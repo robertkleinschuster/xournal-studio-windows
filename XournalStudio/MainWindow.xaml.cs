@@ -38,6 +38,7 @@ public sealed partial class MainWindow : Window
         tools = new ToolController(Toolbar, PenButton, HighlighterButton);
         inkTools = new InkTools(undo, () => tools.PenAttributes) { Shape = settings.Shape };
         inkTools.Message += (_, m) => ShowMessage(m.Severity, m.Title, m.Message);
+        inkTools.BarrelTapped += (_, _) => tools.ReturnFromLasso();
         ShapeChoice.SelectedIndex = (int)settings.Shape;
         tools.CustomToolChanged += (_, _) => inkTools.Tool =
             tools.CustomTool == LassoButton ? InkTool.Lasso :
@@ -150,6 +151,7 @@ public sealed partial class MainWindow : Window
     {
         var view = new PageView(page, pdf);
         inkTools.Attach(view);
+        tools.Attach(view, LassoButton);
         view.Ink.StrokesCollected += (_, e) => OnStrokesCollected(view, e.Strokes);
         view.Ink.StrokesErased += (_, e) =>
         {

@@ -51,7 +51,10 @@ arrows), math exercises long formulas in several colors.
 - **Windows 11 only**, this machine's version (26200) – no compatibility layers.
 - **Right-handed UI:** nothing interactive at the right screen edge; one toolbar row, left-aligned; menu bar
   visible; scrollbars hidden; the left side is for the explorer. Touch never draws (it scrolls/zooms).
-- **Pen buttons:** eraser end / eraser button erases (native), barrel button should lasso once the lasso exists.
+- **Pen buttons:** eraser end / eraser button erases (native). Barrel button (agreed 2026-11-15): while inking, a
+  barrel press switches the toolbar to the lasso (`RightDragAction.LeaveUnprocessed` + `UnprocessedInput` only
+  signals it, `InkToolbar.ActiveTool` switches); in the lasso a barrel drag lassos, a barrel tap returns to the
+  previous tool. "Hold barrel = lasso" in one stroke needs readable `UnprocessedInput` (PR #12292).
 - **Decisions (2026-11-15):** eraser = native Windows ink eraser (whole strokes; no pixel eraser, Windows has
   none); shape recognition = Windows `InkAnalyzer`; straight lines also with the Windows ruler (stencil button).
   Lasso, shapes and PDF areas are `InkToolbarCustomToolButton`s built after Microsoft's pattern ("Pen interactions
@@ -172,8 +175,8 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 1. **Git explorer – done 2026-11-15** (not yet tried by the user on the device; sync not run against the real
    repo by Claude). Possible next steps if asked: folder status colors, rename/delete files, new document in a folder.
 2. **Lasso, shapes, PDF areas, ruler – done 2026-11-15** (tested with synthetic pen on the desktop: shapes, lasso,
-   live move, delete, ink copy/paste, undo, PDF area copy + paste at original size, saved XML checked). Open: the
-   barrel-button lasso and switching to `UnprocessedInput` once PR #12292 ships; copying pictures (only strokes are
+   live move, delete, ink copy/paste, undo, PDF area copy + paste at original size, barrel-button lasso cycle, saved
+   XML checked). Open: switching to `UnprocessedInput` (and "hold barrel = lasso") once PR #12292 ships; copying pictures (only strokes are
    copied with Ctrl+C); PDF areas only from PDF pages (no ink in the copy).
 3. **Pen eraser end** did not erase in later sandbox runs (worked in the first one, native code only) – the user
    should check it on the device; if it fails there too, investigate before anything else.
