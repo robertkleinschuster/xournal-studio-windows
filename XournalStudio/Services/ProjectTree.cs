@@ -58,7 +58,11 @@ public static class ProjectTree
         return entries;
     }
 
-    private static bool IsHidden(string folder) =>
-        Path.GetFileName(folder).StartsWith('.') ||
-        new DirectoryInfo(folder).Attributes.HasFlag(FileAttributes.Hidden);
+    // Junctions and symbolic links are skipped too: one pointing to a parent folder would recurse forever.
+    // (Not all reparse points: OneDrive's online-only folders are ones as well.)
+    private static bool IsHidden(string folder)
+    {
+        var info = new DirectoryInfo(folder);
+        return info.Name.StartsWith('.') || info.Attributes.HasFlag(FileAttributes.Hidden) || info.LinkTarget != null;
+    }
 }

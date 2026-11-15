@@ -33,8 +33,16 @@
                                   AutomationProperties.Name="{x:Bind Name}">
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <FontIcon Glyph="{x:Bind Glyph}" FontSize="16" />
-                            <TextBlock Text="{x:Bind Name}" Foreground="{x:Bind Foreground, Mode=OneWay}"
-                                       TextTrimming="CharacterEllipsis" />
+                            <Grid>
+                                <TextBlock Text="{x:Bind Name}" TextTrimming="CharacterEllipsis"
+                                           Visibility="{x:Bind IsUnchanged, Mode=OneWay}" />
+                                <TextBlock Text="{x:Bind Name}" TextTrimming="CharacterEllipsis"
+                                           Foreground="{ThemeResource SystemFillColorSuccessBrush}"
+                                           Visibility="{x:Bind IsNew, Mode=OneWay}" />
+                                <TextBlock Text="{x:Bind Name}" TextTrimming="CharacterEllipsis"
+                                           Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                                           Visibility="{x:Bind IsModified, Mode=OneWay}" />
+                            </Grid>
                         </StackPanel>
                     </TreeViewItem>
                 </DataTemplate>

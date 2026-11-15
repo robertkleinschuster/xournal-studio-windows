@@ -89,8 +89,22 @@ public static class GitSync
         var tracking = branch.TrackingDetails;
         if (tracking.BehindBy > 0 && tracking.AheadBy > 0)
         {
-            var result = repo.Rebase.Start(branch, upstream, null, new Identity(signature.Name, signature.Email),
-                new RebaseOptions());
+            RebaseResult result;
+            try
+            {
+                result = repo.Rebase.Start(branch, upstream, null, new Identity(signature.Name, signature.Email),
+                    new RebaseOptions());
+            }
+            catch (Exception)
+            {
+                // E.g. a file locked by another program: never leave the repository mid-rebase (detached HEAD).
+                if (repo.Info.CurrentOperation is CurrentOperation.RebaseMerge or CurrentOperation.Rebase
+                    or CurrentOperation.RebaseInteractive)
+                {
+                    repo.Rebase.Abort();
+                }
+                throw;
+            }
             if (result.Status != RebaseStatus.Complete)
             {
                 var conflicts = repo.Index.Conflicts.Select(c => (c.Ours ?? c.Theirs ?? c.Ancestor).Path).ToList();

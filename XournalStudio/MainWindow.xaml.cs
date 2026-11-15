@@ -183,6 +183,13 @@ public sealed partial class MainWindow : Window
         {
             return false;
         }
+        if (syncing)
+        {
+            // Git is committing and checking out the working tree right now.
+            ShowMessage(InfoBarSeverity.Informational, "Synchronisierung läuft",
+                "Gespeichert wird, sobald die Synchronisierung fertig ist.");
+            return false;
+        }
         try
         {
             document.Save(document.FilePath);
@@ -312,6 +319,10 @@ public sealed partial class MainWindow : Window
     private void OnActivated(object sender, WindowActivatedEventArgs args)
     {
         // Like Xournal Studio: save when the window loses focus.
+        if (syncing)
+        {
+            return; // saved and refreshed when the sync is done
+        }
         if (args.WindowActivationState == WindowActivationState.Deactivated && dirty && document.FilePath != null)
         {
             Save();
@@ -483,6 +494,10 @@ public sealed partial class MainWindow : Window
 
     private async void RefreshExplorer()
     {
+        if (syncing)
+        {
+            return; // git status would compete with the sync for the index; refreshed afterwards
+        }
         await Explorer.ShowAsync(ProjectFolder, document.FilePath);
         SyncMenuItem.IsEnabled = Explorer.RepositoryRoot != null && !syncing;
     }
@@ -517,7 +532,7 @@ public sealed partial class MainWindow : Window
     {
         bool isOpen = string.Equals(path, document.FilePath, StringComparison.OrdinalIgnoreCase) ||
             string.Equals(Path.ChangeExtension(path, ".xopp"), document.FilePath, StringComparison.OrdinalIgnoreCase);
-        if (!isOpen && await SaveBeforeReplacingAsync())
+        if (!isOpen && !syncing && await SaveBeforeReplacingAsync())
         {
             await OpenAsync(path);
         }
@@ -545,19 +560,9 @@ public sealed partial class MainWindow : Window
             var result = await Task.Run(() =>
                 GitSync.Sync(root, GitCredentials.Get, Environment.MachineName, DateTimeOffset.Now));
             bool documentChanged = result.PulledFiles.Any(f =>
-                string.Equals(f, document.FilePath, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(f, document.PdfPath, StringComparison.OrdinalIgnoreCase));
-            if (documentChanged && dirty)
+                SamePath(f, document.FilePath) || SamePath(f, document.PdfPath));
+            if (!documentChanged || await ResolvePulledDocumentAsync())
             {
-                ShowMessage(InfoBarSeverity.Warning, "Dokument wurde extern geändert",
-                    "Die Synchronisierung hat das offene Dokument geändert, es hat aber neue Notizen. Es wurde nicht neu geladen.");
-            }
-            else
-            {
-                if (documentChanged && document.FilePath != null)
-                {
-                    await OpenAsync(document.FilePath);
-                }
                 ShowMessage(InfoBarSeverity.Success, "Synchronisiert", Describe(result));
             }
         }
@@ -574,10 +579,88 @@ public sealed partial class MainWindow : Window
         {
             syncing = false;
             Explorer.IsSyncing = false;
+            if (dirty && document.FilePath != null && File.Exists(document.FilePath))
+            {
+                Save(); // notes written during the sync (or the own version the user chose to keep)
+            }
             RefreshExplorer();
         }
     }
 
+    private static bool SamePath(string a, string? b) =>
+        b != null && string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The pull changed (or removed) the open document. With new notes in it the user decides; otherwise it is
+    /// reloaded – from the PDF when the .xopp is gone, or closed when nothing is left. False: a message is shown.
+    /// </summary>
+    private async Task<bool> ResolvePulledDocumentAsync()
+    {
+        if (dirty)
+        {
+            var dialog = new ContentDialog
+            {
+                XamlRoot = Content.XamlRoot,
+                Title = "Dokument wurde auf einem anderen Gerät geändert",
+                Content = "Die Synchronisierung hat das offene Dokument geändert, während es neue, nicht gespeicherte " +
+                    "Notizen hatte.",
+                PrimaryButtonText = "Neu laden (meine Notizen verwerfen)",
+                SecondaryButtonText = "Meine als Kopie speichern…",
+                CloseButtonText = "Meine behalten",
+                DefaultButton = ContentDialogButton.Secondary,
+            };
+            var choice = await dialog.ShowAsync();
+            if (choice == ContentDialogResult.None)
+            {
+                // Saved when the sync ends, over the pulled version; git history keeps that one.
+                ShowMessage(InfoBarSeverity.Warning, "Eigene Version behalten",
+                    "Die geholte Version wird mit der eigenen überschrieben; sie bleibt in der Git-Historie.");
+                return false;
+            }
+            string? pulledPath = document.FilePath;
+            if (choice == ContentDialogResult.Secondary)
+            {
+                syncing = false; // the git work is done; saving the copy is allowed
+                bool saved = await SaveCopyAsync();
+                syncing = true;
+                if (!saved)
+                {
+                    ShowMessage(InfoBarSeverity.Warning, "Eigene Version behalten",
+                        "Keine Kopie gespeichert: die geholte Version wird mit der eigenen überschrieben; sie bleibt in der Git-Historie.");
+                    return false;
+                }
+            }
+            document.FilePath = pulledPath;
+        }
+
+        string? path = document.FilePath;
+        if (path != null && File.Exists(path))
+        {
+            await OpenAsync(path);
+            return true;
+        }
+        if (document.PdfPath != null && File.Exists(document.PdfPath))
+        {
+            await OpenAsync(document.PdfPath);
+            return true;
+        }
+        ShowDocument(XoppDocument.CreateNew(), null);
+        ShowMessage(InfoBarSeverity.Warning, "Dokument wurde auf einem anderen Gerät gelöscht oder umbenannt",
+            $"{path} gibt es nach der Synchronisierung nicht mehr.");
+        return false;
+    }
+
+    /// <summary>Saves the open document under a new name without making that the open file.</summary>
+    private async Task<bool> SaveCopyAsync()
+    {
+        string? original = document.FilePath;
+        bool saved = await SaveAsAsync();
+        if (!saved)
+        {
+            document.FilePath = original;
+        }
+        return saved;
+    }
 
     private static string Describe(GitSyncResult result)
     {

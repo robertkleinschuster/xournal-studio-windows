@@ -1,12 +1,10 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Media;
 using XournalStudio.Services;
 
 namespace XournalStudio.Views;
 
-/// <summary>A row of the explorer's TreeView: folder or document, with its git state as text color.</summary>
+/// <summary>A row of the explorer's TreeView: folder or document, with its git state (new = green, modified = blue).</summary>
 public sealed partial class ExplorerItem(ProjectEntry entry) : INotifyPropertyChanged
 {
     private GitFileState state;
@@ -47,16 +45,17 @@ public sealed partial class ExplorerItem(ProjectEntry entry) : INotifyPropertyCh
             if (state != value)
             {
                 state = value;
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Foreground)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsNew)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsModified)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsUnchanged)));
             }
         }
     }
 
-    /// <summary>New = green, modified = blue (accent), otherwise the normal text color.</summary>
-    public Brush Foreground => (Brush)Application.Current.Resources[State switch
-    {
-        GitFileState.New => "SystemFillColorSuccessBrush",
-        GitFileState.Modified => "AccentTextFillColorPrimaryBrush",
-        _ => "TextFillColorPrimaryBrush",
-    }];
+    // The template shows the name in the theme color of the state (theme resources follow light/dark changes).
+    public bool IsNew => State == GitFileState.New;
+
+    public bool IsModified => State == GitFileState.Modified;
+
+    public bool IsUnchanged => State == GitFileState.Unchanged;
 }

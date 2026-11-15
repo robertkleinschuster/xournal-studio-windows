@@ -10,7 +10,8 @@ public sealed class ExplorerTests : IDisposable
 
     public void Dispose()
     {
-        foreach (var file in Directory.EnumerateFiles(temp, "*", SearchOption.AllDirectories))
+        var options = new EnumerationOptions { RecurseSubdirectories = true, AttributesToSkip = FileAttributes.ReparsePoint };
+        foreach (var file in Directory.EnumerateFiles(temp, "*", options))
         {
             File.SetAttributes(file, FileAttributes.Normal); // git objects are read-only
         }
@@ -37,13 +38,30 @@ public sealed class ExplorerTests : IDisposable
         Touch("GET/UE/notes.txt");
         Touch("Leer/readme.md");
         Touch(".git/x.pdf");
+        // A junction back to the project folder must not be followed (endless recursion).
+        string loop = Path.Combine(temp, "GET", "UE", "Schleife");
+        CreateJunction(loop, temp);
 
         var root = ProjectTree.Read(temp);
+        Directory.Delete(loop); // removes the link only
 
         var get = Assert.Single(root.Children);
         Assert.Equal("GET", get.Name);
         var ue = Assert.Single(get.Children);
         Assert.Equal(["blatt1.xopp", "blatt2.pdf"], ue.Children.Select(c => c.Name));
+    }
+
+    private static void CreateJunction(string link, string target)
+    {
+        var start = new System.Diagnostics.ProcessStartInfo("cmd.exe", $"/c mklink /J \"{link}\" \"{target}\"")
+        {
+            CreateNoWindow = true,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+        };
+        using var process = System.Diagnostics.Process.Start(start)!;
+        process.WaitForExit();
+        Assert.Equal(0, process.ExitCode);
     }
 
     private string Clone(string remote, string name)
