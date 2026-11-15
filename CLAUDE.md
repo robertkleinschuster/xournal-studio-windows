@@ -104,7 +104,10 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   `Windows.UI.Core.PointerEventArgs` whose `CurrentPoint` and `GetIntermediatePoints()` throw 0x80004021
   CO_E_NOT_SUPPORTED** – no position. (An earlier note said the events never fire: wrong, the COMException inside the
   handler was swallowed and hid the log line. Log first, then touch risky members in try/catch that logs.)
-  Re-test the args with each new Windows App SDK release.
+  Root cause (WinUI bug, not our usage): WinUI hosts the presenter on its ink thread and forwards the OS args to the
+  UI thread, but `PointerPoint` is not marshalable. Fix: microsoft/microsoft-ui-xaml PR #12292 (open, not merged as
+  of 2026-11-15; reproduced with 2.5.4-experimental too). No app-side workaround exists – check the PR and re-test
+  with each new Windows App SDK release.
 - Pen input never reaches XAML pointer events while a presenter takes pen input, not even with the InkCanvas' hit
   testing off. With the pen removed from `InkPresenter.InputDeviceTypes`, XAML pointer events arrive with
   `PointerDeviceType.Pen` – but the `ScrollView` captures the pen for panning after ~100 ms unless it has
