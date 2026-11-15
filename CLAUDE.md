@@ -175,6 +175,10 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 - Upstream .xopp PDF reference: `domain="absolute"` + `filename` = path written by `Util::normalizeAssetPath`
   (absolute or relative to the .xopp, by the path storage mode), or `domain="attach"` + `filename="bg.pdf"` =
   `<name>.xopp.bg.pdf` next to the document (found by the document's name, so it is renamed with it).
+  Upstream's default storage mode is relative (a loaded rooted path switches to absolute). We do the same: new
+  documents write the PDF relative to the .xopp with '/' (portable in the git-synced folder); a loaded reference
+  is written back verbatim while it still names the PDF from the save location, otherwise recomputed in its mode.
+  The user's real documents all use relative paths (checked 2026-11-15).
 - The debug build (HEAD before the explorer work too) sometimes crashed with 0xc000027b (stowed exception) in
   CoreMessagingXP.dll when started/closed by a script (`Start-Process`, `CloseMainWindow`) – not investigated.
 

@@ -24,7 +24,7 @@ public sealed class XoppDocument
 
     public List<XoppPage> Pages { get; } = new();
 
-    // The PDF reference as found in the file (may be relative); written back unchanged.
+    // The PDF reference as found in the file (may be relative); written back unchanged while it still fits.
     private (string? Domain, string? Filename) loadedPdfReference;
 
     private XElement Root => xml.Root!;
@@ -122,7 +122,7 @@ public sealed class XoppDocument
                 var pageNo = (string?)background.Attribute("pageno");
                 background.RemoveAttributes();
                 background.SetAttributeValue("type", "pdf");
-                if (firstPdf && loadedPdfReference.Filename != null)
+                if (firstPdf && KeepsLoadedPdfReference(path))
                 {
                     background.SetAttributeValue("domain", loadedPdfReference.Domain ?? "absolute");
                     background.SetAttributeValue("filename", loadedPdfReference.Filename);
@@ -130,7 +130,7 @@ public sealed class XoppDocument
                 else if (firstPdf && PdfPath != null)
                 {
                     background.SetAttributeValue("domain", "absolute");
-                    background.SetAttributeValue("filename", PdfPath);
+                    background.SetAttributeValue("filename", PdfReference(PdfPath, path));
                 }
                 background.SetAttributeValue("pageno", pageNo);
                 firstPdf = false;
@@ -152,6 +152,37 @@ public sealed class XoppDocument
         }
         File.Move(temp, path, overwrite: true);
         FilePath = path;
+    }
+
+    // The reference read from the file is written back as it was while it still names the PDF from where the
+    // document is saved (an attached PDF always: it travels with the document's name).
+    private bool KeepsLoadedPdfReference(string target)
+    {
+        var (domain, filename) = loadedPdfReference;
+        if (filename == null)
+        {
+            return false;
+        }
+        if (domain == "attach" || PdfPath == null)
+        {
+            return true;
+        }
+        string dir = Path.GetDirectoryName(Path.GetFullPath(target))!;
+        string named = Path.GetFullPath(Path.Combine(dir, filename.Replace('/', Path.DirectorySeparatorChar)));
+        return string.Equals(named, Path.GetFullPath(PdfPath), StringComparison.OrdinalIgnoreCase);
+    }
+
+    // As upstream SaveHandler + Util::normalizeAssetPath: domain "absolute" just means "a path"; it is relative to the
+    // .xopp's folder (upstream's default storage mode) unless the loaded file used an absolute one, with '/'
+    // separators. Relative keeps git-synced folders portable between machines.
+    private string PdfReference(string pdf, string target)
+    {
+        string full = Path.GetFullPath(pdf);
+        bool absolute = loadedPdfReference.Filename != null && Path.IsPathRooted(loadedPdfReference.Filename);
+        string reference = absolute
+            ? full
+            : Path.GetRelativePath(Path.GetDirectoryName(Path.GetFullPath(target))!, full);
+        return reference.Replace(Path.DirectorySeparatorChar, '/');
     }
 
     private static XDocument NewXml() =>
@@ -176,7 +207,8 @@ public sealed class XoppDocument
         }
         else
         {
-            candidates.Add(Path.IsPathRooted(filename) ? filename : Path.Combine(dir, filename));
+            // Relative to the .xopp's folder, '/' separated ("../VO/x.pdf").
+            candidates.Add(Path.GetFullPath(Path.Combine(dir, filename)));
             // Moved documents: Xournal also looks for the PDF next to the .xopp.
             candidates.Add(Path.Combine(dir, Path.GetFileName(filename.Replace('/', '\\'))));
         }

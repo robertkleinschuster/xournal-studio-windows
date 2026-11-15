@@ -165,6 +165,50 @@ public class FileFormatTests : IDisposable
         Assert.Throws<InvalidOperationException>(() => XoppDocument.Load(path).MovePdf("x.pdf"));
     }
 
+    private static string? PdfFilename(string path) =>
+        (string?)ReadXml(path).Descendants("background").First().Attribute("filename");
+
+    [Fact]
+    public void NewDocumentRefersToItsPdfRelatively()
+    {
+        Directory.CreateDirectory(Path.Combine(dir, "VO"));
+        var doc = XoppDocument.FromPdf(Path.Combine(dir, "VO", "Skript 1.pdf"), [(595, 842)]);
+        string path = Path.Combine(dir, "a.xopp");
+        doc.Save(path);
+
+        Assert.Equal("VO/Skript 1.pdf", PdfFilename(path));
+        Assert.Equal(Path.Combine(dir, "VO", "Skript 1.pdf"), XoppDocument.Load(path).PdfPath);
+    }
+
+    [Fact]
+    public void LoadedRelativeReferenceIsKeptAndFollowsASavedCopy()
+    {
+        File.WriteAllText(Path.Combine(dir, "lecture.pdf"), "");
+        string path = Write("a.xopp", Sample);
+        var doc = XoppDocument.Load(path);
+        doc.Save(path);
+        Assert.Equal("lecture.pdf", PdfFilename(path));
+
+        Directory.CreateDirectory(Path.Combine(dir, "Kopie"));
+        string copy = Path.Combine(dir, "Kopie", "a.xopp");
+        doc.Save(copy);
+        Assert.Equal("../lecture.pdf", PdfFilename(copy));
+        Assert.Equal(Path.Combine(dir, "lecture.pdf"), XoppDocument.Load(copy).PdfPath);
+    }
+
+    [Fact]
+    public void LoadedAbsoluteReferenceIsRepairedAsAbsolute()
+    {
+        // Written on another machine; the PDF is found next to the .xopp.
+        string pdf = Path.Combine(dir, "lecture.pdf");
+        File.WriteAllText(pdf, "");
+        string path = Write("a.xopp", Sample.Replace("filename=\"lecture.pdf\"", "filename=\"Z:/elsewhere/lecture.pdf\""));
+        var doc = XoppDocument.Load(path);
+        doc.Save(path);
+
+        Assert.Equal(pdf.Replace('\\', '/'), PdfFilename(path));
+    }
+
     // Whitespace-only text nodes depend on formatting, not content.
     private static XElement Normalize(XElement e)
     {
