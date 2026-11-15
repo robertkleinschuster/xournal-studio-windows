@@ -6,6 +6,8 @@
     <Grid x:Name="Sheet" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="0.5">
         <Image x:Name="PdfImage" Stretch="Fill" />
         <Path x:Name="Pattern" StrokeThickness="0.5" />
+        <!-- Pictures (copied PDF areas, images) lie below the ink, like in Xournal's usual layering. -->
+        <Canvas x:Name="ImagesLayer" IsHitTestVisible="False" />
         <InkCanvas x:Name="Canvas" />
     </Grid>
 </UserControl>

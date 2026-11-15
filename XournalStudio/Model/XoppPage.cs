@@ -9,7 +9,7 @@ public enum BackgroundStyle { Plain, Lined, Ruled, Graph, Dotted }
 
 /// <summary>
 /// One page. Its strokes live in an <see cref="InkStrokeContainer"/> (shown by the page's InkCanvas);
-/// all other content stays in the page's XML element and is written back as loaded.
+/// pictures and all other content stay in the page's XML element and are written back as loaded.
 /// </summary>
 public sealed class XoppPage
 {
@@ -118,6 +118,43 @@ public sealed class XoppPage
         {
             strokeElements[newId] = e;
         }
+    }
+
+    /// <summary>Pictures (&lt;image&gt;, &lt;teximage&gt;) of all layers, bottom to top.</summary>
+    public IEnumerable<XElement> Images => element.Elements("layer").Elements().Where(XoppImage.IsImage);
+
+    /// <summary>Raised when pictures are added or removed.</summary>
+    public event EventHandler? ImagesChanged;
+
+    /// <summary>Adds a picture (new ones go to the top layer, like strokes).</summary>
+    public void AddImage(XElement image)
+    {
+        element.Elements("layer").Last().Add(image);
+        ImagesChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void RemoveImage(XElement image)
+    {
+        if (image.Parent != null)
+        {
+            image.Remove();
+            ImagesChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    /// <summary>The lowest edge of the page's content (strokes and pictures), 0 if empty.</summary>
+    public double ContentBottom()
+    {
+        double bottom = 0;
+        foreach (var s in Strokes)
+        {
+            bottom = Math.Max(bottom, s.BoundingRect.Bottom);
+        }
+        foreach (var image in Images)
+        {
+            bottom = Math.Max(bottom, XoppImage.GetBounds(image).Bottom);
+        }
+        return bottom;
     }
 
     /// <summary>Synchronizes the XML element with the ink and returns it.</summary>

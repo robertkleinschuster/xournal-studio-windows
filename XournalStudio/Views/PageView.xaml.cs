@@ -1,3 +1,4 @@
+using System.Xml.Linq;
 using Microsoft.UI;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
@@ -8,7 +9,9 @@ using XournalStudio.Services;
 
 namespace XournalStudio.Views;
 
-/// <summary>A page: background (color, ruling or PDF page) with an InkCanvas on top.</summary>
+/// <summary>
+/// A page: background (color, ruling or PDF page), pictures and the InkCanvas.
+/// </summary>
 public sealed partial class PageView : UserControl
 {
     private const uint MaxPdfPixelWidth = 3200;
@@ -16,6 +19,8 @@ public sealed partial class PageView : UserControl
     private readonly PdfBackground? pdf;
     private uint renderedPixelWidth;
     private uint requestedPixelWidth;
+    private bool picturesShown;
+    private double picturePixelsPerPoint;
 
     public XoppPage Page { get; }
 
@@ -39,25 +44,42 @@ public sealed partial class PageView : UserControl
         }
 
         page.AttachInk(Canvas.InkPresenter.StrokeContainer);
+        page.ImagesChanged += (_, _) =>
+        {
+            if (picturesShown)
+            {
+                ShowPictures(picturePixelsPerPoint);
+            }
+        };
     }
 
     /// <summary>
-    /// Renders the PDF page sharp enough for <paramref name="pixelsPerPoint"/> while the page is near the
-    /// viewport and frees the bitmap otherwise.
+    /// Renders the PDF page and the pictures sharp enough for <paramref name="pixelsPerPoint"/> while the page is
+    /// near the viewport and frees the bitmaps otherwise.
     /// </summary>
-    public async void UpdateBackground(bool nearViewport, double pixelsPerPoint)
+    public void UpdateBackground(bool nearViewport, double pixelsPerPoint)
+    {
+        if (!nearViewport)
+        {
+            PdfImage.Source = null;
+            renderedPixelWidth = requestedPixelWidth = 0;
+            ImagesLayer.Children.Clear();
+            picturesShown = false;
+            return;
+        }
+        if (!picturesShown || pixelsPerPoint > picturePixelsPerPoint * 1.6)
+        {
+            ShowPictures(pixelsPerPoint);
+        }
+        RenderPdf(pixelsPerPoint);
+    }
+
+    private async void RenderPdf(double pixelsPerPoint)
     {
         if (pdf == null)
         {
             return;
         }
-        if (!nearViewport)
-        {
-            PdfImage.Source = null;
-            renderedPixelWidth = requestedPixelWidth = 0;
-            return;
-        }
-
         uint wanted = (uint)Math.Min(MaxPdfPixelWidth, Math.Ceiling(Page.Width * pixelsPerPoint));
         bool sharpEnough = renderedPixelWidth >= wanted * 0.9 && renderedPixelWidth <= wanted * 1.6;
         if (sharpEnough || requestedPixelWidth == wanted)
@@ -71,6 +93,34 @@ public sealed partial class PageView : UserControl
         {
             PdfImage.Source = bitmap;
             renderedPixelWidth = wanted;
+        }
+    }
+
+    private void ShowPictures(double pixelsPerPoint)
+    {
+        picturesShown = true;
+        picturePixelsPerPoint = pixelsPerPoint;
+        ImagesLayer.Children.Clear();
+        foreach (var element in Page.Images)
+        {
+            var bounds = XoppImage.GetBounds(element);
+            var image = new Image { Width = bounds.Width, Height = bounds.Height, Stretch = Stretch.Fill, Tag = element };
+            Microsoft.UI.Xaml.Controls.Canvas.SetLeft(image, bounds.Left);
+            Microsoft.UI.Xaml.Controls.Canvas.SetTop(image, bounds.Top);
+            ImagesLayer.Children.Add(image);
+            LoadPicture(image, element, (uint)Math.Clamp(bounds.Width * pixelsPerPoint, 1, MaxPdfPixelWidth));
+        }
+    }
+
+    private static async void LoadPicture(Image image, XElement element, uint pixelWidth)
+    {
+        try
+        {
+            image.Source = await PictureRenderer.LoadAsync(XoppImage.GetData(element), pixelWidth);
+        }
+        catch (Exception e)
+        {
+            DebugLog.Write($"picture not shown: {e.Message}");
         }
     }
 }

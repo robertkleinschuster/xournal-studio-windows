@@ -1,4 +1,4 @@
-using Microsoft.UI.Dispatching;
+﻿using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -13,8 +13,8 @@ namespace XournalStudio;
 public sealed partial class MainWindow : Window
 {
     private readonly AppSettings settings = AppSettings.Load();
-    private readonly InkUndoStack undo = new();
-    private readonly InkToolSync tools;
+    private readonly UndoStack undo = new();
+    private readonly ToolController tools;
     private readonly DispatcherQueueTimer viewTimer;
 
     private XoppDocument document = XoppDocument.CreateNew();
@@ -34,7 +34,13 @@ public sealed partial class MainWindow : Window
             presenter.Maximize();
         }
 
-        tools = new InkToolSync(Toolbar, PenButton, HighlighterButton);
+        tools = new ToolController(Toolbar, PenButton, HighlighterButton);
+        RecognizeButton.IsChecked = settings.RecognizeShapes;
+        RecognizeButton.Click += (_, _) =>
+        {
+            settings.RecognizeShapes = RecognizeButton.IsChecked == true;
+            settings.Save();
+        };
         undo.Changed += (_, _) =>
         {
             UndoButton.IsEnabled = UndoMenuItem.IsEnabled = undo.CanUndo;
@@ -127,13 +133,42 @@ public sealed partial class MainWindow : Window
     private PageView CreatePageView(XoppPage page)
     {
         var view = new PageView(page, pdf);
-        undo.Attach(page, view.Ink);
+        view.Ink.StrokesCollected += (_, e) => OnStrokesCollected(view, e.Strokes);
+        view.Ink.StrokesErased += (_, e) =>
+        {
+            var edit = new PageEdit(page);
+            edit.RemovedStrokes.AddRange(e.Strokes);
+            undo.Push(edit);
+        };
         return view;
+    }
+
+    /// <summary>Records new ink for undo; with shape recognition on, hand-drawn shapes become clean ones.</summary>
+    private async void OnStrokesCollected(PageView view, IReadOnlyList<Windows.UI.Input.Inking.InkStroke> strokes)
+    {
+        var page = view.Page;
+        var edit = new PageEdit(page);
+        foreach (var stroke in strokes.ToList())
+        {
+            var shape = RecognizeButton.IsChecked == true && !stroke.DrawingAttributes.DrawAsHighlighter
+                ? await ShapeRecognition.RecognizeAsync(stroke) : null;
+            if (shape != null && page.Ink!.GetStrokes().Contains(stroke))
+            {
+                PageEdit.RemoveStrokes(page, [stroke]);
+                page.Ink!.AddStroke(shape);
+                edit.AddedStrokes.Add(shape);
+            }
+            else
+            {
+                edit.AddedStrokes.Add(stroke);
+            }
+        }
+        undo.Push(edit);
     }
 
     private void OnPagesChanged()
     {
-        tools.SetPresenters(PageViews.Select(v => (v.InkCanvas, v.Ink)));
+        tools.SetPages(PageViews);
         viewTimer.Start();
     }
 
@@ -410,4 +445,46 @@ public sealed partial class MainWindow : Window
     private void OnZoomIn(object sender, RoutedEventArgs e) => Zoom(1.25f);
 
     private void OnZoomOut(object sender, RoutedEventArgs e) => Zoom(0.8f);
+
+    // ---------------------------------------------------------------- paste
+
+    /// <summary>
+    /// Pastes a bitmap from the clipboard onto the page in the middle of the view: at the left margin, below what is
+    /// already on it (on the next grid line), so parts of an exercise stack up on a graph page.
+    /// </summary>
+    private async void OnPaste(object sender, RoutedEventArgs e)
+    {
+        System.Xml.Linq.XElement? image;
+        try
+        {
+            image = await ClipboardService.PasteImageAsync();
+        }
+        catch (Exception ex)
+        {
+            ShowMessage(InfoBarSeverity.Warning, "Einfügen nicht möglich", ex.Message);
+            return;
+        }
+        if (image == null)
+        {
+            ShowMessage(InfoBarSeverity.Informational, "Kein Bild in der Zwischenablage",
+                "Einen Ausschnitt z. B. mit dem Ausschneidetool (Win+Umschalt+S) kopieren.");
+            return;
+        }
+
+        var page = document.Pages[CurrentPageIndex()];
+        var size = XoppImage.GetBounds(image);
+        const double Grid = 14.17;
+        // Wider than the page: scaled down to fit between the margins.
+        double scale = Math.Min(1, (page.Width - 2 * Grid) / size.Width);
+        double top = Math.Ceiling((page.ContentBottom() + 4) / Grid) * Grid;
+        if (top < Grid || top + size.Height * scale > page.Height)
+        {
+            top = Grid;
+        }
+        var placed = XoppImage.WithBounds(image, new Rect(Grid, top, size.Width * scale, size.Height * scale));
+        page.AddImage(placed);
+        var edit = new PageEdit(page);
+        edit.AddedImages.Add(placed);
+        undo.Push(edit);
+    }
 }

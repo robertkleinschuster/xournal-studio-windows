@@ -54,6 +54,13 @@
                         <KeyboardAccelerator Modifiers="Control" Key="Y" />
                     </MenuFlyoutItem.KeyboardAccelerators>
                 </MenuFlyoutItem>
+                <MenuFlyoutSeparator />
+                <MenuFlyoutItem Text="Einfügen" Click="OnPaste">
+                    <MenuFlyoutItem.Icon><SymbolIcon Symbol="Paste" /></MenuFlyoutItem.Icon>
+                    <MenuFlyoutItem.KeyboardAccelerators>
+                        <KeyboardAccelerator Modifiers="Control" Key="V" />
+                    </MenuFlyoutItem.KeyboardAccelerators>
+                </MenuFlyoutItem>
             </MenuBarItem>
             <MenuBarItem Title="Seite">
                 <MenuFlyoutItem Text="Seite einfÃ¼gen" Click="OnInsertPage">
@@ -87,12 +94,18 @@
         <!-- Single toolbar, everything left-aligned (nothing at the right edge). -->
         <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="4" Padding="8,0,8,4">
             <InkToolbar x:Name="Toolbar" InitialControls="None" VerticalAlignment="Center">
-                <InkToolbarBallpointPenButton x:Name="PenButton" />
-                <InkToolbarHighlighterButton x:Name="HighlighterButton" />
-                <InkToolbarEraserButton IsClearAllVisible="False" />
+                <InkToolbarBallpointPenButton x:Name="PenButton" AutomationProperties.Name="Stift" />
+                <InkToolbarHighlighterButton x:Name="HighlighterButton" AutomationProperties.Name="Textmarker" />
+                <InkToolbarEraserButton x:Name="EraserButton" IsClearAllVisible="False" ToolTipService.ToolTip="Radierer" AutomationProperties.Name="Radierer" />
+                <InkToolbarCustomToggleButton x:Name="RecognizeButton" AutomationProperties.Name="Formerkennung" ToolTipService.ToolTip="Formerkennung">
+                    <FontIcon Glyph="&#xF4A5;" />
+                </InkToolbarCustomToggleButton>
             </InkToolbar>
+            <AppBarButton x:Name="PasteButton" LabelPosition="Collapsed" Label="Einfügen" ToolTipService.ToolTip="Bild einfügen (Strg+V), z. B. einen Ausschnitt aus dem Ausschneidetool (Win+Umschalt+S)" Click="OnPaste">
+                <AppBarButton.Icon><FontIcon Glyph="&#xE77F;" /></AppBarButton.Icon>
+            </AppBarButton>
             <AppBarSeparator />
-            <AppBarButton Icon="Add" LabelPosition="Collapsed" Label="Seite einfÃ¼gen"
+            <AppBarButton x:Name="InsertPageButton" Icon="Add" LabelPosition="Collapsed" Label="Seite einfÃ¼gen"
                           ToolTipService.ToolTip="Seite einfÃ¼gen" Click="OnInsertPage" />
             <AppBarButton Icon="Delete" LabelPosition="Collapsed" Label="Seite lÃ¶schen"
                           ToolTipService.ToolTip="Seite lÃ¶schen" Click="OnDeletePage" />

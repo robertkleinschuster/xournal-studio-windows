@@ -32,24 +32,26 @@ arrows), math exercises long formulas in several colors.
   understand or that other programs (the GTK fork) added. Only the content the user changed is rewritten.
 - **Native WinUI 3 controls, default theme.** InkCanvas/InkPresenter (Windows ink: low latency, pressure, pen
   eraser), InkToolbar (incl. custom tool/toggle buttons), ScrollView (touch pan, pinch zoom, touchpad), MenuBar,
-  CommandBarFlyout, InfoBar, ContentDialog, TreeView, Windows App SDK pickers, Windows.Data.Pdf. Mica backdrop,
+  InfoBar, ContentDialog, TreeView, Windows App SDK pickers, Windows.Data.Pdf. Mica backdrop,
   no custom theme or styling.
 - **Little custom code, strictly encapsulated.** What is left (the .xopp mapping, glue between controls) lives in
-  small classes with one job: `Model/`
-  (file format), `Ink/` (geometry: eraser, shapes, recognition – unit-tested), `Views/CanvasTools.cs`
-  (tools on top of the InkPresenter), `Services/`.
+  small classes with one job: `Model/` (file format, unit-tested), `Views/`, `Services/`.
 - **Iterative.** Only features in actual use, simplest version first. Ask before large new areas.
 - **Windows 11 only**, this machine's version (26200) – no compatibility layers.
 - **Right-handed UI:** nothing interactive at the right screen edge; one toolbar row, left-aligned; menu bar
   visible; scrollbars hidden; the left side is for the explorer. Touch never draws (it scrolls/zooms).
-- **Pen buttons:** eraser end / eraser button erases, barrel button lassoes.
+- **Pen buttons:** eraser end / eraser button erases (native), barrel button should lasso once the lasso exists.
+- **Decisions (2026-11-15):** eraser = native Windows ink eraser (whole strokes; no pixel eraser, Windows has
+  none); shape recognition = Windows `InkAnalyzer`; lasso, shape tools and copying PDF areas wait until the
+  Windows App SDK delivers `InkPresenter.UnprocessedInput` (no workaround). Parts of an exercise come in via the
+  Snipping Tool + paste.
 - German UI texts; code, comments and commits in English.
 
 ## Build, test, install
 
 ```powershell
 dotnet build XournalStudio                 # debug build (no Visual Studio needed, .NET 10 SDK)
-dotnet test XournalStudio.Tests            # unit tests (file format, geometry)
+dotnet test XournalStudio.Tests            # unit tests (file format)
 .\install.ps1                              # tests + publish + install to %LOCALAPPDATA%\Programs\Xournal Studio for Windows
 ```
 
@@ -62,13 +64,11 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   unchanged strokes are written back as their original elements, mapped by ink stroke id; pictures stay XML),
   `StrokeConverter` (Xournal per-segment widths ↔ ink pressure), `XoppImage` (`<image>`/`<teximage>`),
   `XoppFormat` (creator, file version).
-- `Ink/` – `StrokeEraser` (pixel eraser: cuts strokes, exact cut points by bisection), `ShapeRecognizer` (line,
-  triangle, rectangle/quadrilateral, circle/ellipse), `Shapes` (outlines, strokes from polylines). No XAML here.
 - `Views/` – `PageView` (background: color + ruling or PDF page rendered at the current zoom near the viewport;
-  pictures layer; InkCanvas; overlay for tool feedback), `ToolController` (InkToolbar ↔ all pages' presenters,
-  input routing), `CanvasTools` (eraser, lasso + selection, shapes, copy PDF area).
+  pictures layer; InkCanvas), `ToolController` (copies the InkToolbar's tool to all pages' presenters).
 - `Services/` – `UndoStack` + `PageEdit` (strokes/pictures removed/added; the InkCanvas has no undo),
-  `PdfBackground`, `PictureRenderer`, `ClipboardService`, `AppSettings`, `DebugLog`.
+  `ShapeRecognition` (InkAnalyzer result → clean stroke), `PdfBackground`, `PictureRenderer`,
+  `ClipboardService` (bitmap → `<image>`), `AppSettings`, `DebugLog`.
 
 ## Facts learned (keep)
 
@@ -78,12 +78,21 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   release build crashes at start in Microsoft.UI.Xaml.dll).
 - The XAML ink types are in `Microsoft.UI.Xaml.Controls` (InkPresenter, InkStrokeContainer, InkInputProcessingMode,
   ...) and clash with `Windows.UI.Input.Inking` (InkStroke, InkPoint, InkStrokeBuilder, InkDrawingAttributes) –
-  use aliases. `InkPresenter.UnprocessedInput` delivers `Windows.UI.Input.PointerPoint`.
+  use aliases.
 - `InkStrokeContainer` has no public constructor and `InkPresenter.StrokeContainer` is read-only: pages adopt the
   canvas' container. A removed stroke cannot be re-added: undo adds `Clone()`s.
 - Windows ink draws a stroke of size s at pressure p about `s * (0.25 + 1.5 p)` wide (measured).
-- Custom tools: presenter mode `None` → all input arrives as `UnprocessedInput` in page coordinates.
-  `RightDragAction = LeaveUnprocessed` sends barrel-button drags there while inking.
+- **2.6.6-experimental raises neither `InkPresenter.UnprocessedInput` nor `StrokeInput` events** (tested in the
+  sandbox with pen and mouse, mode `None` and `RightDragAction.LeaveUnprocessed`). Pen input never reaches XAML
+  pointer events while a presenter takes pen input, not even with the InkCanvas' hit testing off. `StrokesCollected`
+  and `StrokesErased` work. Re-test UnprocessedInput with each new Windows App SDK release.
+- `InkAnalyzer` (Windows.UI.Input.Inking.Analysis) works in the unpackaged app; for circles/ellipses
+  `InkAnalysisInkDrawing.Points` are the ends of both axes (0–2, 1–3).
+- The pen's eraser end erased in the sandbox in the first session but not in later runs (same native setup) –
+  unresolved, check on the device.
+- UI Automation: the InkToolbar's own buttons have the ids `InkToolbarBallpointPenButton`,
+  `InkToolbarHighlighterButton`, `InkToolbarEraserButton` (their `x:Name`/`AutomationProperties.Name` is
+  ignored); custom buttons and other controls use their `x:Name`.
 - `ScrollView` needs `ContentOrientation="Vertical"` (with `None`, zoomed content was clipped at its unzoomed width).
 - `PdfPage.Size` is in DIPs (points × 96/72); `PdfPageRenderOptions.SourceRect` too.
 - .xopp: highlighter alpha 0x7f; only the first PDF background carries `domain`/`filename`; `pageno` may look
@@ -92,7 +101,7 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 
 ## Testing
 
-- Unit tests: `XournalStudio.Tests` compiles `Model/` and `Ink/` directly (no app, no XAML).
+- Unit tests: `XournalStudio.Tests` compiles `Model/` directly (no app, no XAML).
 - UI test: `UiTests/Run-SandboxTest.ps1 -Document examples\Schaltungen.xopp` runs the installed app in
   Windows Sandbox (the sandbox window opens on the desktop – tell the user first) with synthetic pen/touch input,
   screenshots per step, and checks the saved file with the GTK Xournal Studio CLI (`--create-img`).

@@ -2,14 +2,15 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Windows.UI;
 using Windows.UI.Core;
+using InkInputProcessingMode = Microsoft.UI.Xaml.Controls.InkInputProcessingMode;
 
 namespace XournalStudio.Views;
 
 /// <summary>
-/// An InkToolbar drives a single InkCanvas, but every page has its own. The toolbar targets one of
-/// them and this class copies the toolbar's tool to all other pages' InkPresenters.
+/// An InkToolbar drives a single InkCanvas, but every page has its own. The toolbar targets one of them and this
+/// copies the toolbar's tool (pen, highlighter, eraser) to all other pages' InkPresenters.
 /// </summary>
-public sealed class InkToolSync
+public sealed class ToolController
 {
     // Xournal++'s default palette.
     private static readonly Color[] PenColors =
@@ -27,9 +28,9 @@ public sealed class InkToolSync
     ];
 
     private readonly InkToolbar toolbar;
-    private readonly List<InkPresenter> presenters = new();
+    private readonly List<PageView> views = new();
 
-    public InkToolSync(InkToolbar toolbar, InkToolbarBallpointPenButton pen, InkToolbarHighlighterButton highlighter)
+    public ToolController(InkToolbar toolbar, InkToolbarBallpointPenButton pen, InkToolbarHighlighterButton highlighter)
     {
         this.toolbar = toolbar;
 
@@ -47,18 +48,16 @@ public sealed class InkToolSync
         toolbar.InkDrawingAttributesChanged += (_, _) => ApplyToAll();
     }
 
-    public void SetPresenters(IEnumerable<(InkCanvas Canvas, InkPresenter Presenter)> pages)
+    public void SetPages(IEnumerable<PageView> pages)
     {
-        presenters.Clear();
-        InkCanvas? first = null;
-        foreach (var (canvas, presenter) in pages)
+        views.Clear();
+        views.AddRange(pages);
+        foreach (var view in views)
         {
-            first ??= canvas;
             // Pen draws (mouse too, for convenience); touch is left to the ScrollView for panning and zooming.
-            presenter.InputDeviceTypes = CoreInputDeviceTypes.Pen | CoreInputDeviceTypes.Mouse;
-            presenters.Add(presenter);
+            view.Ink.InputDeviceTypes = CoreInputDeviceTypes.Pen | CoreInputDeviceTypes.Mouse;
         }
-        toolbar.TargetInkCanvas = first;
+        toolbar.TargetInkCanvas = views.FirstOrDefault()?.InkCanvas;
         ApplyToAll();
     }
 
@@ -70,13 +69,12 @@ public sealed class InkToolSync
         {
             attributes.FitToCurve = true;
         }
-        foreach (var presenter in presenters)
+        foreach (var view in views)
         {
-            presenter.InputProcessingConfiguration.Mode =
-                erasing ? InkInputProcessingMode.Erasing : InkInputProcessingMode.Inking;
+            view.Ink.InputProcessingConfiguration.Mode = erasing ? InkInputProcessingMode.Erasing : InkInputProcessingMode.Inking;
             if (attributes != null)
             {
-                presenter.UpdateDefaultDrawingAttributes(attributes);
+                view.Ink.UpdateDefaultDrawingAttributes(attributes);
             }
         }
     }
