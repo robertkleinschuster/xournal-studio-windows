@@ -120,6 +120,15 @@ public sealed class PagesController
         PagesChanged?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>Scrolls to the page with this index (if the document has it).</summary>
+    public void ScrollToPage(int index)
+    {
+        if (Views.ElementAtOrDefault(index) is { } view)
+        {
+            ScrollIntoView(view);
+        }
+    }
+
     /// <summary>Scrolls so the page's top is at the top of the viewport.</summary>
     public void ScrollIntoView(PageView view)
     {

@@ -195,7 +195,23 @@
         <SplitView x:Name="Split" Grid.Row="2" DisplayMode="Inline" OpenPaneLength="300"
                    PaneBackground="Transparent" IsPaneOpen="False">
             <SplitView.Pane>
-                <views:ExplorerView x:Name="Explorer" />
+                <!-- Files of the project folder or its todo.txt tasks. -->
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <SelectorBar x:Name="PaneSelector" SelectionChanged="OnPaneSelectionChanged">
+                        <SelectorBarItem x:Name="FilesTab" Text="Dateien" IsSelected="True">
+                            <SelectorBarItem.Icon><FontIcon Glyph="&#xE8B7;" /></SelectorBarItem.Icon>
+                        </SelectorBarItem>
+                        <SelectorBarItem x:Name="TasksTab" Text="Aufgaben">
+                            <SelectorBarItem.Icon><FontIcon Glyph="&#xE9D5;" /></SelectorBarItem.Icon>
+                        </SelectorBarItem>
+                    </SelectorBar>
+                    <views:ExplorerView x:Name="Explorer" Grid.Row="1" />
+                    <views:TasksView x:Name="Tasks" Grid.Row="1" Visibility="Collapsed" />
+                </Grid>
             </SplitView.Pane>
             <Grid Background="{ThemeResource LayerFillColorDefaultBrush}"
                   BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1,1,0,0">

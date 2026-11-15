@@ -26,6 +26,8 @@
     <!-- Crash recovery copies. -->
     <Compile Include="..\XournalStudio\Services\Recovery.cs" Link="Services\Recovery.cs" />
     <Compile Include="..\XournalStudio\Services\AppSettings.cs" Link="Services\AppSettings.cs" />
+    <!-- Tasks (todo.txt). -->
+    <Compile Include="..\XournalStudio\Services\TaskFile.cs" Link="Services\TaskFile.cs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="LibGit2Sharp" Version="0.32.0" />

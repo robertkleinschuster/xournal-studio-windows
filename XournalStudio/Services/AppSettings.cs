@@ -12,6 +12,11 @@ public sealed class AppSettings
 
     public bool ExplorerOpen { get; set; } = true;
 
+    /// <summary>The side pane shows the tasks (todo.txt) instead of the files.</summary>
+    public bool TasksShown { get; set; }
+
+    public bool DoneTasksShown { get; set; }
+
     public bool RecognizeShapes { get; set; }
 
     public Model.ShapeKind Shape { get; set; }

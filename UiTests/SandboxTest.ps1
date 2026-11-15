@@ -12,7 +12,13 @@ try {
     Copy-Item "$root\data\*" $work -Force
     # Explorer closed: the test's coordinates assume the page starts at the left edge.
     New-Item -ItemType Directory -Force "$work\cfg" | Out-Null
-    Set-Content "$work\cfg\settings.json" '{"ExplorerOpen":false}'
+    Set-Content "$work\cfg\settings.json" '{"ExplorerOpen":false,"ProjectFolder":"C:\\work"}'
+    $d = Get-Date; $f = { param($days) $d.AddDays($days).ToString('yyyy-MM-dd') }
+    Set-Content "$work\todo.txt" -Encoding UTF8 @(
+        "$(& $f -10) GET HÜ Abgabe due:$(& $f -1) time:18:00",
+        "$(& $f -3) Trigonometrie wiederholen",
+        "$(& $f -2) Mathe Altklausur due:$(& $f 0) doc:test.xopp#p1",
+        "x $(& $f -1) $(& $f -5) Physik Skript lesen")
     $env:XOURNAL_STUDIO_CONFIG_DIR = "$work\cfg"; $env:XOURNAL_STUDIO_LOG = "$out\app.log"
     $p = Start-Process "$root\app\XournalStudio.exe" -ArgumentList "`"$work\test.xopp`"" -PassThru
     for ($i = 0; $i -lt 60; $i++) { Start-Sleep -Milliseconds 500; $p.Refresh(); if ($p.MainWindowHandle -ne 0) { break } }
@@ -53,6 +59,16 @@ try {
         $r = $e.Current.BoundingRectangle
         [Inj]::ClickPixel([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2)); Start-Sleep -Milliseconds 500
         "click $name"
+    }
+    function Check($name) {
+        $cond = New-Object System.Windows.Automation.AndCondition(
+            (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, $name)),
+            (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::CheckBox)))
+        $e = $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $cond)
+        if ($e -eq $null) { throw "checkbox '$name' not found" }
+        $r = $e.Current.BoundingRectangle
+        [Inj]::ClickPixel([int]($r.X + 12), [int]($r.Y + $r.Height / 2)); Start-Sleep -Milliseconds 500
+        "check $name"
     }
     function Focus { [Inj]::Click((X 0.6), 20); Start-Sleep -Milliseconds 300 }  # menu bar background
 
@@ -125,6 +141,20 @@ try {
     [System.Windows.Forms.Clipboard]::SetImage($bmp)
     Focus; [Inj]::Ctrl(0x56); Start-Sleep 2
     Shot '12-bitmap-pasted'
+
+    # Tasks (todo.txt of the project folder): add one with Enter, the text box keeps its keys (Ctrl+A, Del do not touch
+    # the selection on the page), check one off.
+    Focus; [Inj]::Ctrl(0x42); Start-Sleep 1
+    Button 'TasksTab' 'Aufgaben'
+    Shot 'T1-tasks'
+    Button 'NewTask'
+    [System.Windows.Forms.SendKeys]::SendWait('xyz'); [Inj]::Ctrl(0x41); [Inj]::Key(0x2E); Start-Sleep -Milliseconds 500
+    [System.Windows.Forms.SendKeys]::SendWait('Übung 4 rechnen{ENTER}'); Start-Sleep 1
+    Shot 'T2-added-selection-kept'
+    Check 'Trigonometrie wiederholen'
+    Shot 'T3-checked'
+    Copy-Item "$work\todo.txt" "$out\todo.txt"
+    Focus; [Inj]::Ctrl(0x42); Start-Sleep 1
 
     # Closing with changes asks (Abbrechen keeps the window), then Ctrl+S saves and closing does not ask.
     [Inj]::PostMessage($h, 0x10, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null; Start-Sleep 2

@@ -89,6 +89,17 @@ public sealed partial class MainWindow : Window
         Explorer.Failed += (_, m) => messages.Show(InfoBarSeverity.Warning, m.Title, m.Message);
         SetExplorerOpen(settings.ExplorerOpen);
 
+        Tasks.Initialize(dialogs, () => (session.Document.FilePath, pages.CurrentIndex));
+        Tasks.ShowsDone = settings.DoneTasksShown;
+        Tasks.ShowsDoneChanged += (_, _) =>
+        {
+            settings.DoneTasksShown = Tasks.ShowsDone;
+            settings.Save();
+        };
+        Tasks.Failed += (_, m) => messages.Show(InfoBarSeverity.Warning, m.Title, m.Message);
+        Tasks.OpenRequested += async (_, link) => await OpenLinkedPageAsync(link.Document, link.PageIndex);
+        (settings.TasksShown ? TasksTab : FilesTab).IsSelected = true;
+
         Activated += OnActivated;
         AppWindow.Closing += OnClosing;
 
@@ -277,8 +288,47 @@ public sealed partial class MainWindow : Window
         {
             return; // git status would compete with the sync for the index; refreshed afterwards
         }
-        await Explorer.ShowAsync(ProjectFolder, session.OpenPath);
+        string? folder = ProjectFolder;
+        Tasks.Show(folder);
+        await Explorer.ShowAsync(folder, session.OpenPath);
         SyncMenuItem.IsEnabled = Explorer.RepositoryRoot != null && !sync.IsSyncing;
+    }
+
+    private void OnPaneSelectionChanged(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
+    {
+        bool tasks = sender.SelectedItem == TasksTab;
+        Tasks.Visibility = tasks ? Visibility.Visible : Visibility.Collapsed;
+        Explorer.Visibility = tasks ? Visibility.Collapsed : Visibility.Visible;
+        if (settings.TasksShown != tasks)
+        {
+            settings.TasksShown = tasks;
+            settings.Save();
+        }
+    }
+
+    /// <summary>A task's link: its document (left with the save question if another one is open) at its page.</summary>
+    private async Task OpenLinkedPageAsync(string document, int pageIndex)
+    {
+        if (!File.Exists(document))
+        {
+            messages.Show(InfoBarSeverity.Warning, "Verknüpftes Dokument nicht gefunden", document);
+            return;
+        }
+        if (!string.Equals(Path.GetFullPath(document), session.Document.FilePath is { } open ? Path.GetFullPath(open) : null,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            if (sync.IsSyncing || !await session.ConfirmLeaveAsync())
+            {
+                return;
+            }
+            await session.OpenAsync(document);
+            Root.UpdateLayout();
+        }
+        if (pageIndex >= 0)
+        {
+            pages.ScrollToPage(pageIndex);
+        }
+        FocusDocument();
     }
 
     private void SetExplorerOpen(bool open)
