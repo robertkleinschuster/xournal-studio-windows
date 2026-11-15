@@ -57,18 +57,17 @@ arrows), math exercises long formulas in several colors.
 - **Windows 11 only**, this machine's version (26200) – no compatibility layers.
 - **Right-handed UI:** nothing interactive at the right screen edge; one toolbar row, left-aligned; menu bar
   visible; scrollbars hidden; the left side is for the explorer. Touch never draws (it scrolls/zooms).
-- **Pen buttons:** eraser end / eraser button erases (native). Barrel button (agreed 2026-11-15): while inking, a
-  barrel press switches the toolbar to the lasso (`RightDragAction.LeaveUnprocessed` + `UnprocessedInput` only
-  signals it, `InkToolbar.ActiveTool` switches); in the lasso a barrel drag lassos, a barrel tap returns to the
-  previous tool. "Hold barrel = lasso" in one stroke is possible with `IsPrimaryBarrelButtonInputEnabled = false`
-  (barrel input then arrives as readable XAML pointer events) – awaiting the user's decision (Open work 2).
+- **Pen buttons:** eraser end / eraser button erases (native). Barrel button (user, 2026-11-15): hold barrel = lasso, with
+  every tool and without switching the toolbar: the presenters ignore barrel input (documented
+  `InkInputConfiguration.IsPrimaryBarrelButtonInputEnabled = false`), it arrives as XAML pointer events and
+  `InkTools` lassos with it; a barrel drag inside the selection moves it, a barrel tap clears it.
 - **Decisions (2026-11-15):** eraser = native Windows ink eraser (whole strokes; no pixel eraser, Windows has
   none); shape recognition = Windows `InkAnalyzer`; straight lines also with the Windows ruler (stencil button).
   Lasso, shapes and PDF areas are `InkToolbarCustomToolButton`s built after Microsoft's pattern ("Pen interactions
   and Windows Ink": selection layer, `SelectWithPolyLine`, `MoveSelected`); because `UnprocessedInput` has no
   readable pointer data yet (PR #12292), a custom tool sets `InkPresenter.IsInputEnabled = false` (as Microsoft's
   SimpleInk sample does for a non-ink mode) and input arrives as XAML pointer events. Agreed with the user. When an
-  SDK ships PR #12292: switch the input source to `UnprocessedInput` and add the barrel-button lasso.
+  SDK ships PR #12292: consider switching the custom tools' input source to `UnprocessedInput`.
 - German UI texts; code, comments and commits in English.
 
 ## Build, test, install
@@ -166,8 +165,8 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 - **`InkPresenter.InputConfiguration.IsPrimaryBarrelButtonInputEnabled = false`** (documented: "ignore barrel input",
   UWP sample ScenarioBarrelEraserIgnore) makes barrel-button input arrive as **XAML pointer events with readable
   data** while the pen tool stays active: pressed/moved/released on the page, `PointerDeviceType.Pen`,
-  `IsBarrelButtonPressed = true`, `IsRightButtonPressed = true` while in contact (sandbox 2026-11-15). This allows
-  "hold barrel = lasso" in one stroke today – not built yet, needs the user's decision (see Open work).
+  `IsBarrelButtonPressed = true`, `IsRightButtonPressed = true` while in contact (sandbox 2026-11-15). Used for
+  the barrel lasso (sandbox test steps 03b–03e: lasso, move, pen still inks, Del).
 - Pen input never reaches XAML pointer events while a presenter takes pen input, not even with the InkCanvas' hit
   testing off. With the pen removed from `InkPresenter.InputDeviceTypes`, XAML pointer events arrive with
   `PointerDeviceType.Pen` – but the `ScrollView` captures the pen for panning after ~100 ms unless it has
@@ -231,12 +230,9 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
    refer to the new name (dirty, written on save). Not done: drag & drop moving (TreeView's built-in
    drag & drop reorders its data, it does not know files).
 2. **Lasso, shapes, PDF areas, ruler – done 2026-11-15** (tested with synthetic pen on the desktop: shapes, lasso,
-   live move, delete, ink copy/paste, undo, PDF area copy + paste at original size, barrel-button lasso cycle, saved
-   XML checked). Open: switching to `UnprocessedInput` once PR #12292 ships; copying pictures (only strokes are
+   live move, delete, ink copy/paste, undo, PDF area copy + paste at original size, barrel-button lasso (hold barrel,
+   sandbox), saved XML checked). Open: switching to `UnprocessedInput` once PR #12292 ships; copying pictures (only strokes are
    copied with Ctrl+C); PDF areas only from PDF pages (no ink in the copy).
-   **Decision for the user:** "hold barrel = lasso" in one stroke works today with
-   `IsPrimaryBarrelButtonInputEnabled = false` + the XAML pointer events the custom tools already use (see Facts
-   learned); it would replace the barrel press → toolbar switch → barrel tap back cycle.
 3. **Pen eraser end – resolved 2026-11-15:** works in the sandbox; the failures were sparse synthetic strokes (see
    Facts learned). Still part of the device test.
 4. **Device test by the user** of everything: latency, pressure, palm rejection, touch scroll/zoom, the pen's

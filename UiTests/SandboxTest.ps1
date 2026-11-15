@@ -59,6 +59,17 @@ try {
     [Inj]::PenStroke((L (X 0.4) 275 (X 0.4) 305), $true, 512)
     Shot '03-eraser-end'
 
+    # Pen's barrel button while the pen is active (no tool switch): a barrel drag lassos, a barrel drag inside the
+    # selection moves it, the pen still inks, Del deletes the selection.
+    [Inj]::PenStroke((L (X 0.7) 250 (X 0.85) 250), $false, 512)
+    [Inj]::PenStrokeFlags((L (X 0.68) 232 (X 0.87) 232 (X 0.87) 268 (X 0.68) 268 (X 0.68) 232), 1, 512)
+    Shot '03b-barrel-lasso'
+    [Inj]::PenStrokeFlags((L (X 0.77) 250 (X 0.77) 300), 1, 512)
+    Shot '03c-barrel-move'
+    [Inj]::PenStroke((L (X 0.7) 350 (X 0.85) 350), $false, 512)
+    Shot '03d-pen-still-inks'
+    Focus; [Inj]::Key(0x2E); Shot '03e-selection-deleted'
+
     # Shape recognition (Windows ink analysis): a hand-drawn rectangle and circle become clean shapes.
     Button 'RecognizeButton' 'Formerkennung'
     [Inj]::PenStroke((L (X 0.32) 330 (X 0.5) 332 (X 0.499) 400 (X 0.321) 398 (X 0.32) 331), $false, 512)

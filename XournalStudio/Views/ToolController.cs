@@ -4,7 +4,6 @@ using Windows.UI;
 using Windows.UI.Core;
 using InkDrawingAttributes = Windows.UI.Input.Inking.InkDrawingAttributes;
 using InkInputProcessingMode = Microsoft.UI.Xaml.Controls.InkInputProcessingMode;
-using InkInputRightDragAction = Microsoft.UI.Xaml.Controls.InkInputRightDragAction;
 
 namespace XournalStudio.Views;
 
@@ -16,6 +15,9 @@ namespace XournalStudio.Views;
 /// do for modes without ink (<c>IsInputEnabled = false</c>): pen and mouse then arrive as XAML pointer events for
 /// <see cref="InkTools"/>. (The documented route, <c>UnprocessedInput</c>, has unreadable pointer data in the
 /// Windows App SDK so far – microsoft-ui-xaml PR #12292.)
+/// The presenters ignore input with the pen's barrel button held (documented
+/// <c>InkInputConfiguration.IsPrimaryBarrelButtonInputEnabled = false</c>, Microsoft's "barrel button" sample): it then
+/// arrives as XAML pointer events with readable data and <see cref="InkTools"/> lassos with it, whatever tool is active.
 /// </summary>
 public sealed class ToolController
 {
@@ -42,9 +44,6 @@ public sealed class ToolController
     public InkToolbarCustomToolButton? CustomTool => toolbar.ActiveTool as InkToolbarCustomToolButton;
 
     public event EventHandler? CustomToolChanged;
-
-    // The tool active before the barrel button switched to the lasso.
-    private InkToolbarToolButton? toolBeforeLasso;
 
     /// <summary>Color and width of the pen button, for shapes.</summary>
     public InkDrawingAttributes PenAttributes => new()
@@ -76,32 +75,10 @@ public sealed class ToolController
         toolbar.InkDrawingAttributesChanged += (_, _) => ApplyToAll();
     }
 
-    /// <summary>
-    /// Barrel button (or right mouse button) while inking: the presenter leaves that input unprocessed
-    /// (<c>RightDragAction.LeaveUnprocessed</c>, as documented for selection) and the toolbar switches to the lasso.
-    /// The event's pointer data is not readable yet (PR #12292), only the fact that it happened is used.
-    /// </summary>
-    public void Attach(PageView view, InkToolbarCustomToolButton lasso)
+    /// <summary>Barrel-button input bypasses the presenter (lasso, see the class summary).</summary>
+    public static void Attach(PageView view)
     {
-        view.Ink.InputProcessingConfiguration.RightDragAction = InkInputRightDragAction.LeaveUnprocessed;
-        view.Ink.UnprocessedInput.PointerPressed += (_, _) =>
-        {
-            if (CustomTool == null && toolbar.ActiveTool is InkToolbarToolButton current)
-            {
-                toolBeforeLasso = current;
-                toolbar.ActiveTool = lasso;
-            }
-        };
-    }
-
-    /// <summary>Back to the tool that was active before the barrel button switched to the lasso.</summary>
-    public void ReturnFromLasso()
-    {
-        if (toolBeforeLasso != null)
-        {
-            toolbar.ActiveTool = toolBeforeLasso;
-            toolBeforeLasso = null;
-        }
+        view.Ink.InputConfiguration.IsPrimaryBarrelButtonInputEnabled = false;
     }
 
     public void SetPages(IEnumerable<PageView> pages)

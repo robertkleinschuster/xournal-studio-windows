@@ -27,6 +27,8 @@ public enum InkTool
 /// input on the page, live feedback on the page's overlay layer, and the work done by the ink's own APIs
 /// (<c>SelectWithPolyLine</c>, <c>MoveSelected</c>, <c>DeleteSelected</c>, <c>CopySelectedToClipboard</c>).
 /// Touch is left to the ScrollView. A selection lives on one page and contains strokes and pictures.
+/// The pen's barrel button lassos with every tool: the presenters ignore barrel input
+/// (<c>IsPrimaryBarrelButtonInputEnabled = false</c>, see <see cref="ToolController"/>), so it arrives here as well.
 /// </summary>
 public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
 {
@@ -41,12 +43,8 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
     private Polyline? line;       // shape preview or lasso
     private Rectangle? areaFrame; // PDF area
     private Selection? selection;
-    private bool barrelGesture;
 
     public event EventHandler<(InfoBarSeverity Severity, string Title, string Message)>? Message;
-
-    /// <summary>A tap with the pen's barrel button held while the lasso is active (back to the pen).</summary>
-    public event EventHandler? BarrelTapped;
 
     public InkTool Tool
     {
@@ -77,21 +75,22 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
 
     private void OnPressed(PageView view, PointerRoutedEventArgs e)
     {
-        if (tool == InkTool.None || gesture != Gesture.None || e.Pointer.PointerDeviceType == PointerDeviceType.Touch)
+        if (gesture != Gesture.None || e.Pointer.PointerDeviceType == PointerDeviceType.Touch)
         {
             return;
         }
         var point = e.GetCurrentPoint(view.Surface);
         bool isPen = e.Pointer.PointerDeviceType == PointerDeviceType.Pen;
         // The pen's barrel button may arrive as barrel or as right button (Lenovo pens).
-        barrelGesture = isPen && (point.Properties.IsBarrelButtonPressed || point.Properties.IsRightButtonPressed);
+        bool barrel = isPen && (point.Properties.IsBarrelButtonPressed || point.Properties.IsRightButtonPressed);
         bool down = isPen ? point.IsInContact : point.Properties.IsLeftButtonPressed;
-        if (!down || point.Properties.IsEraser)
+        var active = barrel ? InkTool.Lasso : tool;
+        if (active == InkTool.None || !down || point.Properties.IsEraser)
         {
             return;
         }
         start = last = point.Position;
-        switch (tool)
+        switch (active)
         {
             case InkTool.Shape:
                 var attributes = pen();
@@ -191,13 +190,7 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
                 AddShape(view.Page, end);
                 break;
             case Gesture.Lasso:
-                // A tap: the pen hardly moved during the whole gesture (a closed lasso also ends near its start).
-                if (barrelGesture && lasso.All(p => Math.Abs(p.X - start.X) + Math.Abs(p.Y - start.Y) < 4))
-                {
-                    BarrelTapped?.Invoke(this, EventArgs.Empty);
-                    break;
-                }
-                Select(view, lasso);
+                Select(view, lasso); // a tap selects nothing: the selection was cleared on press
                 break;
             case Gesture.PdfArea:
                 CopyPdfArea(view, Normalize(start, end));
