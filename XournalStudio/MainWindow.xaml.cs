@@ -43,7 +43,8 @@ public sealed partial class MainWindow : Window
         inkTools.Selection.Mode = settings.SelectMode;
         pages = new PagesController(Scroller, PagesPanel, tools, inkTools, undo, () => RecognizeButton.IsChecked == true);
         dialogs = new Dialogs(() => Content.XamlRoot, () => pages.Views);
-        session = new DocumentSession(AppWindow.Id, pages, dialogs, messages, settings, () => ProjectFolder);
+        session = new DocumentSession(AppWindow.Id, pages, dialogs, messages, settings, () => ProjectFolder,
+            () => inkTools.Selection.Current?.IsPreviewing == true);
         sync = new SyncController(session, dialogs, messages);
         var explorerCommands = new ExplorerCommands(Explorer, session, sync, dialogs, messages, FocusDocument, RefreshExplorer);
         edit = new EditCommands(inkTools.Selection, pages, undo, messages, () => Toolbar.ActiveTool = SelectButton);

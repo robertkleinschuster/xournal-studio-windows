@@ -126,14 +126,13 @@ public static class StrokeConverter
         var moved = new StringBuilder(coords.Count * 8);
         for (int i = 0; i + 1 < coords.Count; i += 2)
         {
-            var p = Vector2.Transform(new Vector2((float)coords[i], (float)coords[i + 1]), m);
             if (i > 0)
             {
                 moved.Append(' ');
             }
-            // Exact for a pure translation (no float rounding of untouched digits).
-            double x = m.M11 == 1 && m.M21 == 0 ? coords[i] + m.M31 : p.X;
-            double y = m.M22 == 1 && m.M12 == 0 ? coords[i + 1] + m.M32 : p.Y;
+            // In double: the file's numbers keep their precision (Vector2 would round them to float).
+            double x = coords[i] * m.M11 + coords[i + 1] * m.M21 + m.M31;
+            double y = coords[i] * m.M12 + coords[i + 1] * m.M22 + m.M32;
             moved.Append(Format(x)).Append(' ').Append(Format(y));
         }
         if (coords.Count % 2 == 1)

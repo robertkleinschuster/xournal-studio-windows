@@ -112,4 +112,12 @@ public sealed class TodoTxtTests : IDisposable
     [Fact]
     public void TagValuesAreLiteral() =>
         Assert.Equal("a doc:%C3%9C$_.xopp b", TodoTxt.SetTag("a doc:old b", "doc", "%C3%9C$_.xopp"));
+
+    [Fact]
+    public void TimesInTheTextAreNotTags()
+    {
+        var task = TodoTxt.Parse("2026-11-15 Prüfung GET 10:30 Hörsaal i13 due:2026-11-20")!;
+        Assert.Equal("Prüfung GET 10:30 Hörsaal i13", task.Title);
+        Assert.Null(task.Tag("10"));
+    }
 }

@@ -33,7 +33,12 @@ public sealed class ExplorerCommands(
             return;
         }
         bool isOpen = string.Equals(path, session.OpenPath, StringComparison.OrdinalIgnoreCase);
-        if (!isOpen && !sync.IsSyncing && await session.ConfirmLeaveAsync())
+        if (!isOpen && sync.IsSyncing)
+        {
+            messages.Show(InfoBarSeverity.Informational, "Synchronisierung läuft",
+                "Dokumente lassen sich öffnen, sobald die Synchronisierung fertig ist.");
+        }
+        else if (!isOpen && await session.ConfirmLeaveAsync())
         {
             await session.OpenAsync(path);
         }

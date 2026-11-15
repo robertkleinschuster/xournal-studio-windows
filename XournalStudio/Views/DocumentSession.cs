@@ -25,7 +25,7 @@ public sealed class DocumentSession
     private readonly DateTime processStart = Recovery.CurrentProcessStart();
 
     public DocumentSession(WindowId window, PagesController pages, Dialogs dialogs, Messages messages,
-        AppSettings settings, Func<string?> projectFolder)
+        AppSettings settings, Func<string?> projectFolder, Func<bool> previewing)
     {
         this.window = window;
         this.pages = pages;
@@ -33,7 +33,7 @@ public sealed class DocumentSession
         this.messages = messages;
         this.settings = settings;
         this.projectFolder = projectFolder;
-        autosave = new Autosave(recovery, Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread(), Snapshot);
+        autosave = new Autosave(recovery, Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread(), Snapshot, previewing);
         autosave.Failed += (_, e) => messages.Show(InfoBarSeverity.Warning, "Wiederherstellungskopie fehlgeschlagen",
             $"Nicht gespeicherte Änderungen sind bei einem Absturz nicht gesichert: {DebugLog.Describe(e)}");
     }
@@ -209,6 +209,13 @@ public sealed class DocumentSession
         string? picked = await PickSavePathAsync();
         if (picked == null)
         {
+            return false;
+        }
+        if (SaveBlocked)
+        {
+            // A sync began while the picker was open.
+            messages.Show(InfoBarSeverity.Informational, "Synchronisierung läuft",
+                "Nicht gespeichert: Speichern unter ist möglich, sobald die Synchronisierung fertig ist.");
             return false;
         }
         string? previous = Document.FilePath;

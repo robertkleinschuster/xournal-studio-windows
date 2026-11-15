@@ -1,4 +1,3 @@
-using System.Numerics;
 using System.Xml.Linq;
 using Windows.Foundation;
 using Windows.UI.Input.Inking;
@@ -86,27 +85,19 @@ public sealed class PageEdit(XoppPage page) : IPageEdit
     }
 }
 
-/// <summary>Strokes and pictures moved/scaled by a transform (a selection dragged or resized).</summary>
-public sealed class TransformEdit(XoppPage page, IReadOnlyList<InkStroke> strokes, IReadOnlyList<XElement> images, Matrix3x2 transform)
-    : IPageEdit
+/// <summary>
+/// Strokes and pictures moved/scaled (a selection dragged or resized): undo and redo put back the exact placement
+/// before and after (no inverse transform, so the file gets back exactly its numbers).
+/// </summary>
+public sealed class TransformEdit(XoppPage page, Placement before, Placement after) : IPageEdit
 {
     public XoppPage Page { get; } = page;
 
-    public bool IsEmpty => strokes.Count + images.Count == 0 || transform.IsIdentity;
+    public bool IsEmpty => before.Strokes.Count + before.Images.Count == 0;
 
-    public void Undo()
-    {
-        Matrix3x2.Invert(transform, out var inverse);
-        Apply(inverse);
-    }
+    public void Undo() => Page.RestorePlacement(before);
 
-    public void Redo() => Apply(transform);
-
-    private void Apply(Matrix3x2 m)
-    {
-        Page.TransformStrokes(strokes.Select(Page.Current).OfType<InkStroke>(), m);
-        Page.TransformImages(images, m);
-    }
+    public void Redo() => Page.RestorePlacement(after);
 }
 
 /// <summary>Undo/redo of page edits (the WinUI InkCanvas has no undo of its own).</summary>

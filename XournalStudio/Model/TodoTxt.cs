@@ -12,7 +12,7 @@ namespace XournalStudio.Model;
 public sealed record TodoTask(bool Done, char? Priority, DateOnly? Completed, DateOnly? Created, string Description)
 {
     private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
-    private static readonly Regex TagPattern = new(@"(?<=^|\s)([^\s:]+):(\S+)", RegexOptions.Compiled);
+    private static readonly Regex TagPattern = new(@"(?<=^|\s)(\p{L}[^\s:]*):(\S+)", RegexOptions.Compiled); // a key starts with a letter: 10:30 is a time
 
     /// <summary>The value of a key:value tag (the first one), if present.</summary>
     public string? Tag(string key) =>

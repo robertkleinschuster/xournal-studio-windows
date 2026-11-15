@@ -114,7 +114,7 @@ public sealed class SelectionTool(UndoStack undo)
                 var r = new Rect(start, p);
                 r.Intersect(new Rect(0, 0, page.Page.Width, page.Page.Height));
                 var area = page.Pdf != null && !r.IsEmpty && r.Width >= 4 && r.Height >= 4 ? r : (Rect?)null;
-                SelectInside(page, [new(r.Left, r.Top), new(r.Right, r.Top), new(r.Right, r.Bottom), new(r.Left, r.Bottom)], area);
+                SelectInside(page, [.. Corners(r)], area);
                 break;
             case Gesture.Lasso or Gesture.Rectangle:
                 SelectPictureAt(page, p);

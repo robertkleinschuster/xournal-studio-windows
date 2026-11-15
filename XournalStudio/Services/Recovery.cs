@@ -72,7 +72,7 @@ public sealed class Recovery
     public async Task RecycleAsync(RecoveryEntry entry, string name)
     {
         var file = await Windows.Storage.StorageFile.GetFileFromPathAsync(entry.CopyPath);
-        string readable = string.Concat($"{Path.GetFileNameWithoutExtension(name)} (Wiederherstellung {entry.Info.SavedAt:yyyy-MM-dd HH-mm}).xopp"
+        string readable = string.Concat($"{name} (Wiederherstellung {entry.Info.SavedAt:yyyy-MM-dd HH-mm}).xopp"
             .Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
         await file.RenameAsync(readable, Windows.Storage.NameCollisionOption.GenerateUniqueName);
         await file.DeleteAsync(Windows.Storage.StorageDeleteOption.Default);

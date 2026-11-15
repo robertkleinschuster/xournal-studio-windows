@@ -63,6 +63,9 @@ public sealed class Selection
 
     public bool HasContent => Strokes.Count + Images.Count > 0;
 
+    /// <summary>A drag shows a move/scale not written to the page yet.</summary>
+    public bool IsPreviewing => !live.IsIdentity;
+
     public static Brush AccentBrush => (Brush)Application.Current.Resources["AccentFillColorDefaultBrush"];
 
     /// <summary>The corner handle at <paramref name="p"/> (0 top-left, clockwise), or -1.</summary>
@@ -123,17 +126,19 @@ public sealed class Selection
     {
         var m = live;
         live = Matrix3x2.Identity;
-        startTransforms.Clear();
         if (m.IsIdentity)
         {
+            startTransforms.Clear();
             return false;
         }
+        var before = Page.CapturePlacement(Strokes, Images, s => startTransforms[s]);
+        startTransforms.Clear();
         foreach (var stroke in Strokes)
         {
             Page.RecordTransform(stroke, m); // the ink shows it already
         }
         Page.TransformImages(Images, m); // pictures are redrawn at the new place
-        undo.Push(new TransformEdit(Page, Strokes.ToList(), Images.ToList(), m));
+        undo.Push(new TransformEdit(Page, before, Page.CapturePlacement(Strokes, Images)));
         Area = null;
         Bounds = ContentBounds();
         PlaceFeedback(Bounds);

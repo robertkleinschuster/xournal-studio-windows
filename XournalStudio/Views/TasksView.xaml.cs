@@ -107,21 +107,24 @@ public sealed partial class TasksView : UserControl
 
     // ---------------------------------------------------------------- changes
 
-    private void Change(string what, Func<TaskFile, bool> change)
+    /// <summary>Changes the file and reloads the list. False: nothing written (sync running, failed, line gone).</summary>
+    private bool Change(string what, Func<TaskFile, bool> change)
     {
         if (file == null)
         {
-            return;
+            return false;
         }
         if (syncing())
         {
             // Git commits and checks out the folder right now (as documents, the file waits).
             Failed?.Invoke(this, ("Synchronisierung läuft", "Aufgaben können geändert werden, sobald sie fertig ist."));
-            return;
+            return false;
         }
+        bool written = false;
         try
         {
-            if (!change(file))
+            written = change(file);
+            if (!written)
             {
                 Failed?.Invoke(this, ("Aufgabe wurde inzwischen geändert",
                     "Eine andere App oder die Synchronisierung hat die Zeile geändert; die Liste ist neu geladen."));
@@ -133,6 +136,7 @@ public sealed partial class TasksView : UserControl
             Failed?.Invoke(this, ("todo.txt konnte nicht geschrieben werden", DebugLog.Describe(e)));
         }
         Reload();
+        return written;
     }
 
     private void OnAdd(object sender, RoutedEventArgs e) => Add();
@@ -160,11 +164,14 @@ public sealed partial class TasksView : UserControl
         {
             task = task with { Description = TodoTxt.SetTag(task.Description, "doc", TodoTxt.DocumentLink(file.Path, document, page)) };
         }
-        Change("add task", f =>
+        if (!Change("add task", f =>
+            {
+                f.Append(task.ToString());
+                return true;
+            }))
         {
-            f.Append(task.ToString());
-            return true;
-        });
+            return; // what was typed stays
+        }
         NewTask.Text = "";
         NewDue.Date = null;
         LinkPage.IsChecked = false;

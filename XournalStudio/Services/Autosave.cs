@@ -14,16 +14,19 @@ public sealed class Autosave
 
     private readonly Recovery recovery;
     private readonly Func<(XDocument Snapshot, RecoveryInfo Info)> snapshot;
+    private readonly Func<bool> busy;
     private readonly DispatcherQueueTimer timer;
     private string id = Recovery.NewId();
     private bool pending;
     private Task queue = Task.CompletedTask;
 
     /// <param name="snapshot">The document as it is now (taken on the UI thread, written on another).</param>
-    public Autosave(Recovery recovery, DispatcherQueue dispatcher, Func<(XDocument, RecoveryInfo)> snapshot)
+    /// <param name="busy">True while the document is between two states (a drag previews a move): wait.</param>
+    public Autosave(Recovery recovery, DispatcherQueue dispatcher, Func<(XDocument, RecoveryInfo)> snapshot, Func<bool> busy)
     {
         this.recovery = recovery;
         this.snapshot = snapshot;
+        this.busy = busy;
         timer = dispatcher.CreateTimer();
         timer.Interval = Delay;
         timer.IsRepeating = false;
@@ -52,6 +55,11 @@ public sealed class Autosave
         timer.Stop();
         if (!pending)
         {
+            return;
+        }
+        if (busy())
+        {
+            timer.Start(); // after the drag
             return;
         }
         pending = false;

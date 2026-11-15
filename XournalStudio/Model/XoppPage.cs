@@ -9,6 +9,11 @@ namespace XournalStudio.Model;
 
 public enum BackgroundStyle { Plain, Lined, Ruled, Graph, Dotted }
 
+/// <summary>Where strokes and pictures were (see <see cref="XoppPage.CapturePlacement"/>).</summary>
+public sealed record Placement(
+    List<(InkStroke Stroke, System.Numerics.Matrix3x2 Transform, string? Coordinates)> Strokes,
+    List<(System.Xml.Linq.XElement Image, Windows.Foundation.Rect Bounds)> Images);
+
 /// <summary>
 /// One page. Its strokes live in an <see cref="InkStrokeContainer"/> (shown by the page's InkCanvas);
 /// pictures and all other content stay in the page's XML element and are written back as loaded.
@@ -141,15 +146,36 @@ public sealed class XoppPage
     }
 
     /// <summary>
-    /// Moves/scales strokes: the ink by their <c>PointTransform</c> (Windows ink redraws them), their original
-    /// elements by the same transform; strokes drawn in this session are written from the ink anyway.
+    /// Where strokes and pictures are: each stroke's <c>PointTransform</c> and its element's coordinates (if it has
+    /// one), each picture's bounds – to put them back exactly (undo/redo of a move or scale, no rounding).
     /// </summary>
-    public void TransformStrokes(IEnumerable<InkStroke> strokes, Matrix3x2 m)
+    public Placement CapturePlacement(IEnumerable<InkStroke> strokes, IEnumerable<XElement> images,
+        Func<InkStroke, Matrix3x2>? transformOf = null) => new(
+        strokes.Select(s => (s, transformOf?.Invoke(s) ?? s.PointTransform,
+            strokeElements.TryGetValue(s.Id, out var e) ? e.Value : null)).ToList(),
+        images.Select(i => (i, XoppImage.GetBounds(i))).ToList());
+
+    public void RestorePlacement(Placement placement)
     {
-        foreach (var stroke in strokes)
+        foreach (var (remembered, transform, coordinates) in placement.Strokes)
         {
-            stroke.PointTransform *= m;
-            RecordTransform(stroke, m);
+            if (Current(remembered) is not { } stroke)
+            {
+                continue;
+            }
+            stroke.PointTransform = transform;
+            if (coordinates != null && strokeElements.TryGetValue(stroke.Id, out var e))
+            {
+                e.Value = coordinates;
+            }
+        }
+        foreach (var (image, bounds) in placement.Images)
+        {
+            XoppImage.SetBounds(image, bounds);
+        }
+        if (placement.Images.Count > 0)
+        {
+            ImagesMoved?.Invoke(this, placement.Images.Select(i => i.Image).ToList());
         }
     }
 
