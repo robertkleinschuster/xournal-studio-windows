@@ -60,7 +60,8 @@ arrows), math exercises long formulas in several colors.
 - **Pen buttons:** eraser end / eraser button erases (native). Barrel button (agreed 2026-11-15): while inking, a
   barrel press switches the toolbar to the lasso (`RightDragAction.LeaveUnprocessed` + `UnprocessedInput` only
   signals it, `InkToolbar.ActiveTool` switches); in the lasso a barrel drag lassos, a barrel tap returns to the
-  previous tool. "Hold barrel = lasso" in one stroke needs readable `UnprocessedInput` (PR #12292).
+  previous tool. "Hold barrel = lasso" in one stroke is possible with `IsPrimaryBarrelButtonInputEnabled = false`
+  (barrel input then arrives as readable XAML pointer events) – awaiting the user's decision (Open work 2).
 - **Decisions (2026-11-15):** eraser = native Windows ink eraser (whole strokes; no pixel eraser, Windows has
   none); shape recognition = Windows `InkAnalyzer`; straight lines also with the Windows ruler (stencil button).
   Lasso, shapes and PDF areas are `InkToolbarCustomToolButton`s built after Microsoft's pattern ("Pen interactions
@@ -124,10 +125,16 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 - `PathIcon` fills its geometry: outline icons need even-odd rings (`F0`).
 - Saving adds formatting whitespace (newlines) between elements; element content and attributes stay identical.
 
-- **The experimental InkCanvas renders and takes mouse/pen input above XAML popups** (ink over ContentDialogs, clicks on
-  dialog buttons drew instead; keyboard worked; no child HWND involved). Agreed with the user: `ShowDialogAsync`
-  hides the pages' InkCanvas while a dialog is open – use it for every dialog. Menus/flyouts over a page may be
-  affected too (not checked). Re-test and remove with each new Windows App SDK release.
+- **The experimental InkCanvas composes its ink above all XAML laid over it and takes pen/mouse input there**
+  (cause: `IsAboveContent(true)` on the lifted compositor; a fix was merged and reverted because pointer-drawn ink
+  then vanished – microsoft-ui-xaml #11904/#11928, issue #10461; still so in 2.6.6-experimental). Tested in the sandbox
+  2026-11-15: **ContentDialog** – ink over the dialog, pen strokes on it/its buttons became ink; `ShowDialogAsync`
+  (agreed with the user) collapses the pages' InkCanvas: no ink, the pen taps the dialog button – use it for every
+  dialog (`IsInputEnabled = false` also stops the input but leaves the ink drawn over the dialog). **InfoBar laid over
+  the pages** – overdrawn and inked: it now has its own row above the ScrollView; never lay XAML over a page.
+  **MenuBar menus and the custom tool flyout (`ConfigurationContent`)** – fine: drawn above the ink, a pen tap on a
+  menu item invokes it, no ink (windowed popups). Re-test and remove `ShowDialogAsync`'s hiding with each new
+  Windows App SDK release.
 - Strokes are polylines (`FitToCurve = false`, loaded and drawn): with Bezier fitting the few-point rectangles of
   the user's circuit diagrams (resistors) came out round.
 - Git: LibGit2Sharp (user's choice over the git CLI). Sign-in = the credential the Git Credential Manager / wincred
@@ -153,7 +160,14 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   Root cause (WinUI bug, not our usage): WinUI hosts the presenter on its ink thread and forwards the OS args to the
   UI thread, but `PointerPoint` is not marshalable. Fix: microsoft/microsoft-ui-xaml PR #12292 (open, not merged as
   of 2026-11-15; reproduced with 2.5.4-experimental too). No app-side workaround exists – check the PR and re-test
-  with each new Windows App SDK release.
+  with each new Windows App SDK release. 2.6.6-experimental is the newest package with InkCanvas (stable 2.6.5 has no
+  ink types in its metadata); `CoreInkIndependentInputSource` is not part of the WinUI 3 ink surface (InkToolbar.cpp
+  documents it as a dropped OS-internal capability).
+- **`InkPresenter.InputConfiguration.IsPrimaryBarrelButtonInputEnabled = false`** (documented: "ignore barrel input",
+  UWP sample ScenarioBarrelEraserIgnore) makes barrel-button input arrive as **XAML pointer events with readable
+  data** while the pen tool stays active: pressed/moved/released on the page, `PointerDeviceType.Pen`,
+  `IsBarrelButtonPressed = true`, `IsRightButtonPressed = true` while in contact (sandbox 2026-11-15). This allows
+  "hold barrel = lasso" in one stroke today – not built yet, needs the user's decision (see Open work).
 - Pen input never reaches XAML pointer events while a presenter takes pen input, not even with the InkCanvas' hit
   testing off. With the pen removed from `InkPresenter.InputDeviceTypes`, XAML pointer events arrive with
   `PointerDeviceType.Pen` – but the `ScrollView` captures the pen for panning after ~100 ms unless it has
@@ -162,8 +176,10 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   works in parallel); otherwise strokes go nowhere and the test lies.
 - `InkAnalyzer` (Windows.UI.Input.Inking.Analysis) works in the unpackaged app; for circles/ellipses
   `InkAnalysisInkDrawing.Points` are the ends of both axes (0–2, 1–3).
-- The pen's eraser end erased in the sandbox in the first session but not in later runs (same native setup) –
-  unresolved, check on the device.
+- The pen's eraser end works (native, `PEN_FLAG_INVERTED|PEN_FLAG_ERASER`; `INVERTED` alone draws ink). The
+  earlier "did not erase" was the synthetic input: strokes had a sample every ~38 DIPs and the eraser crossed between
+  two – the Windows eraser does not hit a collected stroke between far-apart samples (two-point shape strokes from
+  `InkStrokeBuilder` are hit along the line). `Inj` now injects a sample every ~4 DIPs, like a real pen.
 - UI Automation: the InkToolbar's own buttons have the ids `InkToolbarBallpointPenButton`,
   `InkToolbarHighlighterButton`, `InkToolbarEraserButton` (their `x:Name`/`AutomationProperties.Name` is
   ignored); custom buttons and other controls use their `x:Name`.
@@ -195,7 +211,10 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 - UI test: `UiTests/Run-SandboxTest.ps1 -Document examples\Schaltungen.xopp` runs the installed app in
   Windows Sandbox (the sandbox window opens on the desktop – tell the user first) with synthetic pen/touch input,
   screenshots per step, and checks the saved file with the GTK Xournal Studio CLI (`--create-img`).
-  Inside the sandbox: PowerShell 5.1 (Add-Type = C# 5), 1514x900 at 150 %.
+  Inside the sandbox: PowerShell 5.1 (Add-Type = C# 5), 1514x900 at 150 %. `-App <publish folder>` tests another
+  build (never install to test), `-Test <script>` runs an experiment instead of `SandboxTest.ps1`. The tests start
+  with `{"ExplorerOpen":false}` in the config dir (with the pane open strokes begin beside the page). In a test
+  script never name a function `Erase` (PowerShell alias of Remove-Item).
 - Test hooks: `XOURNAL_STUDIO_CONFIG_DIR`, `XOURNAL_STUDIO_LOG`, `XOURNAL_STUDIO_TEST_PAGE`.
 - `examples/` holds sanitized real documents; never commit the user's own files (they contain university
   material and personal data) – derive examples with `tools/make_examples.py` and check each page visually.
@@ -213,10 +232,13 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
    drag & drop reorders its data, it does not know files).
 2. **Lasso, shapes, PDF areas, ruler – done 2026-11-15** (tested with synthetic pen on the desktop: shapes, lasso,
    live move, delete, ink copy/paste, undo, PDF area copy + paste at original size, barrel-button lasso cycle, saved
-   XML checked). Open: switching to `UnprocessedInput` (and "hold barrel = lasso") once PR #12292 ships; copying pictures (only strokes are
+   XML checked). Open: switching to `UnprocessedInput` once PR #12292 ships; copying pictures (only strokes are
    copied with Ctrl+C); PDF areas only from PDF pages (no ink in the copy).
-3. **Pen eraser end** did not erase in later sandbox runs (worked in the first one, native code only) – the user
-   should check it on the device; if it fails there too, investigate before anything else.
+   **Decision for the user:** "hold barrel = lasso" in one stroke works today with
+   `IsPrimaryBarrelButtonInputEnabled = false` + the XAML pointer events the custom tools already use (see Facts
+   learned); it would replace the barrel press → toolbar switch → barrel tap back cycle.
+3. **Pen eraser end – resolved 2026-11-15:** works in the sandbox; the failures were sparse synthetic strokes (see
+   Facts learned). Still part of the device test.
 4. **Device test by the user** of everything: latency, pressure, palm rejection, touch scroll/zoom, the pen's
    buttons (Lenovo barrel button may arrive as right click).
 5. Not started, only if the user asks: text, inserting pages of another PDF, PDF export, page reordering.
