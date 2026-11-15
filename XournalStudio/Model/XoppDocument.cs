@@ -91,10 +91,10 @@ public sealed class XoppDocument
     /// <summary>Writes "&lt;path&gt;~" first and replaces the file only once it is complete.</summary>
     public void Save(string path)
     {
-        Root.SetAttributeValue("creator", "Xournal Studio WinUI");
+        Root.SetAttributeValue("creator", XoppFormat.Creator);
         if (Root.Attribute("fileversion") == null)
         {
-            Root.SetAttributeValue("fileversion", "4");
+            Root.SetAttributeValue("fileversion", XoppFormat.FileVersion);
         }
 
         var output = new XDocument(new XDeclaration("1.0", null, "no"), new XElement(Root));
@@ -143,8 +143,8 @@ public sealed class XoppDocument
 
     private static XDocument NewXml() =>
         new(new XElement("xournal",
-            new XAttribute("creator", "Xournal Studio WinUI"),
-            new XAttribute("fileversion", "4"),
+            new XAttribute("creator", XoppFormat.Creator),
+            new XAttribute("fileversion", XoppFormat.FileVersion),
             new XElement("title", "Xournal++ document - see https://xournalpp.github.io/")));
 
     private static string? ResolvePdfPath(string xoppPath, string? domain, string? filename)

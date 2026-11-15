@@ -76,7 +76,9 @@ public class FileFormatTests : IDisposable
         var after = ReadXml(path);
 
         Assert.Equal("5", (string?)after.Root!.Attribute("fileversion"));
+        // Nothing is removed, also not attributes of other programs.
         Assert.Equal("x_kommentiert.pdf", (string?)after.Root.Attribute("fork-export"));
+        Assert.Equal("Xournal Studio for Windows", (string?)after.Root.Attribute("creator"));
         var pagesBefore = before.Root!.Elements("page").ToList();
         var pagesAfter = after.Root.Elements("page").ToList();
         Assert.Equal(pagesBefore.Count, pagesAfter.Count);
@@ -85,6 +87,28 @@ public class FileFormatTests : IDisposable
             Assert.True(XNode.DeepEquals(Normalize(pagesBefore[i]), Normalize(pagesAfter[i])), $"page {i + 1}");
         }
         Assert.False(File.Exists(path + "~"));
+    }
+
+    [Fact]
+    public void SavingKeepsAttributesOfOtherPrograms()
+    {
+        string path = Write("d.xopp", """
+            <xournal creator="x" fileversion="4" fork-export="e.pdf"><title>t</title>
+            <page width="100" height="100" fork-page="1"><background type="solid" color="#ffffffff" style="graph"/>
+            <layer name="L"><teximage text="" left="1" top="2" right="3" bottom="4" portal="abc" portal-area="1 2 3 4">JVBERi0=</teximage>
+            <stroke tool="pen" color="#000000ff" width="1" capStyle="round" ts="0" fn="" extra="x">1 2 3 4</stroke></layer></page></xournal>
+            """);
+        XoppDocument.Load(path).Save(path);
+        var root = ReadXml(path).Root!;
+        Assert.Equal("e.pdf", (string?)root.Attribute("fork-export"));
+        Assert.Equal("1", (string?)root.Element("page")!.Attribute("fork-page"));
+        Assert.Equal("L", (string?)root.Descendants("layer").Single().Attribute("name"));
+        var tex = root.Descendants("teximage").Single();
+        Assert.Equal("abc", (string?)tex.Attribute("portal"));
+        Assert.Equal("JVBERi0=", tex.Value);
+        var stroke = root.Descendants("stroke").Single();
+        Assert.Equal("x", (string?)stroke.Attribute("extra"));
+        Assert.Equal("round", (string?)stroke.Attribute("capStyle"));
     }
 
     [Fact]
