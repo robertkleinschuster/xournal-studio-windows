@@ -235,6 +235,6 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
    copied with Ctrl+C); PDF areas only from PDF pages (no ink in the copy).
 3. **Pen eraser end – resolved 2026-11-15:** works in the sandbox; the failures were sparse synthetic strokes (see
    Facts learned). Still part of the device test.
-4. **Device test by the user** of everything: latency, pressure, palm rejection, touch scroll/zoom, the pen's
-   buttons (Lenovo barrel button may arrive as right click).
+4. **Device test by the user** of everything: latency, pressure, palm rejection, touch scroll/zoom. The pen's
+   buttons work on the device (eraser end, barrel lasso – confirmed by the user 2026-11-15).
 5. Not started, only if the user asks: text, inserting pages of another PDF, PDF export, page reordering.
