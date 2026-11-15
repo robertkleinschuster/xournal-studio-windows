@@ -88,13 +88,21 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   tool to all pages' presenters; custom tool active → presenters `IsInputEnabled = false`, mode None),
   `InkTools` (lasso/move/delete/copy, shapes, PDF area: pointer input on the page, live feedback on the overlay,
   the work done by `InkStrokeContainer`),
-  `ExplorerView` + `ExplorerItem` (TreeView of the project folder in the SplitView pane, git colors, sync button).
+  `ExplorerView` + `ExplorerItem` (TreeView of the project folder in the SplitView pane, git colors incl. folders,
+  sync button; context menus `ItemMenu`/`FolderMenu` and F2/Del/Ctrl+Shift+C on the tree raise `CommandRequested`,
+  which `MainWindow` carries out because the open document may be affected; "Im Explorer anzeigen" = WinRT
+  `Launcher.LaunchFolderPathAsync` with `ItemsToSelect`, "Als Pfad kopieren" = quoted path like File Explorer;
+  a `FolderWatcher` change restarts a 400 ms timer, then the window refreshes the tree).
 - `Services/` – `UndoStack` of `IPageEdit`: `PageEdit` (strokes/pictures removed/added) and `MoveEdit` (the
   InkCanvas has no undo; strokes are resolved through `XoppPage.Current` because undo/redo re-adds copies),
   `ShapeRecognition` (InkAnalyzer result → clean stroke), `PdfBackground`, `PictureRenderer`,
   `ClipboardService` (bitmap ↔ `<image>`; own format `XournalStudio.Image` keeps the size in points), `AppSettings`, `DebugLog`, `ProjectTree` (which files the explorer
-  shows), `GitSync` (LibGit2Sharp: status; sync = commit all, fetch, rebase/fast-forward, push; conflicts are
-  aborted), `GitCredentials` (reads Git for Windows' stored credential, see Facts learned).
+  shows; empty folders are shown, folders with only non-documents not), `GitSync` (LibGit2Sharp: status,
+  `WithFolders` marks folders by what is below them – modified/deleted > new; sync = commit all, fetch,
+  rebase/fast-forward, push; conflicts are aborted), `GitCredentials` (reads Git for Windows' stored credential, see
+  Facts learned), `ProjectFiles` (new folder, rename, delete to the recycle bin with `StorageFile`/`StorageFolder`;
+  a .xopp's upstream attached PDF `<name>.xopp.bg.pdf` goes along; name validation, "Name (2)" like File Explorer),
+  `FolderWatcher` (`FileSystemWatcher` on the project folder, hidden folders such as .git ignored).
 
 ## Facts learned (keep)
 
@@ -158,10 +166,22 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 - .xopp: highlighter alpha 0x7f; only the first PDF background carries `domain`/`filename`; `pageno` may look
   like "3ll" in old files; copied PDF areas of other builds are `<teximage>` with a one-page PDF as base64.
 - Ink ignores posted window messages: UI tests need real pointer input (`InjectSyntheticPointerInput`).
+- Explorer (2026-11-15): one `MenuFlyout` resource is shared by all rows as `ContextFlyout` (`FlyoutBase.Target` =
+  the TreeViewItem, `TreeView.ItemFromContainer` gives the row). `DispatcherQueue.TryEnqueue(
+  timer.Start)` (method group of a WinRT object) throws InvalidCastException while marshaling – use a lambda. A
+  `FileSystemWatcher` handler runs on the thread pool: an exception there ends the app. A loaded `PdfDocument`
+  (Windows.Data.Pdf) does not lock its file: it and its folder can be renamed or recycled while open.
+  `StorageFile.GetFileFromPathAsync` rejects forward slashes (FileNotFoundException) – pass `Path.GetFullPath`.
+- Upstream .xopp PDF reference: `domain="absolute"` + `filename` = path written by `Util::normalizeAssetPath`
+  (absolute or relative to the .xopp, by the path storage mode), or `domain="attach"` + `filename="bg.pdf"` =
+  `<name>.xopp.bg.pdf` next to the document (found by the document's name, so it is renamed with it).
+- The debug build (HEAD before the explorer work too) sometimes crashed with 0xc000027b (stowed exception) in
+  CoreMessagingXP.dll when started/closed by a script (`Start-Process`, `CloseMainWindow`) – not investigated.
 
 ## Testing
 
-- Unit tests: `XournalStudio.Tests` compiles `Model/` directly (no app, no XAML).
+- Unit tests: `XournalStudio.Tests` compiles `Model/` and the non-UI explorer services (`ProjectTree`, `GitSync`,
+  `ProjectFiles`, `FolderWatcher`, `DebugLog`) directly (no app, no XAML).
 - UI test: `UiTests/Run-SandboxTest.ps1 -Document examples\Schaltungen.xopp` runs the installed app in
   Windows Sandbox (the sandbox window opens on the desktop – tell the user first) with synthetic pen/touch input,
   screenshots per step, and checks the saved file with the GTK Xournal Studio CLI (`--create-img`).
@@ -173,7 +193,14 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 ## Open work (as of 2026-11-15; update when done)
 
 1. **Git explorer – done 2026-11-15** (not yet tried by the user on the device; sync not run against the real
-   repo by Claude). Possible next steps if asked: folder status colors, rename/delete files, new document in a folder.
+   repo by Claude). **File functions – done 2026-11-15**: context menu (Öffnen, Neues Dokument, Neuer Ordner,
+   Umbenennen, Löschen to the recycle bin with confirmation, Im Explorer anzeigen, Als Pfad kopieren), F2/Del/
+   Ctrl+Shift+C, folder git colors, tree follows changes on disk. Unit-tested; in the app only the startup and the
+   watcher were checked (screenshots) – menus, dialogs, keys, recycle bin, launcher not yet tried by hand.
+   Renaming a .xopp renames only it (+ its attached `.xopp.bg.pdf`): the referenced lecture PDF stays and keeps
+   working, but then shows up again in the tree under its own name (pairing is by name) – user decision pending
+   whether a rename should take the same-named PDF along. Not done: drag & drop moving (TreeView's built-in
+   drag & drop reorders its data, it does not know files).
 2. **Lasso, shapes, PDF areas, ruler – done 2026-11-15** (tested with synthetic pen on the desktop: shapes, lasso,
    live move, delete, ink copy/paste, undo, PDF area copy + paste at original size, barrel-button lasso cycle, saved
    XML checked). Open: switching to `UnprocessedInput` (and "hold barrel = lasso") once PR #12292 ships; copying pictures (only strokes are
