@@ -176,13 +176,19 @@
             </SplitView.Pane>
             <Grid Background="{ThemeResource LayerFillColorDefaultBrush}"
                   BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1,1,0,0">
-                <ScrollView x:Name="Scroller" IgnoredInputKinds="Pen" ZoomMode="Enabled" ContentOrientation="Vertical"
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <!-- Above the pages, not over them: the experimental InkCanvas draws its ink over XAML laid on top of
+                     it and takes the pen there (microsoft-ui-xaml #10461, #11928). -->
+                <InfoBar x:Name="Info" Margin="16,16,16,0" IsOpen="False" />
+                <ScrollView x:Name="Scroller" Grid.Row="1" IgnoredInputKinds="Pen" ZoomMode="Enabled" ContentOrientation="Vertical"
                             MinZoomFactor="0.2" MaxZoomFactor="6"
                             HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Hidden"
                             ViewChanged="OnViewChanged" SizeChanged="OnScrollerSizeChanged">
                     <StackPanel x:Name="PagesPanel" Spacing="16" Padding="16" HorizontalAlignment="Center" />
                 </ScrollView>
-                <InfoBar x:Name="Info" VerticalAlignment="Top" Margin="16" IsOpen="False" />
             </Grid>
         </SplitView>
     </Grid>
