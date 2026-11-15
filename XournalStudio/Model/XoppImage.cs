@@ -43,9 +43,9 @@ public static class XoppImage
     /// <summary>The bounds after scaling/moving by <paramref name="m"/> (no rotation: pictures stay upright).</summary>
     public static Rect Transform(Rect bounds, System.Numerics.Matrix3x2 m)
     {
-        var a = System.Numerics.Vector2.Transform(new((float)bounds.Left, (float)bounds.Top), m);
-        var b = System.Numerics.Vector2.Transform(new((float)bounds.Right, (float)bounds.Bottom), m);
-        return new Rect(new Point(a.X, a.Y), new Point(b.X, b.Y));
+        // In double, as stroke coordinates (Vector2 would round the file's numbers to float).
+        Point Map(double x, double y) => new(x * m.M11 + y * m.M21 + m.M31, x * m.M12 + y * m.M22 + m.M32);
+        return new Rect(Map(bounds.Left, bounds.Top), Map(bounds.Right, bounds.Bottom));
     }
 
     public static byte[] GetData(XElement e)

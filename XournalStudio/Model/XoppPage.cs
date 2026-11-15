@@ -132,12 +132,9 @@ public sealed class XoppPage
     }
 
     /// <summary>
-    /// The stroke on the page now for a stroke an edit remembers: itself, or the copy undo/redo put in its place;
-    /// null if it is not on the page.
+    /// The strokes on the page now for strokes an edit remembers: each itself, or the copy undo/redo put in its place;
+    /// null where it is not on the page. The ink's strokes are read once.
     /// </summary>
-    public InkStroke? Current(InkStroke stroke) => CurrentAll([stroke])[0];
-
-    /// <summary><see cref="Current"/> for many strokes, reading the ink's strokes once (null where gone).</summary>
     public List<InkStroke?> CurrentAll(IEnumerable<InkStroke> strokes)
     {
         var byId = Ink?.GetStrokes().ToDictionary(s => s.Id) ?? [];
@@ -223,8 +220,7 @@ public sealed class XoppPage
             return null;
         }
         Ink!.AddStroke(stroke);
-        strokeElements[stroke.Id] = e;
-        element.Elements("layer").Last().Add(e);
+        strokeElements[stroke.Id] = e; // written with the new strokes, in drawing order (see Snapshot)
         return stroke;
     }
 
@@ -279,8 +275,9 @@ public sealed class XoppPage
 
     /// <summary>
     /// The page as it is now, as a detached copy (reading only: the page keeps every element it has, so an undo can
-    /// bring a deleted stroke back with its original element). Strokes on the ink are their original elements, strokes
-    /// drawn in this session are converted into the top layer, where Xournal draws by default as well; elements of
+    /// bring a deleted stroke back with its original element). Strokes on the ink are their original elements; strokes
+    /// added in this session (drawn: converted; pasted/duplicated: their element) follow in the top layer in drawing
+    /// order, where Xournal draws by default as well; elements of
     /// strokes no longer on the ink are left out; everything else (unknown elements too) is copied as it is.
     /// </summary>
     public XElement Snapshot()
@@ -317,9 +314,13 @@ public sealed class XoppPage
         }
         foreach (var stroke in strokes)
         {
-            if (!strokeElements.ContainsKey(stroke.Id))
+            if (!strokeElements.TryGetValue(stroke.Id, out var e))
             {
                 topLayer!.Add(StrokeConverter.ToXml(stroke));
+            }
+            else if (e.Parent == null)
+            {
+                topLayer!.Add(new XElement(e)); // pasted or duplicated: its element, at its place in the drawing order
             }
         }
         return copy;

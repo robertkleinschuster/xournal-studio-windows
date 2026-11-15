@@ -95,7 +95,7 @@ public sealed class Recovery
             {
                 info = JsonSerializer.Deserialize<RecoveryInfo>(File.ReadAllText(infoPath));
             }
-            catch (Exception e) when (e is JsonException or IOException)
+            catch (Exception e) when (e is JsonException or IOException or UnauthorizedAccessException)
             {
                 DebugLog.Write($"recovery info {infoPath} unreadable (not offered, kept)", e);
                 continue;

@@ -118,6 +118,7 @@ public sealed partial class TasksView : UserControl
         {
             // Git commits and checks out the folder right now (as documents, the file waits).
             Failed?.Invoke(this, ("Synchronisierung läuft", "Aufgaben können geändert werden, sobald sie fertig ist."));
+            Reload(); // e.g. the check box back to what the file says
             return false;
         }
         bool written = false;

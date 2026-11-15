@@ -50,7 +50,7 @@ public sealed class SyncController(DocumentSession session, Dialogs dialogs, Mes
         finally
         {
             SetSyncing(false);
-            // Saving was asked for during the sync (Ctrl+S, or the own version kept over the pulled one).
+            // Saving was asked for during the sync (Ctrl+S) and the pull did not change the document.
             if (session.SaveRequested && session.IsDirty && session.Document.FilePath != null)
             {
                 session.Save();
@@ -76,6 +76,7 @@ public sealed class SyncController(DocumentSession session, Dialogs dialogs, Mes
     /// </summary>
     private async Task<bool> ResolvePulledDocumentAsync()
     {
+        session.SaveRequested = false; // asked for before the document changed on disk: the user decides again
         if (session.IsDirty)
         {
             var choice = await dialogs.ShowAsync(new ContentDialog

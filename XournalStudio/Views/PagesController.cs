@@ -24,6 +24,7 @@ public sealed class PagesController
     private XoppDocument? document;
     private PdfBackground? pdf;
     private bool fitWidthPending = true;
+    private float? requestedZoom; // asked for with ZoomTo, until the ScrollView shows it
 
     public PagesController(ScrollView scroller, StackPanel panel, ToolController tools, InkTools inkTools,
         UndoStack undo, Func<bool> recognizeShapes)
@@ -39,7 +40,14 @@ public sealed class PagesController
         viewTimer.Interval = TimeSpan.FromMilliseconds(120);
         viewTimer.IsRepeating = false;
         viewTimer.Tick += (_, _) => UpdateVisiblePages();
-        scroller.ViewChanged += (_, _) => viewTimer.Start();
+        scroller.ViewChanged += (_, _) =>
+        {
+            if (requestedZoom is { } z && Math.Abs(scroller.ZoomFactor - z) < 1e-4)
+            {
+                requestedZoom = null;
+            }
+            viewTimer.Start();
+        };
         scroller.SizeChanged += (_, _) =>
         {
             if (fitWidthPending)
@@ -133,7 +141,7 @@ public sealed class PagesController
     public void ScrollIntoView(PageView view)
     {
         panel.UpdateLayout();
-        double y = view.ActualOffset.Y * scroller.ZoomFactor;
+        double y = view.ActualOffset.Y * (requestedZoom ?? scroller.ZoomFactor); // ZoomTo applies later
         scroller.ScrollTo(0, y, new ScrollingScrollOptions(ScrollingAnimationMode.Auto));
     }
 
@@ -146,6 +154,7 @@ public sealed class PagesController
         fitWidthPending = false;
         double pageWidth = document.Pages.Max(p => p.Width) + 32;
         float zoom = (float)Math.Clamp(scroller.ViewportWidth / pageWidth, scroller.MinZoomFactor, scroller.MaxZoomFactor);
+        requestedZoom = zoom;
         scroller.ZoomTo(zoom, System.Numerics.Vector2.Zero, new ScrollingZoomOptions(ScrollingAnimationMode.Disabled));
 
         // Test hook: start at page XOURNAL_STUDIO_TEST_PAGE (1-based).
@@ -161,7 +170,9 @@ public sealed class PagesController
     public void Zoom(float factor)
     {
         var center = new System.Numerics.Vector2((float)scroller.ViewportWidth / 2, (float)scroller.ViewportHeight / 2);
-        scroller.ZoomTo((float)Math.Clamp(scroller.ZoomFactor * factor, scroller.MinZoomFactor, scroller.MaxZoomFactor), center);
+        float zoom = (float)Math.Clamp((requestedZoom ?? scroller.ZoomFactor) * factor, scroller.MinZoomFactor, scroller.MaxZoomFactor);
+        requestedZoom = zoom;
+        scroller.ZoomTo(zoom, center);
     }
 
     private PageView CreateView(XoppPage page)

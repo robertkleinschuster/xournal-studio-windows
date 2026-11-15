@@ -221,6 +221,22 @@ public class FileFormatTests : IDisposable
         Assert.Equal(pdf.Replace('\\', '/'), PdfFilename(path));
     }
 
+    [Fact]
+    public void AttachedPdfIsReferencedByPathFromAnotherFile()
+    {
+        // "attach" names "<document>.xopp.bg.pdf": a copy under another name must name the real file instead.
+        string path = Write("a.xopp", Sample.Replace("domain=\"absolute\" filename=\"lecture.pdf\"", "domain=\"attach\" filename=\"bg.pdf\""));
+        File.WriteAllText(path + ".bg.pdf", "");
+        var doc = XoppDocument.Load(path);
+        doc.Save(path);
+        Assert.Equal("bg.pdf", PdfFilename(path));
+
+        string copy = Path.Combine(dir, "copy.xopp");
+        XoppDocument.Write(doc.Snapshot(copy), copy);
+        Assert.Equal("a.xopp.bg.pdf", PdfFilename(copy));
+        Assert.Equal(path + ".bg.pdf", XoppDocument.Load(copy).PdfPath);
+    }
+
     // Whitespace-only text nodes depend on formatting, not content.
     private static XElement Normalize(XElement e)
     {

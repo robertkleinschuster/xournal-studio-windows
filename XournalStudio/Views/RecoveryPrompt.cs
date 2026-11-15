@@ -14,7 +14,17 @@ public sealed class RecoveryPrompt(Recovery recovery, Dialogs dialogs, Messages 
     /// <summary>The copy the user wants restored, or null.</summary>
     public async Task<RecoveryEntry?> ChooseAsync()
     {
-        foreach (var entry in recovery.FindAbandoned())
+        List<RecoveryEntry> abandoned;
+        try
+        {
+            abandoned = recovery.FindAbandoned();
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            messages.Error("find recovery copies", "Wiederherstellungskopien nicht lesbar", e);
+            return null;
+        }
+        foreach (var entry in abandoned)
         {
             string name = DisplayName(entry.Info);
             var choice = await dialogs.ShowAsync(new ContentDialog

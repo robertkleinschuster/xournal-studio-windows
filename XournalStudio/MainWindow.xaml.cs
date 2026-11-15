@@ -113,6 +113,11 @@ public sealed partial class MainWindow : Window
     {
         if (await session.OfferRecoveryAsync())
         {
+            if (fileToOpen != null)
+            {
+                messages.Show(InfoBarSeverity.Informational, "Wiederhergestelltes Dokument geöffnet",
+                    $"{Path.GetFileName(fileToOpen)} wurde nicht geöffnet; nach dem Speichern über Datei → Öffnen.");
+            }
             return;
         }
         string? file = fileToOpen ?? settings.LastFile;

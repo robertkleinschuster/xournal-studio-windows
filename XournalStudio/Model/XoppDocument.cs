@@ -207,9 +207,15 @@ public sealed class XoppDocument
         {
             return false;
         }
-        if (domain == "attach" || PdfPath == null)
+        if (PdfPath == null)
         {
             return true;
+        }
+        if (domain == "attach")
+        {
+            // "<name>.xopp.bg.pdf" belongs to the document's own name: another file would name a PDF that is not there.
+            return FilePath != null &&
+                string.Equals(Path.GetFullPath(target), Path.GetFullPath(FilePath), StringComparison.OrdinalIgnoreCase);
         }
         string dir = Path.GetDirectoryName(Path.GetFullPath(target))!;
         string named = Path.GetFullPath(Path.Combine(dir, filename.Replace('/', Path.DirectorySeparatorChar)));
