@@ -17,6 +17,12 @@ arrows), math exercises long formulas in several colors.
 
 ## Constraints (agreed with the user)
 
+- **No home-made solutions, no hacks.** Use what exists: WinUI 3 controls, Windows features/APIs (Windows Ink,
+  ink analysis, Windows.Data.Pdf, clipboard, pickers, ...) and established libraries (NuGet). Do not re-implement
+  something a platform feature or library already does, and do not work around platform behavior (toggling input
+  devices, hit-testing tricks, hooks, timers to fight the framework, ...). If the native way does not work, stop
+  and report it to the user with the options instead of building a workaround.
+
 - **Upstream .xopp format.** Every feature is expressed with what upstream Xournal++ writes
   (`src/core/control/xojfile` of xournalpp/xournalpp: XmlTags.h, XmlAttrs.h, SaveHandler.cpp). Never invent
   attributes, elements or companion files for our own purposes – the GTK fork did (`portal` attributes,
@@ -28,7 +34,8 @@ arrows), math exercises long formulas in several colors.
   eraser), InkToolbar (incl. custom tool/toggle buttons), ScrollView (touch pan, pinch zoom, touchpad), MenuBar,
   CommandBarFlyout, InfoBar, ContentDialog, TreeView, Windows App SDK pickers, Windows.Data.Pdf. Mica backdrop,
   no custom theme or styling.
-- **Little custom code, strictly encapsulated.** Custom logic lives in small classes with one job: `Model/`
+- **Little custom code, strictly encapsulated.** What is left (the .xopp mapping, glue between controls) lives in
+  small classes with one job: `Model/`
   (file format), `Ink/` (geometry: eraser, shapes, recognition – unit-tested), `Views/CanvasTools.cs`
   (tools on top of the InkPresenter), `Services/`.
 - **Iterative.** Only features in actual use, simplest version first. Ask before large new areas.
