@@ -56,6 +56,10 @@ public sealed class Recovery
     /// <summary>Removes a session's copy (the user saved or discarded the changes).</summary>
     public void Delete(string id)
     {
+        if (!Directory.Exists(folder))
+        {
+            return; // nothing was ever written (File.Delete throws for a missing folder)
+        }
         File.Delete(InfoPath(id));
         File.Delete(CopyPath(id));
         File.Delete(CopyPath(id) + "~");

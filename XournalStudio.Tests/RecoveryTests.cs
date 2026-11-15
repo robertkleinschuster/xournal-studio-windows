@@ -82,6 +82,13 @@ public sealed class RecoveryTests : IDisposable
     }
 
     [Fact]
+    public void DeletingWithoutAnyCopyWrittenIsFine()
+    {
+        new Recovery(Folder).Delete("never-written");
+        Assert.Empty(new Recovery(Folder).FindAbandoned());
+    }
+
+    [Fact]
     public void DefaultNameIsXournalsDateAndTime()
     {
         Assert.Equal("2026-11-15-Notiz-22-05", XoppDocument.DefaultName(new DateTime(2026, 11, 15, 22, 5, 30)));
