@@ -149,9 +149,12 @@ public static class Inj
         for (int i = 2; i + 1 < pts.Length; i += 2)
         {
             double x0 = pts[i - 2], y0 = pts[i - 1], x1 = pts[i], y1 = pts[i + 1];
-            for (int s = 1; s <= 8; s++)
+            // A sample every ~4 DIPs, as dense as a real pen: the Windows eraser misses a collected stroke between
+            // samples that lie far apart (tested: 38 DIPs apart, the eraser end crossing between two did nothing).
+            int n = Math.Max(1, (int)Math.Ceiling(Math.Sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0)) / 4));
+            for (int s = 1; s <= n; s++)
             {
-                Pen(P(x0 + (x1 - x0) * s / 8, y0 + (y1 - y0) * s / 8), INRANGE | INCONTACT | UPDATE | buttons | PRIMARY, pf, pressure);
+                Pen(P(x0 + (x1 - x0) * s / n, y0 + (y1 - y0) * s / n), INRANGE | INCONTACT | UPDATE | buttons | PRIMARY, pf, pressure);
             }
         }
         var last = P(pts[pts.Length - 2], pts[pts.Length - 1]);
