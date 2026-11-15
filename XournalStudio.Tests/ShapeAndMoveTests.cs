@@ -50,10 +50,21 @@ public class ShapeAndMoveTests
     public void TranslateMovesPointsAndKeepsUnknownAttributes()
     {
         var e = XElement.Parse("""<stroke tool="pen" color="#000000ff" width="1.41 1.2" fork-extra="keep">10 20 30.5 40</stroke>""");
-        StrokeConverter.Translate(e, 5, -2.5);
+        StrokeConverter.Transform(e, System.Numerics.Matrix3x2.CreateTranslation(5, -2.5f));
         Assert.Equal("15 17.5 35.5 37.5", e.Value);
         Assert.Equal("keep", (string?)e.Attribute("fork-extra"));
         Assert.Equal("1.41 1.2", (string?)e.Attribute("width"));
+    }
+
+    [Fact]
+    public void ScalingAboutACornerScalesPointsButNotWidths()
+    {
+        var e = XElement.Parse("""<stroke tool="pen" color="#000000ff" width="1.41 1.2">10 10 30 20</stroke>""");
+        var m = System.Numerics.Matrix3x2.CreateScale(2, new System.Numerics.Vector2(10, 10));
+        StrokeConverter.Transform(e, m);
+        Assert.Equal("10 10 50 30", e.Value);
+        Assert.Equal("1.41 1.2", (string?)e.Attribute("width"));
+        Assert.Equal(new Rect(10, 10, 40, 20), XoppImage.Transform(new Rect(10, 10, 20, 10), m));
     }
 
     [Fact]
@@ -65,5 +76,22 @@ public class ShapeAndMoveTests
         Assert.Same(image, layer.Elements().First()); // same element, same place in the layer
         Assert.Equal(new Rect(6, 7, 10, 20), XoppImage.GetBounds(image));
         Assert.Equal("x", (string?)image.Attribute("extra"));
+    }
+
+    [Fact]
+    public void ClipIsRelativeToItsCornerAndPlacesScaled()
+    {
+        var stroke = XElement.Parse("""<stroke tool="pen" color="#000000ff" width="1.41 1.2" extra="x">110 220 130 240</stroke>""");
+        var image = XElement.Parse("""<image left="100" top="200" right="140" bottom="220">AAAA</image>""");
+        var clip = XoppClip.Create(new Rect(100, 200, 40, 40), [image, stroke]);
+
+        Assert.Equal(new Size(40, 40), XoppClip.GetSize(clip));
+        Assert.Equal("110 220 130 240", stroke.Value); // the originals stay where they are
+
+        var placed = XoppClip.Place(clip, System.Numerics.Matrix3x2.CreateScale(0.5f) * System.Numerics.Matrix3x2.CreateTranslation(14, 28));
+        Assert.Equal(new Rect(14, 28, 20, 10), XoppImage.GetBounds(placed[0]));
+        Assert.Equal("19 38 29 48", placed[1].Value);
+        Assert.Equal("x", (string?)placed[1].Attribute("extra"));
+        Assert.Equal("1.41 1.2", (string?)placed[1].Attribute("width"));
     }
 }

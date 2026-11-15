@@ -7,34 +7,41 @@ using XournalStudio.Model;
 namespace XournalStudio.Services;
 
 /// <summary>
-/// Pictures through the Windows clipboard: pastes a bitmap (e.g. a part of an exercise cut out with the Snipping
-/// Tool, Win+Shift+S) as a Xournal &lt;image&gt;, and copies an area of a PDF page as a bitmap that other apps can
-/// paste too.
+/// Copied pictures and groups through the Windows clipboard. Own format: a <see cref="XoppClip"/> (strokes and
+/// pictures in points, so pasting here keeps sizes and pressure exactly), plus a bitmap other apps paste. Bitmaps
+/// from other apps (e.g. a part of an exercise cut out with the Snipping Tool, Win+Shift+S) paste as a picture.
+/// Strokes alone go through Windows ink's own clipboard format (<c>InkStrokeContainer.CopySelectedToClipboard</c>).
 /// </summary>
 public static class ClipboardService
 {
-    // Our own format next to the bitmap: the picture as an <image> element, so pasting it here keeps its size in
-    // points (a bitmap alone only has pixels).
-    private const string ImageFormat = "XournalStudio.Image";
+    private const string ClipFormat = "XournalStudio.Clip";
 
-    /// <summary>True if the clipboard holds a picture copied by this app (preferred over ink and bitmaps).</summary>
-    public static bool HasPicture() => Clipboard.GetContent().Contains(ImageFormat);
+    /// <summary>True if the clipboard holds a group copied by this app (preferred over ink and bitmaps).</summary>
+    public static bool HasClip() => Clipboard.GetContent().Contains(ClipFormat);
 
-    /// <summary>The image to paste (at 0,0), or null if the clipboard has no bitmap.</summary>
-    public static async Task<XElement?> PasteImageAsync()
+    /// <summary>The group copied by this app, or null.</summary>
+    public static async Task<XElement?> GetClipAsync()
     {
         var content = Clipboard.GetContent();
-        if (content.Contains(ImageFormat))
+        if (!content.Contains(ClipFormat))
         {
-            var data = await content.GetDataAsync(ImageFormat);
-            if (data is string xml)
-            {
-                return XElement.Parse(xml);
-            }
-            // Never silently: e.g. after Clipboard.Flush the string came back as an unreadable IInspectable.
-            string kind = data is WinRT.IInspectable i ? i.GetRuntimeClassName() : data?.GetType().FullName ?? "null";
-            DebugLog.Write($"own picture format not readable ({kind}); pasting the bitmap instead");
+            return null;
         }
+        var data = await content.GetDataAsync(ClipFormat);
+        if (data is string xml)
+        {
+            return XElement.Parse(xml);
+        }
+        // Never silently: e.g. after Clipboard.Flush the string came back as an unreadable IInspectable.
+        string kind = data is WinRT.IInspectable i ? i.GetRuntimeClassName() : data?.GetType().FullName ?? "null";
+        DebugLog.Write($"own clip format not readable ({kind}); pasting the bitmap instead");
+        return null;
+    }
+
+    /// <summary>A bitmap on the clipboard as a picture group (screen pixels at 96 dpi as points), or null.</summary>
+    public static async Task<XElement?> GetBitmapAsClipAsync()
+    {
+        var content = Clipboard.GetContent();
         if (!content.Contains(StandardDataFormats.Bitmap))
         {
             return null;
@@ -42,23 +49,24 @@ public static class ClipboardService
         var reference = await content.GetBitmapAsync();
         using var stream = await reference.OpenReadAsync();
         var (png, width, height) = await PictureRenderer.ToPngAsync(stream);
-        // Screen pixels at 96 dpi -> points.
-        return XoppImage.Create(new Rect(0, 0, width * 0.75, height * 0.75), png, width, height);
+        var bounds = new Rect(0, 0, width * 0.75, height * 0.75);
+        return XoppClip.Create(bounds, [XoppImage.Create(bounds, png, width, height)]);
     }
 
     /// <summary>
-    /// Puts a picture of <paramref name="size"/> points on the clipboard, while the app runs. (No
+    /// Puts a group on the clipboard, while the app runs, with <paramref name="bitmap"/> (PNG) for other apps. (No
     /// <c>Clipboard.Flush</c>: it is optional, failed with CLIPBRD_E_CANT_OPEN whenever another process – the
     /// clipboard history – opened the clipboard right after <c>SetContent</c>, and after a successful flush our own
     /// format came back as an unreadable IInspectable.)
     /// </summary>
-    public static async Task CopyImageAsync(byte[] png, int pixelWidth, int pixelHeight, Size size)
+    public static async Task CopyAsync(XElement clip, byte[]? bitmap)
     {
-        var stream = await PictureRenderer.ToStreamAsync(png);
         var package = new DataPackage();
-        package.SetBitmap(RandomAccessStreamReference.CreateFromStream(stream));
-        package.SetData(ImageFormat,
-            XoppImage.Create(new Rect(0, 0, size.Width, size.Height), png, pixelWidth, pixelHeight).ToString());
+        package.SetData(ClipFormat, clip.ToString(SaveOptions.DisableFormatting));
+        if (bitmap != null)
+        {
+            package.SetBitmap(RandomAccessStreamReference.CreateFromStream(await PictureRenderer.ToStreamAsync(bitmap)));
+        }
         Clipboard.SetContent(package);
     }
 }

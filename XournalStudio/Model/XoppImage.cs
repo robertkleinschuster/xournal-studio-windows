@@ -51,6 +51,14 @@ public static class XoppImage
         return copy;
     }
 
+    /// <summary>The bounds after scaling/moving by <paramref name="m"/> (no rotation: pictures stay upright).</summary>
+    public static Rect Transform(Rect bounds, System.Numerics.Matrix3x2 m)
+    {
+        var a = System.Numerics.Vector2.Transform(new((float)bounds.Left, (float)bounds.Top), m);
+        var b = System.Numerics.Vector2.Transform(new((float)bounds.Right, (float)bounds.Bottom), m);
+        return new Rect(new Point(a.X, a.Y), new Point(b.X, b.Y));
+    }
+
     public static byte[] GetData(XElement e)
     {
         try

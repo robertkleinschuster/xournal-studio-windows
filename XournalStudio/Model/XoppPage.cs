@@ -1,5 +1,6 @@
 using System.Xml.Linq;
 using Microsoft.UI.Xaml.Controls;
+using System.Numerics;
 using Windows.Foundation;
 using InkStroke = Windows.UI.Input.Inking.InkStroke;
 using Windows.UI;
@@ -140,26 +141,53 @@ public sealed class XoppPage
     }
 
     /// <summary>
-    /// Records that strokes were moved on the ink (e.g. by <c>MoveSelected</c>): their original elements get the
-    /// new coordinates; strokes drawn in this session are written from the ink anyway.
+    /// Moves/scales strokes: the ink by their <c>PointTransform</c> (Windows ink redraws them), their original
+    /// elements by the same transform; strokes drawn in this session are written from the ink anyway.
     /// </summary>
-    public void MoveStrokes(IEnumerable<InkStroke> strokes, double dx, double dy)
+    public void TransformStrokes(IEnumerable<InkStroke> strokes, Matrix3x2 m)
     {
         foreach (var stroke in strokes)
         {
-            if (strokeElements.TryGetValue(stroke.Id, out var e))
-            {
-                StrokeConverter.Translate(e, dx, dy);
-            }
+            stroke.PointTransform *= m;
+            RecordTransform(stroke, m);
         }
     }
 
-    /// <summary>Moves a picture (in place: its layer and position among the elements stay).</summary>
-    public void MoveImage(XElement image, double dx, double dy)
+    /// <summary>The ink already shows the stroke transformed (live while dragging): only its element follows.</summary>
+    public void RecordTransform(InkStroke stroke, Matrix3x2 m)
     {
-        var bounds = XoppImage.GetBounds(image);
-        XoppImage.SetBounds(image, new Rect(bounds.X + dx, bounds.Y + dy, bounds.Width, bounds.Height));
+        if (strokeElements.TryGetValue(stroke.Id, out var e))
+        {
+            StrokeConverter.Transform(e, m);
+        }
+    }
+
+    /// <summary>Moves/scales a picture (in place: its layer and position among the elements stay).</summary>
+    public void TransformImage(XElement image, Matrix3x2 m)
+    {
+        XoppImage.SetBounds(image, XoppImage.Transform(XoppImage.GetBounds(image), m));
         ImagesChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>The stroke as a .xopp element: its original element (exact widths, unknown attributes) or converted.</summary>
+    public XElement ElementOf(InkStroke stroke) =>
+        strokeElements.TryGetValue(stroke.Id, out var e) ? new XElement(e) : StrokeConverter.ToXml(stroke);
+
+    /// <summary>
+    /// Adds a stroke made from a .xopp element (pasted, duplicated): the element is written as it is, so a copy keeps
+    /// exactly what the original had. Null if the element has no points.
+    /// </summary>
+    public InkStroke? AddStrokeElement(XElement e)
+    {
+        var stroke = StrokeConverter.FromXml(e);
+        if (stroke == null)
+        {
+            return null;
+        }
+        Ink!.AddStroke(stroke);
+        strokeElements[stroke.Id] = e;
+        element.Elements("layer").Last().Add(e);
+        return stroke;
     }
 
     /// <summary>Pictures (&lt;image&gt;, &lt;teximage&gt;) of all layers, bottom to top.</summary>

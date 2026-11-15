@@ -16,6 +16,8 @@ public sealed class AppSettings
 
     public Model.ShapeKind Shape { get; set; }
 
+    public Model.SelectMode SelectMode { get; set; }
+
     private static string LocalAppData => Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
 
     private static string? TestFolder => Environment.GetEnvironmentVariable("XOURNAL_STUDIO_CONFIG_DIR");

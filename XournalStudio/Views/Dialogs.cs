@@ -6,6 +6,9 @@ namespace XournalStudio.Views;
 /// <summary>The app's ContentDialogs: confirmations and name input, all shown through <see cref="ShowAsync"/>.</summary>
 public sealed class Dialogs(Func<XamlRoot> root, Func<IEnumerable<PageView>> pages)
 {
+    /// <summary>Raised before a dialog opens (flyouts at the page close: they would stay above the dialog).</summary>
+    public event EventHandler? Opening;
+
     /// <summary>
     /// Shows a dialog with the pages' ink hidden. The experimental InkCanvas (2.6.6-experimental) renders and takes
     /// pointer input above XAML popups, so mouse and pen clicks on dialog buttons went to the ink
@@ -13,6 +16,7 @@ public sealed class Dialogs(Func<XamlRoot> root, Func<IEnumerable<PageView>> pag
     /// </summary>
     public async Task<ContentDialogResult> ShowAsync(ContentDialog dialog)
     {
+        Opening?.Invoke(this, EventArgs.Empty);
         dialog.XamlRoot = root();
         var views = pages().ToList();
         foreach (var view in views)

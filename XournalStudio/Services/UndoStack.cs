@@ -1,3 +1,4 @@
+using System.Numerics;
 using System.Xml.Linq;
 using Windows.Foundation;
 using Windows.UI.Input.Inking;
@@ -85,27 +86,28 @@ public sealed class PageEdit(XoppPage page) : IPageEdit
     }
 }
 
-/// <summary>Strokes and pictures moved by an offset (lasso selection dragged).</summary>
-public sealed class MoveEdit(XoppPage page, IReadOnlyList<InkStroke> strokes, IReadOnlyList<XElement> images, Point offset)
+/// <summary>Strokes and pictures moved/scaled by a transform (a selection dragged or resized).</summary>
+public sealed class TransformEdit(XoppPage page, IReadOnlyList<InkStroke> strokes, IReadOnlyList<XElement> images, Matrix3x2 transform)
     : IPageEdit
 {
     public XoppPage Page { get; } = page;
 
-    public bool IsEmpty => (strokes.Count + images.Count == 0) || (offset.X == 0 && offset.Y == 0);
+    public bool IsEmpty => strokes.Count + images.Count == 0 || transform.IsIdentity;
 
-    public void Undo() => Move(-offset.X, -offset.Y);
-
-    public void Redo() => Move(offset.X, offset.Y);
-
-    private void Move(double dx, double dy)
+    public void Undo()
     {
-        var current = PageEdit.SelectOnly(Page, strokes);
-        Page.Ink!.MoveSelected(new Point(dx, dy));
-        current.ForEach(s => s.Selected = false);
-        Page.MoveStrokes(current, dx, dy);
+        Matrix3x2.Invert(transform, out var inverse);
+        Apply(inverse);
+    }
+
+    public void Redo() => Apply(transform);
+
+    private void Apply(Matrix3x2 m)
+    {
+        Page.TransformStrokes(strokes.Select(Page.Current).OfType<InkStroke>(), m);
         foreach (var image in images)
         {
-            Page.MoveImage(image, dx, dy);
+            Page.TransformImage(image, m);
         }
     }
 }

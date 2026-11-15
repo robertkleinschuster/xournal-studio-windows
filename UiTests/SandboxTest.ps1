@@ -45,6 +45,15 @@ try {
         Start-Sleep -Milliseconds 400
         "click $args"
     }
+    # Flyout content lives in its own popup window: search from the desktop.
+    function ClickAnywhere($name) {
+        $cond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, $name)
+        $e = [System.Windows.Automation.AutomationElement]::RootElement.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $cond)
+        if ($e -eq $null) { throw "'$name' not found" }
+        $r = $e.Current.BoundingRectangle
+        [Inj]::ClickPixel([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2)); Start-Sleep -Milliseconds 500
+        "click $name"
+    }
     function Focus { [Inj]::Click((X 0.6), 20); Start-Sleep -Milliseconds 300 }  # menu bar background
 
     Shot '01-start'
@@ -70,7 +79,17 @@ try {
     Shot '03d-pen-still-inks'
     Focus; [Inj]::Key(0x2E); Shot '03e-selection-deleted'
 
+    # Selection tool (lasso): a stroke selected shows its commands; the corner handle scales it, Ctrl+Z undoes that.
+    [Inj]::PenStroke((L (X 0.6) 430 (X 0.8) 430), $false, 512)
+    Button 'SelectButton' 'Auswählen'
+    [Inj]::PenStroke((L (X 0.58) 415 (X 0.82) 415 (X 0.82) 445 (X 0.58) 445 (X 0.58) 415), $false, 512)
+    Shot '03f-selected-with-commands'
+    [Inj]::PenStroke((L ((X 0.8) + 8) 438 ((X 0.8) + 110) 445), $false, 512)
+    Shot '03g-scaled'
+    Focus; [Inj]::Ctrl(0x5A); Shot '03h-scale-undone'
+
     # Shape recognition (Windows ink analysis): a hand-drawn rectangle and circle become clean shapes.
+    Button 'InkToolbarBallpointPenButton'
     Button 'RecognizeButton' 'Formerkennung'
     [Inj]::PenStroke((L (X 0.32) 330 (X 0.5) 332 (X 0.499) 400 (X 0.321) 398 (X 0.32) 331), $false, 512)
     $c = @(); for ($k = 0; $k -le 36; $k++) { $t = 2 * [Math]::PI * $k / 36; $c += (X 0.65) + 45 * [Math]::Cos($t) + 2 * [Math]::Sin(5 * $t); $c += 365 + 40 * [Math]::Sin($t) }
@@ -78,31 +97,68 @@ try {
     Shot '04-recognized-shapes'
     Button 'RecognizeButton' 'Formerkennung'
 
-    # A bitmap on the clipboard (as from the Snipping Tool), pasted onto a new graph page.
+    # Rectangle on the PDF page copies that area (Ctrl+C); pasted on a new graph page it is selected: scale it at its
+    # corner, duplicate it, tap the original to select it, delete it, undo.
+    Button 'SelectButton' 'Auswählen'
+    Button 'SelectButton' 'Auswählen'   # second tap: the tool's options
+    ClickAnywhere 'Rechteck'
+    Focus
+    [Inj]::PenStroke((L (X 0.12) 280 (X 0.62) 375), $false, 512)
+    Shot '05-area-selected'
+    Focus; [Inj]::Ctrl(0x43); Start-Sleep 1
+    Button 'InsertPageButton' 'Seite einfügen'; Start-Sleep 1
+    Focus; [Inj]::Ctrl(0x56); Start-Sleep 2
+    Shot '06-area-pasted-selected'
+    [Inj]::PenStroke((L 561 218 700 245), $false, 512)
+    Shot '07-area-scaled'
+    Focus; [Inj]::Ctrl(0x44); Start-Sleep 1
+    Shot '08-duplicated'
+    [Inj]::PenStroke((L 600 125 600.5 125.5), $false, 512)   # on the original, away from the copy and its commands
+    Shot '09-tap-selected'
+    Focus; [Inj]::Key(0x2E); Shot '10-deleted'
+    Focus; [Inj]::Ctrl(0x5A); Shot '11-delete-undone'
+
+    # A bitmap on the clipboard (as from the Snipping Tool) pastes below what is on the page, selected.
     $bmp = New-Object System.Drawing.Bitmap 600, 120
     $g = [System.Drawing.Graphics]::FromImage($bmp); $g.Clear([System.Drawing.Color]::White)
     $g.DrawString('Beispiel 3: Ausschnitt aus der Angabe', (New-Object System.Drawing.Font 'Segoe UI', 24), [System.Drawing.Brushes]::Black, 10, 30)
     [System.Windows.Forms.Clipboard]::SetImage($bmp)
-    Button 'InsertPageButton' 'Seite einfügen'
-    for ($k = 0; $k -lt 5; $k++) { [Inj]::TouchDrag((X 0.85), 480, (X 0.85), 160, 30) }
-    Shot '05-new-page'
-    Focus
-    [Inj]::Ctrl(0x56); Start-Sleep 2
-    Shot '06-pasted'
-    Button 'UndoButton' 'Rückgängig'; Shot '07-undo-paste'
-    Button 'RedoButton' 'Wiederholen'; Shot '08-redo-paste'
+    Focus; [Inj]::Ctrl(0x56); Start-Sleep 2
+    Shot '12-bitmap-pasted'
 
-    # Page 3 of the document (graph page with pictures: a teximage with a PDF and PNG images).
-    for ($k = 0; $k -lt 4; $k++) { [Inj]::TouchDrag((X 0.85), 480, (X 0.85), 160, 30) }
-    Shot '09-pictures'
-
+    # Closing with changes asks (Abbrechen keeps the window), then Ctrl+S saves and closing does not ask.
+    [Inj]::PostMessage($h, 0x10, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null; Start-Sleep 2
+    Shot '13-close-asks'
+    Button 'Abbrechen'
     Focus
-    [Inj]::Ctrl(0x53); Start-Sleep 2; Shot '10-saved'
+    [Inj]::Ctrl(0x53); Start-Sleep 2; Shot '14-saved'
     Copy-Item "$work\test.xopp" "$out\saved1.xopp"
     [Inj]::PostMessage($h, 0x10, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
     $p.WaitForExit(15000) | Out-Null
     "exited: $($p.HasExited)"
     Copy-Item "$work\test.xopp" "$out\saved2.xopp"
+
+    # Crash with unsaved changes: the next start offers the recovery copy; restored, the stroke is back (unsaved).
+    $p = Start-Process "$root\app\XournalStudio.exe" -ArgumentList "`"$work\test.xopp`"" -PassThru
+    for ($i = 0; $i -lt 60; $i++) { Start-Sleep -Milliseconds 500; $p.Refresh(); if ($p.MainWindowHandle -ne 0) { break } }
+    Start-Sleep 6; $h = $p.MainWindowHandle; [Inj]::SetForegroundWindow($h) | Out-Null; "init: " + [Inj]::Init($h)
+    $window = [System.Windows.Automation.AutomationElement]::FromHandle($h)
+    [Inj]::PenStroke((L (X 0.2) 200 (X 0.5) 260), $false, 512); Start-Sleep 7
+    "recovery files: " + ((Get-ChildItem "$work\cfg\Recovery" -ErrorAction SilentlyContinue | ForEach-Object Name) -join ', ')
+    Stop-Process -Id $p.Id -Force; Start-Sleep 2
+    $p = Start-Process "$root\app\XournalStudio.exe" -ArgumentList "`"$work\test.xopp`"" -PassThru
+    for ($i = 0; $i -lt 60; $i++) { Start-Sleep -Milliseconds 500; $p.Refresh(); if ($p.MainWindowHandle -ne 0) { break } }
+    Start-Sleep 6; $h = $p.MainWindowHandle; [Inj]::SetForegroundWindow($h) | Out-Null
+    $window = [System.Windows.Automation.AutomationElement]::FromHandle($h)
+    Shot '15-recovery-offered'
+    Button 'Wiederherstellen'; Start-Sleep 2
+    Shot '16-recovered'
+    [Inj]::PostMessage($h, 0x10, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null; Start-Sleep 2
+    Shot '17-close-asks-again'
+    Button 'Nicht speichern'
+    $p.WaitForExit(15000) | Out-Null
+    "exited: $($p.HasExited)"
+    "recovery files after: " + ((Get-ChildItem "$work\cfg\Recovery" -ErrorAction SilentlyContinue | ForEach-Object Name) -join ', ')
 }
 catch { "ERROR: $_"; $_.ScriptStackTrace; try { [Inj]::Shot("$out\error.png") } catch {} }
 finally { Stop-Transcript | Out-Null; Set-Content "$out\done.txt" 'done' }

@@ -2,7 +2,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.Windows.Storage.Pickers;
-using Windows.Foundation;
 using XournalStudio.Model;
 using XournalStudio.Services;
 using XournalStudio.Views;
@@ -25,6 +24,7 @@ public sealed partial class MainWindow : Window
     private readonly PagesController pages;
     private readonly DocumentSession session;
     private readonly SyncController sync;
+    private readonly EditCommands edit;
     private bool closeConfirmed;
 
     public MainWindow(string? fileToOpen)
@@ -38,19 +38,25 @@ public sealed partial class MainWindow : Window
 
         messages = new Messages(Info);
         tools = new ToolController(Toolbar, PenButton, HighlighterButton);
-        inkTools = new InkTools(undo, () => tools.PenAttributes) { Shape = settings.Shape };
-        inkTools.Message += (_, m) => messages.Show(m.Severity, m.Title, m.Message);
+        inkTools = new InkTools(undo, () => tools.PenAttributes);
+        inkTools.Shapes.Shape = settings.Shape;
+        inkTools.Selection.Mode = settings.SelectMode;
         pages = new PagesController(Scroller, PagesPanel, tools, inkTools, undo, () => RecognizeButton.IsChecked == true);
         dialogs = new Dialogs(() => Content.XamlRoot, () => pages.Views);
         session = new DocumentSession(AppWindow.Id, pages, dialogs, messages, settings, () => ProjectFolder);
         sync = new SyncController(session, dialogs, messages);
         var explorerCommands = new ExplorerCommands(Explorer, session, sync, dialogs, messages, FocusDocument, RefreshExplorer);
+        edit = new EditCommands(inkTools.Selection, pages, undo, messages, () => Toolbar.ActiveTool = SelectButton);
+        var selectionFlyout = new SelectionFlyout(edit, Root);
+        inkTools.Selection.SelectionChanged += (_, _) => selectionFlyout.ShowFor(inkTools.Selection.Current);
+        inkTools.Selection.DragStarted += (_, _) => selectionFlyout.Hide();
+        dialogs.Opening += (_, _) => selectionFlyout.Hide();
 
         ShapeChoice.SelectedIndex = (int)settings.Shape;
+        SelectModeChoice.SelectedIndex = (int)settings.SelectMode;
         tools.CustomToolChanged += (_, _) => inkTools.Tool =
-            tools.CustomTool == LassoButton ? InkTool.Lasso :
-            tools.CustomTool == ShapeButton ? InkTool.Shape :
-            tools.CustomTool == PdfAreaButton ? InkTool.PdfArea : InkTool.None;
+            tools.CustomTool == SelectButton ? InkTool.Select :
+            tools.CustomTool == ShapeButton ? InkTool.Shape : InkTool.None;
         RecognizeButton.IsChecked = settings.RecognizeShapes;
         RecognizeButton.Click += (_, _) =>
         {
@@ -174,25 +180,42 @@ public sealed partial class MainWindow : Window
 
     private void OnUndo(object sender, RoutedEventArgs e)
     {
-        inkTools.ClearSelection(); // undo may replace the selected strokes
+        inkTools.Selection.Clear(); // undo may replace the selected strokes
         undo.Undo();
     }
 
     private void OnRedo(object sender, RoutedEventArgs e)
     {
-        inkTools.ClearSelection();
+        inkTools.Selection.Clear();
         undo.Redo();
     }
 
-    private void OnCopy(object sender, RoutedEventArgs e) => inkTools.CopySelection();
+    private async void OnCut(object sender, RoutedEventArgs e) => await edit.CutAsync();
 
-    private void OnDeleteSelection(object sender, RoutedEventArgs e) => inkTools.DeleteSelection();
+    private async void OnCopy(object sender, RoutedEventArgs e) => await edit.CopyAsync();
+
+    private async void OnPaste(object sender, RoutedEventArgs e) => await edit.PasteAsync();
+
+    private void OnDuplicate(object sender, RoutedEventArgs e) => edit.Duplicate();
+
+    private void OnDeleteSelection(object sender, RoutedEventArgs e) => edit.Delete();
+
+    private void OnSelectAll(object sender, RoutedEventArgs e) => edit.SelectAll();
 
     private void OnShapeChoiceChanged(object sender, SelectionChangedEventArgs e)
     {
         if (ShapeChoice.SelectedIndex >= 0 && inkTools != null)
         {
-            inkTools.Shape = settings.Shape = (ShapeKind)ShapeChoice.SelectedIndex;
+            inkTools.Shapes.Shape = settings.Shape = (ShapeKind)ShapeChoice.SelectedIndex;
+            settings.Save();
+        }
+    }
+
+    private void OnSelectModeChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (SelectModeChoice.SelectedIndex >= 0 && inkTools != null)
+        {
+            inkTools.Selection.Mode = settings.SelectMode = (SelectMode)SelectModeChoice.SelectedIndex;
             settings.Save();
         }
     }
@@ -282,71 +305,5 @@ public sealed partial class MainWindow : Window
         settings.Save();
         SetExplorerOpen(true);
         RefreshExplorer();
-    }
-
-    // ---------------------------------------------------------------- paste
-
-    private const double Grid = 14.17;
-
-    /// <summary>
-    /// Pastes onto the page in the middle of the view, at the left margin below what is already on it (on the next
-    /// grid line), so parts of an exercise stack up on a graph page: a copied PDF area or bitmap (e.g. from the
-    /// Snipping Tool) as a picture, copied ink as strokes (Windows ink's own clipboard format).
-    /// </summary>
-    private async void OnPaste(object sender, RoutedEventArgs e)
-    {
-        var page = session.Document.Pages[pages.CurrentIndex];
-        if (!ClipboardService.HasPicture() && page.Ink!.CanPasteFromClipboard())
-        {
-            PasteInk(page);
-            return;
-        }
-        System.Xml.Linq.XElement? image;
-        try
-        {
-            image = await ClipboardService.PasteImageAsync();
-        }
-        catch (Exception ex)
-        {
-            DebugLog.Write("paste", ex);
-            messages.Show(InfoBarSeverity.Warning, "Einfügen nicht möglich", DebugLog.Describe(ex));
-            return;
-        }
-        if (image == null)
-        {
-            messages.Show(InfoBarSeverity.Informational, "Nichts zum Einfügen in der Zwischenablage",
-                "Einen PDF-Bereich oder Ausschnitt (Ausschneidetool: Win+Umschalt+S) kopieren, oder Striche mit dem Lasso.");
-            return;
-        }
-
-        var size = XoppImage.GetBounds(image);
-        // Wider than the page: scaled down to fit between the margins.
-        double scale = Math.Min(1, (page.Width - 2 * Grid) / size.Width);
-        var placed = XoppImage.WithBounds(image,
-            new Rect(Grid, PasteTop(page, size.Height * scale), size.Width * scale, size.Height * scale));
-        page.AddImage(placed);
-        var edit = new PageEdit(page);
-        edit.AddedImages.Add(placed);
-        undo.Push(edit);
-    }
-
-    private void PasteInk(XoppPage page)
-    {
-        var ink = page.Ink!;
-        var before = ink.GetStrokes().Select(s => s.Id).ToHashSet();
-        ink.PasteFromClipboard(new Point(Grid, PasteTop(page, 0)));
-        var edit = new PageEdit(page);
-        foreach (var stroke in ink.GetStrokes().Where(s => !before.Contains(s.Id)))
-        {
-            stroke.Selected = false;
-            edit.AddedStrokes.Add(stroke);
-        }
-        undo.Push(edit);
-    }
-
-    private static double PasteTop(XoppPage page, double height)
-    {
-        double top = Math.Ceiling((page.ContentBottom() + 4) / Grid) * Grid;
-        return top < Grid || top + height > page.Height ? Grid : top;
     }
 }

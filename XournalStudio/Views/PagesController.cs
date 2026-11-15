@@ -80,7 +80,7 @@ public sealed class PagesController
     {
         document = doc;
         pdf = background;
-        inkTools.ClearSelection();
+        inkTools.Selection.Clear();
         undo.Clear();
         panel.Children.Clear();
         foreach (var page in doc.Pages)
@@ -114,7 +114,7 @@ public sealed class PagesController
         var page = doc.Pages[index];
         doc.Pages.RemoveAt(index);
         panel.Children.RemoveAt(index);
-        inkTools.ClearSelection();
+        inkTools.Selection.Clear();
         undo.Forget(page);
         OnViewsChanged();
         PagesChanged?.Invoke(this, EventArgs.Empty);
