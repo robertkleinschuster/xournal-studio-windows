@@ -109,3 +109,26 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 - Test hooks: `XOURNAL_STUDIO_CONFIG_DIR`, `XOURNAL_STUDIO_LOG`, `XOURNAL_STUDIO_TEST_PAGE`.
 - `examples/` holds sanitized real documents; never commit the user's own files (they contain university
   material and personal data) – derive examples with `tools/make_examples.py` and check each page visually.
+
+## Open work (as of 2026-11-15; update when done)
+
+1. **Git explorer (highest priority for the user).** Collapsible pane on the left (native `TreeView`, e.g. in a
+   `SplitView`), showing the project folder (the user's git-synced university folder; default: git root of the
+   open document, changeable via "Datei → Ordner öffnen…" with the Windows App SDK `FolderPicker`; settings
+   already have `ProjectFolder` and `ExplorerOpen`). Show folders, `.xopp` and `.pdf` (hide a PDF when the `.xopp`
+   of the same name exists, and `*_kommentiert.pdf` / `*.pages.pdf` / `*.portals.pdf` of the GTK fork). Tap opens
+   the document (save the current one first). Git status colors (new = green, modified = blue) and one sync button
+   (commit all in the folder, pull --rebase, push; commit message like the GTK fork's "Sync from <machine>
+   (yyyy-MM-dd HH:mm)"); reload the open document if the pull changed it. Proposed to the user, not yet confirmed:
+   use the installed Git for Windows CLI (it brings the Git Credential Manager) instead of own git code or
+   LibGit2Sharp, which would need home-made credential handling. Ask the user before starting.
+2. **Lasso, shape tools (line, arrow, rectangle, ellipse), copying PDF areas.** Decided to wait until the Windows
+   App SDK raises `InkPresenter.UnprocessedInput` (see Facts learned); re-test with each new release. Then: lasso
+   via `SelectWithPolyLine` + barrel button (`RightDragAction.LeaveUnprocessed`), copy area = render the rectangle
+   with `PdfPageRenderOptions.SourceRect` as PNG into a plain `<image>`. Until then parts of an exercise come in via
+   the Snipping Tool + paste. Pasted images can not be moved yet (needs the lasso).
+3. **Pen eraser end** did not erase in later sandbox runs (worked in the first one, native code only) – the user
+   should check it on the device; if it fails there too, investigate before anything else.
+4. **Device test by the user** of everything: latency, pressure, palm rejection, touch scroll/zoom, the pen's
+   buttons (Lenovo barrel button may arrive as right click).
+5. Not started, only if the user asks: text, inserting pages of another PDF, PDF export, page reordering.
