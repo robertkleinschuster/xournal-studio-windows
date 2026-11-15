@@ -2,22 +2,35 @@ using System.Text.Json;
 
 namespace XournalStudio.Services;
 
-/// <summary>Small JSON settings file in %LOCALAPPDATA%\XournalStudioWinUI (the app is unpackaged).</summary>
+/// <summary>Small JSON settings file in %LOCALAPPDATA%\XournalStudioForWindows (the app is unpackaged).</summary>
 public sealed class AppSettings
 {
     public string? LastFile { get; set; }
 
+    /// <summary>Folder shown in the explorer (a git repository or any folder).</summary>
+    public string? ProjectFolder { get; set; }
+
+    public bool ExplorerOpen { get; set; } = true;
+
+    public bool RecognizeShapes { get; set; }
+
+    private static string LocalAppData => Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+
+    private static string? TestFolder => Environment.GetEnvironmentVariable("XOURNAL_STUDIO_CONFIG_DIR");
+
     // XOURNAL_STUDIO_CONFIG_DIR overrides the folder (for tests).
     private static string FilePath =>
-        Path.Combine(Environment.GetEnvironmentVariable("XOURNAL_STUDIO_CONFIG_DIR") ??
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "XournalStudioWinUI"),
-            "settings.json");
+        Path.Combine(TestFolder ?? Path.Combine(LocalAppData, "XournalStudioForWindows"), "settings.json");
+
+    // Settings of the app's earlier name.
+    private static string OldFilePath => Path.Combine(LocalAppData, "XournalStudioWinUI", "settings.json");
 
     public static AppSettings Load()
     {
         try
         {
-            return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(FilePath)) ?? new AppSettings();
+            string path = File.Exists(FilePath) || TestFolder != null ? FilePath : OldFilePath;
+            return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(path)) ?? new AppSettings();
         }
         catch (Exception)
         {

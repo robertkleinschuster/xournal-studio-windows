@@ -6,7 +6,7 @@
 param(
     [Parameter(Mandatory)] [string]$Document,      # .xopp; its PDF must lie next to it
     [string]$Work = (Join-Path $env:TEMP 'xs-sandbox-test'),
-    [string]$App = (Join-Path $env:LOCALAPPDATA 'Programs\Xournal Studio WinUI'),
+    [string]$App = (Join-Path $env:LOCALAPPDATA 'Programs\Xournal Studio for Windows'),
     [string]$GtkExe = (Join-Path $env:LOCALAPPDATA 'Programs\Xournal Studio\bin\xournalpp.exe')
 )
 $ErrorActionPreference = 'Stop'

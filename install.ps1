@@ -1,12 +1,13 @@
-# Builds Xournal Studio (WinUI) and installs it side by side with the GTK version:
-#   %LOCALAPPDATA%\Programs\Xournal Studio WinUI  +  Start menu entry "Xournal Studio (WinUI)".
-# No file associations are registered; .xopp stays with the GTK version.
+# Builds Xournal Studio for Windows and installs it for the current user:
+#   %LOCALAPPDATA%\Programs\Xournal Studio for Windows  +  Start menu entry "Xournal Studio for Windows".
+# No file associations are registered. An installation of the earlier name ("Xournal Studio WinUI") is removed.
 param([switch]$SkipInstall, [switch]$SkipTests)
 
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 $publish = Join-Path $root 'XournalStudio\bin\publish'
-$target = Join-Path $env:LOCALAPPDATA 'Programs\Xournal Studio WinUI'
+$target = Join-Path $env:LOCALAPPDATA 'Programs\Xournal Studio for Windows'
+$programs = [Environment]::GetFolderPath('Programs')
 
 if (-not $SkipTests) {
     dotnet test (Join-Path $root 'XournalStudio.Tests') -nologo -v q
@@ -20,12 +21,17 @@ if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
 if ($SkipInstall) { "Published to $publish"; return }
 
 $running = Get-Process XournalStudio -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$target\*" }
-if ($running) { throw 'Xournal Studio (WinUI) is running; close it first or use -SkipInstall.' }
+if ($running) { throw 'Xournal Studio for Windows is running; close it first or use -SkipInstall.' }
 
 if (Test-Path $target) { Remove-Item -Recurse -Force $target }
 Copy-Item -Recurse $publish $target
 
-$shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'Xournal Studio (WinUI).lnk'
+# Earlier name of this app.
+$old = Join-Path $env:LOCALAPPDATA 'Programs\Xournal Studio WinUI'
+if (Test-Path $old) { Remove-Item -Recurse -Force $old }
+Remove-Item (Join-Path $programs 'Xournal Studio (WinUI).lnk') -ErrorAction SilentlyContinue
+
+$shortcut = Join-Path $programs 'Xournal Studio for Windows.lnk'
 $shell = New-Object -ComObject WScript.Shell
 $link = $shell.CreateShortcut($shortcut)
 $link.TargetPath = Join-Path $target 'XournalStudio.exe'
