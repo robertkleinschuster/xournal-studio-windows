@@ -1,5 +1,4 @@
-﻿using Microsoft.UI.Dispatching;
-using Microsoft.UI.Windowing;
+﻿using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.Windows.Storage.Pickers;
@@ -10,21 +9,23 @@ using XournalStudio.Views;
 
 namespace XournalStudio;
 
+/// <summary>
+/// The window: wires menus, toolbar and explorer to the feature classes (<see cref="DocumentSession"/>,
+/// <see cref="PagesController"/>, <see cref="SyncController"/>, <see cref="ExplorerCommands"/>, <see cref="InkTools"/>)
+/// and holds no feature logic of its own.
+/// </summary>
 public sealed partial class MainWindow : Window
 {
     private readonly AppSettings settings = AppSettings.Load();
     private readonly UndoStack undo = new();
     private readonly ToolController tools;
     private readonly InkTools inkTools;
-    private readonly DispatcherQueueTimer viewTimer;
-
-    private XoppDocument document = XoppDocument.CreateNew();
-    private PdfBackground? pdf;
-    private bool dirty;
-    private bool fitWidthPending = true;
+    private readonly Messages messages;
+    private readonly Dialogs dialogs;
+    private readonly PagesController pages;
+    private readonly DocumentSession session;
+    private readonly SyncController sync;
     private bool closeConfirmed;
-
-    private IEnumerable<PageView> PageViews => PagesPanel.Children.OfType<PageView>();
 
     public MainWindow(string? fileToOpen)
     {
@@ -35,9 +36,16 @@ public sealed partial class MainWindow : Window
             presenter.Maximize();
         }
 
+        messages = new Messages(Info);
         tools = new ToolController(Toolbar, PenButton, HighlighterButton);
         inkTools = new InkTools(undo, () => tools.PenAttributes) { Shape = settings.Shape };
-        inkTools.Message += (_, m) => ShowMessage(m.Severity, m.Title, m.Message);
+        inkTools.Message += (_, m) => messages.Show(m.Severity, m.Title, m.Message);
+        pages = new PagesController(Scroller, PagesPanel, tools, inkTools, undo, () => RecognizeButton.IsChecked == true);
+        dialogs = new Dialogs(() => Content.XamlRoot, () => pages.Views);
+        session = new DocumentSession(AppWindow.Id, pages, dialogs, messages, settings, () => ProjectFolder);
+        sync = new SyncController(session, dialogs, messages);
+        var explorerCommands = new ExplorerCommands(Explorer, session, sync, dialogs, messages, FocusDocument, RefreshExplorer);
+
         ShapeChoice.SelectedIndex = (int)settings.Shape;
         tools.CustomToolChanged += (_, _) => inkTools.Tool =
             tools.CustomTool == LassoButton ? InkTool.Lasso :
@@ -53,368 +61,94 @@ public sealed partial class MainWindow : Window
         {
             UndoButton.IsEnabled = UndoMenuItem.IsEnabled = undo.CanUndo;
             RedoButton.IsEnabled = RedoMenuItem.IsEnabled = undo.CanRedo;
+            session.MarkChanged();
         };
-        undo.Changed += (_, _) => SetDirty(true);
+        pages.PagesChanged += (_, _) => session.MarkChanged();
+        session.StateChanged += (_, _) => Title = $"{session.Title} – Xournal Studio";
+        session.FilesChanged += (_, _) => RefreshExplorer();
+        sync.StateChanged += (_, _) =>
+        {
+            SyncMenuItem.IsEnabled = Explorer.RepositoryRoot != null && !sync.IsSyncing;
+            Explorer.IsSyncing = sync.IsSyncing;
+            if (!sync.IsSyncing)
+            {
+                RefreshExplorer();
+            }
+        };
 
-        viewTimer = DispatcherQueue.CreateTimer();
-        viewTimer.Interval = TimeSpan.FromMilliseconds(120);
-        viewTimer.IsRepeating = false;
-        viewTimer.Tick += (_, _) => UpdateVisiblePages();
-
-        Explorer.FileInvoked += OnExplorerFileInvoked;
-        Explorer.SyncRequested += (_, _) => Sync();
-        Explorer.CommandRequested += OnExplorerCommand;
+        Explorer.FileInvoked += explorerCommands.OnFileInvoked;
+        Explorer.CommandRequested += explorerCommands.OnCommand;
+        Explorer.SyncRequested += (_, _) => sync.Sync(Explorer.RepositoryRoot);
         Explorer.FolderChanged += (_, _) => RefreshExplorer();
-        Explorer.Failed += (_, m) => ShowMessage(InfoBarSeverity.Warning, m.Title, m.Message);
+        Explorer.Failed += (_, m) => messages.Show(InfoBarSeverity.Warning, m.Title, m.Message);
         SetExplorerOpen(settings.ExplorerOpen);
 
         Activated += OnActivated;
         AppWindow.Closing += OnClosing;
 
-        string? file = fileToOpen ?? settings.LastFile;
-        if (file != null && File.Exists(file))
-        {
-            _ = OpenAsync(file);
-        }
-        else
-        {
-            ShowDocument(XoppDocument.CreateNew(), null);
-        }
+        session.ShowNew();
+        Root.Loaded += async (_, _) => await StartAsync(fileToOpen);
     }
 
-    // ---------------------------------------------------------------- document
-
-    private async Task OpenAsync(string path)
+    /// <summary>Offers what a crashed session left behind first, then opens the file of the command line or the last one.</summary>
+    private async Task StartAsync(string? fileToOpen)
     {
-        try
-        {
-            if (Path.GetExtension(path).Equals(".pdf", StringComparison.OrdinalIgnoreCase))
-            {
-                // A new, unsaved document on the PDF; the first save asks where (nothing is opened or named
-                // behind the user's back).
-                var pdfBackground = await PdfBackground.LoadAsync(path);
-                ShowDocument(XoppDocument.FromPdf(path, pdfBackground.GetPageSizes()), pdfBackground);
-            }
-            else
-            {
-                var doc = XoppDocument.Load(path);
-                PdfBackground? pdfBackground = null;
-                if (doc.PdfPath != null)
-                {
-                    try
-                    {
-                        pdfBackground = await PdfBackground.LoadAsync(doc.PdfPath);
-                    }
-                    catch (Exception e)
-                    {
-                        DebugLog.Write("load PDF background", e);
-                        ShowMessage(InfoBarSeverity.Warning, "PDF-Hintergrund nicht gefunden", $"{doc.PdfPath}: {DebugLog.Describe(e)}");
-                    }
-                }
-                ShowDocument(doc, pdfBackground);
-            }
-            settings.LastFile = path;
-            settings.Save();
-        }
-        catch (Exception e)
-        {
-            DebugLog.Write("open", e);
-            ShowMessage(InfoBarSeverity.Error, "Datei konnte nicht geöffnet werden", $"{path}: {DebugLog.Describe(e)}");
-        }
-    }
-
-    private void ShowDocument(XoppDocument doc, PdfBackground? pdfBackground)
-    {
-        document = doc;
-        pdf = pdfBackground;
-        inkTools.ClearSelection();
-        undo.Clear();
-        PagesPanel.Children.Clear();
-        foreach (var page in doc.Pages)
-        {
-            PagesPanel.Children.Add(CreatePageView(page));
-        }
-        OnPagesChanged();
-        SetDirty(false);
-        RefreshExplorer();
-        fitWidthPending = true;
-        Scroller.ScrollTo(0, 0, new ScrollingScrollOptions(ScrollingAnimationMode.Disabled));
-        FitWidthWhenReady();
-    }
-
-    private PageView CreatePageView(XoppPage page)
-    {
-        var view = new PageView(page, pdf);
-        inkTools.Attach(view);
-        ToolController.Attach(view);
-        view.Ink.StrokesCollected += (_, e) => OnStrokesCollected(view, e.Strokes);
-        view.Ink.StrokesErased += (_, e) =>
-        {
-            var edit = new PageEdit(page);
-            edit.RemovedStrokes.AddRange(e.Strokes);
-            undo.Push(edit);
-        };
-        return view;
-    }
-
-    /// <summary>Records new ink for undo; with shape recognition on, hand-drawn shapes become clean ones.</summary>
-    private async void OnStrokesCollected(PageView view, IReadOnlyList<Windows.UI.Input.Inking.InkStroke> strokes)
-    {
-        var page = view.Page;
-        var edit = new PageEdit(page);
-        foreach (var stroke in strokes.ToList())
-        {
-            var shape = RecognizeButton.IsChecked == true && !stroke.DrawingAttributes.DrawAsHighlighter
-                ? await ShapeRecognition.RecognizeAsync(stroke) : null;
-            if (shape != null && page.Ink!.GetStrokes().Contains(stroke))
-            {
-                PageEdit.RemoveStrokes(page, [stroke]);
-                page.Ink!.AddStroke(shape);
-                edit.AddedStrokes.Add(shape);
-            }
-            else
-            {
-                edit.AddedStrokes.Add(stroke);
-            }
-        }
-        undo.Push(edit);
-    }
-
-    private void OnPagesChanged()
-    {
-        tools.SetPages(PageViews);
-        viewTimer.Start();
-    }
-
-    private bool Save()
-    {
-        if (document.FilePath == null)
-        {
-            return false;
-        }
-        if (syncing)
-        {
-            // Git is committing and checking out the working tree right now.
-            ShowMessage(InfoBarSeverity.Informational, "Synchronisierung läuft",
-                "Gespeichert wird, sobald die Synchronisierung fertig ist.");
-            return false;
-        }
-        try
-        {
-            document.Save(document.FilePath);
-            SetDirty(false);
-            settings.LastFile = document.FilePath;
-            settings.Save();
-            RefreshExplorer();
-            return true;
-        }
-        catch (Exception e)
-        {
-            DebugLog.Write("save", e);
-            ShowMessage(InfoBarSeverity.Error, "Speichern fehlgeschlagen", $"{document.FilePath}: {DebugLog.Describe(e)}");
-            return false;
-        }
-    }
-
-    private async Task<bool> SaveAsAsync()
-    {
-        var picker = new FileSavePicker(AppWindow.Id)
-        {
-            SuggestedFileName = Path.GetFileNameWithoutExtension(document.FilePath ?? document.PdfPath ?? "Notizen"),
-        };
-        picker.FileTypeChoices.Add("Xournal++-Dokument", [".xopp"]);
-        var result = await picker.PickSaveFileAsync();
-        if (result == null)
-        {
-            return false;
-        }
-        document.FilePath = result.Path;
-        return Save();
-    }
-
-    private void SetDirty(bool value)
-    {
-        dirty = value;
-        string name = document.FilePath != null ? Path.GetFileName(document.FilePath) : "Unbenannt";
-        Title = $"{(dirty ? "• " : "")}{name} – Xournal Studio";
-    }
-
-    // ---------------------------------------------------------------- view
-
-    private void FitWidthWhenReady()
-    {
-        if (Scroller.ViewportWidth <= 0 || document.Pages.Count == 0)
+        if (await session.OfferRecoveryAsync())
         {
             return;
         }
-        fitWidthPending = false;
-        double pageWidth = document.Pages.Max(p => p.Width) + 32;
-        float zoom = (float)Math.Clamp(Scroller.ViewportWidth / pageWidth, Scroller.MinZoomFactor, Scroller.MaxZoomFactor);
-        Scroller.ZoomTo(zoom, System.Numerics.Vector2.Zero, new ScrollingZoomOptions(ScrollingAnimationMode.Disabled));
-
-        // Test hook: start at page XOURNAL_STUDIO_TEST_PAGE (1-based).
-        if (int.TryParse(Environment.GetEnvironmentVariable("XOURNAL_STUDIO_TEST_PAGE"), out int testPage) &&
-            testPage >= 1 && testPage <= PagesPanel.Children.Count)
+        string? file = fileToOpen ?? settings.LastFile;
+        if (file != null && File.Exists(file))
         {
-            PagesPanel.UpdateLayout();
-            double y = PagesPanel.Children[testPage - 1].ActualOffset.Y * zoom;
-            Scroller.ScrollTo(0, y, new ScrollingScrollOptions(ScrollingAnimationMode.Disabled));
+            await session.OpenAsync(file);
         }
     }
 
-    private void Zoom(float factor)
+    private void FocusDocument()
     {
-        var center = new System.Numerics.Vector2((float)Scroller.ViewportWidth / 2, (float)Scroller.ViewportHeight / 2);
-        Scroller.ZoomTo((float)Math.Clamp(Scroller.ZoomFactor * factor, Scroller.MinZoomFactor, Scroller.MaxZoomFactor), center);
-    }
-
-    private void OnScrollerSizeChanged(object sender, SizeChangedEventArgs e)
-    {
-        if (fitWidthPending)
+        if (!Scroller.Focus(FocusState.Programmatic))
         {
-            FitWidthWhenReady();
+            DebugLog.Write("focus document: not focusable");
         }
-        viewTimer.Start();
-    }
-
-    private void OnViewChanged(ScrollView sender, object args) => viewTimer.Start();
-
-    /// <summary>Renders PDF backgrounds of pages near the viewport at the current zoom; frees the others.</summary>
-    private void UpdateVisiblePages()
-    {
-        var viewport = new Rect(0, 0, Scroller.ViewportWidth, Scroller.ViewportHeight);
-        var near = new Rect(0, -viewport.Height, viewport.Width, viewport.Height * 3);
-        double scale = Scroller.ZoomFactor * (Content.XamlRoot?.RasterizationScale ?? 1.0);
-        DebugLog.Write($"zoom={Scroller.ZoomFactor} offset={Scroller.HorizontalOffset},{Scroller.VerticalOffset} " +
-            $"extent={Scroller.ExtentWidth}x{Scroller.ExtentHeight} viewport={Scroller.ViewportWidth}x{Scroller.ViewportHeight} " +
-            $"panel={PagesPanel.ActualWidth}x{PagesPanel.ActualHeight}");
-        foreach (var view in PageViews)
-        {
-            var bounds = view.TransformToVisual(Scroller).TransformBounds(new Rect(0, 0, view.Width, view.Height));
-            view.UpdateBackground(Intersects(bounds, near), scale);
-        }
-        if (PagesPanel.Children.Count > 0)
-        {
-            tools.SetCurrentPage(PagesPanel.Children[CurrentPageIndex()] as PageView);
-        }
-    }
-
-    /// <summary>The page in the middle of the viewport (or the last one above it).</summary>
-    private int CurrentPageIndex()
-    {
-        double middle = Scroller.ViewportHeight / 2;
-        int index = 0, i = 0;
-        foreach (var view in PageViews)
-        {
-            var bounds = view.TransformToVisual(Scroller).TransformBounds(new Rect(0, 0, view.Width, view.Height));
-            if (bounds.Top <= middle)
-            {
-                index = i;
-            }
-            i++;
-        }
-        return index;
-    }
-
-    private static bool Intersects(Rect a, Rect b) =>
-        a.Left < b.Right && b.Left < a.Right && a.Top < b.Bottom && b.Top < a.Bottom;
-
-    private void ShowMessage(InfoBarSeverity severity, string title, string message)
-    {
-        DebugLog.Write($"{severity}: {title}: {message}");
-        Info.Severity = severity;
-        Info.Title = title;
-        Info.Message = message;
-        Info.IsOpen = true;
     }
 
     // ---------------------------------------------------------------- window
 
-    /// <summary>
-    /// Shows a dialog with the pages' ink hidden. The experimental InkCanvas (2.6.6-experimental) renders and takes
-    /// pointer input above XAML popups, so mouse and pen clicks on dialog buttons went to the ink. Remove when the
-    /// Windows App SDK fixes it.
-    /// </summary>
-    private async Task<ContentDialogResult> ShowDialogAsync(ContentDialog dialog)
-    {
-        var views = PageViews.ToList();
-        foreach (var view in views)
-        {
-            view.InkCanvas.Visibility = Visibility.Collapsed;
-        }
-        try
-        {
-            return await dialog.ShowAsync();
-        }
-        finally
-        {
-            foreach (var view in views)
-            {
-                view.InkCanvas.Visibility = Visibility.Visible;
-            }
-        }
-    }
-
     private void OnActivated(object sender, WindowActivatedEventArgs args)
     {
-        // Like Xournal Studio: save when the window loses focus.
-        if (syncing)
+        if (args.WindowActivationState == WindowActivationState.Deactivated)
         {
-            return; // saved and refreshed when the sync is done
+            session.Deactivated();
         }
-        if (args.WindowActivationState == WindowActivationState.Deactivated && dirty && document.FilePath != null)
+        else if (!sync.IsSyncing)
         {
-            Save();
-        }
-        else if (args.WindowActivationState != WindowActivationState.Deactivated)
-        {
-            RefreshExplorer(); // files may have changed outside the app
+            RefreshExplorer(); // files may have changed outside the app (refreshed after a sync anyway)
         }
     }
 
     private async void OnClosing(AppWindow sender, AppWindowClosingEventArgs args)
     {
-        if (closeConfirmed || !dirty)
+        if (closeConfirmed)
         {
             return;
         }
-        if (document.FilePath != null)
-        {
-            if (Save())
-            {
-                return;
-            }
-            args.Cancel = true;
-            return;
-        }
-
         args.Cancel = true;
-        var dialog = new ContentDialog
-        {
-            XamlRoot = Content.XamlRoot,
-            Title = "Änderungen speichern?",
-            Content = "Das Dokument wurde noch nicht gespeichert.",
-            PrimaryButtonText = "Speichern",
-            SecondaryButtonText = "Nicht speichern",
-            CloseButtonText = "Abbrechen",
-            DefaultButton = ContentDialogButton.Primary,
-        };
-        var choice = await ShowDialogAsync(dialog);
-        if (choice == ContentDialogResult.None || (choice == ContentDialogResult.Primary && !await SaveAsAsync()))
+        if (!await session.ConfirmLeaveAsync())
         {
             return;
         }
         closeConfirmed = true;
+        await session.IdleAsync(); // the recovery copy is gone before the process ends
         Close();
     }
 
-    // ---------------------------------------------------------------- commands
+    // ---------------------------------------------------------------- file
 
     private async void OnNew(object sender, RoutedEventArgs e)
     {
-        if (await SaveBeforeReplacingAsync())
+        if (await session.ConfirmLeaveAsync())
         {
-            ShowDocument(XoppDocument.CreateNew(), null);
+            session.ShowNew();
         }
     }
 
@@ -424,35 +158,19 @@ public sealed partial class MainWindow : Window
         picker.FileTypeFilter.Add(".xopp");
         picker.FileTypeFilter.Add(".pdf");
         var result = await picker.PickSingleFileAsync();
-        if (result != null && await SaveBeforeReplacingAsync())
+        if (result != null && await session.ConfirmLeaveAsync())
         {
-            await OpenAsync(result.Path);
+            await session.OpenAsync(result.Path);
         }
     }
 
-    private async void OnSave(object sender, RoutedEventArgs e)
-    {
-        if (document.FilePath == null)
-        {
-            await SaveAsAsync();
-        }
-        else
-        {
-            Save();
-        }
-    }
+    private async void OnSave(object sender, RoutedEventArgs e) => await session.SaveOrSaveAsAsync();
 
-    private async void OnSaveAs(object sender, RoutedEventArgs e) => await SaveAsAsync();
+    private async void OnSaveAs(object sender, RoutedEventArgs e) => await session.SaveAsAsync();
 
-    /// <summary>Saves a modified document before another one replaces it; false = keep it open.</summary>
-    private async Task<bool> SaveBeforeReplacingAsync()
-    {
-        if (!dirty)
-        {
-            return true;
-        }
-        return document.FilePath != null ? Save() : await SaveAsAsync();
-    }
+    private void OnSync(object sender, RoutedEventArgs e) => sync.Sync(Explorer.RepositoryRoot);
+
+    // ---------------------------------------------------------------- edit
 
     private void OnUndo(object sender, RoutedEventArgs e)
     {
@@ -479,71 +197,48 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private void OnInsertPage(object sender, RoutedEventArgs e)
-    {
-        int index = document.Pages.Count == 0 ? -1 : CurrentPageIndex();
-        var current = index >= 0 ? document.Pages[index] : null;
-        var page = XoppPage.CreateGraph(current?.Width ?? XoppDocument.A4Width, current?.Height ?? XoppDocument.A4Height);
-        document.Pages.Insert(index + 1, page);
-        PagesPanel.Children.Insert(index + 1, CreatePageView(page));
-        OnPagesChanged();
-        SetDirty(true);
-    }
+    // ---------------------------------------------------------------- pages and view
+
+    private void OnInsertPage(object sender, RoutedEventArgs e) => pages.InsertAfterCurrent();
 
     private async void OnDeletePage(object sender, RoutedEventArgs e)
     {
-        if (document.Pages.Count <= 1)
+        var doc = session.Document;
+        if (doc.Pages.Count <= 1)
         {
             return;
         }
-        int index = CurrentPageIndex();
-        var page = document.Pages[index];
-        if (page.Strokes.Count > 0)
+        int index = pages.CurrentIndex;
+        var page = doc.Pages[index];
+        if ((page.Strokes.Count > 0 || page.Images.Any()) &&
+            !await dialogs.ConfirmAsync($"Seite {index + 1} löschen?", "Die Seite enthält Notizen.", "Löschen"))
         {
-            var dialog = new ContentDialog
-            {
-                XamlRoot = Content.XamlRoot,
-                Title = $"Seite {index + 1} löschen?",
-                Content = "Die Seite enthält Notizen.",
-                PrimaryButtonText = "Löschen",
-                CloseButtonText = "Abbrechen",
-                DefaultButton = ContentDialogButton.Close,
-            };
-            if (await ShowDialogAsync(dialog) != ContentDialogResult.Primary)
-            {
-                return;
-            }
+            return;
         }
-        document.Pages.RemoveAt(index);
-        PagesPanel.Children.RemoveAt(index);
-        inkTools.ClearSelection();
-        undo.Forget(page);
-        OnPagesChanged();
-        SetDirty(true);
+        pages.Remove(index);
     }
 
-    private void OnFitWidth(object sender, RoutedEventArgs e) => FitWidthWhenReady();
+    private void OnFitWidth(object sender, RoutedEventArgs e) => pages.FitWidth();
 
-    private void OnZoomIn(object sender, RoutedEventArgs e) => Zoom(1.25f);
+    private void OnZoomIn(object sender, RoutedEventArgs e) => pages.Zoom(1.25f);
 
-    private void OnZoomOut(object sender, RoutedEventArgs e) => Zoom(0.8f);
+    private void OnZoomOut(object sender, RoutedEventArgs e) => pages.Zoom(0.8f);
 
     // ---------------------------------------------------------------- explorer
-
-    private bool syncing;
 
     /// <summary>The chosen folder, otherwise the git repository of the open document.</summary>
     private string? ProjectFolder
     {
         get
         {
-            if (settings.ProjectFolder != null || document.FilePath == null)
+            string? file = session.Document.FilePath;
+            if (settings.ProjectFolder != null || file == null)
             {
                 return settings.ProjectFolder;
             }
             try
             {
-                return GitSync.FindRoot(Path.GetDirectoryName(document.FilePath)!);
+                return GitSync.FindRoot(Path.GetDirectoryName(file)!);
             }
             catch (Exception e)
             {
@@ -555,12 +250,12 @@ public sealed partial class MainWindow : Window
 
     private async void RefreshExplorer()
     {
-        if (syncing)
+        if (sync.IsSyncing)
         {
             return; // git status would compete with the sync for the index; refreshed afterwards
         }
-        await Explorer.ShowAsync(ProjectFolder, document.FilePath ?? document.PdfPath);
-        SyncMenuItem.IsEnabled = Explorer.RepositoryRoot != null && !syncing;
+        await Explorer.ShowAsync(ProjectFolder, session.OpenPath);
+        SyncMenuItem.IsEnabled = Explorer.RepositoryRoot != null && !sync.IsSyncing;
     }
 
     private void SetExplorerOpen(bool open)
@@ -589,360 +284,6 @@ public sealed partial class MainWindow : Window
         RefreshExplorer();
     }
 
-    private async void OnExplorerFileInvoked(object? sender, string path)
-    {
-        string ext = Path.GetExtension(path);
-        if (!ext.Equals(".xopp", StringComparison.OrdinalIgnoreCase) && !ext.Equals(".pdf", StringComparison.OrdinalIgnoreCase))
-        {
-            // Everything else opens in the app Windows has for it, as in File Explorer.
-            try
-            {
-                var file = await Windows.Storage.StorageFile.GetFileFromPathAsync(Path.GetFullPath(path));
-                if (!await Windows.System.Launcher.LaunchFileAsync(file))
-                {
-                    ShowMessage(InfoBarSeverity.Warning, "Datei konnte nicht geöffnet werden", path);
-                }
-            }
-            catch (Exception e)
-            {
-                DebugLog.Write($"launch {path}", e);
-                ShowMessage(InfoBarSeverity.Error, "Datei konnte nicht geöffnet werden", $"{path}: {DebugLog.Describe(e)}");
-            }
-            return;
-        }
-        bool isOpen = string.Equals(path, document.FilePath ?? document.PdfPath, StringComparison.OrdinalIgnoreCase);
-        if (!isOpen && !syncing && await SaveBeforeReplacingAsync())
-        {
-            await OpenAsync(path);
-        }
-        // The opened document takes the keyboard (as an app opened from File Explorer does): otherwise focus stays in
-        // the tree, and Del meant for a lasso selection would delete the file instead.
-        if (!Scroller.Focus(FocusState.Programmatic))
-        {
-            DebugLog.Write("focus document after opening it from the explorer: not focusable");
-        }
-    }
-
-    // ---------------------------------------------------------------- explorer: file commands
-
-    /// <summary>New document/folder, rename, delete from the explorer's context menu or keys (F2, Del).</summary>
-    private async void OnExplorerCommand(object? sender, ExplorerCommandRequest request)
-    {
-        if (syncing)
-        {
-            ShowMessage(InfoBarSeverity.Informational, "Synchronisierung läuft",
-                "Dateien und Ordner können geändert werden, sobald die Synchronisierung fertig ist.");
-            return;
-        }
-        string parent = request.IsFolder ? request.Path : Path.GetDirectoryName(request.Path)!;
-        try
-        {
-            switch (request.Command)
-            {
-                case ExplorerCommand.NewDocument:
-                    await NewDocumentAsync(parent);
-                    break;
-                case ExplorerCommand.NewFolder:
-                    await NewFolderAsync(parent);
-                    break;
-                case ExplorerCommand.Rename:
-                    await RenameAsync(request.Path, request.IsFolder);
-                    break;
-                case ExplorerCommand.Delete:
-                    await DeleteAsync(request.Path, request.IsFolder);
-                    break;
-            }
-        }
-        catch (Exception e)
-        {
-            DebugLog.Write($"explorer {request.Command} {request.Path}", e);
-            string title = request.Command switch
-            {
-                ExplorerCommand.NewDocument => "Dokument konnte nicht erstellt werden",
-                ExplorerCommand.NewFolder => "Ordner konnte nicht erstellt werden",
-                ExplorerCommand.Rename => "Umbenennen fehlgeschlagen",
-                _ => "Löschen fehlgeschlagen",
-            };
-            ShowMessage(InfoBarSeverity.Error, title, $"{request.Path}: {DebugLog.Describe(e)}");
-        }
-        RefreshExplorer();
-    }
-
-    /// <summary>A new, empty document (the same as Datei → Neu) saved in <paramref name="folder"/> and opened.</summary>
-    private async Task NewDocumentAsync(string folder)
-    {
-        string? name = await AskNameAsync("Neues Dokument",
-            Path.GetFileNameWithoutExtension(ProjectFiles.UniqueName(folder, "Neues Dokument", ProjectFiles.DocumentExtension)),
-            "Erstellen", n => ValidateNewName(folder, n + ProjectFiles.DocumentExtension, null));
-        if (name == null || !await SaveBeforeReplacingAsync())
-        {
-            return;
-        }
-        string path = Path.Combine(folder, name + ProjectFiles.DocumentExtension);
-        XoppDocument.CreateNew().Save(path);
-        await OpenAsync(path);
-    }
-
-    private async Task NewFolderAsync(string folder)
-    {
-        string? name = await AskNameAsync("Neuer Ordner", ProjectFiles.UniqueName(folder, "Neuer Ordner"), "Erstellen",
-            n => ValidateNewName(folder, n, null));
-        if (name != null)
-        {
-            Explorer.SelectAfterRefresh(await ProjectFiles.CreateFolderAsync(folder, name));
-        }
-    }
-
-    /// <summary>
-    /// Renames exactly this file (only the name before the extension is edited) or folder – nothing else is renamed
-    /// with it. The open document, if it is renamed (or lies in the folder), is saved before and opened again from its
-    /// new place; if its background PDF is renamed, the document refers to the new name and has to be saved.
-    /// </summary>
-    private async Task RenameAsync(string path, bool isFolder)
-    {
-        string parent = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(path))!;
-        string? edited = await AskNameAsync("Umbenennen", ProjectFiles.EditableName(path, isFolder), "Umbenennen",
-            n => ValidateNewName(parent, ProjectFiles.NewName(path, isFolder, n), path));
-        if (edited == null)
-        {
-            return;
-        }
-        string newName = ProjectFiles.NewName(path, isFolder, edited);
-        if (newName == Path.GetFileName(Path.TrimEndingDirectorySeparator(path)))
-        {
-            return;
-        }
-        bool fileAffected = ProjectFiles.IsAtOrBelow(document.FilePath, path);
-        if (fileAffected && !await SaveBeforeReplacingAsync())
-        {
-            return;
-        }
-        string renamed = await ProjectFiles.RenameAsync(path, isFolder, newName);
-        Explorer.SelectAfterRefresh(renamed);
-        if (fileAffected)
-        {
-            await OpenAsync(ProjectFiles.MapRenamed(document.FilePath!, path, renamed));
-        }
-        else if (ProjectFiles.IsAtOrBelow(document.PdfPath, path))
-        {
-            document.MovePdf(ProjectFiles.MapRenamed(document.PdfPath!, path, renamed));
-            SetDirty(true);
-        }
-    }
-
-    /// <summary>
-    /// Moves exactly this file or folder to the recycle bin after asking. The open document, if deleted (or its
-    /// background PDF), is saved first – so the recycle bin holds the latest notes – and closed.
-    /// </summary>
-    private async Task DeleteAsync(string path, bool isFolder)
-    {
-        string name = Path.GetFileName(Path.TrimEndingDirectorySeparator(path));
-        var dialog = new ContentDialog
-        {
-            XamlRoot = Content.XamlRoot,
-            Title = $"„{name}“ löschen?",
-            Content = isFolder
-                ? "Der Ordner wird mit allem, was darin ist, in den Papierkorb verschoben."
-                : "Die Datei wird in den Papierkorb verschoben.",
-            PrimaryButtonText = "Löschen",
-            CloseButtonText = "Abbrechen",
-            DefaultButton = ContentDialogButton.Close,
-        };
-        if (await ShowDialogAsync(dialog) != ContentDialogResult.Primary)
-        {
-            return;
-        }
-        if (ProjectFiles.IsAtOrBelow(document.FilePath, path) || ProjectFiles.IsAtOrBelow(document.PdfPath, path))
-        {
-            if (dirty && document.FilePath != null && !Save())
-            {
-                return;
-            }
-            ShowDocument(XoppDocument.CreateNew(), null);
-        }
-        await ProjectFiles.DeleteAsync(path, isFolder);
-    }
-
-    private static string? ValidateNewName(string folder, string name, string? current)
-    {
-        string? error = ProjectFiles.ValidateName(name);
-        string path = Path.Combine(folder, name);
-        if (error == null && Path.Exists(path) && !string.Equals(path, current, StringComparison.OrdinalIgnoreCase))
-        {
-            error = $"In diesem Ordner gibt es „{name}“ schon.";
-        }
-        return error;
-    }
-
-    /// <summary>Asks for a name; the button is enabled only while <paramref name="validate"/> finds no problem.</summary>
-    private async Task<string?> AskNameAsync(string title, string initial, string primary, Func<string, string?> validate)
-    {
-        var box = new TextBox { Text = initial, Header = "Name" };
-        var dialog = new ContentDialog
-        {
-            XamlRoot = Content.XamlRoot,
-            Title = title,
-            Content = box,
-            PrimaryButtonText = primary,
-            CloseButtonText = "Abbrechen",
-            DefaultButton = ContentDialogButton.Primary,
-        };
-        void Validate()
-        {
-            string? error = validate(box.Text);
-            box.Description = error;
-            dialog.IsPrimaryButtonEnabled = error == null;
-        }
-        box.TextChanged += (_, _) => Validate();
-        dialog.Opened += (_, _) =>
-        {
-            box.Focus(FocusState.Programmatic);
-            box.SelectAll();
-        };
-        Validate();
-        return await ShowDialogAsync(dialog) == ContentDialogResult.Primary ? box.Text : null;
-    }
-
-    /// <summary>Saves, then commits everything, pulls with rebase and pushes; reloads the document if the pull changed it.</summary>
-    private void OnSync(object sender, RoutedEventArgs e) => Sync();
-
-    private async void Sync()
-    {
-        string? root = Explorer.RepositoryRoot;
-        if (syncing || root == null)
-        {
-            return;
-        }
-        if (dirty && document.FilePath != null && !Save())
-        {
-            return;
-        }
-        syncing = true;
-        Explorer.IsSyncing = true;
-        SyncMenuItem.IsEnabled = false;
-        try
-        {
-            var result = await Task.Run(() =>
-                GitSync.Sync(root, GitCredentials.Get, Environment.MachineName, DateTimeOffset.Now));
-            bool documentChanged = result.PulledFiles.Any(f =>
-                SamePath(f, document.FilePath) || SamePath(f, document.PdfPath));
-            if (!documentChanged || await ResolvePulledDocumentAsync())
-            {
-                ShowMessage(InfoBarSeverity.Success, "Synchronisiert", Describe(result));
-            }
-        }
-        catch (GitSyncConflictException ex)
-        {
-            DebugLog.Write("sync conflict", ex);
-            ShowMessage(InfoBarSeverity.Error, "Konflikt beim Synchronisieren",
-                $"{ex.Message}. Die eigenen Änderungen sind committet, aber nicht hochgeladen; den Konflikt mit Git lösen.");
-        }
-        catch (Exception ex)
-        {
-            DebugLog.Write("sync", ex);
-            ShowMessage(InfoBarSeverity.Error, "Synchronisieren fehlgeschlagen", DebugLog.Describe(ex));
-        }
-        finally
-        {
-            syncing = false;
-            Explorer.IsSyncing = false;
-            if (dirty && document.FilePath != null && File.Exists(document.FilePath))
-            {
-                Save(); // notes written during the sync (or the own version the user chose to keep)
-            }
-            RefreshExplorer();
-        }
-    }
-
-    private static bool SamePath(string a, string? b) =>
-        b != null && string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase);
-
-    /// <summary>
-    /// The pull changed (or removed) the open document. With new notes in it the user decides; otherwise it is
-    /// reloaded – from the PDF when the .xopp is gone, or closed when nothing is left. False: a message is shown.
-    /// </summary>
-    private async Task<bool> ResolvePulledDocumentAsync()
-    {
-        if (dirty)
-        {
-            var dialog = new ContentDialog
-            {
-                XamlRoot = Content.XamlRoot,
-                Title = "Dokument wurde auf einem anderen Gerät geändert",
-                Content = "Die Synchronisierung hat das offene Dokument geändert, während es neue, nicht gespeicherte " +
-                    "Notizen hatte.",
-                PrimaryButtonText = "Neu laden (meine Notizen verwerfen)",
-                SecondaryButtonText = "Meine als Kopie speichern…",
-                CloseButtonText = "Meine behalten",
-                DefaultButton = ContentDialogButton.Secondary,
-            };
-            var choice = await ShowDialogAsync(dialog);
-            if (choice == ContentDialogResult.None)
-            {
-                // Saved when the sync ends, over the pulled version; git history keeps that one.
-                ShowMessage(InfoBarSeverity.Warning, "Eigene Version behalten",
-                    "Die geholte Version wird mit der eigenen überschrieben; sie bleibt in der Git-Historie.");
-                return false;
-            }
-            string? pulledPath = document.FilePath;
-            if (choice == ContentDialogResult.Secondary)
-            {
-                syncing = false; // the git work is done; saving the copy is allowed
-                bool saved = await SaveCopyAsync();
-                syncing = true;
-                if (!saved)
-                {
-                    ShowMessage(InfoBarSeverity.Warning, "Eigene Version behalten",
-                        "Keine Kopie gespeichert: die geholte Version wird mit der eigenen überschrieben; sie bleibt in der Git-Historie.");
-                    return false;
-                }
-            }
-            document.FilePath = pulledPath;
-        }
-
-        string? path = document.FilePath;
-        if (path != null && File.Exists(path))
-        {
-            await OpenAsync(path);
-            return true;
-        }
-        if (document.PdfPath != null && File.Exists(document.PdfPath))
-        {
-            await OpenAsync(document.PdfPath);
-            return true;
-        }
-        ShowDocument(XoppDocument.CreateNew(), null);
-        ShowMessage(InfoBarSeverity.Warning, "Dokument wurde auf einem anderen Gerät gelöscht oder umbenannt",
-            $"{path} gibt es nach der Synchronisierung nicht mehr.");
-        return false;
-    }
-
-    /// <summary>Saves the open document under a new name without making that the open file.</summary>
-    private async Task<bool> SaveCopyAsync()
-    {
-        string? original = document.FilePath;
-        bool saved = await SaveAsAsync();
-        if (!saved)
-        {
-            document.FilePath = original;
-        }
-        return saved;
-    }
-
-    private static string Describe(GitSyncResult result)
-    {
-        var parts = new List<string>();
-        if (result.PulledFiles.Count > 0)
-        {
-            parts.Add(result.PulledFiles.Count == 1 ? "1 Datei geholt" : $"{result.PulledFiles.Count} Dateien geholt");
-        }
-        if (result.Pushed)
-        {
-            parts.Add(result.Committed ? "Änderungen hochgeladen" : "Commits hochgeladen");
-        }
-        return parts.Count > 0 ? string.Join(", ", parts) + "." : "Alles war schon aktuell.";
-    }
-
     // ---------------------------------------------------------------- paste
 
     private const double Grid = 14.17;
@@ -954,7 +295,7 @@ public sealed partial class MainWindow : Window
     /// </summary>
     private async void OnPaste(object sender, RoutedEventArgs e)
     {
-        var page = document.Pages[CurrentPageIndex()];
+        var page = session.Document.Pages[pages.CurrentIndex];
         if (!ClipboardService.HasPicture() && page.Ink!.CanPasteFromClipboard())
         {
             PasteInk(page);
@@ -968,12 +309,12 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             DebugLog.Write("paste", ex);
-            ShowMessage(InfoBarSeverity.Warning, "Einfügen nicht möglich", DebugLog.Describe(ex));
+            messages.Show(InfoBarSeverity.Warning, "Einfügen nicht möglich", DebugLog.Describe(ex));
             return;
         }
         if (image == null)
         {
-            ShowMessage(InfoBarSeverity.Informational, "Nichts zum Einfügen in der Zwischenablage",
+            messages.Show(InfoBarSeverity.Informational, "Nichts zum Einfügen in der Zwischenablage",
                 "Einen PDF-Bereich oder Ausschnitt (Ausschneidetool: Win+Umschalt+S) kopieren, oder Striche mit dem Lasso.");
             return;
         }

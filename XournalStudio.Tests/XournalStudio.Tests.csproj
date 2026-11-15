@@ -23,6 +23,9 @@
     <Compile Include="..\XournalStudio\Services\ProjectFiles.cs" Link="Services\ProjectFiles.cs" />
     <Compile Include="..\XournalStudio\Services\FolderWatcher.cs" Link="Services\FolderWatcher.cs" />
     <Compile Include="..\XournalStudio\Services\DebugLog.cs" Link="Services\DebugLog.cs" />
+    <!-- Crash recovery copies. -->
+    <Compile Include="..\XournalStudio\Services\Recovery.cs" Link="Services\Recovery.cs" />
+    <Compile Include="..\XournalStudio\Services\AppSettings.cs" Link="Services\AppSettings.cs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="LibGit2Sharp" Version="0.32.0" />

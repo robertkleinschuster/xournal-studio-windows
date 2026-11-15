@@ -24,6 +24,9 @@ public sealed class XoppDocument
 
     public List<XoppPage> Pages { get; } = new();
 
+    /// <summary>When the document was created in this app (for the default file name); null for loaded files.</summary>
+    public DateTime? CreatedAt { get; set; }
+
     // The PDF reference as found in the file (may be relative); written back unchanged while it still fits.
     private (string? Domain, string? Filename) loadedPdfReference;
 
@@ -36,7 +39,7 @@ public sealed class XoppDocument
 
     public static XoppDocument CreateNew()
     {
-        var doc = new XoppDocument(NewXml());
+        var doc = new XoppDocument(NewXml()) { CreatedAt = DateTime.Now };
         doc.Pages.Add(XoppPage.CreateGraph(A4Width, A4Height));
         return doc;
     }
@@ -44,7 +47,7 @@ public sealed class XoppDocument
     /// <summary>A document with one page per PDF page, the PDF as background.</summary>
     public static XoppDocument FromPdf(string pdfPath, IReadOnlyList<(double Width, double Height)> pageSizes)
     {
-        var doc = new XoppDocument(NewXml()) { PdfPath = pdfPath };
+        var doc = new XoppDocument(NewXml()) { PdfPath = pdfPath, CreatedAt = DateTime.Now };
         for (int i = 0; i < pageSizes.Count; i++)
         {
             doc.Pages.Add(XoppPage.CreatePdf(pageSizes[i].Width, pageSizes[i].Height, i));
@@ -58,7 +61,37 @@ public sealed class XoppDocument
     /// </summary>
     public void MovePdf(string newPath) => PdfPath = newPath;
 
-    public static XoppDocument Load(string path)
+    /// <summary>
+    /// The name the first save suggests: the background PDF's name, otherwise upstream Xournal++'s default
+    /// "%F-Notiz-%H-%M" (German translation of "%F-Note-%H-%M") from the time the document was created.
+    /// </summary>
+    public string SuggestedName => FilePath != null ? Path.GetFileNameWithoutExtension(FilePath)
+        : PdfPath != null ? Path.GetFileNameWithoutExtension(PdfPath)
+        : DefaultName(CreatedAt ?? DateTime.Now);
+
+    /// <summary>
+    /// Where PDF references of a copy are made relative to: the document's file, or for a document never saved a file
+    /// next to its PDF (any place does when it has none).
+    /// </summary>
+    public string ReferenceBase => FilePath ?? Path.Combine(
+        Path.GetDirectoryName(PdfPath) ?? Path.GetTempPath(), SuggestedName + ".xopp");
+
+    public static string DefaultName(DateTime created) => created.ToString("yyyy-MM-dd'-Notiz-'HH-mm", System.Globalization.CultureInfo.InvariantCulture);
+
+    public static XoppDocument Load(string path) => Load(path, path);
+
+    /// <summary>
+    /// Loads a copy written by <see cref="Snapshot"/> (crash recovery): PDF references are resolved as from
+    /// <paramref name="referenceBase"/>, and the document's file is <paramref name="documentPath"/> (null: never saved).
+    /// </summary>
+    public static XoppDocument LoadCopy(string path, string? documentPath, string referenceBase)
+    {
+        var doc = Load(path, referenceBase);
+        doc.FilePath = documentPath;
+        return doc;
+    }
+
+    private static XoppDocument Load(string path, string referenceBase)
     {
         XDocument xml;
         using (var file = File.OpenRead(path))
@@ -89,13 +122,23 @@ public sealed class XoppDocument
         if (firstPdf != null)
         {
             doc.loadedPdfReference = ((string?)firstPdf.Attribute("domain"), (string?)firstPdf.Attribute("filename"));
-            doc.PdfPath = ResolvePdfPath(path, doc.loadedPdfReference.Domain, doc.loadedPdfReference.Filename);
+            doc.PdfPath = ResolvePdfPath(referenceBase, doc.loadedPdfReference.Domain, doc.loadedPdfReference.Filename);
         }
         return doc;
     }
 
     /// <summary>Writes "&lt;path&gt;~" first and replaces the file only once it is complete.</summary>
     public void Save(string path)
+    {
+        Write(Snapshot(path), path);
+        FilePath = path;
+    }
+
+    /// <summary>
+    /// The complete document as XML, independent of the live pages (so it can be written on another thread). PDF
+    /// references are written as from <paramref name="referenceBase"/>, the path the file is (or would be) saved at.
+    /// </summary>
+    public XDocument Snapshot(string referenceBase)
     {
         Root.SetAttributeValue("creator", XoppFormat.Creator);
         if (Root.Attribute("fileversion") == null)
@@ -115,7 +158,7 @@ public sealed class XoppDocument
                 var pageNo = (string?)background.Attribute("pageno");
                 background.RemoveAttributes();
                 background.SetAttributeValue("type", "pdf");
-                if (firstPdf && KeepsLoadedPdfReference(path))
+                if (firstPdf && KeepsLoadedPdfReference(referenceBase))
                 {
                     background.SetAttributeValue("domain", loadedPdfReference.Domain ?? "absolute");
                     background.SetAttributeValue("filename", loadedPdfReference.Filename);
@@ -123,14 +166,19 @@ public sealed class XoppDocument
                 else if (firstPdf && PdfPath != null)
                 {
                     background.SetAttributeValue("domain", "absolute");
-                    background.SetAttributeValue("filename", PdfReference(PdfPath, path));
+                    background.SetAttributeValue("filename", PdfReference(PdfPath, referenceBase));
                 }
                 background.SetAttributeValue("pageno", pageNo);
                 firstPdf = false;
             }
             output.Root!.Add(element);
         }
+        return output;
+    }
 
+    /// <summary>Writes a <see cref="Snapshot"/> gzip-compressed to "&lt;path&gt;~", then replaces the file.</summary>
+    public static void Write(XDocument snapshot, string path)
+    {
         string temp = path + "~";
         using (var file = File.Create(temp))
         using (var gzip = new GZipStream(file, CompressionLevel.Fastest))
@@ -141,10 +189,9 @@ public sealed class XoppDocument
             IndentChars = "",
         }))
         {
-            output.Save(writer);
+            snapshot.Save(writer);
         }
         File.Move(temp, path, overwrite: true);
-        FilePath = path;
     }
 
     // The reference read from the file is written back as it was while it still names the PDF from where the

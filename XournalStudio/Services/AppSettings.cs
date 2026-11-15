@@ -20,9 +20,10 @@ public sealed class AppSettings
 
     private static string? TestFolder => Environment.GetEnvironmentVariable("XOURNAL_STUDIO_CONFIG_DIR");
 
-    // XOURNAL_STUDIO_CONFIG_DIR overrides the folder (for tests).
-    private static string FilePath =>
-        Path.Combine(TestFolder ?? Path.Combine(LocalAppData, "XournalStudioForWindows"), "settings.json");
+    /// <summary>The app's own folder (settings, recovery); XOURNAL_STUDIO_CONFIG_DIR overrides it (for tests).</summary>
+    public static string Folder => TestFolder ?? Path.Combine(LocalAppData, "XournalStudioForWindows");
+
+    private static string FilePath => Path.Combine(Folder, "settings.json");
 
     // Settings of the app's earlier name.
     private static string OldFilePath => Path.Combine(LocalAppData, "XournalStudioWinUI", "settings.json");
