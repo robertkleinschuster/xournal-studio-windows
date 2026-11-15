@@ -116,9 +116,11 @@ public sealed class Recovery
         {
             process = Process.GetProcessById(info.ProcessId);
         }
-        catch (ArgumentException)
+        catch (ArgumentException e)
         {
-            return false; // documented: no process with this id is running
+            // Documented: no process with this id is running.
+            DebugLog.Write($"recovery: process {info.ProcessId} not running (session ended)", e);
+            return false;
         }
         using (process)
         {

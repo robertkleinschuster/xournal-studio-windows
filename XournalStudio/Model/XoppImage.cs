@@ -40,17 +40,6 @@ public static class XoppImage
         e.SetAttributeValue("bottom", Format(bounds.Bottom));
     }
 
-    /// <summary>A copy of the element at another position (same data, all other attributes kept).</summary>
-    public static XElement WithBounds(XElement e, Rect bounds)
-    {
-        var copy = new XElement(e);
-        copy.SetAttributeValue("left", Format(bounds.Left));
-        copy.SetAttributeValue("top", Format(bounds.Top));
-        copy.SetAttributeValue("right", Format(bounds.Right));
-        copy.SetAttributeValue("bottom", Format(bounds.Bottom));
-        return copy;
-    }
-
     /// <summary>The bounds after scaling/moving by <paramref name="m"/> (no rotation: pictures stay upright).</summary>
     public static Rect Transform(Rect bounds, System.Numerics.Matrix3x2 m)
     {

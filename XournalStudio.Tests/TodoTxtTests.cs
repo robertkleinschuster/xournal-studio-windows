@@ -92,4 +92,24 @@ public sealed class TodoTxtTests : IDisposable
         Assert.Equal([0xEF, 0xBB, 0xBF], bytes[..3]);
         Assert.Equal("ä\n", new System.Text.UTF8Encoding(false).GetString(bytes, 3, bytes.Length - 3));
     }
+
+    [Fact]
+    public void Utf16StaysAndAnsiIsRefusedUnchanged()
+    {
+        string utf16 = Path.Combine(temp, "u16.txt");
+        File.WriteAllText(utf16, "GET HÜ\r\n", new System.Text.UnicodeEncoding(false, true));
+        Assert.True(new TaskFile(utf16).Replace("GET HÜ", "x GET HÜ"));
+        Assert.Equal("x GET HÜ\r\n", File.ReadAllText(utf16, System.Text.Encoding.Unicode));
+        Assert.Equal([0xFF, 0xFE], File.ReadAllBytes(utf16)[..2]);
+
+        string ansi = Path.Combine(temp, "ansi.txt");
+        byte[] latin1 = [(byte)'H', 0xDC, (byte)'\n']; // "HÜ" in Windows-1252
+        File.WriteAllBytes(ansi, latin1);
+        Assert.Throws<InvalidDataException>(() => new TaskFile(ansi).Replace("x", "y"));
+        Assert.Equal(latin1, File.ReadAllBytes(ansi));
+    }
+
+    [Fact]
+    public void TagValuesAreLiteral() =>
+        Assert.Equal("a doc:%C3%9C$_.xopp b", TodoTxt.SetTag("a doc:old b", "doc", "%C3%9C$_.xopp"));
 }

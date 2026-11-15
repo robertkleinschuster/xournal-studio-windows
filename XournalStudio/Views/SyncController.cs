@@ -95,9 +95,7 @@ public sealed class SyncController(DocumentSession session, Dialogs dialogs, Mes
             }
             if (choice == ContentDialogResult.Secondary)
             {
-                session.SaveBlocked = false; // the git work is done; saving the copy is allowed
-                bool saved = await session.SaveCopyAsync();
-                session.SaveBlocked = true;
+                bool saved = await session.SaveCopyAsync(); // git's work is done by now
                 if (!saved)
                 {
                     KeepOwn("Keine Kopie gespeichert: die geholte Version wird beim Speichern mit der eigenen " +

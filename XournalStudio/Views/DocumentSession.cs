@@ -206,6 +206,23 @@ public sealed class DocumentSession
                 "Speichern unter ist möglich, sobald die Synchronisierung fertig ist.");
             return false;
         }
+        string? picked = await PickSavePathAsync();
+        if (picked == null)
+        {
+            return false;
+        }
+        string? previous = Document.FilePath;
+        Document.FilePath = picked;
+        if (!Save())
+        {
+            Document.FilePath = previous;
+            return false;
+        }
+        return true;
+    }
+
+    private async Task<string?> PickSavePathAsync()
+    {
         string? folder = Path.GetDirectoryName(Document.FilePath ?? Document.PdfPath) ?? projectFolder();
         var picker = new FileSavePicker(window) { SuggestedFileName = Document.SuggestedName };
         if (folder != null && Directory.Exists(folder))
@@ -213,19 +230,7 @@ public sealed class DocumentSession
             picker.SuggestedFolder = folder;
         }
         picker.FileTypeChoices.Add("Xournal++-Dokument", [".xopp"]);
-        var result = await picker.PickSaveFileAsync();
-        if (result == null)
-        {
-            return false;
-        }
-        string? previous = Document.FilePath;
-        Document.FilePath = result.Path;
-        if (!Save())
-        {
-            Document.FilePath = previous;
-            return false;
-        }
-        return true;
+        return (await picker.PickSaveFileAsync())?.Path;
     }
 
     /// <summary>Speichern (Ctrl+S): to the document's file, or where the user picks for a new one.</summary>
@@ -272,13 +277,27 @@ public sealed class DocumentSession
         return choice != SaveChoice.Cancelled;
     }
 
-    /// <summary>Saves under a new name without making that the open file (the sync's "keep mine as a copy").</summary>
+    /// <summary>
+    /// Writes the document to a file the user picks without making that the open file (the sync's "keep mine as a
+    /// copy"): the document stays as it is – its file, its changes, its recovery copy.
+    /// </summary>
     public async Task<bool> SaveCopyAsync()
     {
-        string? original = Document.FilePath;
-        bool saved = await SaveAsAsync();
-        Document.FilePath = original;
-        return saved;
+        string? path = await PickSavePathAsync();
+        if (path == null)
+        {
+            return false;
+        }
+        try
+        {
+            XoppDocument.Write(Document.Snapshot(path), path);
+            return true;
+        }
+        catch (Exception e)
+        {
+            messages.Error("save copy", "Speichern fehlgeschlagen", e, path);
+            return false;
+        }
     }
 
     private void SetDirty(bool value)

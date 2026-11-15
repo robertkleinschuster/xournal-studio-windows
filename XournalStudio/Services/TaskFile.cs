@@ -60,11 +60,40 @@ public sealed class TaskFile(string path)
         return true;
     }
 
+    /// <summary>
+    /// UTF-8 (todo.txt's encoding; with or without byte order mark) or UTF-16 with byte order mark, written back the
+    /// same way. Anything else (an ANSI file) is refused rather than damaged: <see cref="InvalidDataException"/>.
+    /// </summary>
     private Content Read()
     {
         byte[] bytes = File.ReadAllBytes(Path);
-        bool bom = bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF;
-        string text = new UTF8Encoding(false).GetString(bytes, bom ? 3 : 0, bytes.Length - (bom ? 3 : 0));
+        Encoding encoding;
+        int skip;
+        if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
+        {
+            (encoding, skip) = (new UTF8Encoding(true, true), 3);
+        }
+        else if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
+        {
+            (encoding, skip) = (new UnicodeEncoding(false, true, true), 2);
+        }
+        else if (bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF)
+        {
+            (encoding, skip) = (new UnicodeEncoding(true, true, true), 2);
+        }
+        else
+        {
+            (encoding, skip) = (new UTF8Encoding(false, true), 0);
+        }
+        string text;
+        try
+        {
+            text = encoding.GetString(bytes, skip, bytes.Length - skip);
+        }
+        catch (DecoderFallbackException e)
+        {
+            throw new InvalidDataException($"{Path} ist nicht in UTF-8 gespeichert (todo.txt-Format); unverändert gelassen.", e);
+        }
         string newLine = text.Contains("\r\n") ? "\r\n" : "\n";
         bool finalNewline = text.EndsWith('\n');
         var lines = text.Split('\n').Select(l => l.TrimEnd('\r')).ToList();
@@ -77,7 +106,7 @@ public sealed class TaskFile(string path)
             lines.Clear();
             finalNewline = true;
         }
-        return new Content(lines, newLine, new UTF8Encoding(bom), finalNewline);
+        return new Content(lines, newLine, encoding, finalNewline);
     }
 
     private sealed record Content(List<string> Lines, string NewLine, Encoding Encoding, bool FinalNewline);

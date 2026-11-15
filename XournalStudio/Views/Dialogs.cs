@@ -9,12 +9,28 @@ public sealed class Dialogs(Func<XamlRoot> root, Func<IEnumerable<PageView>> pag
     /// <summary>Raised before a dialog opens (flyouts at the page close: they would stay above the dialog).</summary>
     public event EventHandler? Opening;
 
+    // WinUI shows one ContentDialog at a time (a second ShowAsync throws): later ones wait for the open one.
+    private readonly SemaphoreSlim oneAtATime = new(1, 1);
+
     /// <summary>
     /// Shows a dialog with the pages' ink hidden. The experimental InkCanvas (2.6.6-experimental) renders and takes
     /// pointer input above XAML popups, so mouse and pen clicks on dialog buttons went to the ink
     /// (microsoft-ui-xaml #10461/#11928). Remove the hiding when the Windows App SDK fixes it.
     /// </summary>
     public async Task<ContentDialogResult> ShowAsync(ContentDialog dialog)
+    {
+        await oneAtATime.WaitAsync();
+        try
+        {
+            return await ShowNowAsync(dialog);
+        }
+        finally
+        {
+            oneAtATime.Release();
+        }
+    }
+
+    private async Task<ContentDialogResult> ShowNowAsync(ContentDialog dialog)
     {
         Opening?.Invoke(this, EventArgs.Empty);
         dialog.XamlRoot = root();

@@ -30,10 +30,12 @@ public sealed class EditCommands(
         }
         var page = current.Page;
         var edit = new PageEdit(page);
-        PageEdit.RemoveStrokes(page, current.Strokes);
-        edit.RemovedStrokes.AddRange(current.Strokes);
-        page.RemoveImages(current.Images);
-        edit.RemovedImages.AddRange(current.Images);
+        // Only what is still on the page (the eraser may have taken a selected stroke meanwhile).
+        edit.RemovedStrokes.AddRange(PageEdit.SelectOnly(page, current.Strokes));
+        page.Ink!.DeleteSelected();
+        var images = current.Images.Where(i => i.Parent != null).ToList();
+        page.RemoveImages(images);
+        edit.RemovedImages.AddRange(images);
         selection.Clear();
         undo.Push(edit);
         return true;

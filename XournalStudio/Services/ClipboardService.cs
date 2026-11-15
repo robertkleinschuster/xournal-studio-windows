@@ -16,9 +16,6 @@ public static class ClipboardService
 {
     private const string ClipFormat = "XournalStudio.Clip";
 
-    /// <summary>True if the clipboard holds a group copied by this app (preferred over ink and bitmaps).</summary>
-    public static bool HasClip() => Clipboard.GetContent().Contains(ClipFormat);
-
     /// <summary>The group copied by this app, or null.</summary>
     public static async Task<XElement?> GetClipAsync()
     {

@@ -64,6 +64,9 @@ public class ShapeAndMoveTests
         StrokeConverter.Transform(e, m);
         Assert.Equal("10 10 50 30", e.Value);
         Assert.Equal("1.41 1.2", (string?)e.Attribute("width"));
+        var odd = XElement.Parse("""<stroke>1 2 3</stroke>""");
+        StrokeConverter.Transform(odd, System.Numerics.Matrix3x2.CreateTranslation(1, 1));
+        Assert.Equal("2 3 3", odd.Value); // a stray number stays
         Assert.Equal(new Rect(10, 10, 40, 20), XoppImage.Transform(new Rect(10, 10, 20, 10), m));
     }
 

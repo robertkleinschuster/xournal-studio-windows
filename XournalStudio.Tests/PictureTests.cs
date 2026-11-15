@@ -14,7 +14,7 @@ public class PictureTests
         Assert.Equal("image", e.Name);
         Assert.Equal(new Rect(10, 20, 100, 50), XoppImage.GetBounds(e));
         Assert.Equal([0x89, 0x50, 0x4e, 0x47], XoppImage.GetData(e));
-        var moved = XoppImage.WithBounds(e, new Rect(30, 40, 100, 50));
+        var moved = XoppClip.Transformed(e, System.Numerics.Matrix3x2.CreateTranslation(20, 20));
         Assert.Equal("30", (string?)moved.Attribute("left"));
         Assert.Equal("90", (string?)moved.Attribute("bottom"));
         Assert.Equal(e.Value, moved.Value);
@@ -25,7 +25,7 @@ public class PictureTests
     public void MovedPicturesKeepAllTheirAttributes()
     {
         var e = XElement.Parse("""<teximage text="" left="1" top="2" right="3" bottom="4" natural_size="2 2" portal="abc">JVBERi0=</teximage>""");
-        var moved = XoppImage.WithBounds(e, new Rect(10, 20, 2, 2));
+        var moved = XoppClip.Transformed(e, System.Numerics.Matrix3x2.CreateTranslation(9, 18));
         Assert.Equal(["text", "left", "top", "right", "bottom", "natural_size", "portal"], moved.Attributes().Select(a => a.Name.LocalName));
         Assert.Equal("22", (string?)moved.Attribute("bottom"));
         Assert.Equal("JVBERi0=", moved.Value);

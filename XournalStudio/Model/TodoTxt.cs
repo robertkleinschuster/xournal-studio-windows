@@ -139,7 +139,7 @@ public static class TodoTxt
         if (pattern.IsMatch(description))
         {
             string replaced = value != null
-                ? pattern.Replace(description, $"{key}:{value}", 1)
+                ? pattern.Replace(description, _ => $"{key}:{value}", 1) // literal: no $ substitutions
                 : pattern.Replace(description, "", 1);
             return Regex.Replace(replaced, @"\s{2,}", " ").Trim();
         }

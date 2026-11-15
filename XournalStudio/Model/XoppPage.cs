@@ -169,7 +169,7 @@ public sealed class XoppPage
         {
             XoppImage.SetBounds(image, XoppImage.Transform(XoppImage.GetBounds(image), m));
         }
-        RaiseImagesChanged(images);
+        ImagesMoved?.Invoke(this, images);
     }
 
     /// <summary>The stroke as a .xopp element: its original element (exact widths, unknown attributes) or converted.</summary>
@@ -198,6 +198,9 @@ public sealed class XoppPage
 
     /// <summary>Raised when pictures are added or removed.</summary>
     public event EventHandler? ImagesChanged;
+
+    /// <summary>Raised when pictures got new bounds (moved, scaled).</summary>
+    public event EventHandler<IReadOnlyCollection<XElement>>? ImagesMoved;
 
     /// <summary>Adds pictures (new ones go to the top layer, like strokes).</summary>
     public void AddImages(IReadOnlyCollection<XElement> images)

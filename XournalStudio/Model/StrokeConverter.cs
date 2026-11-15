@@ -136,6 +136,10 @@ public static class StrokeConverter
             double y = m.M22 == 1 && m.M12 == 0 ? coords[i + 1] + m.M32 : p.Y;
             moved.Append(Format(x)).Append(' ').Append(Format(y));
         }
+        if (coords.Count % 2 == 1)
+        {
+            moved.Append(' ').Append(Format(coords[^1])); // a stray number is written back as read
+        }
         e.Value = moved.ToString();
     }
 

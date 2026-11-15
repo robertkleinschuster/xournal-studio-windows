@@ -178,6 +178,7 @@ public sealed class SelectionTool(UndoStack undo)
         {
             return;
         }
+        Clear();
         var ink = page.Page.Ink!;
         ink.SelectWithPolyLine(polygon);
         var strokes = ink.GetStrokes().Where(s => s.Selected).ToList();
@@ -185,6 +186,7 @@ public sealed class SelectionTool(UndoStack undo)
         var images = page.Page.Images.Where(i => Corners(XoppImage.GetBounds(i)).All(c => Inside(c, polygon))).ToList();
         if (strokes.Count + images.Count > 0 || area != null)
         {
+            Clear(); // one may have been made by keyboard during the drag (Ctrl+V, Ctrl+A)
             Current = new Selection(page, strokes, images, area);
             SelectionChanged?.Invoke(this, EventArgs.Empty);
         }

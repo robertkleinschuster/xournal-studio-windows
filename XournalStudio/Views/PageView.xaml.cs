@@ -65,6 +65,30 @@ public sealed partial class PageView : UserControl
                 ShowPictures(picturePixelsPerPoint);
             }
         };
+        page.ImagesMoved += (_, moved) => MovePictures(moved);
+    }
+
+    // Only the moved pictures change: new place and size; decoded again only when the size changed.
+    private void MovePictures(IReadOnlyCollection<XElement> moved)
+    {
+        foreach (var element in moved)
+        {
+            if (FindPicture(element) is not { } image)
+            {
+                continue;
+            }
+            var bounds = XoppImage.GetBounds(element);
+            bool resized = Math.Abs(bounds.Width - image.Width) > 0.5;
+            image.RenderTransform = null; // the selection's live preview
+            Microsoft.UI.Xaml.Controls.Canvas.SetLeft(image, bounds.Left);
+            Microsoft.UI.Xaml.Controls.Canvas.SetTop(image, bounds.Top);
+            image.Width = bounds.Width;
+            image.Height = bounds.Height;
+            if (resized)
+            {
+                LoadPicture(image, element, (uint)Math.Clamp(bounds.Width * picturePixelsPerPoint, 1, MaxPdfPixelWidth));
+            }
+        }
     }
 
     /// <summary>

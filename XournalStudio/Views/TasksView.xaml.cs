@@ -77,7 +77,7 @@ public sealed partial class TasksView : UserControl
         {
             lines = file!.ReadLines();
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException)
         {
             DebugLog.Write($"read {file!.Path}", e);
             Failed?.Invoke(this, ("todo.txt konnte nicht gelesen werden", DebugLog.Describe(e)));
@@ -127,7 +127,7 @@ public sealed partial class TasksView : UserControl
                     "Eine andere App oder die Synchronisierung hat die Zeile geändert; die Liste ist neu geladen."));
             }
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException)
         {
             DebugLog.Write($"{what} {file.Path}", e);
             Failed?.Invoke(this, ("todo.txt konnte nicht geschrieben werden", DebugLog.Describe(e)));
