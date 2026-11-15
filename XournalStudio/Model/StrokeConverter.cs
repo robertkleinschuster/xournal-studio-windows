@@ -26,6 +26,35 @@ public static class StrokeConverter
 
     private static readonly InkStrokeBuilder Builder = new();
 
+    /// <summary>
+    /// A stroke element as drawn by Xournal: its color (with the file's alpha), its points and the width of each
+    /// segment (the per-segment widths of a pressure stroke, otherwise the stroke's width). Null without points.
+    /// </summary>
+    public static StrokeShape? ReadShape(XElement e)
+    {
+        var coords = ParseNumbers(e.Value);
+        int count = coords.Count / 2;
+        if (count == 0)
+        {
+            return null;
+        }
+        var points = new List<Point>(count);
+        for (int i = 0; i < count; i++)
+        {
+            points.Add(new Point(coords[2 * i], coords[2 * i + 1]));
+        }
+        var widths = ParseNumbers((string?)e.Attribute("width") ?? "1");
+        double width = widths.Count > 0 && widths[0] > 0 ? widths[0] : 1;
+        var segments = new List<double>(Math.Max(0, count - 1));
+        for (int i = 0; i < count - 1; i++)
+        {
+            segments.Add(widths.Count > 1 ? widths[Math.Min(i + 1, widths.Count - 1)] : width);
+        }
+        bool highlighter = (string?)e.Attribute("tool") == "highlighter";
+        return new StrokeShape(XoppColor.Parse((string?)e.Attribute("color"), Microsoft.UI.Colors.Black), highlighter,
+            width, points, segments);
+    }
+
     public static InkStroke? FromXml(XElement e)
     {
         var coords = ParseNumbers(e.Value);
@@ -194,4 +223,12 @@ public static class XoppColor
     }
 
     public static string Format(Color c) => $"#{c.R:x2}{c.G:x2}{c.B:x2}{c.A:x2}";
+}
+
+/// <summary>A stroke as Xournal draws it (see <see cref="StrokeConverter.ReadShape"/>).</summary>
+public sealed record StrokeShape(Color Color, bool Highlighter, double Width, IReadOnlyList<Point> Points,
+    IReadOnlyList<double> SegmentWidths)
+{
+    /// <summary>True when all segments have the stroke's width (no pressure): drawn as one polyline.</summary>
+    public bool EvenWidth => SegmentWidths.All(w => w == Width);
 }

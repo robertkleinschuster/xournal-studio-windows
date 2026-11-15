@@ -25,6 +25,7 @@ public sealed partial class MainWindow : Window
     private readonly DocumentSession session;
     private readonly SyncController sync;
     private readonly EditCommands edit;
+    private readonly PdfExportCommand export;
     private bool closeConfirmed;
 
     public MainWindow(string? fileToOpen)
@@ -49,6 +50,7 @@ public sealed partial class MainWindow : Window
         var explorerCommands = new ExplorerCommands(Explorer, session, sync, dialogs, messages, FocusDocument, RefreshExplorer);
         edit = new EditCommands(inkTools.Selection, pages, undo, messages, () => Toolbar.ActiveTool = SelectButton);
         var selectionFlyout = new SelectionFlyout(edit, Root);
+        export = new PdfExportCommand(AppWindow.Id, session, messages, () => inkTools.Selection.Current?.IsPreviewing == true);
         inkTools.Selection.SelectionChanged += (_, _) => selectionFlyout.ShowFor(inkTools.Selection.Current);
         inkTools.Selection.DragStarted += (_, _) => selectionFlyout.Hide();
         dialogs.Opening += (_, _) => selectionFlyout.Hide();
@@ -192,6 +194,8 @@ public sealed partial class MainWindow : Window
     private async void OnSaveAs(object sender, RoutedEventArgs e) => await session.SaveAsAsync();
 
     private void OnSync(object sender, RoutedEventArgs e) => sync.Sync(Explorer.RepositoryRoot);
+
+    private async void OnExportPdf(object sender, RoutedEventArgs e) => await export.ExportAsync();
 
     // ---------------------------------------------------------------- edit
 

@@ -43,22 +43,29 @@ public sealed class XoppPage
     public IReadOnlyList<InkStroke> Strokes =>
         Ink?.GetStrokes() ?? (IReadOnlyList<InkStroke>?)pendingStrokes?.Select(p => p.Stroke).ToList() ?? [];
 
-    public bool IsPdf => (string?)Background.Attribute("type") == "pdf";
+    public bool IsPdf => IsPdfBackground(Background);
 
     /// <summary>0-based page index in the background PDF.</summary>
-    public int PdfPageIndex
+    public int PdfPageIndex => PdfPageIndexOf(Background);
+
+    public Color BackgroundColor => ColorOf(Background);
+
+    public BackgroundStyle Style => StyleOf(Background);
+
+    /// <summary>0-based page index in the background PDF of a &lt;background&gt; element.</summary>
+    public static int PdfPageIndexOf(XElement background)
     {
-        get
-        {
-            // Older files contain values like "3ll".
-            var digits = new string(((string?)Background.Attribute("pageno") ?? "1").TakeWhile(char.IsDigit).ToArray());
-            return Math.Max(0, (int.TryParse(digits, out int n) ? n : 1) - 1);
-        }
+        // Older files contain values like "3ll".
+        var digits = new string(((string?)background.Attribute("pageno") ?? "1").TakeWhile(char.IsDigit).ToArray());
+        return Math.Max(0, (int.TryParse(digits, out int n) ? n : 1) - 1);
     }
 
-    public Color BackgroundColor => XoppColor.Parse((string?)Background.Attribute("color"), Microsoft.UI.Colors.White);
+    public static bool IsPdfBackground(XElement background) => (string?)background.Attribute("type") == "pdf";
 
-    public BackgroundStyle Style => (string?)Background.Attribute("style") switch
+    public static Color ColorOf(XElement background) =>
+        XoppColor.Parse((string?)background.Attribute("color"), Microsoft.UI.Colors.White);
+
+    public static BackgroundStyle StyleOf(XElement background) => (string?)background.Attribute("style") switch
     {
         "lined" => BackgroundStyle.Lined,
         "ruled" => BackgroundStyle.Ruled,

@@ -28,9 +28,12 @@
     <Compile Include="..\XournalStudio\Services\AppSettings.cs" Link="Services\AppSettings.cs" />
     <!-- Tasks (todo.txt). -->
     <Compile Include="..\XournalStudio\Services\TaskFile.cs" Link="Services\TaskFile.cs" />
+    <!-- PDF export. -->
+    <Compile Include="..\XournalStudio\Services\PdfExport.cs" Link="Services\PdfExport.cs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="LibGit2Sharp" Version="0.32.0" />
+    <PackageReference Include="PDFsharp" Version="6.2.4" />
     <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="2.6.6-experimental" />
     <PackageReference Include="Microsoft.WindowsAppSDK.DWrite" Version="2.6.6-experimental" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />

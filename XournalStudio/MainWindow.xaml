@@ -41,6 +41,12 @@
                         <KeyboardAccelerator Modifiers="Control,Shift" Key="S" />
                     </MenuFlyoutItem.KeyboardAccelerators>
                 </MenuFlyoutItem>
+                <MenuFlyoutItem Text="Als PDF exportieren…" Click="OnExportPdf">
+                    <MenuFlyoutItem.Icon><FontIcon Glyph="&#xEA90;" /></MenuFlyoutItem.Icon>
+                    <MenuFlyoutItem.KeyboardAccelerators>
+                        <KeyboardAccelerator Modifiers="Control" Key="E" />
+                    </MenuFlyoutItem.KeyboardAccelerators>
+                </MenuFlyoutItem>
                 <MenuFlyoutSeparator />
                 <MenuFlyoutItem Text="Ordner öffnen…" Click="OnOpenFolder">
                     <MenuFlyoutItem.Icon><SymbolIcon Symbol="Folder" /></MenuFlyoutItem.Icon>

@@ -302,3 +302,10 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 - `examples/Schaltungen.xopp` reset; when the reviews are clean: merge `overnight` into main, push, install.
 - Next feature: **PDF export** (approved 2026-11-16). Later candidates: pages of another PDF, page reordering, text.
 - Still open: report the ink-over-dialog bug / comment on PR #12292 (public, needs approval).
+- **Partial eraser approved (user, 2026-11-16)** as a deliberate exception (Windows ink erases whole strokes only):
+  a toggle next to the eraser switches the eraser (tool and the pen's eraser end) between whole strokes (native) and
+  partial, without changing the active tool. Partial: the radius is exact and shown as a circle at the pen (hover and
+  while erasing) – exactly what is inside the circle disappears, nothing else (cut where the ink's edge, i.e. the
+  centerline plus half the stroke width, meets the circle).
+- **PDF export:** PDFsharp pinned to 6.2.4, the last MIT version (6.5.0 is AGPL-3.0 with license acceptance – a
+  license change for this project is the user's decision).

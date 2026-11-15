@@ -35,5 +35,6 @@
     <PackageReference Include="Meziantou.Framework.Win32.CredentialManager" Version="3.0.11" />
     <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="2.6.6-experimental" />
     <PackageReference Include="Microsoft.WindowsAppSDK.DWrite" Version="2.6.6-experimental" />
+    <PackageReference Include="PDFsharp" Version="6.2.4" />
   </ItemGroup>
 </Project>

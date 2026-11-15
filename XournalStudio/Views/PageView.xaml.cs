@@ -163,51 +163,26 @@ public sealed partial class PageView : UserControl
     }
 }
 
-/// <summary>Xournal's ruling patterns (sizes from Xournal++'s background views).</summary>
+/// <summary>A page's ruling (<see cref="BackgroundRuling"/>) as XAML geometry.</summary>
 internal static class BackgroundPattern
 {
-    private static readonly Color Silver = Color.FromArgb(255, 0xc0, 0xc0, 0xc0);
-    private static readonly Color Blue = Color.FromArgb(255, 0x40, 0xa0, 0xff);
-
     public static Geometry? Create(BackgroundStyle style, double width, double height, out Color color)
     {
-        var lines = new GeometryGroup();
-        color = Silver;
-        switch (style)
+        var ruling = BackgroundRuling.For(style, width, height);
+        color = ruling?.Color ?? Colors.Transparent;
+        if (ruling == null)
         {
-            case BackgroundStyle.Graph:
-                for (double x = 14.17; x < width; x += 14.17)
-                {
-                    lines.Children.Add(Line(x, 0, x, height));
-                }
-                for (double y = 14.17; y < height; y += 14.17)
-                {
-                    lines.Children.Add(Line(0, y, width, y));
-                }
-                break;
-            case BackgroundStyle.Lined:
-            case BackgroundStyle.Ruled:
-                color = Blue;
-                for (double y = 80; y < height - 20; y += 24)
-                {
-                    lines.Children.Add(Line(0, y, width, y));
-                }
-                break;
-            case BackgroundStyle.Dotted:
-                for (double x = 14.17; x < width; x += 14.17)
-                {
-                    for (double y = 14.17; y < height; y += 14.17)
-                    {
-                        lines.Children.Add(new EllipseGeometry { Center = new Point(x, y), RadiusX = 0.4, RadiusY = 0.4 });
-                    }
-                }
-                break;
-            default:
-                return null;
+            return null;
         }
-        return lines;
+        var group = new GeometryGroup();
+        foreach (var (from, to) in ruling.Lines)
+        {
+            group.Children.Add(new LineGeometry { StartPoint = from, EndPoint = to });
+        }
+        foreach (var dot in ruling.Dots)
+        {
+            group.Children.Add(new EllipseGeometry { Center = dot, RadiusX = Ruling.DotRadius, RadiusY = Ruling.DotRadius });
+        }
+        return group;
     }
-
-    private static LineGeometry Line(double x1, double y1, double x2, double y2) =>
-        new() { StartPoint = new Point(x1, y1), EndPoint = new Point(x2, y2) };
 }
