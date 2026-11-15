@@ -126,13 +126,20 @@ public static class Inj
         Thread.Sleep(8);
     }
 
+    /// <summary>One raw pen frame at client DIPs (POINTER_FLAGs, PEN_FLAGs), e.g. hovering.</summary>
+    public static void PenFrame(double x, double y, uint flags, uint penFlags, uint pressure)
+    {
+        Pen(P(x, y), flags, penFlags, pressure);
+    }
+
     /// <summary>Pen stroke through client DIP points (x0,y0,x1,y1,...); eraser = eraser end of the pen.</summary>
     public static void PenStroke(double[] pts, bool eraser, uint pressure)
     {
         PenStrokeFlags(pts, eraser ? 0x6u : 0u, pressure); // INVERTED | ERASER
     }
 
-    static void PenStrokeFlags(double[] pts, uint pf, uint pressure)
+    /// <summary>Pen stroke with explicit PEN_FLAGs: 0x1 barrel, 0x2 inverted, 0x4 eraser.</summary>
+    public static void PenStrokeFlags(double[] pts, uint pf, uint pressure)
     {
         uint hover = pf & 0x3u; // inverted/barrel already while hovering
         uint buttons = FIRSTBUTTON | ((pf & 0x1u) != 0 ? 0x20u : 0u); // barrel: SECONDBUTTON
@@ -235,6 +242,11 @@ public static class Inj
         i.u.ki.dwFlags = up ? 2u : 0u;
         SendInput(1, new[] { i }, Marshal.SizeOf(typeof(INPUT)));
         Thread.Sleep(30);
+    }
+
+    public static void Key(ushort vk)
+    {
+        KeyEvent(vk, false); KeyEvent(vk, true);
     }
 
     public static void Ctrl(ushort vk)

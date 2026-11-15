@@ -3,10 +3,14 @@
 # starts a sandbox, runs the test in its user session and collects screenshots, the app log and
 # the saved .xopp files in <Work>\out. Then exports page 1-2 of the result with the GTK version
 # to check that it still reads the file.
+# -App runs another build (e.g. a dotnet publish folder) instead of the installed app; -Test runs another
+# in-sandbox script (an experiment) instead of SandboxTest.ps1.
 param(
     [Parameter(Mandatory)] [string]$Document,      # .xopp; its PDF must lie next to it
     [string]$Work = (Join-Path $env:TEMP 'xs-sandbox-test'),
     [string]$App = (Join-Path $env:LOCALAPPDATA 'Programs\Xournal Studio for Windows'),
+    [string]$Test = (Join-Path $PSScriptRoot 'SandboxTest.ps1'),
+    [int]$TimeoutSeconds = 240,
     [string]$GtkExe = (Join-Path $env:LOCALAPPDATA 'Programs\Xournal Studio\bin\xournalpp.exe')
 )
 $ErrorActionPreference = 'Stop'
@@ -16,8 +20,8 @@ New-Item -ItemType Directory -Force "$Work\data", "$Work\out" | Out-Null
 robocopy $App "$Work\app" /MIR /NFL /NDL /NJH /NJS /MT:16 | Out-Null
 Copy-Item $Document "$Work\data\test.xopp"
 Get-ChildItem (Split-Path $Document) -Filter *.pdf | Copy-Item -Destination "$Work\data"
-Copy-Item "$PSScriptRoot\Inj.cs", "$PSScriptRoot\SandboxTest.ps1" $Work
-Rename-Item "$Work\SandboxTest.ps1" 'test.ps1'
+Copy-Item "$PSScriptRoot\Inj.cs" $Work
+Copy-Item $Test "$Work\test.ps1"
 
 $id = (wsb start --raw | ConvertFrom-Json).Id
 try {
@@ -25,14 +29,14 @@ try {
     Start-Process wsb -ArgumentList "connect --id $id"   # the test needs an interactive session
     Start-Sleep 20
     wsb exec --id $id -r ExistingLogin -c 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\sbx\test.ps1' | Out-Null
-    for ($i = 0; $i -lt 120 -and -not (Test-Path "$Work\out\done.txt"); $i++) { Start-Sleep 2 }
+    for ($i = 0; $i -lt $TimeoutSeconds / 2 -and -not (Test-Path "$Work\out\done.txt"); $i++) { Start-Sleep 2 }
 }
 finally {
     wsb stop --id $id | Out-Null
 }
 Get-Content "$Work\out\transcript.txt" | Select-String -Pattern '^(init|shot|exited|ERROR)'
 
-if (Test-Path $GtkExe) {
+if ((Test-Path $GtkExe) -and (Test-Path "$Work\out\saved2.xopp")) {
     New-Item -ItemType Directory -Force "$Work\gtk" | Out-Null
     Copy-Item "$Work\out\saved2.xopp" "$Work\gtk\test.xopp"
     Copy-Item "$Work\data\*.pdf" "$Work\gtk"

@@ -10,6 +10,9 @@ try {
     Get-Process XournalStudio -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep 1
     $work = 'C:\work'; New-Item -ItemType Directory -Force $work | Out-Null
     Copy-Item "$root\data\*" $work -Force
+    # Explorer closed: the test's coordinates assume the page starts at the left edge.
+    New-Item -ItemType Directory -Force "$work\cfg" | Out-Null
+    Set-Content "$work\cfg\settings.json" '{"ExplorerOpen":false}'
     $env:XOURNAL_STUDIO_CONFIG_DIR = "$work\cfg"; $env:XOURNAL_STUDIO_LOG = "$out\app.log"
     $p = Start-Process "$root\app\XournalStudio.exe" -ArgumentList "`"$work\test.xopp`"" -PassThru
     for ($i = 0; $i -lt 60; $i++) { Start-Sleep -Milliseconds 500; $p.Refresh(); if ($p.MainWindowHandle -ne 0) { break } }
