@@ -9,8 +9,8 @@ namespace XournalStudio.Services;
 /// <summary>
 /// Copied pictures and groups through the Windows clipboard. Own format: a <see cref="XoppClip"/> (strokes and
 /// pictures in points, so pasting here keeps sizes and pressure exactly), plus a bitmap other apps paste. Bitmaps
-/// from other apps (e.g. a part of an exercise cut out with the Snipping Tool, Win+Shift+S) paste as a picture.
-/// Strokes alone go through Windows ink's own clipboard format (<c>InkStrokeContainer.CopySelectedToClipboard</c>).
+/// from other apps (e.g. a part of an exercise cut out with the Snipping Tool, Win+Shift+S) paste as a picture, ink
+/// of other apps (Windows ink's clipboard format) as strokes.
 /// </summary>
 public static class ClipboardService
 {

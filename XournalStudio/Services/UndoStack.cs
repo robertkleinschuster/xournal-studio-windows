@@ -28,6 +28,14 @@ public sealed class PageEdit(XoppPage page) : IPageEdit
     public List<InkStroke> AddedStrokes { get; private set; } = new();
     public List<XElement> RemovedImages { get; } = new();
     public List<XElement> AddedImages { get; } = new();
+    private List<ImagePlace> removedPlaces = new();
+
+    /// <summary>Removes pictures from the page as part of this edit (undo puts them back at their place).</summary>
+    public void RemoveImages(IReadOnlyCollection<XElement> images)
+    {
+        removedPlaces.AddRange(Page.RemoveImages(images));
+        RemovedImages.AddRange(images);
+    }
 
     public bool IsEmpty => RemovedStrokes.Count + AddedStrokes.Count + RemovedImages.Count + AddedImages.Count == 0;
 
@@ -36,14 +44,14 @@ public sealed class PageEdit(XoppPage page) : IPageEdit
         RemoveStrokes(Page, AddedStrokes);
         RemovedStrokes = RestoreStrokes(Page, RemovedStrokes);
         Page.RemoveImages(AddedImages);
-        Page.AddImages(RemovedImages);
+        Page.RestoreImages(removedPlaces);
     }
 
     public void Redo()
     {
         RemoveStrokes(Page, RemovedStrokes);
         AddedStrokes = RestoreStrokes(Page, AddedStrokes);
-        Page.RemoveImages(RemovedImages);
+        removedPlaces = Page.RemoveImages(RemovedImages);
         Page.AddImages(AddedImages);
     }
 

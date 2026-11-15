@@ -79,10 +79,18 @@ public sealed class Recovery
         {
             await file.DeleteAsync(Windows.Storage.StorageDeleteOption.Default);
         }
-        catch
+        catch (Exception e)
         {
             // Not recycled: back to the name its info refers to, so it is offered again (the caller reports the error).
-            await file.RenameAsync(Path.GetFileName(entry.CopyPath));
+            DebugLog.Write($"recycle recovery copy {entry.Id}", e);
+            try
+            {
+                await file.RenameAsync(Path.GetFileName(entry.CopyPath));
+            }
+            catch (Exception renameBack)
+            {
+                DebugLog.Write($"rename recovery copy {entry.Id} back (it stays as {file.Name})", renameBack);
+            }
             throw;
         }
         File.Delete(InfoPath(entry.Id));

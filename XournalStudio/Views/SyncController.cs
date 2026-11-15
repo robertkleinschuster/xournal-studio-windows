@@ -14,16 +14,26 @@ public sealed class SyncController(DocumentSession session, Dialogs dialogs, Mes
     /// <summary>A sync started or ended.</summary>
     public event EventHandler? StateChanged;
 
+    private bool starting; // asking to save before a sync: a second start waits for nothing
+
     public async void Sync(string? root)
     {
-        if (IsSyncing || root == null)
+        if (IsSyncing || starting || root == null)
         {
             return;
         }
-        if (session.IsDirty && await session.AskSaveAsync("Hochgeladen wird nur, was gespeichert ist. Ohne Speichern " +
-            "bleiben die Änderungen ungespeichert im Fenster.") == SaveChoice.Cancelled)
+        starting = true;
+        try
         {
-            return;
+            if (session.IsDirty && await session.AskSaveAsync("Hochgeladen wird nur, was gespeichert ist. Ohne " +
+                "Speichern bleiben die Änderungen ungespeichert im Fenster.") == SaveChoice.Cancelled)
+            {
+                return;
+            }
+        }
+        finally
+        {
+            starting = false;
         }
         SetSyncing(true);
         try
@@ -31,7 +41,7 @@ public sealed class SyncController(DocumentSession session, Dialogs dialogs, Mes
             var result = await Task.Run(() =>
                 GitSync.Sync(root, GitCredentials.Get, Environment.MachineName, DateTimeOffset.Now));
             var doc = session.Document;
-            bool documentChanged = result.PulledFiles.Any(f => SamePath(f, doc.FilePath) || SamePath(f, doc.PdfPath));
+            bool documentChanged = result.PulledFiles.Any(f => ProjectFiles.SamePath(f, doc.FilePath) || ProjectFiles.SamePath(f, doc.PdfPath));
             if (!documentChanged || await ResolvePulledDocumentAsync())
             {
                 messages.Show(InfoBarSeverity.Success, "Synchronisiert", Describe(result));
@@ -66,9 +76,6 @@ public sealed class SyncController(DocumentSession session, Dialogs dialogs, Mes
         session.SaveBlocked = value;
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
-
-    private static bool SamePath(string a, string? b) =>
-        b != null && string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// The pull changed (or removed) the open document. With unsaved notes in it the user decides; otherwise it is

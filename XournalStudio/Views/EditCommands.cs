@@ -34,17 +34,15 @@ public sealed class EditCommands(
         edit.RemovedStrokes.AddRange(PageEdit.SelectOnly(page, current.Strokes));
         page.Ink!.DeleteSelected();
         var images = current.Images.Where(i => i.Parent != null).ToList();
-        page.RemoveImages(images);
-        edit.RemovedImages.AddRange(images);
+        edit.RemoveImages(images);
         selection.Clear();
         undo.Push(edit);
         return true;
     }
 
     /// <summary>
-    /// Copies the selection. Strokes alone go through Windows ink's clipboard format (other ink apps paste them too);
-    /// with pictures or a PDF area the group goes in the app's own format, plus a bitmap for other apps: the area as
-    /// the PDF shows it, or the one picture.
+    /// Copies the selection in the app's own format – the .xopp elements themselves, so a copy or a cut and paste keeps
+    /// exactly what the file had – plus a bitmap for other apps: the area as the PDF shows it, or the one picture.
     /// </summary>
     public async Task<bool> CopyAsync()
     {
@@ -53,15 +51,12 @@ public sealed class EditCommands(
         {
             return false;
         }
+        if (current.IsPreviewing)
+        {
+            return false; // mid-drag the content is between two places
+        }
         try
         {
-            if (current.Area == null && current.Images.Count == 0)
-            {
-                PageEdit.SelectOnly(current.Page, current.Strokes);
-                current.Page.Ink!.CopySelectedToClipboard();
-                current.Strokes.ForEach(s => s.Selected = false);
-                return true;
-            }
             // Taken now: the selection may be moved while the area renders.
             var bounds = current.Bounds;
             var area = current.Area;
@@ -141,7 +136,7 @@ public sealed class EditCommands(
     public void Duplicate()
     {
         var current = selection.Current;
-        if (current == null || !current.HasContent)
+        if (current == null || !current.HasContent || current.IsPreviewing)
         {
             return;
         }
@@ -197,6 +192,14 @@ public sealed class EditCommands(
         var before = ink.GetStrokes().Select(s => s.Id).ToHashSet();
         ink.PasteFromClipboard(new Point(Grid, PasteTop(view.Page, 0)));
         var added = ink.GetStrokes().Where(s => !before.Contains(s.Id)).ToList();
+        // Its height is only known now: below the page's end it goes to the top instead (as pictures do).
+        var bounds = Rect.Empty;
+        added.ForEach(s => bounds.Union(s.BoundingRect));
+        if (!bounds.IsEmpty && bounds.Bottom > view.Page.Height)
+        {
+            var up = Matrix3x2.CreateTranslation(0, (float)(Grid - bounds.Top));
+            added.ForEach(s => s.PointTransform *= up);
+        }
         added.ForEach(s => s.Selected = false);
         var edit = new PageEdit(view.Page);
         edit.AddedStrokes.AddRange(added);

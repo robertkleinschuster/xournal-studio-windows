@@ -22,7 +22,7 @@ public sealed class PdfExportCommand(WindowId window, DocumentSession session, M
         string? background = doc.PdfPath;
         string folder = Path.GetDirectoryName(doc.FilePath ?? doc.PdfPath) ?? Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
         string name = doc.SuggestedName;
-        if (background != null && SamePath(Path.Combine(folder, name + ".pdf"), background))
+        if (background != null && ProjectFiles.SamePath(Path.Combine(folder, name + ".pdf"), background))
         {
             name += " (mit Notizen)"; // the lecture PDF itself stays untouched
         }
@@ -37,7 +37,7 @@ public sealed class PdfExportCommand(WindowId window, DocumentSession session, M
         {
             return;
         }
-        if (background != null && SamePath(target, background))
+        if (background != null && ProjectFiles.SamePath(target, background))
         {
             messages.Show(InfoBarSeverity.Warning, "Nicht exportiert",
                 "Das ist die PDF, auf der das Dokument liegt; bitte einen anderen Namen wählen.");
@@ -58,7 +58,4 @@ public sealed class PdfExportCommand(WindowId window, DocumentSession session, M
             messages.Error("export PDF", "Export fehlgeschlagen", e, target);
         }
     }
-
-    private static bool SamePath(string a, string b) =>
-        string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase);
 }

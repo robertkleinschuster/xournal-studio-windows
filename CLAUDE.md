@@ -130,7 +130,7 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   InkCanvas has no undo; strokes are resolved through `XoppPage.Current` because undo/redo re-adds copies),
   `ShapeRecognition` (InkAnalyzer result → clean stroke), `PdfBackground`, `PictureRenderer`,
   `ClipboardService` (own format `XournalStudio.Clip` = a `XoppClip`, plus a bitmap for other apps; bitmaps of
-  other apps paste as pictures; strokes alone use Windows ink's clipboard format), `Recovery` (recovery copies +
+  other apps paste as pictures, their ink (Windows ink's format) as strokes; copies are always the exact elements), `Recovery` (recovery copies +
   info JSON with the writing process id/start time; abandoned = that process is gone), `Autosave` (timer + ordered
   write/delete queue), `TaskFile` (todo.txt line edits, re-read before each change), `AppSettings`, `DebugLog`, `ProjectTree` (the folder as it is on
   disk: all files and folders, Windows-hidden/system items left out, links shown but not entered), `GitSync` (LibGit2Sharp: status,

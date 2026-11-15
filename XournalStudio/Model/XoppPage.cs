@@ -9,6 +9,9 @@ namespace XournalStudio.Model;
 
 public enum BackgroundStyle { Plain, Lined, Ruled, Graph, Dotted }
 
+/// <summary>Where a removed picture was: its layer and its position among the layer's elements.</summary>
+public sealed record ImagePlace(System.Xml.Linq.XElement Image, System.Xml.Linq.XElement Layer, int Index);
+
 /// <summary>Where strokes and pictures were (see <see cref="XoppPage.CapturePlacement"/>).</summary>
 public sealed record Placement(
     List<(InkStroke Stroke, System.Numerics.Matrix3x2 Transform, string? Coordinates)> Strokes,
@@ -253,13 +256,35 @@ public sealed class XoppPage
         RaiseImagesChanged(images);
     }
 
-    public void RemoveImages(IReadOnlyCollection<XElement> images)
+    /// <summary>Removes pictures; returns where they were (layer and position) for <see cref="RestoreImages"/>.</summary>
+    public List<ImagePlace> RemoveImages(IReadOnlyCollection<XElement> images)
     {
-        foreach (var image in images.Where(i => i.Parent != null))
+        var places = images.Where(i => i.Parent != null)
+            .Select(i => new ImagePlace(i, i.Parent!, i.ElementsBeforeSelf().Count())).ToList();
+        foreach (var place in places)
         {
-            image.Remove();
+            place.Image.Remove();
         }
         RaiseImagesChanged(images);
+        return places;
+    }
+
+    /// <summary>Puts removed pictures back at their place (undo: the file keeps its layers and order).</summary>
+    public void RestoreImages(IReadOnlyCollection<ImagePlace> places)
+    {
+        foreach (var place in places.OrderBy(p => p.Index))
+        {
+            var next = place.Layer.Elements().ElementAtOrDefault(place.Index);
+            if (next != null)
+            {
+                next.AddBeforeSelf(place.Image);
+            }
+            else
+            {
+                place.Layer.Add(place.Image);
+            }
+        }
+        RaiseImagesChanged(places.Select(p => p.Image).ToList());
     }
 
     // Once per change: the page view redraws all its pictures.

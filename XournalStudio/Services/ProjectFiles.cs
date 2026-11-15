@@ -118,4 +118,9 @@ public static class ProjectFiles
         var folder = await StorageFolder.GetFolderFromPathAsync(Path.GetFullPath(parent));
         return (await folder.CreateFolderAsync(name, CreationCollisionOption.FailIfExists)).Path;
     }
+
+    /// <summary>The same file or folder (full paths, case-insensitive like Windows); false if one is null.</summary>
+    public static bool SamePath(string? a, string? b) =>
+        a != null && b != null &&
+        string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase);
 }

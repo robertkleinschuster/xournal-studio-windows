@@ -53,4 +53,20 @@ public class PictureTests
         Assert.Equal(2, changes);
         Assert.True(XNode.DeepEquals(added, page.Snapshot().Elements("layer").Last().Elements().Last())); // a copy
     }
+
+    [Fact]
+    public void RemovedPicturesComeBackAtTheirPlace()
+    {
+        var page = XoppPage.FromXml(XElement.Parse("""
+            <page width="100" height="100"><background type="solid" color="#ffffffff" style="graph"/>
+            <layer><image left="0" top="0" right="1" bottom="1">AA==</image><stroke tool="pen" color="#000000ff" width="1">0 0 1 1</stroke></layer>
+            <layer name="2"><stroke tool="pen" color="#000000ff" width="1">0 0 2 2</stroke></layer></page>
+            """));
+        var image = page.Images.Single();
+        var places = page.RemoveImages([image]);
+        Assert.Empty(page.Images);
+        page.RestoreImages(places);
+        var layer = page.Snapshot().Elements("layer").First();
+        Assert.Equal("image", layer.Elements().First().Name.LocalName); // first in the first layer again, under the stroke
+    }
 }

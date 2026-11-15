@@ -48,7 +48,11 @@ public sealed partial class MainWindow : Window
         session = new DocumentSession(AppWindow.Id, pages, dialogs, messages, settings, () => ProjectFolder,
             () => inkTools.Selection.Current?.IsPreviewing == true);
         sync = new SyncController(session, dialogs, messages);
-        var explorerCommands = new ExplorerCommands(Explorer, session, sync, dialogs, messages, FocusDocument, RefreshExplorer);
+        var explorerCommands = new ExplorerCommands(Explorer, session, sync, dialogs, messages, FocusDocument, RefreshExplorer, index =>
+        {
+            Root.UpdateLayout(); // a document just opened: its pages are laid out before scrolling
+            pages.ScrollToPage(index);
+        });
         edit = new EditCommands(inkTools.Selection, pages, undo, messages, () => Toolbar.ActiveTool = SelectButton);
         var selectionFlyout = new SelectionFlyout(edit, Root);
         export = new PdfExportCommand(AppWindow.Id, session, messages, () => inkTools.Selection.Current?.IsPreviewing == true);
@@ -131,7 +135,7 @@ public sealed partial class MainWindow : Window
             settings.Save();
         };
         Tasks.Failed += (_, m) => messages.Show(InfoBarSeverity.Warning, m.Title, m.Message);
-        Tasks.OpenRequested += async (_, link) => await OpenLinkedPageAsync(link.Document, link.PageIndex);
+        Tasks.OpenRequested += async (_, link) => await explorerCommands.OpenDocumentAsync(link.Document, link.PageIndex);
         (settings.TasksShown ? TasksTab : FilesTab).IsSelected = true;
 
         Activated += OnActivated;
@@ -354,35 +358,6 @@ public sealed partial class MainWindow : Window
             settings.TasksShown = tasks;
             settings.Save();
         }
-    }
-
-    /// <summary>A task's link: its document (left with the save question if another one is open) at its page.</summary>
-    private async Task OpenLinkedPageAsync(string document, int pageIndex)
-    {
-        if (!File.Exists(document))
-        {
-            messages.Show(InfoBarSeverity.Warning, "Verknüpftes Dokument nicht gefunden", document);
-            return;
-        }
-        if (!string.Equals(Path.GetFullPath(document), session.Document.FilePath is { } open ? Path.GetFullPath(open) : null,
-                StringComparison.OrdinalIgnoreCase))
-        {
-            if (sync.IsSyncing || !await session.ConfirmLeaveAsync())
-            {
-                return;
-            }
-            await session.OpenAsync(document);
-            if (!string.Equals(session.Document.FilePath, document, StringComparison.OrdinalIgnoreCase))
-            {
-                return; // not opened (the message says why)
-            }
-            Root.UpdateLayout();
-        }
-        if (pageIndex >= 0)
-        {
-            pages.ScrollToPage(pageIndex);
-        }
-        FocusDocument();
     }
 
     private void SetExplorerOpen(bool open)

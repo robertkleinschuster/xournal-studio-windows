@@ -10,7 +10,7 @@ namespace XournalStudio.Views;
 /// </summary>
 public sealed class ExplorerCommands(
     ExplorerView explorer, DocumentSession session, SyncController sync, Dialogs dialogs, Messages messages,
-    Action focusDocument, Action refreshExplorer)
+    Action focusDocument, Action refreshExplorer, Action<int> scrollToPage)
 {
     /// <summary>.xopp and .pdf open here; everything else in the app Windows has for it, as in File Explorer.</summary>
     public async void OnFileInvoked(object? sender, string path)
@@ -32,18 +32,43 @@ public sealed class ExplorerCommands(
             }
             return;
         }
-        bool isOpen = string.Equals(path, session.OpenPath, StringComparison.OrdinalIgnoreCase);
-        if (!isOpen && sync.IsSyncing)
+        await OpenDocumentAsync(path, -1);
+    }
+
+    /// <summary>
+    /// Opens a .xopp or PDF (from the explorer or a task's link): the open one is left with the save question, nothing
+    /// opens during a sync; then the page (0-based, -1: the start) is scrolled to. The document takes the keyboard (as
+    /// an app opened from File Explorer does): otherwise Del meant for a selection would delete the file in the tree.
+    /// </summary>
+    public async Task OpenDocumentAsync(string path, int pageIndex)
+    {
+        if (!File.Exists(path))
         {
-            messages.Show(InfoBarSeverity.Informational, "Synchronisierung läuft",
-                "Dokumente lassen sich öffnen, sobald die Synchronisierung fertig ist.");
+            messages.Show(InfoBarSeverity.Warning, "Dokument nicht gefunden", path);
+            return;
         }
-        else if (!isOpen && await session.ConfirmLeaveAsync())
+        if (!ProjectFiles.SamePath(path, session.OpenPath))
         {
+            if (sync.IsSyncing)
+            {
+                messages.Show(InfoBarSeverity.Informational, "Synchronisierung läuft",
+                    "Dokumente lassen sich öffnen, sobald die Synchronisierung fertig ist.");
+                return;
+            }
+            if (!await session.ConfirmLeaveAsync())
+            {
+                return;
+            }
             await session.OpenAsync(path);
+            if (!ProjectFiles.SamePath(path, session.OpenPath))
+            {
+                return; // not opened (the message says why)
+            }
         }
-        // The opened document takes the keyboard (as an app opened from File Explorer does): otherwise focus stays in
-        // the tree, and Del meant for a selection would delete the file instead.
+        if (pageIndex >= 0)
+        {
+            scrollToPage(pageIndex);
+        }
         focusDocument();
     }
 
