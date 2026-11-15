@@ -22,6 +22,9 @@ arrows), math exercises long formulas in several colors.
   something a platform feature or library already does, and do not work around platform behavior (toggling input
   devices, hit-testing tricks, hooks, timers to fight the framework, ...). If the native way does not work, stop
   and report it to the user with the options instead of building a workaround.
+- **Never swallow exceptions** (app code, event handlers, experiments). Log them with type, HResult and message;
+  `App` logs unhandled/unobserved ones. Before concluding "the platform does not raise X", prove the handler ran
+  with a log line at its very start.
 
 - **Upstream .xopp format.** Every feature is expressed with what upstream Xournal++ writes
   (`src/core/control/xojfile` of xournalpp/xournalpp: XmlTags.h, XmlAttrs.h, SaveHandler.cpp). Never invent
@@ -96,10 +99,18 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 - `InkStrokeContainer` has no public constructor and `InkPresenter.StrokeContainer` is read-only: pages adopt the
   canvas' container. A removed stroke cannot be re-added: undo adds `Clone()`s.
 - Windows ink draws a stroke of size s at pressure p about `s * (0.25 + 1.5 p)` wide (measured).
-- **2.6.6-experimental raises neither `InkPresenter.UnprocessedInput` nor `StrokeInput` events** (tested in the
-  sandbox with pen and mouse, mode `None` and `RightDragAction.LeaveUnprocessed`). Pen input never reaches XAML
-  pointer events while a presenter takes pen input, not even with the InkCanvas' hit testing off. `StrokesCollected`
-  and `StrokesErased` work. Re-test UnprocessedInput with each new Windows App SDK release.
+- **`InkPresenter.UnprocessedInput` and `StrokeInput` ARE raised in 2.6.6-experimental** (mode `None` and
+  barrel + `RightDragAction.LeaveUnprocessed`: pressed, 16× moved, released, on the UI thread), **but their args are
+  `Windows.UI.Core.PointerEventArgs` whose `CurrentPoint` and `GetIntermediatePoints()` throw 0x80004021
+  CO_E_NOT_SUPPORTED** – no position. (An earlier note said the events never fire: wrong, the COMException inside the
+  handler was swallowed and hid the log line. Log first, then touch risky members in try/catch that logs.)
+  Re-test the args with each new Windows App SDK release.
+- Pen input never reaches XAML pointer events while a presenter takes pen input, not even with the InkCanvas' hit
+  testing off. With the pen removed from `InkPresenter.InputDeviceTypes`, XAML pointer events arrive with
+  `PointerDeviceType.Pen` – but the `ScrollView` captures the pen for panning after ~100 ms unless it has
+  `IgnoredInputKinds="Pen"`; with that, pressed/moved/released all arrive (tested 2026-11-15).
+- UI tests on the user's desktop: check that the test window is in the foreground before injecting input (the user
+  works in parallel); otherwise strokes go nowhere and the test lies.
 - `InkAnalyzer` (Windows.UI.Input.Inking.Analysis) works in the unpackaged app; for circles/ellipses
   `InkAnalysisInkDrawing.Points` are the ends of both axes (0–2, 1–3).
 - The pen's eraser end erased in the sandbox in the first session but not in later runs (same native setup) –

@@ -9,6 +9,9 @@ public partial class App : Application
     public App()
     {
         InitializeComponent();
+        // Exceptions must never vanish silently (a swallowed one once led to a wrong diagnosis).
+        UnhandledException += (_, e) => Services.DebugLog.Write($"Unhandled: {e.Exception}");
+        TaskScheduler.UnobservedTaskException += (_, e) => Services.DebugLog.Write($"Unobserved task: {e.Exception}");
     }
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
