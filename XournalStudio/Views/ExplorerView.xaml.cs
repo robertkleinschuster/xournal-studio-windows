@@ -30,7 +30,6 @@ public sealed record ExplorerCommandRequest(ExplorerCommand Command, string Path
 /// </summary>
 public sealed partial class ExplorerView : UserControl
 {
-    private readonly ObservableCollection<ExplorerItem> roots = [];
     private readonly DispatcherQueueTimer changeTimer;
     private Dictionary<string, ExplorerItem> items = new(StringComparer.OrdinalIgnoreCase);
     private string? folder;
@@ -43,7 +42,6 @@ public sealed partial class ExplorerView : UserControl
     public ExplorerView()
     {
         InitializeComponent();
-        Tree.ItemsSource = roots;
         changeTimer = DispatcherQueue.CreateTimer();
         changeTimer.Interval = TimeSpan.FromMilliseconds(400);
         changeTimer.IsRepeating = false;
@@ -92,7 +90,7 @@ public sealed partial class ExplorerView : UserControl
         if (!string.Equals(folder, projectFolder, StringComparison.OrdinalIgnoreCase))
         {
             folder = projectFolder;
-            roots.Clear();
+            Tree.ItemsSource = null;
             items.Clear();
             revealedFile = null;
             Watch(projectFolder);
@@ -180,11 +178,10 @@ public sealed partial class ExplorerView : UserControl
     {
         var expanded = items.Values.Where(i => i.IsExpanded).Select(i => i.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var newItems = new Dictionary<string, ExplorerItem>(StringComparer.OrdinalIgnoreCase);
-        roots.Clear();
-        foreach (var entry in tree.Children)
-        {
-            roots.Add(Create(entry, null, expanded, newItems));
-        }
+        // The selected item is about to go: deselect it first. Selecting a new item while the tree still held one of its
+        // old list crashed WinUI when the pane was closed (no containers; 0xC0000005/0xC0000374, 2.6.6-experimental).
+        Tree.SelectedItem = null;
+        Tree.ItemsSource = tree.Children.Select(entry => Create(entry, null, expanded, newItems)).ToList();
         items = newItems;
         DebugLog.Write($"explorer: tree rebuilt ({items.Count} entries)");
     }
