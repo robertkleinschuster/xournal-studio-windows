@@ -75,6 +75,10 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 
 ## Facts learned (keep)
 
+- **The experimental InkCanvas renders and takes mouse/pen input above XAML popups** (ink over ContentDialogs, clicks on
+  dialog buttons drew instead; keyboard worked; no child HWND involved). Agreed with the user: `ShowDialogAsync`
+  hides the pages' InkCanvas while a dialog is open – use it for every dialog. Menus/flyouts over a page may be
+  affected too (not checked). Re-test and remove with each new Windows App SDK release.
 - Strokes are polylines (`FitToCurve = false`, loaded and drawn): with Bezier fitting the few-point rectangles of
   the user's circuit diagrams (resistors) came out round.
 - Git: LibGit2Sharp (user's choice over the git CLI). Sign-in = the credential the Git Credential Manager / wincred

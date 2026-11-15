@@ -316,6 +316,31 @@ public sealed partial class MainWindow : Window
 
     // ---------------------------------------------------------------- window
 
+    /// <summary>
+    /// Shows a dialog with the pages' ink hidden. The experimental InkCanvas (2.6.6-experimental) renders and takes
+    /// pointer input above XAML popups, so mouse and pen clicks on dialog buttons went to the ink. Remove when the
+    /// Windows App SDK fixes it.
+    /// </summary>
+    private async Task<ContentDialogResult> ShowDialogAsync(ContentDialog dialog)
+    {
+        var views = PageViews.ToList();
+        foreach (var view in views)
+        {
+            view.InkCanvas.Visibility = Visibility.Collapsed;
+        }
+        try
+        {
+            return await dialog.ShowAsync();
+        }
+        finally
+        {
+            foreach (var view in views)
+            {
+                view.InkCanvas.Visibility = Visibility.Visible;
+            }
+        }
+    }
+
     private void OnActivated(object sender, WindowActivatedEventArgs args)
     {
         // Like Xournal Studio: save when the window loses focus.
@@ -360,7 +385,7 @@ public sealed partial class MainWindow : Window
             CloseButtonText = "Abbrechen",
             DefaultButton = ContentDialogButton.Primary,
         };
-        var choice = await dialog.ShowAsync();
+        var choice = await ShowDialogAsync(dialog);
         if (choice == ContentDialogResult.None || (choice == ContentDialogResult.Primary && !await SaveAsAsync()))
         {
             return;
@@ -449,7 +474,7 @@ public sealed partial class MainWindow : Window
                 CloseButtonText = "Abbrechen",
                 DefaultButton = ContentDialogButton.Close,
             };
-            if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+            if (await ShowDialogAsync(dialog) != ContentDialogResult.Primary)
             {
                 return;
             }
@@ -609,7 +634,7 @@ public sealed partial class MainWindow : Window
                 CloseButtonText = "Meine behalten",
                 DefaultButton = ContentDialogButton.Secondary,
             };
-            var choice = await dialog.ShowAsync();
+            var choice = await ShowDialogAsync(dialog);
             if (choice == ContentDialogResult.None)
             {
                 // Saved when the sync ends, over the pulled version; git history keeps that one.
