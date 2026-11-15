@@ -53,6 +53,10 @@ public sealed partial class MainWindow : Window
         viewTimer.IsRepeating = false;
         viewTimer.Tick += (_, _) => UpdateVisiblePages();
 
+        Explorer.FileInvoked += OnExplorerFileInvoked;
+        Explorer.SyncRequested += (_, _) => Sync();
+        SetExplorerOpen(settings.ExplorerOpen);
+
         Activated += OnActivated;
         AppWindow.Closing += OnClosing;
 
@@ -125,6 +129,7 @@ public sealed partial class MainWindow : Window
         }
         OnPagesChanged();
         SetDirty(false);
+        RefreshExplorer();
         fitWidthPending = true;
         Scroller.ScrollTo(0, 0, new ScrollingScrollOptions(ScrollingAnimationMode.Disabled));
         FitWidthWhenReady();
@@ -184,6 +189,7 @@ public sealed partial class MainWindow : Window
             SetDirty(false);
             settings.LastFile = document.FilePath;
             settings.Save();
+            RefreshExplorer();
             return true;
         }
         catch (Exception e)
@@ -309,6 +315,10 @@ public sealed partial class MainWindow : Window
         if (args.WindowActivationState == WindowActivationState.Deactivated && dirty && document.FilePath != null)
         {
             Save();
+        }
+        else if (args.WindowActivationState != WindowActivationState.Deactivated)
+        {
+            RefreshExplorer(); // files may have changed outside the app
         }
     }
 
@@ -445,6 +455,143 @@ public sealed partial class MainWindow : Window
     private void OnZoomIn(object sender, RoutedEventArgs e) => Zoom(1.25f);
 
     private void OnZoomOut(object sender, RoutedEventArgs e) => Zoom(0.8f);
+
+    // ---------------------------------------------------------------- explorer
+
+    private bool syncing;
+
+    /// <summary>The chosen folder, otherwise the git repository of the open document.</summary>
+    private string? ProjectFolder
+    {
+        get
+        {
+            if (settings.ProjectFolder != null || document.FilePath == null)
+            {
+                return settings.ProjectFolder;
+            }
+            try
+            {
+                return GitSync.FindRoot(Path.GetDirectoryName(document.FilePath)!);
+            }
+            catch (Exception e)
+            {
+                DebugLog.Write($"git root not found: {e.Message}");
+                return null;
+            }
+        }
+    }
+
+    private async void RefreshExplorer()
+    {
+        await Explorer.ShowAsync(ProjectFolder, document.FilePath);
+        SyncMenuItem.IsEnabled = Explorer.RepositoryRoot != null && !syncing;
+    }
+
+    private void SetExplorerOpen(bool open)
+    {
+        Split.IsPaneOpen = ExplorerMenuItem.IsChecked = open;
+        ExplorerButton.IsChecked = open;
+        if (settings.ExplorerOpen != open)
+        {
+            settings.ExplorerOpen = open;
+            settings.Save();
+        }
+    }
+
+    private void OnToggleExplorer(object sender, RoutedEventArgs e) => SetExplorerOpen(!Split.IsPaneOpen);
+
+    private async void OnOpenFolder(object sender, RoutedEventArgs e)
+    {
+        var result = await new FolderPicker(AppWindow.Id).PickSingleFolderAsync();
+        if (result == null)
+        {
+            return;
+        }
+        settings.ProjectFolder = result.Path;
+        settings.Save();
+        SetExplorerOpen(true);
+        RefreshExplorer();
+    }
+
+    private async void OnExplorerFileInvoked(object? sender, string path)
+    {
+        bool isOpen = string.Equals(path, document.FilePath, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(Path.ChangeExtension(path, ".xopp"), document.FilePath, StringComparison.OrdinalIgnoreCase);
+        if (!isOpen && await SaveBeforeReplacingAsync())
+        {
+            await OpenAsync(path);
+        }
+    }
+
+    /// <summary>Saves, then commits everything, pulls with rebase and pushes; reloads the document if the pull changed it.</summary>
+    private void OnSync(object sender, RoutedEventArgs e) => Sync();
+
+    private async void Sync()
+    {
+        string? root = Explorer.RepositoryRoot;
+        if (syncing || root == null)
+        {
+            return;
+        }
+        if (dirty && document.FilePath != null && !Save())
+        {
+            return;
+        }
+        syncing = true;
+        Explorer.IsSyncing = true;
+        SyncMenuItem.IsEnabled = false;
+        try
+        {
+            var result = await Task.Run(() =>
+                GitSync.Sync(root, GitCredentials.Get, Environment.MachineName, DateTimeOffset.Now));
+            bool documentChanged = result.PulledFiles.Any(f =>
+                string.Equals(f, document.FilePath, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(f, document.PdfPath, StringComparison.OrdinalIgnoreCase));
+            if (documentChanged && dirty)
+            {
+                ShowMessage(InfoBarSeverity.Warning, "Dokument wurde extern geändert",
+                    "Die Synchronisierung hat das offene Dokument geändert, es hat aber neue Notizen. Es wurde nicht neu geladen.");
+            }
+            else
+            {
+                if (documentChanged && document.FilePath != null)
+                {
+                    await OpenAsync(document.FilePath);
+                }
+                ShowMessage(InfoBarSeverity.Success, "Synchronisiert", Describe(result));
+            }
+        }
+        catch (GitSyncConflictException ex)
+        {
+            ShowMessage(InfoBarSeverity.Error, "Konflikt beim Synchronisieren",
+                $"{ex.Message}. Die eigenen Änderungen sind committet, aber nicht hochgeladen; den Konflikt mit Git lösen.");
+        }
+        catch (Exception ex)
+        {
+            ShowMessage(InfoBarSeverity.Error, "Synchronisieren fehlgeschlagen", ex.Message);
+        }
+        finally
+        {
+            syncing = false;
+            Explorer.IsSyncing = false;
+            RefreshExplorer();
+        }
+    }
+
+
+    private static string Describe(GitSyncResult result)
+    {
+        var parts = new List<string>();
+        if (result.PulledFiles.Count > 0)
+        {
+            parts.Add(result.PulledFiles.Count == 1 ? "1 Datei geholt" : $"{result.PulledFiles.Count} Dateien geholt");
+        }
+        if (result.Pushed)
+        {
+            parts.Add(result.Committed ? "Änderungen hochgeladen" : "Commits hochgeladen");
+        }
+        return parts.Count > 0 ? string.Join(", ", parts) + "." : "Alles war schon aktuell.";
+    }
 
     // ---------------------------------------------------------------- paste
 

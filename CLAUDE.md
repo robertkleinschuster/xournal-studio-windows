@@ -65,12 +65,22 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   `StrokeConverter` (Xournal per-segment widths ↔ ink pressure), `XoppImage` (`<image>`/`<teximage>`),
   `XoppFormat` (creator, file version).
 - `Views/` – `PageView` (background: color + ruling or PDF page rendered at the current zoom near the viewport;
-  pictures layer; InkCanvas), `ToolController` (copies the InkToolbar's tool to all pages' presenters).
+  pictures layer; InkCanvas), `ToolController` (copies the InkToolbar's tool to all pages' presenters),
+  `ExplorerView` + `ExplorerItem` (TreeView of the project folder in the SplitView pane, git colors, sync button).
 - `Services/` – `UndoStack` + `PageEdit` (strokes/pictures removed/added; the InkCanvas has no undo),
   `ShapeRecognition` (InkAnalyzer result → clean stroke), `PdfBackground`, `PictureRenderer`,
-  `ClipboardService` (bitmap → `<image>`), `AppSettings`, `DebugLog`.
+  `ClipboardService` (bitmap → `<image>`), `AppSettings`, `DebugLog`, `ProjectTree` (which files the explorer
+  shows), `GitSync` (LibGit2Sharp: status; sync = commit all, fetch, rebase/fast-forward, push; conflicts are
+  aborted), `GitCredentials` (reads Git for Windows' stored credential, see Facts learned).
 
 ## Facts learned (keep)
+
+- Strokes are polylines (`FitToCurve = false`, loaded and drawn): with Bezier fitting the few-point rectangles of
+  the user's circuit diagrams (resistors) came out round.
+- Git: LibGit2Sharp (user's choice over the git CLI). Sign-in = the credential the Git Credential Manager / wincred
+  helper stores in the Windows Credential Manager (generic `git:https://host`, GCM as UTF-8, wincred as UTF-16),
+  read with Meziantou.Framework.Win32.CredentialManager – the same as the GTK fork's libgit2 code. Verified against
+  the user's private GitHub repo. The app never asks for credentials itself.
 
 - InkCanvas/InkToolbar exist for WinUI 3 only in the **experimental** Windows App SDK (`Microsoft.WindowsAppSDK.WinUI`
   + `.DWrite` 2.6.6-experimental, component packages to avoid the AI/ML DLLs). The app is unpackaged and
@@ -112,16 +122,8 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 
 ## Open work (as of 2026-11-15; update when done)
 
-1. **Git explorer (highest priority for the user).** Collapsible pane on the left (native `TreeView`, e.g. in a
-   `SplitView`), showing the project folder (the user's git-synced university folder; default: git root of the
-   open document, changeable via "Datei → Ordner öffnen…" with the Windows App SDK `FolderPicker`; settings
-   already have `ProjectFolder` and `ExplorerOpen`). Show folders, `.xopp` and `.pdf` (hide a PDF when the `.xopp`
-   of the same name exists, and `*_kommentiert.pdf` / `*.pages.pdf` / `*.portals.pdf` of the GTK fork). Tap opens
-   the document (save the current one first). Git status colors (new = green, modified = blue) and one sync button
-   (commit all in the folder, pull --rebase, push; commit message like the GTK fork's "Sync from <machine>
-   (yyyy-MM-dd HH:mm)"); reload the open document if the pull changed it. Proposed to the user, not yet confirmed:
-   use the installed Git for Windows CLI (it brings the Git Credential Manager) instead of own git code or
-   LibGit2Sharp, which would need home-made credential handling. Ask the user before starting.
+1. **Git explorer – done 2026-11-15** (not yet tried by the user on the device; sync not run against the real
+   repo by Claude). Possible next steps if asked: folder status colors, rename/delete files, new document in a folder.
 2. **Lasso, shape tools (line, arrow, rectangle, ellipse), copying PDF areas.** Decided to wait until the Windows
    App SDK raises `InkPresenter.UnprocessedInput` (see Facts learned); re-test with each new release. Then: lasso
    via `SelectWithPolyLine` + barrel button (`RightDragAction.LeaveUnprocessed`), copy area = render the rectangle

@@ -31,6 +31,8 @@
   </ItemGroup>
   <ItemGroup>
     <!-- InkCanvas/InkToolbar for WinUI 3 are only in the experimental channel so far. -->
+    <PackageReference Include="LibGit2Sharp" Version="0.32.0" />
+    <PackageReference Include="Meziantou.Framework.Win32.CredentialManager" Version="3.0.11" />
     <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="2.6.6-experimental" />
     <PackageReference Include="Microsoft.WindowsAppSDK.DWrite" Version="2.6.6-experimental" />
   </ItemGroup>

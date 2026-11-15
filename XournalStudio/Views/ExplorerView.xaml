@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="XournalStudio.Views.ExplorerView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:XournalStudio.Views">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Grid Padding="8,4,4,4" ColumnSpacing="4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock x:Name="FolderName" Style="{StaticResource BodyStrongTextBlockStyle}"
+                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text="Kein Ordner" />
+            <Grid Grid.Column="1">
+                <AppBarButton x:Name="SyncButton" Icon="Sync" LabelPosition="Collapsed" Label="Synchronisieren"
+                              ToolTipService.ToolTip="Synchronisieren: alles committen, holen (rebase), hochladen"
+                              Click="OnSync" IsEnabled="False" />
+                <ProgressRing x:Name="SyncProgress" Width="20" Height="20" IsActive="False" IsHitTestVisible="False" />
+            </Grid>
+        </Grid>
+
+        <TreeView x:Name="Tree" Grid.Row="1" SelectionMode="Single" CanDragItems="False" CanReorderItems="False"
+                  AllowDrop="False" ItemInvoked="OnItemInvoked">
+            <TreeView.ItemTemplate>
+                <DataTemplate x:DataType="local:ExplorerItem">
+                    <TreeViewItem ItemsSource="{x:Bind Children}" IsExpanded="{x:Bind IsExpanded, Mode=TwoWay}"
+                                  AutomationProperties.Name="{x:Bind Name}">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="{x:Bind Glyph}" FontSize="16" />
+                            <TextBlock Text="{x:Bind Name}" Foreground="{x:Bind Foreground, Mode=OneWay}"
+                                       TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                    </TreeViewItem>
+                </DataTemplate>
+            </TreeView.ItemTemplate>
+        </TreeView>
+    </Grid>
+</UserControl>
