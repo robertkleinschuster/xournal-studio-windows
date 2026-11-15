@@ -152,6 +152,19 @@ public class FileFormatTests : IDisposable
         Assert.Equal("8.5", (string?)back.Attribute("width"));
     }
 
+    [Fact]
+    public void UnsavedDocumentFollowsItsRenamedPdf()
+    {
+        Directory.CreateDirectory(dir);
+        var doc = XoppDocument.FromPdf(Path.Combine(dir, "alt.pdf"), [(595, 842)]);
+        doc.MovePdf(Path.Combine(dir, "neu.pdf"));
+        string path = Path.Combine(dir, "neu.xopp");
+        doc.Save(path);
+
+        Assert.Equal(Path.Combine(dir, "neu.pdf"), XoppDocument.Load(path).PdfPath);
+        Assert.Throws<InvalidOperationException>(() => XoppDocument.Load(path).MovePdf("x.pdf"));
+    }
+
     // Whitespace-only text nodes depend on formatting, not content.
     private static XElement Normalize(XElement e)
     {

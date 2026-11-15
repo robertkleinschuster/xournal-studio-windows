@@ -20,6 +20,8 @@
     <!-- Explorer logic without UI. -->
     <Compile Include="..\XournalStudio\Services\ProjectTree.cs" Link="Services\ProjectTree.cs" />
     <Compile Include="..\XournalStudio\Services\GitSync.cs" Link="Services\GitSync.cs" />
+    <Compile Include="..\XournalStudio\Services\ProjectFiles.cs" Link="Services\ProjectFiles.cs" />
+    <Compile Include="..\XournalStudio\Services\FolderWatcher.cs" Link="Services\FolderWatcher.cs" />
     <Compile Include="..\XournalStudio\Services\DebugLog.cs" Link="Services\DebugLog.cs" />
   </ItemGroup>
   <ItemGroup>

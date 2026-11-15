@@ -33,7 +33,10 @@ public static class GitSync
         return repo.Info.WorkingDirectory is { } dir ? Path.TrimEndingDirectorySeparator(dir) : null;
     }
 
-    /// <summary>New and modified files of the repository by full path (case-insensitive, like the file system).</summary>
+    /// <summary>
+    /// New and modified (also deleted, renamed) files of the repository by full path (case-insensitive, like the file
+    /// system). Deleted files are not shown, but they mark their folders as modified (<see cref="WithFolders"/>).
+    /// </summary>
     public static Dictionary<string, GitFileState> GetStatus(string root)
     {
         var states = new Dictionary<string, GitFileState>(StringComparer.OrdinalIgnoreCase);
@@ -45,7 +48,8 @@ public static class GitSync
                 entry.State.HasFlag(FileStatus.NewInWorkdir) || entry.State.HasFlag(FileStatus.NewInIndex) ? GitFileState.New :
                 entry.State.HasFlag(FileStatus.ModifiedInWorkdir) || entry.State.HasFlag(FileStatus.ModifiedInIndex) ||
                 entry.State.HasFlag(FileStatus.RenamedInWorkdir) || entry.State.HasFlag(FileStatus.RenamedInIndex) ||
-                entry.State.HasFlag(FileStatus.TypeChangeInWorkdir) || entry.State.HasFlag(FileStatus.TypeChangeInIndex)
+                entry.State.HasFlag(FileStatus.TypeChangeInWorkdir) || entry.State.HasFlag(FileStatus.TypeChangeInIndex) ||
+                entry.State.HasFlag(FileStatus.DeletedFromWorkdir) || entry.State.HasFlag(FileStatus.DeletedFromIndex)
                     ? GitFileState.Modified : GitFileState.Unchanged;
             if (state != GitFileState.Unchanged)
             {
@@ -53,6 +57,29 @@ public static class GitSync
             }
         }
         return states;
+    }
+
+    /// <summary>
+    /// Adds the folders below <paramref name="root"/> that contain changes: modified when anything in them is
+    /// modified or deleted, otherwise new (only new files in them), as the git views of code editors show it.
+    /// </summary>
+    public static Dictionary<string, GitFileState> WithFolders(IReadOnlyDictionary<string, GitFileState> status, string root)
+    {
+        var all = new Dictionary<string, GitFileState>(status, StringComparer.OrdinalIgnoreCase);
+        string top = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+        foreach (var (path, state) in status)
+        {
+            for (string? dir = Path.GetDirectoryName(path);
+                dir != null && dir.Length > top.Length && dir.StartsWith(top, StringComparison.OrdinalIgnoreCase);
+                dir = Path.GetDirectoryName(dir))
+            {
+                if (!all.TryGetValue(dir, out var current) || current < state)
+                {
+                    all[dir] = state; // Modified > New
+                }
+            }
+        }
+        return all;
     }
 
     /// <summary>

@@ -36,8 +36,13 @@ public sealed class ExplorerTests : IDisposable
         Touch("GET/UE/blatt3.xopp.pages.pdf");
         Touch("GET/UE/blatt3.portals.pdf");
         Touch("GET/UE/notes.txt");
+        Touch("GET/UE/blatt4.xopp");
+        Touch("GET/UE/blatt4.xopp.bg.pdf"); // upstream's attached PDF
         Touch("Leer/readme.md");
         Touch(".git/x.pdf");
+        Directory.CreateDirectory(Path.Combine(temp, "Neu", "Unterordner")); // empty folders: just created
+        Directory.CreateDirectory(Path.Combine(temp, "Nur", "Fremdes"));
+        Touch("Nur/Fremdes/a.txt");
         // A junction back to the project folder must not be followed (endless recursion).
         string loop = Path.Combine(temp, "GET", "UE", "Schleife");
         CreateJunction(loop, temp);
@@ -45,10 +50,131 @@ public sealed class ExplorerTests : IDisposable
         var root = ProjectTree.Read(temp);
         Directory.Delete(loop); // removes the link only
 
-        var get = Assert.Single(root.Children);
-        Assert.Equal("GET", get.Name);
+        Assert.Equal(["GET", "Neu"], root.Children.Select(c => c.Name));
+        var get = root.Children[0];
         var ue = Assert.Single(get.Children);
-        Assert.Equal(["blatt1.xopp", "blatt2.pdf"], ue.Children.Select(c => c.Name));
+        Assert.Equal(["blatt1.xopp", "blatt2.pdf", "blatt4.xopp"], ue.Children.Select(c => c.Name));
+        var neu = Assert.Single(root.Children[1].Children);
+        Assert.Equal("Unterordner", neu.Name);
+        Assert.True(neu.IsFolder);
+    }
+
+    [Fact]
+    public void FolderStatusFollowsTheFilesBelow()
+    {
+        string root = Path.Combine(temp, "repo");
+        var status = new Dictionary<string, GitFileState>
+        {
+            [Path.Combine(root, "A", "B", "neu.xopp")] = GitFileState.New,
+            [Path.Combine(root, "A", "alt.xopp")] = GitFileState.Modified,
+            [Path.Combine(root, "C", "neu.pdf")] = GitFileState.New,
+            [Path.Combine(root, "top.xopp")] = GitFileState.Modified,
+        };
+
+        var all = GitSync.WithFolders(status, root);
+
+        Assert.Equal(GitFileState.Modified, all[Path.Combine(root, "A")]);
+        Assert.Equal(GitFileState.New, all[Path.Combine(root, "A", "B")]);
+        Assert.Equal(GitFileState.New, all[Path.Combine(root, "c")]); // case-insensitive like the file system
+        Assert.False(all.ContainsKey(root));
+        Assert.Equal(GitFileState.New, all[Path.Combine(root, "A", "B", "neu.xopp")]);
+    }
+
+    [Fact]
+    public void DeletedFileMarksItsFolderModified()
+    {
+        var (a, _) = TwoClones();
+        Directory.CreateDirectory(Path.Combine(a, "UE"));
+        File.WriteAllText(Path.Combine(a, "UE", "weg.xopp"), "x");
+        GitSync.Sync(a, null, "PC-A", Now);
+        File.Delete(Path.Combine(a, "UE", "weg.xopp"));
+        File.WriteAllText(Path.Combine(a, "UE", "bleibt.xopp"), "x");
+
+        var all = GitSync.WithFolders(GitSync.GetStatus(a), a);
+
+        Assert.Equal(GitFileState.Modified, all[Path.Combine(a, "UE")]);
+    }
+
+    [Fact]
+    public void NamesAreCheckedLikeWindowsDoes()
+    {
+        Assert.Null(ProjectFiles.ValidateName("Blatt 3.xopp"));
+        Assert.NotNull(ProjectFiles.ValidateName(""));
+        Assert.NotNull(ProjectFiles.ValidateName("a/b"));
+        Assert.NotNull(ProjectFiles.ValidateName("a:b.xopp"));
+        Assert.NotNull(ProjectFiles.ValidateName("Ordner."));
+        Assert.NotNull(ProjectFiles.ValidateName("con.xopp"));
+
+        Touch("Neues Dokument.xopp");
+        Touch("Neues Dokument (2).xopp");
+        Assert.Equal("Neues Dokument (3).xopp", ProjectFiles.UniqueName(temp, "Neues Dokument", ".xopp"));
+        Assert.Equal("Neuer Ordner", ProjectFiles.UniqueName(temp, "Neuer Ordner"));
+    }
+
+    [Fact]
+    public void RenamedPathsAreMapped()
+    {
+        string ue = Path.Combine(temp, "GET", "UE");
+        string renamed = Path.Combine(temp, "GET", "Übung");
+        Assert.True(ProjectFiles.IsAtOrBelow(Path.Combine(ue, "a.xopp"), ue));
+        Assert.True(ProjectFiles.IsAtOrBelow(ue, ue));
+        Assert.False(ProjectFiles.IsAtOrBelow(Path.Combine(temp, "GET", "UE2", "a.xopp"), ue));
+        Assert.False(ProjectFiles.IsAtOrBelow(null, ue));
+        Assert.Equal(Path.Combine(renamed, "a.xopp"), ProjectFiles.MapRenamed(Path.Combine(ue, "a.xopp"), ue, renamed));
+        Assert.Equal(Path.Combine(temp, "b.xopp"), ProjectFiles.MapRenamed(Path.Combine(temp, "b.xopp"), ue, renamed));
+
+        Assert.Equal("blatt1", ProjectFiles.EditableName(Path.Combine(ue, "blatt1.xopp"), false));
+        Assert.Equal("blatt2.xopp", ProjectFiles.NewName(Path.Combine(ue, "blatt1.xopp"), false, "blatt2"));
+        Assert.Equal("UE", ProjectFiles.EditableName(ue, true));
+    }
+
+    [Fact]
+    public async Task RenameTakesTheAttachedPdfAlong()
+    {
+        string doc = Touch("UE/blatt1.xopp", "doc");
+        Touch("UE/blatt1.xopp.bg.pdf", "pdf");
+        Touch("UE/blatt1.pdf", "lecture");
+
+        string renamed = await ProjectFiles.RenameAsync(doc, false, "Lösung 1.xopp");
+
+        Assert.Equal(Path.Combine(temp, "UE", "Lösung 1.xopp"), renamed);
+        Assert.Equal("doc", File.ReadAllText(renamed));
+        Assert.Equal("pdf", File.ReadAllText(Path.Combine(temp, "UE", "Lösung 1.xopp.bg.pdf")));
+        Assert.True(File.Exists(Path.Combine(temp, "UE", "blatt1.pdf"))); // a referenced PDF stays where it is
+        Assert.False(File.Exists(doc));
+        await Assert.ThrowsAnyAsync<Exception>(() => ProjectFiles.RenameAsync(renamed, false, "blatt1.pdf"));
+    }
+
+    [Fact]
+    public async Task FoldersAreCreatedAndRenamed()
+    {
+        string created = await ProjectFiles.CreateFolderAsync(temp, "Übung 1");
+        Touch("Übung 1/a.xopp");
+
+        string renamed = await ProjectFiles.RenameAsync(created, true, "Übung 2");
+
+        Assert.Equal(Path.Combine(temp, "Übung 2"), renamed);
+        Assert.True(File.Exists(Path.Combine(renamed, "a.xopp")));
+        await Assert.ThrowsAnyAsync<Exception>(() => ProjectFiles.CreateFolderAsync(temp, "Übung 2"));
+    }
+
+    [Fact]
+    public async Task WatcherReportsChangesOutsideHiddenFolders()
+    {
+        Directory.CreateDirectory(Path.Combine(temp, ".git"));
+        Assert.True(FolderWatcher.IsInHiddenFolder(temp, Path.Combine(temp, ".git", "index")));
+        Assert.True(FolderWatcher.IsInHiddenFolder(temp, Path.Combine(temp, ".git")));
+        Assert.False(FolderWatcher.IsInHiddenFolder(temp, Path.Combine(temp, ".gitignore")));
+        Assert.False(FolderWatcher.IsInHiddenFolder(temp, Path.Combine(temp, "UE", "a.xopp")));
+
+        using var watcher = new FolderWatcher(temp);
+        var changed = new TaskCompletionSource();
+        watcher.Changed += (_, _) => changed.TrySetResult();
+        Touch(".git/index");
+        await Task.Delay(300);
+        Assert.False(changed.Task.IsCompleted);
+        Touch("UE/neu.xopp");
+        Assert.Same(changed.Task, await Task.WhenAny(changed.Task, Task.Delay(5000)));
     }
 
     private static void CreateJunction(string link, string target)
