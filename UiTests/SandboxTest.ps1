@@ -1,9 +1,12 @@
+﻿# Runs inside Windows Sandbox (see Run-SandboxTest.ps1): drives the app with synthetic pen/touch input,
+# finds toolbar buttons by UI Automation, takes a screenshot per step and copies the saved files.
 $ErrorActionPreference = 'Stop'
 $root = 'C:\sbx'; $out = "$root\out"
 New-Item -ItemType Directory -Force $out | Out-Null
 Start-Transcript "$out\transcript.txt" | Out-Null
 try {
     Add-Type -Path "$root\Inj.cs" -ReferencedAssemblies System.Drawing
+    Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes, System.Windows.Forms, System.Drawing
     Get-Process XournalStudio -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep 1
     $work = 'C:\work'; New-Item -ItemType Directory -Force $work | Out-Null
     Copy-Item "$root\data\*" $work -Force
@@ -16,41 +19,76 @@ try {
     [Inj]::SetForegroundWindow($h) | Out-Null
     "init: " + [Inj]::Init($h)
     $W = [Inj]::W
-    function Shot($name) { Start-Sleep -Milliseconds 800; [Inj]::Shot("$out\$name.png"); if ($p.HasExited) { throw "app exited after $name" }; "shot $name" }
-    function Line($x0, $y0, $x1, $y1) { [double[]]@($x0, $y0, $x1, $y1) }
-    $tb = 63  # toolbar row (client DIPs)
+    $window = [System.Windows.Automation.AutomationElement]::FromHandle($h)
+
+    function Shot($name) { Start-Sleep -Milliseconds 900; [Inj]::Shot("$out\$name.png"); if ($p.HasExited) { throw "app exited after $name" }; "shot $name" }
+    function L { [double[]]$args }
+    function X($f) { [double]($f * $W) }
+    function Find($name) {
+        foreach ($prop in [System.Windows.Automation.AutomationElement]::AutomationIdProperty, [System.Windows.Automation.AutomationElement]::NameProperty) {
+            $cond = New-Object System.Windows.Automation.PropertyCondition($prop, $name)
+            $e = $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $cond)
+            if ($e -ne $null) { return $e }
+        }
+        $null
+    }
+    # Clicks the first button found by automation id or name (the InkToolbar's own buttons have localized names).
+    function Button {
+        $e = $null
+        foreach ($name in $args) { if ($e -eq $null) { $e = Find $name } }
+        if ($e -eq $null) { throw "button '$args' not found" }
+        $r = $e.Current.BoundingRectangle
+        [Inj]::ClickPixel([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2))
+        Start-Sleep -Milliseconds 400
+        "click $args"
+    }
+    function Focus { [Inj]::Click((X 0.6), 20); Start-Sleep -Milliseconds 300 }  # menu bar background
 
     Shot '01-start'
-    $x = { param($f) [double]($f * $W) }
-    [Inj]::PenStroke([double[]]@((& $x 0.3),180, (& $x 0.35),230, (& $x 0.4),180, (& $x 0.45),230, (& $x 0.5),180, (& $x 0.55),230), $false, 600)
-    Shot '02-pen'
-    [Inj]::TouchDrag((& $x 0.75), 450, (& $x 0.75), 200, 25)
-    Shot '03-touch-pan'
-    [Inj]::TouchDrag((& $x 0.75), 200, (& $x 0.75), 450, 25)
-    Shot '04-touch-back'
-    [Inj]::Click(333, $tb); Shot '05-undo'
-    [Inj]::Click(404, $tb); Shot '06-redo'
-    [Inj]::PenStroke((Line (& $x 0.3) 270 (& $x 0.6) 270), $false, 512); Shot '07-stroke-b'
-    [Inj]::Click(110, $tb)
-    [Inj]::PenStroke((Line (& $x 0.45) 250 (& $x 0.45) 290), $false, 512); Shot '08-erased-with-eraser-tool'
-    [Inj]::Click(30, $tb)
-    [Inj]::PenStroke((Line (& $x 0.3) 330 (& $x 0.6) 330), $false, 900); Shot '09-stroke-c'
-    [Inj]::PenStroke((Line (& $x 0.45) 310 (& $x 0.45) 350), $true, 512); Shot '10-erased-with-pen-eraser'
-    [Inj]::Click(69, $tb)
-    [Inj]::PenStroke((Line (& $x 0.3) 390 (& $x 0.6) 390), $false, 512); Shot '11-highlighter'
-    [Inj]::Click(30, $tb)
-    [Inj]::Pinch((& $x 0.5), 330, 150, 400, 25); Shot '12-pinch-zoom-in'
-    [Inj]::Pinch((& $x 0.5), 330, 400, 150, 25); Shot '13-pinch-zoom-out'
-    [Inj]::Click((& $x 0.5), 30)  # menu bar background: focus
-    [Inj]::Ctrl(0x53); Start-Sleep 2; Shot '14-saved'
+
+    # Native eraser (toolbar) and the pen's eraser end: each removes the stroke it touches.
+    [Inj]::PenStroke((L (X 0.3) 250 (X 0.6) 250), $false, 512)
+    Button 'InkToolbarEraserButton' 'Radierer'
+    [Inj]::PenStroke((L (X 0.45) 235 (X 0.45) 265), $false, 512)
+    Shot '02-eraser-tool'
+    Button 'InkToolbarBallpointPenButton'
+    [Inj]::PenStroke((L (X 0.3) 290 (X 0.6) 290), $false, 512)
+    [Inj]::PenStroke((L (X 0.4) 275 (X 0.4) 305), $true, 512)
+    Shot '03-eraser-end'
+
+    # Shape recognition (Windows ink analysis): a hand-drawn rectangle and circle become clean shapes.
+    Button 'RecognizeButton' 'Formerkennung'
+    [Inj]::PenStroke((L (X 0.32) 330 (X 0.5) 332 (X 0.499) 400 (X 0.321) 398 (X 0.32) 331), $false, 512)
+    $c = @(); for ($k = 0; $k -le 36; $k++) { $t = 2 * [Math]::PI * $k / 36; $c += (X 0.65) + 45 * [Math]::Cos($t) + 2 * [Math]::Sin(5 * $t); $c += 365 + 40 * [Math]::Sin($t) }
+    [Inj]::PenStroke([double[]]$c, $false, 512); Start-Sleep 2
+    Shot '04-recognized-shapes'
+    Button 'RecognizeButton' 'Formerkennung'
+
+    # A bitmap on the clipboard (as from the Snipping Tool), pasted onto a new graph page.
+    $bmp = New-Object System.Drawing.Bitmap 600, 120
+    $g = [System.Drawing.Graphics]::FromImage($bmp); $g.Clear([System.Drawing.Color]::White)
+    $g.DrawString('Beispiel 3: Ausschnitt aus der Angabe', (New-Object System.Drawing.Font 'Segoe UI', 24), [System.Drawing.Brushes]::Black, 10, 30)
+    [System.Windows.Forms.Clipboard]::SetImage($bmp)
+    Button 'InsertPageButton' 'Seite einfügen'
+    for ($k = 0; $k -lt 5; $k++) { [Inj]::TouchDrag((X 0.85), 480, (X 0.85), 160, 30) }
+    Shot '05-new-page'
+    Focus
+    [Inj]::Ctrl(0x56); Start-Sleep 2
+    Shot '06-pasted'
+    Button 'UndoButton' 'Rückgängig'; Shot '07-undo-paste'
+    Button 'RedoButton' 'Wiederholen'; Shot '08-redo-paste'
+
+    # Page 3 of the document (graph page with pictures: a teximage with a PDF and PNG images).
+    for ($k = 0; $k -lt 4; $k++) { [Inj]::TouchDrag((X 0.85), 480, (X 0.85), 160, 30) }
+    Shot '09-pictures'
+
+    Focus
+    [Inj]::Ctrl(0x53); Start-Sleep 2; Shot '10-saved'
     Copy-Item "$work\test.xopp" "$out\saved1.xopp"
-    [Inj]::Click(179, $tb); Shot '15-page-inserted'
     [Inj]::PostMessage($h, 0x10, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
     $p.WaitForExit(15000) | Out-Null
     "exited: $($p.HasExited)"
     Copy-Item "$work\test.xopp" "$out\saved2.xopp"
-    Get-ChildItem $work | Select-Object Name, Length | Format-Table | Out-String
 }
-catch { "ERROR: $_"; $_.ScriptStackTrace }
+catch { "ERROR: $_"; $_.ScriptStackTrace; try { [Inj]::Shot("$out\error.png") } catch {} }
 finally { Stop-Transcript | Out-Null; Set-Content "$out\done.txt" 'done' }
-

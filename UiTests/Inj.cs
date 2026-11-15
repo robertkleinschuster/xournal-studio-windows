@@ -129,21 +129,38 @@ public static class Inj
     /// <summary>Pen stroke through client DIP points (x0,y0,x1,y1,...); eraser = eraser end of the pen.</summary>
     public static void PenStroke(double[] pts, bool eraser, uint pressure)
     {
-        uint pf = eraser ? 0x6u : 0u; // INVERTED | ERASER
+        PenStrokeFlags(pts, eraser ? 0x6u : 0u, pressure); // INVERTED | ERASER
+    }
+
+    static void PenStrokeFlags(double[] pts, uint pf, uint pressure)
+    {
+        uint hover = pf & 0x3u; // inverted/barrel already while hovering
+        uint buttons = FIRSTBUTTON | ((pf & 0x1u) != 0 ? 0x20u : 0u); // barrel: SECONDBUTTON
         var first = P(pts[0], pts[1]);
-        Pen(first, INRANGE | UPDATE | PRIMARY, eraser ? 0x2u : 0u, 0);
-        Pen(first, INRANGE | INCONTACT | DOWN | FIRSTBUTTON | PRIMARY, pf, pressure);
+        Pen(first, INRANGE | UPDATE | PRIMARY, hover, 0);
+        Pen(first, INRANGE | INCONTACT | DOWN | buttons | PRIMARY, pf, pressure);
         for (int i = 2; i + 1 < pts.Length; i += 2)
         {
             double x0 = pts[i - 2], y0 = pts[i - 1], x1 = pts[i], y1 = pts[i + 1];
             for (int s = 1; s <= 8; s++)
             {
-                Pen(P(x0 + (x1 - x0) * s / 8, y0 + (y1 - y0) * s / 8), INRANGE | INCONTACT | UPDATE | FIRSTBUTTON | PRIMARY, pf, pressure);
+                Pen(P(x0 + (x1 - x0) * s / 8, y0 + (y1 - y0) * s / 8), INRANGE | INCONTACT | UPDATE | buttons | PRIMARY, pf, pressure);
             }
         }
         var last = P(pts[pts.Length - 2], pts[pts.Length - 1]);
-        Pen(last, INRANGE | UP | PRIMARY, eraser ? 0x2u : 0u, 0);
+        Pen(last, INRANGE | UP | PRIMARY, hover, 0);
         Pen(last, UPDATE | PRIMARY, 0, 0);
+        Thread.Sleep(150);
+    }
+
+    /// <summary>Mouse click at screen pixels (e.g. the center of a UI Automation bounding rectangle).</summary>
+    public static void ClickPixel(int x, int y)
+    {
+        var p = new POINT();
+        p.X = x; p.Y = y;
+        Mouse(0, p);
+        Mouse(0x2, p);
+        Mouse(0x4, p);
     }
 
     static TOUCH_TYPE_INFO Contact(uint id, POINT p, uint flags)
