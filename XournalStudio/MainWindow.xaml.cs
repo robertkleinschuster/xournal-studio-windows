@@ -64,6 +64,9 @@ public sealed partial class MainWindow : Window
 
         Explorer.FileInvoked += OnExplorerFileInvoked;
         Explorer.SyncRequested += (_, _) => Sync();
+        Explorer.CommandRequested += OnExplorerCommand;
+        Explorer.FolderChanged += (_, _) => RefreshExplorer();
+        Explorer.Failed += (_, m) => ShowMessage(InfoBarSeverity.Warning, m.Title, m.Message);
         SetExplorerOpen(settings.ExplorerOpen);
 
         Activated += OnActivated;
@@ -602,6 +605,208 @@ public sealed partial class MainWindow : Window
         {
             await OpenAsync(path);
         }
+    }
+
+    // ---------------------------------------------------------------- explorer: file commands
+
+    /// <summary>New document/folder, rename, delete from the explorer's context menu or keys (F2, Del).</summary>
+    private async void OnExplorerCommand(object? sender, ExplorerCommandRequest request)
+    {
+        if (syncing)
+        {
+            ShowMessage(InfoBarSeverity.Informational, "Synchronisierung läuft",
+                "Dateien und Ordner können geändert werden, sobald die Synchronisierung fertig ist.");
+            return;
+        }
+        string parent = request.IsFolder ? request.Path : Path.GetDirectoryName(request.Path)!;
+        try
+        {
+            switch (request.Command)
+            {
+                case ExplorerCommand.NewDocument:
+                    await NewDocumentAsync(parent);
+                    break;
+                case ExplorerCommand.NewFolder:
+                    await NewFolderAsync(parent);
+                    break;
+                case ExplorerCommand.Rename:
+                    await RenameAsync(request.Path, request.IsFolder);
+                    break;
+                case ExplorerCommand.Delete:
+                    await DeleteAsync(request.Path, request.IsFolder);
+                    break;
+            }
+        }
+        catch (Exception e)
+        {
+            DebugLog.Write($"explorer {request.Command} {request.Path}", e);
+            string title = request.Command switch
+            {
+                ExplorerCommand.NewDocument => "Dokument konnte nicht erstellt werden",
+                ExplorerCommand.NewFolder => "Ordner konnte nicht erstellt werden",
+                ExplorerCommand.Rename => "Umbenennen fehlgeschlagen",
+                _ => "Löschen fehlgeschlagen",
+            };
+            ShowMessage(InfoBarSeverity.Error, title, $"{request.Path}: {DebugLog.Describe(e)}");
+        }
+        RefreshExplorer();
+    }
+
+    /// <summary>A new, empty document (the same as Datei → Neu) saved in <paramref name="folder"/> and opened.</summary>
+    private async Task NewDocumentAsync(string folder)
+    {
+        string? name = await AskNameAsync("Neues Dokument",
+            Path.GetFileNameWithoutExtension(ProjectFiles.UniqueName(folder, "Neues Dokument", ProjectFiles.DocumentExtension)),
+            "Erstellen", n => ValidateNewName(folder, n + ProjectFiles.DocumentExtension, null));
+        if (name == null || !await SaveBeforeReplacingAsync())
+        {
+            return;
+        }
+        string path = Path.Combine(folder, name + ProjectFiles.DocumentExtension);
+        XoppDocument.CreateNew().Save(path);
+        await OpenAsync(path);
+    }
+
+    private async Task NewFolderAsync(string folder)
+    {
+        string? name = await AskNameAsync("Neuer Ordner", ProjectFiles.UniqueName(folder, "Neuer Ordner"), "Erstellen",
+            n => ValidateNewName(folder, n, null));
+        if (name != null)
+        {
+            Explorer.SelectAfterRefresh(await ProjectFiles.CreateFolderAsync(folder, name));
+        }
+    }
+
+    /// <summary>
+    /// Renames a file (only the name before the extension is edited; a .xopp keeps referring to its PDF, which stays)
+    /// or a folder. The open document, if renamed with it, is saved before and opened again from its new place.
+    /// </summary>
+    private async Task RenameAsync(string path, bool isFolder)
+    {
+        string parent = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(path))!;
+        string? edited = await AskNameAsync("Umbenennen", ProjectFiles.EditableName(path, isFolder), "Umbenennen",
+            n => ValidateNewName(parent, ProjectFiles.NewName(path, isFolder, n), path));
+        if (edited == null)
+        {
+            return;
+        }
+        string newName = ProjectFiles.NewName(path, isFolder, edited);
+        if (newName == Path.GetFileName(Path.TrimEndingDirectorySeparator(path)))
+        {
+            return;
+        }
+        bool affectsOpen = ProjectFiles.IsAtOrBelow(document.FilePath, path) || ProjectFiles.IsAtOrBelow(document.PdfPath, path);
+        // A document made from a PDF that has no .xopp yet stays open with its notes; it follows the PDF.
+        bool unsavedFromPdf = affectsOpen && document.FilePath != null && !File.Exists(document.FilePath);
+        if (affectsOpen && !unsavedFromPdf && !await SaveBeforeReplacingAsync())
+        {
+            return;
+        }
+        string renamed = await ProjectFiles.RenameAsync(path, isFolder, newName);
+        Explorer.SelectAfterRefresh(renamed);
+        if (unsavedFromPdf)
+        {
+            document.FilePath = ProjectFiles.MapRenamed(document.FilePath!, path, renamed);
+            if (document.PdfPath != null)
+            {
+                document.MovePdf(ProjectFiles.MapRenamed(document.PdfPath, path, renamed));
+                // Annotations of "x.pdf" go to "x.xopp" (see OpenAsync) – unless that is another document.
+                string xopp = Path.ChangeExtension(document.PdfPath, ProjectFiles.DocumentExtension);
+                if (!File.Exists(xopp))
+                {
+                    document.FilePath = xopp;
+                }
+            }
+            settings.LastFile = document.PdfPath;
+            settings.Save();
+            SetDirty(dirty); // the title shows the new name
+        }
+        else if (affectsOpen && document.FilePath != null)
+        {
+            await OpenAsync(ProjectFiles.MapRenamed(document.FilePath, path, renamed));
+        }
+    }
+
+    /// <summary>
+    /// Moves a file or folder to the recycle bin after asking. The open document, if deleted with it, is saved first
+    /// (so the recycle bin holds the latest notes) and closed.
+    /// </summary>
+    private async Task DeleteAsync(string path, bool isFolder)
+    {
+        string name = Path.GetFileName(Path.TrimEndingDirectorySeparator(path));
+        string content = isFolder
+            ? "Der Ordner wird mit allem, was darin ist, in den Papierkorb verschoben."
+            : "Die Datei wird in den Papierkorb verschoben.";
+        string pdfOfDocument = Path.ChangeExtension(path, ".pdf");
+        if (!isFolder && path.EndsWith(ProjectFiles.DocumentExtension, StringComparison.OrdinalIgnoreCase) &&
+            File.Exists(pdfOfDocument))
+        {
+            content += $" Das PDF „{Path.GetFileName(pdfOfDocument)}“ bleibt (ohne Notizen).";
+        }
+        var dialog = new ContentDialog
+        {
+            XamlRoot = Content.XamlRoot,
+            Title = $"„{name}“ löschen?",
+            Content = content,
+            PrimaryButtonText = "Löschen",
+            CloseButtonText = "Abbrechen",
+            DefaultButton = ContentDialogButton.Close,
+        };
+        if (await ShowDialogAsync(dialog) != ContentDialogResult.Primary)
+        {
+            return;
+        }
+        bool affectsOpen = ProjectFiles.IsAtOrBelow(document.FilePath, path) || ProjectFiles.IsAtOrBelow(document.PdfPath, path);
+        if (affectsOpen)
+        {
+            // Not when the .xopp does not exist yet: saving would create it just as its PDF goes.
+            if (dirty && document.FilePath != null && File.Exists(document.FilePath) && !Save())
+            {
+                return;
+            }
+            ShowDocument(XoppDocument.CreateNew(), null);
+        }
+        await ProjectFiles.DeleteAsync(path, isFolder);
+    }
+
+    private static string? ValidateNewName(string folder, string name, string? current)
+    {
+        string? error = ProjectFiles.ValidateName(name);
+        string path = Path.Combine(folder, name);
+        if (error == null && Path.Exists(path) && !string.Equals(path, current, StringComparison.OrdinalIgnoreCase))
+        {
+            error = $"In diesem Ordner gibt es „{name}“ schon.";
+        }
+        return error;
+    }
+
+    /// <summary>Asks for a name; the button is enabled only while <paramref name="validate"/> finds no problem.</summary>
+    private async Task<string?> AskNameAsync(string title, string initial, string primary, Func<string, string?> validate)
+    {
+        var box = new TextBox { Text = initial, Header = "Name" };
+        var dialog = new ContentDialog
+        {
+            XamlRoot = Content.XamlRoot,
+            Title = title,
+            Content = box,
+            PrimaryButtonText = primary,
+            CloseButtonText = "Abbrechen",
+            DefaultButton = ContentDialogButton.Primary,
+        };
+        void Validate()
+        {
+            string? error = validate(box.Text);
+            box.Description = error;
+            dialog.IsPrimaryButtonEnabled = error == null;
+        }
+        box.TextChanged += (_, _) => Validate();
+        dialog.Opened += (_, _) =>
+        {
+            box.Focus(FocusState.Programmatic);
+            box.SelectAll();
+        };
+        Validate();
+        return await ShowDialogAsync(dialog) == ContentDialogResult.Primary ? box.Text : null;
     }
 
     /// <summary>Saves, then commits everything, pulls with rebase and pushes; reloads the document if the pull changed it.</summary>
