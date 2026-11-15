@@ -45,6 +45,28 @@ public sealed class ToolController
 
     public event EventHandler? CustomToolChanged;
 
+    private bool partialErasing;
+
+    /// <summary>
+    /// The eraser erases partially (<see cref="PartialEraser"/>): with the eraser tool active the presenters take no
+    /// input (as for a custom tool) and the app erases. The pen's eraser end should come to the app the same way
+    /// (documented <c>InkInputConfiguration.IsEraserInputEnabled = false</c>), but 2.6.6-experimental ignores that
+    /// setting and erases whole strokes natively (sandbox 2026-11-16: the value reads back false, StrokesErased fires).
+    /// It stays set: an SDK that honors it hands the eraser end to the partial eraser without a change here.
+    /// </summary>
+    public bool PartialErasing
+    {
+        get => partialErasing;
+        set
+        {
+            partialErasing = value;
+            ApplyToAll();
+        }
+    }
+
+    /// <summary>The toolbar's eraser is the active tool.</summary>
+    public bool EraserActive => toolbar.ActiveTool is InkToolbarEraserButton;
+
     /// <summary>Color and width of the pen button, for shapes.</summary>
     public InkDrawingAttributes PenAttributes => new()
     {
@@ -111,8 +133,8 @@ public sealed class ToolController
 
     private void ApplyToAll()
     {
-        bool erasing = toolbar.ActiveTool is InkToolbarEraserButton;
-        bool custom = CustomTool != null;
+        bool erasing = EraserActive;
+        bool custom = CustomTool != null || (erasing && partialErasing); // the app takes the input
         var attributes = toolbar.InkDrawingAttributes;
         if (attributes != null)
         {
@@ -124,6 +146,7 @@ public sealed class ToolController
             view.Ink.InputProcessingConfiguration.Mode =
                 custom ? InkInputProcessingMode.None : erasing ? InkInputProcessingMode.Erasing : InkInputProcessingMode.Inking;
             view.Ink.IsInputEnabled = !custom;
+            view.Ink.InputConfiguration.IsEraserInputEnabled = !partialErasing;
             if (attributes != null)
             {
                 view.Ink.UpdateDefaultDrawingAttributes(attributes);

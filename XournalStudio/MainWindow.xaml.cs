@@ -26,6 +26,7 @@ public sealed partial class MainWindow : Window
     private readonly SyncController sync;
     private readonly EditCommands edit;
     private readonly PdfExportCommand export;
+    private readonly PartialEraser partialEraser;
     private bool closeConfirmed;
 
     public MainWindow(string? fileToOpen)
@@ -60,6 +61,36 @@ public sealed partial class MainWindow : Window
         tools.CustomToolChanged += (_, _) => inkTools.Tool =
             tools.CustomTool == SelectButton ? InkTool.Select :
             tools.CustomTool == ShapeButton ? InkTool.Shape : InkTool.None;
+        var eraser = new PartialEraser(undo, erased =>
+        {
+            // A selection must not keep strokes that are gone.
+            var ids = erased.Select(s => s.Id).ToHashSet();
+            if (inkTools.Selection.Current?.Strokes.Any(s => ids.Contains(s.Id)) == true)
+            {
+                inkTools.Selection.Clear();
+            }
+        }) { Radius = settings.EraserRadius };
+        inkTools.EraserToolActive = () => tools.EraserActive;
+        EraserRadius.Value = settings.EraserRadius;
+        PartialEraserButton.IsChecked = settings.PartialErasing;
+        void ApplyEraserMode()
+        {
+            bool partial = PartialEraserButton.IsChecked == true;
+            tools.PartialErasing = partial;
+            inkTools.Eraser = partial ? eraser : null;
+            if (!partial)
+            {
+                eraser.Hide();
+            }
+        }
+        ApplyEraserMode();
+        PartialEraserButton.Click += (_, _) =>
+        {
+            ApplyEraserMode();
+            settings.PartialErasing = PartialEraserButton.IsChecked == true;
+            settings.Save();
+        };
+        partialEraser = eraser;
         RecognizeButton.IsChecked = settings.RecognizeShapes;
         RecognizeButton.Click += (_, _) =>
         {
@@ -228,6 +259,15 @@ public sealed partial class MainWindow : Window
         if (ShapeChoice.SelectedIndex >= 0 && inkTools != null)
         {
             inkTools.Shapes.Shape = settings.Shape = (ShapeKind)ShapeChoice.SelectedIndex;
+            settings.Save();
+        }
+    }
+
+    private void OnEraserRadiusChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+    {
+        if (partialEraser != null)
+        {
+            partialEraser.Radius = settings.EraserRadius = e.NewValue;
             settings.Save();
         }
     }

@@ -23,6 +23,11 @@ public sealed class AppSettings
 
     public Model.SelectMode SelectMode { get; set; }
 
+    /// <summary>The eraser erases partially (a circle of <see cref="EraserRadius"/> points) instead of whole strokes.</summary>
+    public bool PartialErasing { get; set; }
+
+    public double EraserRadius { get; set; } = 4;
+
     private static string LocalAppData => Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
 
     private static string? TestFolder => Environment.GetEnvironmentVariable("XOURNAL_STUDIO_CONFIG_DIR");

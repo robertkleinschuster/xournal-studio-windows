@@ -153,6 +153,18 @@
                 <InkToolbarBallpointPenButton x:Name="PenButton" AutomationProperties.Name="Stift" />
                 <InkToolbarHighlighterButton x:Name="HighlighterButton" AutomationProperties.Name="Textmarker" />
                 <InkToolbarEraserButton x:Name="EraserButton" IsClearAllVisible="False" ToolTipService.ToolTip="Radierer" AutomationProperties.Name="Radierer" />
+                <!-- How the eraser (tool and the pen's eraser end) erases: whole strokes (Windows) or exactly the circle
+                     shown at the pen. A toggle, so the active tool stays. -->
+                <InkToolbarCustomToggleButton x:Name="PartialEraserButton" AutomationProperties.Name="Teilweise radieren"
+                                              ToolTipService.ToolTip="Teilweise radieren: der Radierer löscht genau den Kreis am Stift (Größe: rechte Maustaste oder gedrückt halten). Das Radierer-Ende des Stifts löscht vorerst immer ganze Striche.">
+                    <InkToolbarCustomToggleButton.ContextFlyout>
+                        <Flyout>
+                            <Slider x:Name="EraserRadius" Header="Radius (Punkt)" Minimum="1" Maximum="20" StepFrequency="0.5"
+                                    Width="220" ValueChanged="OnEraserRadiusChanged" />
+                        </Flyout>
+                    </InkToolbarCustomToggleButton.ContextFlyout>
+                    <FontIcon Glyph="&#xE75C;" />
+                </InkToolbarCustomToggleButton>
                 <!-- Windows' own ruler and protractor: draw along the edge for straight lines; move/turn with fingers. -->
                 <InkToolbarStencilButton x:Name="StencilButton" ToolTipService.ToolTip="Lineal / Geodreieck" AutomationProperties.Name="Lineal" />
                 <!-- Custom tools (Microsoft's InkToolbar extension point); the ink takes no input while one is active. -->

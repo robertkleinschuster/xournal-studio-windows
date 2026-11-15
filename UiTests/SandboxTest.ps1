@@ -107,6 +107,21 @@ try {
     Focus; [Inj]::Ctrl(0x5A); Start-Sleep 1
     Focus; [Inj]::Ctrl(0x5A); Shot '03h-scale-undone'
 
+    # Partial eraser (toggle) with the eraser tool: a line is cut exactly where the circle is; the circle shows while
+    # hovering (shot at once: an injected pen leaves range ~0.6 s after its last frame). The eraser end still erases
+    # whole strokes (WinUI ignores IsEraserInputEnabled = false, see ToolController).
+    Button 'InkToolbarBallpointPenButton'
+    Button 'PartialEraserButton' 'Teilweise radieren'
+    [Inj]::PenStroke((L (X 0.3) 480 (X 0.6) 480), $false, 512)
+    Button 'InkToolbarEraserButton' 'Radierer'
+    [Inj]::PenStroke((L (X 0.45) 465 (X 0.45) 495), $false, 512)
+    for ($k = 0; $k -lt 6; $k++) { [Inj]::PenFrame((X 0.5) + 3 * $k, 480, 0x22002, 0, 0) }
+    [Inj]::Shot("$out\03i-partial-erased-circle.png"); "shot 03i-partial-erased-circle"
+    [Inj]::PenFrame((X 0.52), 480, 0x22000, 0, 0)
+    Focus; [Inj]::Ctrl(0x5A); Shot '03j-partial-undone'
+    Button 'PartialEraserButton' 'Teilweise radieren'
+    Button 'SelectButton' 'Auswählen'
+
     # Shape recognition (Windows ink analysis): a hand-drawn rectangle and circle become clean shapes.
     Button 'InkToolbarBallpointPenButton'
     Button 'RecognizeButton' 'Formerkennung'

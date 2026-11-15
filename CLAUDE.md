@@ -306,6 +306,10 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   a toggle next to the eraser switches the eraser (tool and the pen's eraser end) between whole strokes (native) and
   partial, without changing the active tool. Partial: the radius is exact and shown as a circle at the pen (hover and
   while erasing) – exactly what is inside the circle disappears, nothing else (cut where the ink's edge, i.e. the
-  centerline plus half the stroke width, meets the circle).
+  centerline plus half the stroke width, meets the circle). **Done 2026-11-16 for the eraser tool** (sandbox: exact gap, circle
+  while hovering, undo). **The pen's eraser end still erases whole strokes:** WinUI 2.6.6-experimental ignores
+  `InkInputConfiguration.IsEraserInputEnabled = false` (reads back false, the presenter still erases natively,
+  StrokesErased fires) – no workaround (doctrine); the setting stays, so an SDK that honors it routes the eraser end
+  to the partial eraser. Radius: context menu of the toggle (1–20 pt, default 4). Tell the user.
 - **PDF export:** PDFsharp pinned to 6.2.4, the last MIT version (6.5.0 is AGPL-3.0 with license acceptance – a
   license change for this project is the user's decision).
