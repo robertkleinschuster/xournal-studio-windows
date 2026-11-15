@@ -53,6 +53,10 @@ arrows), math exercises long formulas in several colors.
   migrated later instead of being accommodated by special cases.
 - **Little custom code, strictly encapsulated.** What is left (the .xopp mapping, glue between controls) lives in
   small classes with one job: `Model/` (file format, unit-tested), `Views/`, `Services/`.
+- **No monster classes, clean modular code** (user, 2026-11-15). A class has one job and stays small (a few hundred
+  lines at most); `MainWindow` only wires the window's controls to feature classes (document session, recovery,
+  sync, explorer commands, selection, tasks) and does not grow their logic. When a class grows, split it before
+  adding more. Logic without UI goes where the unit tests can reach it.
 - **Iterative.** Only features in actual use, simplest version first. Ask before large new areas.
 - **Windows 11 only**, this machine's version (26200) – no compatibility layers.
 - **Right-handed UI:** nothing interactive at the right screen edge; one toolbar row, left-aligned; menu bar
