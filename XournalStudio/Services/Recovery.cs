@@ -75,7 +75,16 @@ public sealed class Recovery
         string readable = string.Concat($"{name} (Wiederherstellung {entry.Info.SavedAt:yyyy-MM-dd HH-mm}).xopp"
             .Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
         await file.RenameAsync(readable, Windows.Storage.NameCollisionOption.GenerateUniqueName);
-        await file.DeleteAsync(Windows.Storage.StorageDeleteOption.Default);
+        try
+        {
+            await file.DeleteAsync(Windows.Storage.StorageDeleteOption.Default);
+        }
+        catch
+        {
+            // Not recycled: back to the name its info refers to, so it is offered again (the caller reports the error).
+            await file.RenameAsync(Path.GetFileName(entry.CopyPath));
+            throw;
+        }
         File.Delete(InfoPath(entry.Id));
     }
 

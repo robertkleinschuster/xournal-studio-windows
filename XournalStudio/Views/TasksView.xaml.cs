@@ -259,9 +259,16 @@ public sealed class TaskItem
     {
         Line = line;
         Task = task;
-        if (task.Tag("doc") is { } doc && TodoTxt.ResolveDocumentLink(taskFile, doc) is { } link)
+        if (task.Tag("doc") is { } doc)
         {
-            Link = link;
+            try
+            {
+                Link = TodoTxt.ResolveDocumentLink(taskFile, doc);
+            }
+            catch (Exception e) when (e is ArgumentException or NotSupportedException or PathTooLongException)
+            {
+                DebugLog.Write($"doc: link '{doc}' is no path (shown without link)", e); // e.g. written by another app
+            }
         }
         if (task.Due is { } due)
         {

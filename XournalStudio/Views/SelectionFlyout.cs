@@ -13,6 +13,7 @@ namespace XournalStudio.Views;
 public sealed class SelectionFlyout
 {
     private readonly CommandBarFlyout flyout;
+    private readonly List<AppBarButton> contentCommands = new(); // not for a PDF area alone
 
     public SelectionFlyout(EditCommands commands, UIElement passThrough)
     {
@@ -23,10 +24,14 @@ public sealed class SelectionFlyout
             // Taps beside it reach the page (and close it), as with the text selection's flyout.
             OverlayInputPassThroughElement = passThrough,
         };
-        flyout.PrimaryCommands.Add(Button("Ausschneiden", Symbol.Cut, async () => await commands.CutAsync()));
+        var cut = Button("Ausschneiden", Symbol.Cut, async () => await commands.CutAsync());
+        var duplicate = Button("Duplizieren", Symbol.Add, commands.Duplicate);
+        var delete = Button("Löschen", Symbol.Delete, () => commands.Delete());
+        contentCommands.AddRange([cut, duplicate, delete]);
+        flyout.PrimaryCommands.Add(cut);
         flyout.PrimaryCommands.Add(Button("Kopieren", Symbol.Copy, async () => await commands.CopyAsync()));
-        flyout.PrimaryCommands.Add(Button("Duplizieren", Symbol.Add, commands.Duplicate));
-        flyout.PrimaryCommands.Add(Button("Löschen", Symbol.Delete, () => commands.Delete()));
+        flyout.PrimaryCommands.Add(duplicate);
+        flyout.PrimaryCommands.Add(delete);
     }
 
     /// <summary>Shows the commands above the selection (or hides them when there is none).</summary>
@@ -36,6 +41,10 @@ public sealed class SelectionFlyout
         {
             flyout.Hide();
             return;
+        }
+        foreach (var command in contentCommands)
+        {
+            command.Visibility = selection.HasContent ? Visibility.Visible : Visibility.Collapsed;
         }
         var b = selection.Bounds;
         flyout.ShowAt(selection.View.Surface, new FlyoutShowOptions

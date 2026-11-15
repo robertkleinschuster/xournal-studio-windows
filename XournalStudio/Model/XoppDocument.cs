@@ -213,9 +213,9 @@ public sealed class XoppDocument
         }
         if (domain == "attach")
         {
-            // "<name>.xopp.bg.pdf" belongs to the document's own name: another file would name a PDF that is not there.
-            return FilePath != null &&
-                string.Equals(Path.GetFullPath(target), Path.GetFullPath(FilePath), StringComparison.OrdinalIgnoreCase);
+            // "<name>.xopp.bg.pdf" belongs to a file's name: kept only where it names the PDF (not for Save As or a copy).
+            return string.Equals(Path.GetFullPath(target + "." + filename), Path.GetFullPath(PdfPath),
+                StringComparison.OrdinalIgnoreCase);
         }
         string dir = Path.GetDirectoryName(Path.GetFullPath(target))!;
         string named = Path.GetFullPath(Path.Combine(dir, filename.Replace('/', Path.DirectorySeparatorChar)));

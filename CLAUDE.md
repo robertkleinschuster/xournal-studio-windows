@@ -61,8 +61,8 @@ arrows), math exercises long formulas in several colors.
 - **Windows 11 only**, this machine's version (26200) – no compatibility layers.
 - **Right-handed UI:** nothing interactive at the right screen edge; one toolbar row, left-aligned; menu bar
   visible; scrollbars hidden; the left side is for the explorer. Touch never draws (it scrolls/zooms).
-- **Pen buttons:** eraser end / eraser button erases (native). Barrel button (user, 2026-11-15): hold barrel = select
-  (the Auswählen tool's mode, lasso by default), with every tool and without switching the toolbar: the presenters
+- **Pen buttons:** eraser end / eraser button erases (native). Barrel button (user, 2026-11-15): hold barrel = lasso
+  (always, whatever mode the Auswählen tool has – user, 2026-11-16), with every tool and without switching the toolbar: the presenters
   ignore barrel input (documented `InkInputConfiguration.IsPrimaryBarrelButtonInputEnabled = false`), it arrives as
   XAML pointer events and `InkTools` hands it to the `SelectionTool`; a barrel drag inside the selection moves it, on
   a corner handle scales it, a barrel tap clears it (or selects the picture under it).
@@ -291,22 +291,14 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
    (eraser end, barrel lasso – confirmed by the user 2026-11-15).
 6. Not started, only if the user asks: text, inserting pages of another PDF, PDF export, page reordering.
 
-## Questions for the user (2026-11-15 night, decided provisionally – confirm or change)
+## Decided with the user (2026-11-16 morning)
 
-1. **Tool after paste/duplicate:** the Auswählen tool becomes active (visible in the toolbar) so the pasted content
-   can be moved with the pen at once; it does not switch back to the pen by itself. Switch back automatically when
-   the selection is cleared?
-2. **Default name:** `2026-11-15-Notiz-22-05` (Xournal++'s German default `%F-Notiz-%H-%M`); a document opened from a
-   PDF suggests the PDF's name in its folder. OK, or the English `Note`?
-3. **Recovery interval:** 5 s after a change (and on focus loss). Fine, or less often?
-4. **Scaling** keeps the stroke width (as Xournal's file does) and the aspect ratio (corner handles only). Want
-   edge handles (stretch) or width scaling?
-5. **Barrel button** now uses the Auswählen tool's mode (lasso or rectangle) instead of always the lasso. OK?
-6. **todo.txt:** only `<project folder>/todo.txt` is shown (your Uni folder has exactly that one). Also
-   `*.todo.txt` or files in subfolders? New tasks get today's creation date; due date by picker; links to a page via
-   the link button (`doc:path#pN`, like the GTK fork). Reminders/notifications and quick-add date words ("morgen")
-   were left out (simple first).
-7. **"Meine behalten" after a sync conflict** no longer saves by itself (no saving without choice): the own version
-   stays open, unsaved, until Ctrl+S. OK?
-8. Earlier, still open: reset `examples/Schaltungen.xopp` (it has your test strokes)? Report the ink-over-dialog bug /
-   comment on PR #12292 (public)? PDF export needed?
+- After paste/duplicate the Auswählen tool stays active (no automatic switch back to the pen).
+- Scaling: corner handles only, proportional, stroke width unchanged.
+- Tasks: only `<project folder>/todo.txt`; no reminders, no date words in quick add.
+- Default name `%F-Notiz-%H-%M`, a PDF's document suggests the PDF's name in its folder.
+- Barrel button = always the lasso. Recovery copy 5 s after a change and on focus loss.
+- "Meine behalten" after a sync changed the open document: stays unsaved until Ctrl+S.
+- `examples/Schaltungen.xopp` reset; when the reviews are clean: merge `overnight` into main, push, install.
+- Next feature: **PDF export** (approved 2026-11-16). Later candidates: pages of another PDF, page reordering, text.
+- Still open: report the ink-over-dialog bug / comment on PR #12292 (public, needs approval).

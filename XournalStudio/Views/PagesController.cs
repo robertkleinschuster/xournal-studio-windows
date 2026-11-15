@@ -199,12 +199,27 @@ public sealed class PagesController
     /// <summary>Records new ink for undo; with shape recognition on, hand-drawn shapes become clean ones.</summary>
     private async void OnStrokesCollected(PageView view, IReadOnlyList<InkStroke> strokes)
     {
+        var shown = document;
         var page = view.Page;
         var edit = new PageEdit(page);
         foreach (var stroke in strokes.ToList())
         {
-            var shape = recognizeShapes() && !stroke.DrawingAttributes.DrawAsHighlighter
-                ? await ShapeRecognition.RecognizeAsync(stroke) : null;
+            InkStroke? shape = null;
+            if (recognizeShapes() && !stroke.DrawingAttributes.DrawAsHighlighter)
+            {
+                try
+                {
+                    shape = await ShapeRecognition.RecognizeAsync(stroke);
+                }
+                catch (Exception e)
+                {
+                    DebugLog.Write("shape recognition (stroke kept as drawn)", e);
+                }
+                if (document != shown)
+                {
+                    return; // another document was opened meanwhile: this one's history is gone
+                }
+            }
             if (shape != null && page.Ink!.GetStrokes().Contains(stroke))
             {
                 PageEdit.RemoveStrokes(page, [stroke]);

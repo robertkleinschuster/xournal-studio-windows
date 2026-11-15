@@ -64,7 +64,19 @@ public sealed class Autosave
         }
         pending = false;
         string current = id;
-        var (xml, info) = snapshot();
+        (XDocument, RecoveryInfo) copy;
+        try
+        {
+            copy = snapshot();
+        }
+        catch (Exception e)
+        {
+            DebugLog.Write($"snapshot for recovery copy {current}", e);
+            pending = true; // tried again with the next change
+            Failed?.Invoke(this, e);
+            return;
+        }
+        var (xml, info) = copy;
         Enqueue($"write recovery copy {current}", () => recovery.WriteAsync(current, xml, info));
     }
 

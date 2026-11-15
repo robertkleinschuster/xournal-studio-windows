@@ -90,6 +90,7 @@ public sealed partial class ExplorerView : UserControl
         if (!string.Equals(folder, projectFolder, StringComparison.OrdinalIgnoreCase))
         {
             folder = projectFolder;
+            Tree.SelectedItem = null; // before the list goes (see Rebuild)
             Tree.ItemsSource = null;
             items.Clear();
             revealedFile = null;

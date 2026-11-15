@@ -124,6 +124,12 @@ public sealed class XoppPage
     /// <summary>Called when undo/redo puts a copy of a stroke back in place of the removed original.</summary>
     public void TransferStrokeIdentity(uint oldId, uint newId)
     {
+        // The edit may remember an older identity (S, while S' replaced it): continue the chain from its end, so every
+        // edit remembering S or S' finds the copy, and the element moves from the id that holds it.
+        while (replacedIds.TryGetValue(oldId, out uint next))
+        {
+            oldId = next;
+        }
         replacedIds[oldId] = newId;
         if (strokeElements.Remove(oldId, out var e))
         {

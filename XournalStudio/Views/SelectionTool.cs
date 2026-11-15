@@ -37,7 +37,8 @@ public sealed class SelectionTool(UndoStack undo)
     /// <summary>A drag began (the selection's commands make room).</summary>
     public event EventHandler? DragStarted;
 
-    public void Begin(PageView page, Point p)
+    /// <param name="mode">Lasso or rectangle for a new selection (the barrel button always lassos).</param>
+    public void Begin(PageView page, Point p, SelectMode mode)
     {
         view = page;
         start = p;
@@ -60,7 +61,7 @@ public sealed class SelectionTool(UndoStack undo)
         if (gesture == Gesture.None)
         {
             Clear();
-            if (Mode == SelectMode.Lasso)
+            if (mode == SelectMode.Lasso)
             {
                 lasso = new Polyline { Stroke = Selection.AccentBrush, StrokeThickness = 1, StrokeDashArray = [4, 2] };
                 lasso.Points.Add(p);

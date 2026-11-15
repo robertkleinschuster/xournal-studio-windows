@@ -62,22 +62,23 @@ public sealed class EditCommands(
                 current.Strokes.ForEach(s => s.Selected = false);
                 return true;
             }
-            var elements = new List<XElement>();
+            // Taken now: the selection may be moved while the area renders.
+            var bounds = current.Bounds;
+            var area = current.Area;
+            var elements = current.Images.Select(i => new XElement(i))
+                .Concat(current.Strokes.Select(current.Page.ElementOf)).ToList();
             byte[]? bitmap = null;
-            if (current.Area is { } area)
+            if (area is { } a)
             {
-                var (png, width, height) = await current.View.Pdf!.RenderAreaAsync(current.Page.PdfPageIndex, area, PdfAreaPixelsPerPoint);
-                elements.Add(XoppImage.Create(area, png, width, height));
+                var (png, width, height) = await current.View.Pdf!.RenderAreaAsync(current.Page.PdfPageIndex, a, PdfAreaPixelsPerPoint);
+                elements.Insert(0, XoppImage.Create(a, png, width, height)); // below the notes on it
                 bitmap = png;
             }
-            elements.AddRange(current.Images.Select(i => new XElement(i)));
-            elements.AddRange(current.Strokes.Select(current.Page.ElementOf));
-            if (bitmap == null && current.Strokes.Count == 0 && current.Images.Count == 1 &&
-                !XoppImage.IsPdf(XoppImage.GetData(current.Images[0])))
+            else if (elements.Count == 1 && XoppImage.IsImage(elements[0]) && !XoppImage.IsPdf(XoppImage.GetData(elements[0])))
             {
-                bitmap = XoppImage.GetData(current.Images[0]);
+                bitmap = XoppImage.GetData(elements[0]);
             }
-            await ClipboardService.CopyAsync(XoppClip.Create(current.Bounds, elements), bitmap);
+            await ClipboardService.CopyAsync(XoppClip.Create(bounds, elements), bitmap);
             return true;
         }
         catch (Exception e)
@@ -90,7 +91,12 @@ public sealed class EditCommands(
     public async Task CutAsync()
     {
         var copied = selection.Current;
-        if (copied is { HasContent: true } && await CopyAsync() && selection.Current == copied)
+        if (copied is { HasContent: false })
+        {
+            messages.Show(InfoBarSeverity.Informational, "Nur kopieren", "Ein PDF-Bereich lässt sich kopieren, nicht ausschneiden.");
+            return;
+        }
+        if (copied != null && await CopyAsync() && selection.Current == copied)
         {
             Delete(); // only if the selection is still the one copied (a tap may have changed it meanwhile)
         }

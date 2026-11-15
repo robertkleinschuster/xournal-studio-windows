@@ -1,6 +1,7 @@
 using Microsoft.UI.Input;
 using Microsoft.UI.Xaml.Input;
 using Windows.Foundation;
+using XournalStudio.Model;
 using XournalStudio.Services;
 using InkDrawingAttributes = Windows.UI.Input.Inking.InkDrawingAttributes;
 
@@ -74,7 +75,7 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
         last = point.Position;
         if (active == InkTool.Select)
         {
-            Selection.Begin(view, last);
+            Selection.Begin(view, last, barrel ? SelectMode.Lasso : Selection.Mode); // barrel: always the lasso (user)
         }
         else
         {
