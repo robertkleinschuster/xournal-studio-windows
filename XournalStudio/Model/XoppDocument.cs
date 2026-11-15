@@ -53,17 +53,10 @@ public sealed class XoppDocument
     }
 
     /// <summary>
-    /// The background PDF was renamed or moved: the document refers to it at <paramref name="newPath"/> from now on.
-    /// For documents made from a PDF and not saved yet (a loaded document keeps the reference it was written with).
+    /// The background PDF was renamed or moved: the document refers to it at <paramref name="newPath"/> from now on
+    /// (written on the next save, as the old reference no longer names it).
     /// </summary>
-    public void MovePdf(string newPath)
-    {
-        if (loadedPdfReference.Filename != null)
-        {
-            throw new InvalidOperationException("The PDF reference of a loaded document is written back as it was.");
-        }
-        PdfPath = newPath;
-    }
+    public void MovePdf(string newPath) => PdfPath = newPath;
 
     public static XoppDocument Load(string path)
     {

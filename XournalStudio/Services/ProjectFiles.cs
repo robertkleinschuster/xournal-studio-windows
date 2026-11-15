@@ -4,16 +4,12 @@ namespace XournalStudio.Services;
 
 /// <summary>
 /// File operations of the explorer with the Windows storage API (StorageFile/StorageFolder): new document, new
-/// folder, rename, delete to the recycle bin. A .xopp is renamed and deleted together with its upstream companion
-/// file – the attached PDF background "&lt;name&gt;.xopp.bg.pdf" (domain "attach" in upstream SaveHandler.cpp) –
-/// because Xournal++ finds that one by the document's name.
+/// folder, rename, delete to the recycle bin. Each acts on exactly the item it is given – no companion files are
+/// renamed or deleted along with it.
 /// </summary>
 public static class ProjectFiles
 {
     public const string DocumentExtension = ".xopp";
-
-    /// <summary>Upstream's attached PDF of a document: the name without extensions + ".xopp.bg.pdf".</summary>
-    public const string AttachedPdfSuffix = ".xopp.bg.pdf";
 
     private static readonly string[] ReservedNames =
     [
@@ -80,17 +76,6 @@ public static class ProjectFiles
         return Path.TrimEndingDirectorySeparator(Path.GetFullPath(renamed)) + full[at.Length..];
     }
 
-    /// <summary>The upstream companion files of <paramref name="path"/> that exist (the attached PDF of a .xopp).</summary>
-    public static IReadOnlyList<string> Companions(string path)
-    {
-        if (!path.EndsWith(DocumentExtension, StringComparison.OrdinalIgnoreCase))
-        {
-            return [];
-        }
-        string attached = path[..^DocumentExtension.Length] + AttachedPdfSuffix;
-        return File.Exists(attached) ? [attached] : [];
-    }
-
     /// <summary>
     /// The name an item gets: a file keeps its extension (only the name before it is edited, as the dialog shows it).
     /// </summary>
@@ -101,7 +86,7 @@ public static class ProjectFiles
     public static string EditableName(string path, bool isFolder) =>
         isFolder ? Path.GetFileName(Path.TrimEndingDirectorySeparator(path)) : Path.GetFileNameWithoutExtension(path);
 
-    /// <summary>Renames a file (with its companions) or folder; fails if the name is taken. Returns the new path.</summary>
+    /// <summary>Renames a file or folder; fails if the name is taken. Returns the new path.</summary>
     public static async Task<string> RenameAsync(string path, bool isFolder, string newName)
     {
         if (isFolder)
@@ -110,19 +95,12 @@ public static class ProjectFiles
             await folder.RenameAsync(newName, NameCollisionOption.FailIfExists);
             return folder.Path;
         }
-        var companions = Companions(path);
         var file = await StorageFile.GetFileFromPathAsync(Path.GetFullPath(path));
         await file.RenameAsync(newName, NameCollisionOption.FailIfExists);
-        string stem = Path.GetFileNameWithoutExtension(newName);
-        foreach (string companion in companions)
-        {
-            var companionFile = await StorageFile.GetFileFromPathAsync(Path.GetFullPath(companion));
-            await companionFile.RenameAsync(stem + AttachedPdfSuffix, NameCollisionOption.FailIfExists);
-        }
         return file.Path;
     }
 
-    /// <summary>Moves a file (with its companions) or folder to the recycle bin (<see cref="StorageDeleteOption.Default"/>).</summary>
+    /// <summary>Moves a file or folder to the recycle bin (<see cref="StorageDeleteOption.Default"/>).</summary>
     public static async Task DeleteAsync(string path, bool isFolder)
     {
         if (isFolder)
@@ -131,12 +109,7 @@ public static class ProjectFiles
             await folder.DeleteAsync(StorageDeleteOption.Default);
             return;
         }
-        var companions = Companions(path);
         await (await StorageFile.GetFileFromPathAsync(Path.GetFullPath(path))).DeleteAsync(StorageDeleteOption.Default);
-        foreach (string companion in companions)
-        {
-            await (await StorageFile.GetFileFromPathAsync(Path.GetFullPath(companion))).DeleteAsync(StorageDeleteOption.Default);
-        }
     }
 
     /// <summary>Creates a folder; fails if the name is taken. Returns its path.</summary>

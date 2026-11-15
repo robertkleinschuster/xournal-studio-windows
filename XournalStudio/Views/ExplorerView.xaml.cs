@@ -23,7 +23,7 @@ public enum ExplorerCommand
 public sealed record ExplorerCommandRequest(ExplorerCommand Command, string Path, bool IsFolder);
 
 /// <summary>
-/// The project folder as a TreeView (folders, .xopp, .pdf) with git status colors and the sync button.
+/// The project folder as a TreeView (everything on disk) with git status colors and the sync button.
 /// Tapping a document raises <see cref="FileInvoked"/>; the window opens it. The context menu and F2/Del raise
 /// <see cref="CommandRequested"/>; showing in File Explorer and copying the path are done here. Changes on disk raise
 /// <see cref="FolderChanged"/> (debounced) so the window refreshes the tree.
@@ -221,9 +221,7 @@ public sealed partial class ExplorerView : UserControl
 
     private void Reveal(string? file)
     {
-        // A PDF without annotations yet is shown under its own name; with them, its .xopp is.
-        if (file == null || !(items.TryGetValue(file, out var item) ||
-            items.TryGetValue(Path.ChangeExtension(file, ".pdf"), out item)))
+        if (file == null || !items.TryGetValue(file, out var item))
         {
             return;
         }

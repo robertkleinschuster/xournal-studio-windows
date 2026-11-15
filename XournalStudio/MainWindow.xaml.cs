@@ -91,17 +91,10 @@ public sealed partial class MainWindow : Window
         {
             if (Path.GetExtension(path).Equals(".pdf", StringComparison.OrdinalIgnoreCase))
             {
-                // Annotations of "x.pdf" live in "x.xopp" next to it, created on the first save.
-                string xopp = Path.ChangeExtension(path, ".xopp");
-                if (File.Exists(xopp))
-                {
-                    await OpenAsync(xopp);
-                    return;
-                }
+                // A new, unsaved document on the PDF; the first save asks where (nothing is opened or named
+                // behind the user's back).
                 var pdfBackground = await PdfBackground.LoadAsync(path);
-                var doc = XoppDocument.FromPdf(path, pdfBackground.GetPageSizes());
-                doc.FilePath = xopp;
-                ShowDocument(doc, pdfBackground);
+                ShowDocument(XoppDocument.FromPdf(path, pdfBackground.GetPageSizes()), pdfBackground);
             }
             else
             {
@@ -228,7 +221,7 @@ public sealed partial class MainWindow : Window
     {
         var picker = new FileSavePicker(AppWindow.Id)
         {
-            SuggestedFileName = Path.GetFileNameWithoutExtension(document.FilePath ?? "Notizen"),
+            SuggestedFileName = Path.GetFileNameWithoutExtension(document.FilePath ?? document.PdfPath ?? "Notizen"),
         };
         picker.FileTypeChoices.Add("Xournal++-Dokument", [".xopp"]);
         var result = await picker.PickSaveFileAsync();
@@ -567,7 +560,7 @@ public sealed partial class MainWindow : Window
         {
             return; // git status would compete with the sync for the index; refreshed afterwards
         }
-        await Explorer.ShowAsync(ProjectFolder, document.FilePath);
+        await Explorer.ShowAsync(ProjectFolder, document.FilePath ?? document.PdfPath);
         SyncMenuItem.IsEnabled = Explorer.RepositoryRoot != null && !syncing;
     }
 
@@ -599,8 +592,26 @@ public sealed partial class MainWindow : Window
 
     private async void OnExplorerFileInvoked(object? sender, string path)
     {
-        bool isOpen = string.Equals(path, document.FilePath, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(Path.ChangeExtension(path, ".xopp"), document.FilePath, StringComparison.OrdinalIgnoreCase);
+        string ext = Path.GetExtension(path);
+        if (!ext.Equals(".xopp", StringComparison.OrdinalIgnoreCase) && !ext.Equals(".pdf", StringComparison.OrdinalIgnoreCase))
+        {
+            // Everything else opens in the app Windows has for it, as in File Explorer.
+            try
+            {
+                var file = await Windows.Storage.StorageFile.GetFileFromPathAsync(Path.GetFullPath(path));
+                if (!await Windows.System.Launcher.LaunchFileAsync(file))
+                {
+                    ShowMessage(InfoBarSeverity.Warning, "Datei konnte nicht geöffnet werden", path);
+                }
+            }
+            catch (Exception e)
+            {
+                DebugLog.Write($"launch {path}", e);
+                ShowMessage(InfoBarSeverity.Error, "Datei konnte nicht geöffnet werden", $"{path}: {DebugLog.Describe(e)}");
+            }
+            return;
+        }
+        bool isOpen = string.Equals(path, document.FilePath ?? document.PdfPath, StringComparison.OrdinalIgnoreCase);
         if (!isOpen && !syncing && await SaveBeforeReplacingAsync())
         {
             await OpenAsync(path);
@@ -684,8 +695,9 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Renames a file (only the name before the extension is edited; a .xopp keeps referring to its PDF, which stays)
-    /// or a folder. The open document, if renamed with it, is saved before and opened again from its new place.
+    /// Renames exactly this file (only the name before the extension is edited) or folder – nothing else is renamed
+    /// with it. The open document, if it is renamed (or lies in the folder), is saved before and opened again from its
+    /// new place; if its background PDF is renamed, the document refers to the new name and has to be saved.
     /// </summary>
     private async Task RenameAsync(string path, bool isFolder)
     {
@@ -701,59 +713,38 @@ public sealed partial class MainWindow : Window
         {
             return;
         }
-        bool affectsOpen = ProjectFiles.IsAtOrBelow(document.FilePath, path) || ProjectFiles.IsAtOrBelow(document.PdfPath, path);
-        // A document made from a PDF that has no .xopp yet stays open with its notes; it follows the PDF.
-        bool unsavedFromPdf = affectsOpen && document.FilePath != null && !File.Exists(document.FilePath);
-        if (affectsOpen && !unsavedFromPdf && !await SaveBeforeReplacingAsync())
+        bool fileAffected = ProjectFiles.IsAtOrBelow(document.FilePath, path);
+        if (fileAffected && !await SaveBeforeReplacingAsync())
         {
             return;
         }
         string renamed = await ProjectFiles.RenameAsync(path, isFolder, newName);
         Explorer.SelectAfterRefresh(renamed);
-        if (unsavedFromPdf)
+        if (fileAffected)
         {
-            document.FilePath = ProjectFiles.MapRenamed(document.FilePath!, path, renamed);
-            if (document.PdfPath != null)
-            {
-                document.MovePdf(ProjectFiles.MapRenamed(document.PdfPath, path, renamed));
-                // Annotations of "x.pdf" go to "x.xopp" (see OpenAsync) – unless that is another document.
-                string xopp = Path.ChangeExtension(document.PdfPath, ProjectFiles.DocumentExtension);
-                if (!File.Exists(xopp))
-                {
-                    document.FilePath = xopp;
-                }
-            }
-            settings.LastFile = document.PdfPath;
-            settings.Save();
-            SetDirty(dirty); // the title shows the new name
+            await OpenAsync(ProjectFiles.MapRenamed(document.FilePath!, path, renamed));
         }
-        else if (affectsOpen && document.FilePath != null)
+        else if (ProjectFiles.IsAtOrBelow(document.PdfPath, path))
         {
-            await OpenAsync(ProjectFiles.MapRenamed(document.FilePath, path, renamed));
+            document.MovePdf(ProjectFiles.MapRenamed(document.PdfPath!, path, renamed));
+            SetDirty(true);
         }
     }
 
     /// <summary>
-    /// Moves a file or folder to the recycle bin after asking. The open document, if deleted with it, is saved first
-    /// (so the recycle bin holds the latest notes) and closed.
+    /// Moves exactly this file or folder to the recycle bin after asking. The open document, if deleted (or its
+    /// background PDF), is saved first – so the recycle bin holds the latest notes – and closed.
     /// </summary>
     private async Task DeleteAsync(string path, bool isFolder)
     {
         string name = Path.GetFileName(Path.TrimEndingDirectorySeparator(path));
-        string content = isFolder
-            ? "Der Ordner wird mit allem, was darin ist, in den Papierkorb verschoben."
-            : "Die Datei wird in den Papierkorb verschoben.";
-        string pdfOfDocument = Path.ChangeExtension(path, ".pdf");
-        if (!isFolder && path.EndsWith(ProjectFiles.DocumentExtension, StringComparison.OrdinalIgnoreCase) &&
-            File.Exists(pdfOfDocument))
-        {
-            content += $" Das PDF „{Path.GetFileName(pdfOfDocument)}“ bleibt (ohne Notizen).";
-        }
         var dialog = new ContentDialog
         {
             XamlRoot = Content.XamlRoot,
             Title = $"„{name}“ löschen?",
-            Content = content,
+            Content = isFolder
+                ? "Der Ordner wird mit allem, was darin ist, in den Papierkorb verschoben."
+                : "Die Datei wird in den Papierkorb verschoben.",
             PrimaryButtonText = "Löschen",
             CloseButtonText = "Abbrechen",
             DefaultButton = ContentDialogButton.Close,
@@ -762,11 +753,9 @@ public sealed partial class MainWindow : Window
         {
             return;
         }
-        bool affectsOpen = ProjectFiles.IsAtOrBelow(document.FilePath, path) || ProjectFiles.IsAtOrBelow(document.PdfPath, path);
-        if (affectsOpen)
+        if (ProjectFiles.IsAtOrBelow(document.FilePath, path) || ProjectFiles.IsAtOrBelow(document.PdfPath, path))
         {
-            // Not when the .xopp does not exist yet: saving would create it just as its PDF goes.
-            if (dirty && document.FilePath != null && File.Exists(document.FilePath) && !Save())
+            if (dirty && document.FilePath != null && !Save())
             {
                 return;
             }

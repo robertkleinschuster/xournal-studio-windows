@@ -27,36 +27,30 @@ public sealed class ExplorerTests : IDisposable
     }
 
     [Fact]
-    public void TreeShowsDocumentsOnly()
+    public void TreeShowsEverythingOnDisk()
     {
         Touch("GET/UE/blatt1.pdf");
         Touch("GET/UE/blatt1.xopp");
-        Touch("GET/UE/blatt2.pdf");
         Touch("GET/UE/blatt2_kommentiert.pdf");
-        Touch("GET/UE/blatt3.xopp.pages.pdf");
-        Touch("GET/UE/blatt3.portals.pdf");
         Touch("GET/UE/notes.txt");
-        Touch("GET/UE/blatt4.xopp");
-        Touch("GET/UE/blatt4.xopp.bg.pdf"); // upstream's attached PDF
-        Touch("Leer/readme.md");
+        Touch("GET/UE/blatt4.xopp.bg.pdf");
+        Directory.CreateDirectory(Path.Combine(temp, "Leer"));
+        // Only what Windows marks hidden is left out (git marks its .git folder hidden).
         Touch(".git/x.pdf");
-        Directory.CreateDirectory(Path.Combine(temp, "Neu", "Unterordner")); // empty folders: just created
-        Directory.CreateDirectory(Path.Combine(temp, "Nur", "Fremdes"));
-        Touch("Nur/Fremdes/a.txt");
-        // A junction back to the project folder must not be followed (endless recursion).
+        File.SetAttributes(Path.Combine(temp, ".git"), FileAttributes.Directory | FileAttributes.Hidden);
+        // A junction back to the project folder is shown but not entered (endless recursion).
         string loop = Path.Combine(temp, "GET", "UE", "Schleife");
         CreateJunction(loop, temp);
 
         var root = ProjectTree.Read(temp);
         Directory.Delete(loop); // removes the link only
 
-        Assert.Equal(["GET", "Neu"], root.Children.Select(c => c.Name));
-        var get = root.Children[0];
-        var ue = Assert.Single(get.Children);
-        Assert.Equal(["blatt1.xopp", "blatt2.pdf", "blatt4.xopp"], ue.Children.Select(c => c.Name));
-        var neu = Assert.Single(root.Children[1].Children);
-        Assert.Equal("Unterordner", neu.Name);
-        Assert.True(neu.IsFolder);
+        Assert.Equal(["GET", "Leer"], root.Children.Select(c => c.Name));
+        var ue = Assert.Single(root.Children[0].Children);
+        Assert.Equal(["Schleife", "blatt1.pdf", "blatt1.xopp", "blatt2_kommentiert.pdf", "blatt4.xopp.bg.pdf", "notes.txt"],
+            ue.Children.Select(c => c.Name));
+        Assert.Empty(ue.Children[0].Children);
+        Assert.True(root.Children[1].IsFolder);
     }
 
     [Fact]
@@ -129,7 +123,7 @@ public sealed class ExplorerTests : IDisposable
     }
 
     [Fact]
-    public async Task RenameTakesTheAttachedPdfAlong()
+    public async Task RenameRenamesOnlyThatFile()
     {
         string doc = Touch("UE/blatt1.xopp", "doc");
         Touch("UE/blatt1.xopp.bg.pdf", "pdf");
@@ -139,8 +133,8 @@ public sealed class ExplorerTests : IDisposable
 
         Assert.Equal(Path.Combine(temp, "UE", "Lösung 1.xopp"), renamed);
         Assert.Equal("doc", File.ReadAllText(renamed));
-        Assert.Equal("pdf", File.ReadAllText(Path.Combine(temp, "UE", "Lösung 1.xopp.bg.pdf")));
-        Assert.True(File.Exists(Path.Combine(temp, "UE", "blatt1.pdf"))); // a referenced PDF stays where it is
+        Assert.True(File.Exists(Path.Combine(temp, "UE", "blatt1.xopp.bg.pdf")));
+        Assert.True(File.Exists(Path.Combine(temp, "UE", "blatt1.pdf")));
         Assert.False(File.Exists(doc));
         await Assert.ThrowsAnyAsync<Exception>(() => ProjectFiles.RenameAsync(renamed, false, "blatt1.pdf"));
     }

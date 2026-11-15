@@ -162,7 +162,19 @@ public class FileFormatTests : IDisposable
         doc.Save(path);
 
         Assert.Equal(Path.Combine(dir, "neu.pdf"), XoppDocument.Load(path).PdfPath);
-        Assert.Throws<InvalidOperationException>(() => XoppDocument.Load(path).MovePdf("x.pdf"));
+    }
+
+    [Fact]
+    public void LoadedDocumentFollowsItsRenamedPdf()
+    {
+        File.WriteAllText(Path.Combine(dir, "lecture.pdf"), "");
+        string path = Write("a.xopp", Sample);
+        var doc = XoppDocument.Load(path);
+        File.Move(Path.Combine(dir, "lecture.pdf"), Path.Combine(dir, "Skript.pdf"));
+        doc.MovePdf(Path.Combine(dir, "Skript.pdf"));
+        doc.Save(path);
+
+        Assert.Equal("Skript.pdf", PdfFilename(path));
     }
 
     private static string? PdfFilename(string path) =>

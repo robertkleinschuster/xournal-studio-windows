@@ -45,6 +45,12 @@ arrows), math exercises long formulas in several colors.
   eraser), InkToolbar (incl. custom tool/toggle buttons), ScrollView (touch pan, pinch zoom, touchpad), MenuBar,
   InfoBar, ContentDialog, TreeView, Windows App SDK pickers, Windows.Data.Pdf. Mica backdrop,
   no custom theme or styling.
+- **Simple, flat and honest – no magic** (user, 2026-11-15). The GTK fork grew so much hidden behavior that it
+  became confusing. Show things as they are and do exactly what the user asked: the explorer shows every file
+  and folder (only what Windows itself marks hidden/system is left out), nothing is paired, filtered, renamed or
+  deleted "along with" something else, opening a PDF does not redirect to a .xopp of the same name and does not
+  pick a file name behind the user's back (the first save asks). Existing material of the GTK fork will be
+  migrated later instead of being accommodated by special cases.
 - **Little custom code, strictly encapsulated.** What is left (the .xopp mapping, glue between controls) lives in
   small classes with one job: `Model/` (file format, unit-tested), `Views/`, `Services/`.
 - **Iterative.** Only features in actual use, simplest version first. Ask before large new areas.
@@ -96,12 +102,12 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 - `Services/` – `UndoStack` of `IPageEdit`: `PageEdit` (strokes/pictures removed/added) and `MoveEdit` (the
   InkCanvas has no undo; strokes are resolved through `XoppPage.Current` because undo/redo re-adds copies),
   `ShapeRecognition` (InkAnalyzer result → clean stroke), `PdfBackground`, `PictureRenderer`,
-  `ClipboardService` (bitmap ↔ `<image>`; own format `XournalStudio.Image` keeps the size in points), `AppSettings`, `DebugLog`, `ProjectTree` (which files the explorer
-  shows; empty folders are shown, folders with only non-documents not), `GitSync` (LibGit2Sharp: status,
+  `ClipboardService` (bitmap ↔ `<image>`; own format `XournalStudio.Image` keeps the size in points), `AppSettings`, `DebugLog`, `ProjectTree` (the folder as it is on
+  disk: all files and folders, Windows-hidden/system items left out, links shown but not entered), `GitSync` (LibGit2Sharp: status,
   `WithFolders` marks folders by what is below them – modified/deleted > new; sync = commit all, fetch,
   rebase/fast-forward, push; conflicts are aborted), `GitCredentials` (reads Git for Windows' stored credential, see
-  Facts learned), `ProjectFiles` (new folder, rename, delete to the recycle bin with `StorageFile`/`StorageFolder`;
-  a .xopp's upstream attached PDF `<name>.xopp.bg.pdf` goes along; name validation, "Name (2)" like File Explorer),
+  Facts learned), `ProjectFiles` (new folder, rename, delete to the recycle bin with `StorageFile`/`StorageFolder`,
+  exactly the item given; name validation, "Name (2)" like File Explorer),
   `FolderWatcher` (`FileSystemWatcher` on the project folder, hidden folders such as .git ignored).
 
 ## Facts learned (keep)
@@ -201,9 +207,9 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
    Umbenennen, Löschen to the recycle bin with confirmation, Im Explorer anzeigen, Als Pfad kopieren), F2/Del/
    Ctrl+Shift+C, folder git colors, tree follows changes on disk. Unit-tested; in the app only the startup and the
    watcher were checked (screenshots) – menus, dialogs, keys, recycle bin, launcher not yet tried by hand.
-   Renaming a .xopp renames only it (+ its attached `.xopp.bg.pdf`): the referenced lecture PDF stays and keeps
-   working, but then shows up again in the tree under its own name (pairing is by name) – user decision pending
-   whether a rename should take the same-named PDF along. Not done: drag & drop moving (TreeView's built-in
+   Flat since 2026-11-15 (see constraints): rename/delete act on exactly one item; files other than .xopp/.pdf
+   open in their Windows app (`Launcher.LaunchFileAsync`); renaming the open document's PDF makes the document
+   refer to the new name (dirty, written on save). Not done: drag & drop moving (TreeView's built-in
    drag & drop reorders its data, it does not know files).
 2. **Lasso, shapes, PDF areas, ruler – done 2026-11-15** (tested with synthetic pen on the desktop: shapes, lasso,
    live move, delete, ink copy/paste, undo, PDF area copy + paste at original size, barrel-button lasso cycle, saved
