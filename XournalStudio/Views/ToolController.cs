@@ -8,7 +8,8 @@ namespace XournalStudio.Views;
 
 /// <summary>
 /// An InkToolbar drives a single InkCanvas, but every page has its own. The toolbar targets one of them and this
-/// copies the toolbar's tool (pen, highlighter, eraser) to all other pages' InkPresenters.
+/// copies the toolbar's tool (pen, highlighter, eraser) to all other pages' InkPresenters. The target follows the
+/// page in view (for the stencils, which belong to one presenter).
 /// </summary>
 public sealed class ToolController
 {
@@ -57,8 +58,23 @@ public sealed class ToolController
             // Pen draws (mouse too, for convenience); touch is left to the ScrollView for panning and zooming.
             view.Ink.InputDeviceTypes = CoreInputDeviceTypes.Pen | CoreInputDeviceTypes.Mouse;
         }
-        toolbar.TargetInkCanvas = views.FirstOrDefault()?.InkCanvas;
+        if (toolbar.TargetInkCanvas == null || !views.Any(v => v.InkCanvas == toolbar.TargetInkCanvas))
+        {
+            toolbar.TargetInkCanvas = views.FirstOrDefault()?.InkCanvas;
+        }
         ApplyToAll();
+    }
+
+    /// <summary>
+    /// Makes the toolbar drive the page in view, so the Windows ruler/protractor (stencil button) appears where the
+    /// user writes.
+    /// </summary>
+    public void SetCurrentPage(PageView? page)
+    {
+        if (page != null && toolbar.TargetInkCanvas != page.InkCanvas)
+        {
+            toolbar.TargetInkCanvas = page.InkCanvas;
+        }
     }
 
     private void ApplyToAll()

@@ -283,6 +283,10 @@ public sealed partial class MainWindow : Window
             var bounds = view.TransformToVisual(Scroller).TransformBounds(new Rect(0, 0, view.Width, view.Height));
             view.UpdateBackground(Intersects(bounds, near), scale);
         }
+        if (PagesPanel.Children.Count > 0)
+        {
+            tools.SetCurrentPage(PagesPanel.Children[CurrentPageIndex()] as PageView);
+        }
     }
 
     /// <summary>The page in the middle of the viewport (or the last one above it).</summary>

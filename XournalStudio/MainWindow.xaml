@@ -116,6 +116,8 @@
                 <InkToolbarBallpointPenButton x:Name="PenButton" AutomationProperties.Name="Stift" />
                 <InkToolbarHighlighterButton x:Name="HighlighterButton" AutomationProperties.Name="Textmarker" />
                 <InkToolbarEraserButton x:Name="EraserButton" IsClearAllVisible="False" ToolTipService.ToolTip="Radierer" AutomationProperties.Name="Radierer" />
+                <!-- Windows' own ruler and protractor: draw along the edge for straight lines; move/turn with fingers. -->
+                <InkToolbarStencilButton x:Name="StencilButton" ToolTipService.ToolTip="Lineal / Geodreieck" AutomationProperties.Name="Lineal" />
                 <InkToolbarCustomToggleButton x:Name="RecognizeButton" AutomationProperties.Name="Formerkennung" ToolTipService.ToolTip="Formerkennung">
                     <FontIcon Glyph="&#xF4A5;" />
                 </InkToolbarCustomToggleButton>
