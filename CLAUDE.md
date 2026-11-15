@@ -61,14 +61,25 @@ arrows), math exercises long formulas in several colors.
 - **Windows 11 only**, this machine's version (26200) – no compatibility layers.
 - **Right-handed UI:** nothing interactive at the right screen edge; one toolbar row, left-aligned; menu bar
   visible; scrollbars hidden; the left side is for the explorer. Touch never draws (it scrolls/zooms).
-- **Pen buttons:** eraser end / eraser button erases (native). Barrel button (user, 2026-11-15): hold barrel = lasso, with
-  every tool and without switching the toolbar: the presenters ignore barrel input (documented
-  `InkInputConfiguration.IsPrimaryBarrelButtonInputEnabled = false`), it arrives as XAML pointer events and
-  `InkTools` lassos with it; a barrel drag inside the selection moves it, a barrel tap clears it.
+- **Pen buttons:** eraser end / eraser button erases (native). Barrel button (user, 2026-11-15): hold barrel = select
+  (the Auswählen tool's mode, lasso by default), with every tool and without switching the toolbar: the presenters
+  ignore barrel input (documented `InkInputConfiguration.IsPrimaryBarrelButtonInputEnabled = false`), it arrives as
+  XAML pointer events and `InkTools` hands it to the `SelectionTool`; a barrel drag inside the selection moves it, on
+  a corner handle scales it, a barrel tap clears it (or selects the picture under it).
+- **Saving only by choice, nothing lost** (user, 2026-11-15): whenever a document is left (another opened, window
+  closed, file renamed/deleted in the explorer, sync) the same question Speichern / Nicht speichern / Abbrechen;
+  no saving on focus loss. Unsaved changes are copied to `%LOCALAPPDATA%\XournalStudioForWindows\Recovery` (never
+  next to the document: the folder is git-synced) a few seconds after a change and on focus loss; a copy of a
+  session that ended without a decision is offered at the next start (Wiederherstellen / Verwerfen = recycle bin /
+  Später). New documents are named like Xournal++ (`%F-Notiz-%H-%M`, its German default) or after their PDF.
+- **One selection tool** (user, 2026-11-15: "Vereinheitlichung"): Auswählen = lasso or rectangle for strokes and
+  pictures; a rectangle on a PDF page also marks that area – copying takes what is seen (rendered PDF + ink and
+  pictures in it). Selected, pasted and duplicated content is selected the same way: move, scale (corners),
+  duplicate, cut/copy, delete (commands in a transient CommandBarFlyout at the selection, like selected text).
 - **Decisions (2026-11-15):** eraser = native Windows ink eraser (whole strokes; no pixel eraser, Windows has
   none); shape recognition = Windows `InkAnalyzer`; straight lines also with the Windows ruler (stencil button).
-  Lasso, shapes and PDF areas are `InkToolbarCustomToolButton`s built after Microsoft's pattern ("Pen interactions
-  and Windows Ink": selection layer, `SelectWithPolyLine`, `MoveSelected`); because `UnprocessedInput` has no
+  Selection and shapes are `InkToolbarCustomToolButton`s built after Microsoft's pattern ("Pen interactions
+  and Windows Ink": selection layer, `SelectWithPolyLine`, strokes transformed by `InkStroke.PointTransform`); because `UnprocessedInput` has no
   readable pointer data yet (PR #12292), a custom tool sets `InkPresenter.IsInputEnabled = false` (as Microsoft's
   SimpleInk sample does for a non-ink mode) and input arrives as XAML pointer events. Agreed with the user. When an
   SDK ships PR #12292: consider switching the custom tools' input source to `UnprocessedInput`.
@@ -91,22 +102,36 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   unchanged strokes are written back as their original elements, mapped by ink stroke id; pictures stay XML),
   `StrokeConverter` (Xournal per-segment widths ↔ ink pressure), `XoppImage` (`<image>`/`<teximage>`),
   `XoppFormat` (creator, file version), `ShapeGeometry` (outlines of shapes and recognized shapes → stroke).
-  Moved strokes: `XoppPage.MoveStrokes` translates their original elements (`StrokeConverter.Translate`), moved
-  pictures change their attributes in place.
+  Moved/scaled strokes: the ink by `PointTransform`, their original elements by `StrokeConverter.Transform`
+  (`XoppPage.TransformStrokes`/`RecordTransform`; widths stay, as Xournal); pictures change their attributes in
+  place. `XoppPage.ElementOf`/`AddStrokeElement` copy strokes as their elements (exact widths, unknown attributes).
+  `XoppClip` (a copied group relative to its corner; clipboard only), `TodoTxt` (todo.txt lines, doc: links),
+  `SelectMode`. `XoppDocument.Snapshot` (detached XML, PDF references as from a given base) + `Write` (any thread)
+  serve saving and recovery copies; `SuggestedName`/`DefaultName` = Xournal's date-time name.
+- `MainWindow` only wires menus, toolbar and panes to the feature classes below (no feature logic).
 - `Views/` – `PageView` (background: color + ruling or PDF page rendered at the current zoom near the viewport;
-  pictures layer; InkCanvas; overlay `ToolLayer` for tool feedback), `ToolController` (copies the InkToolbar's
+  pictures layer; InkCanvas; overlay `ToolLayer` for tool feedback), `PagesController` (page views in the
+  ScrollView, zoom, page in view, insert/remove pages, PDF rendering near the viewport), `DocumentSession` (open,
+  save, save-as with the suggested name/folder, the leave question, recovery offer and `Autosave`),
+  `RecoveryPrompt`, `SyncController`, `ExplorerCommands` (what the explorer asks for), `Dialogs` (all
+  ContentDialogs; hides the ink while one is open), `Messages` (InfoBar), `ToolController` (copies the InkToolbar's
   tool to all pages' presenters; custom tool active → presenters `IsInputEnabled = false`, mode None),
-  `InkTools` (lasso/move/delete/copy, shapes, PDF area: pointer input on the page, live feedback on the overlay,
-  the work done by `InkStrokeContainer`),
+  `InkTools` (routes pen/mouse input on the page to `SelectionTool` or `ShapeTool`; barrel → selection),
+  `Selection` (selected strokes/pictures, frame + corner handles, live preview, commit as `TransformEdit`),
+  `EditCommands` (cut/copy/paste/duplicate/delete/select all; pasted content placed at the left margin below the
+  page's content and selected), `SelectionFlyout`, `TasksView` + `TaskItem` (todo.txt pane),
   `ExplorerView` + `ExplorerItem` (TreeView of the project folder in the SplitView pane, git colors incl. folders,
   sync button; context menus `ItemMenu`/`FolderMenu` and F2/Del/Ctrl+Shift+C on the tree raise `CommandRequested`,
   which `MainWindow` carries out because the open document may be affected; "Im Explorer anzeigen" = WinRT
   `Launcher.LaunchFolderPathAsync` with `ItemsToSelect`, "Als Pfad kopieren" = quoted path like File Explorer;
   a `FolderWatcher` change restarts a 400 ms timer, then the window refreshes the tree).
-- `Services/` – `UndoStack` of `IPageEdit`: `PageEdit` (strokes/pictures removed/added) and `MoveEdit` (the
+- `Services/` – `UndoStack` of `IPageEdit`: `PageEdit` (strokes/pictures removed/added) and `TransformEdit` (the
   InkCanvas has no undo; strokes are resolved through `XoppPage.Current` because undo/redo re-adds copies),
   `ShapeRecognition` (InkAnalyzer result → clean stroke), `PdfBackground`, `PictureRenderer`,
-  `ClipboardService` (bitmap ↔ `<image>`; own format `XournalStudio.Image` keeps the size in points), `AppSettings`, `DebugLog`, `ProjectTree` (the folder as it is on
+  `ClipboardService` (own format `XournalStudio.Clip` = a `XoppClip`, plus a bitmap for other apps; bitmaps of
+  other apps paste as pictures; strokes alone use Windows ink's clipboard format), `Recovery` (recovery copies +
+  info JSON with the writing process id/start time; abandoned = that process is gone), `Autosave` (timer + ordered
+  write/delete queue), `TaskFile` (todo.txt line edits, re-read before each change), `AppSettings`, `DebugLog`, `ProjectTree` (the folder as it is on
   disk: all files and folders, Windows-hidden/system items left out, links shown but not entered), `GitSync` (LibGit2Sharp: status,
   `WithFolders` marks folders by what is below them – modified/deleted > new; sync = commit all, fetch,
   rebase/fast-forward, push; conflicts are aborted), `GitCredentials` (reads Git for Windows' stored credential, see
@@ -207,38 +232,79 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 - The debug build (HEAD before the explorer work too) sometimes crashed with 0xc000027b (stowed exception) in
   CoreMessagingXP.dll when started/closed by a script (`Start-Process`, `CloseMainWindow`) – not investigated.
 
+- **`InkStroke.PointTransform` set on a stroke in the canvas' container is redrawn live** (sandbox 2026-11-15):
+  moving and scaling selections preview through it; the pen width is not scaled (the drawn width stays, matching
+  Xournal's file where only the points change).
+- **TreeView crash** (0xC0000005/0xC0000374): replacing the tree's items while it still had an item of the old list
+  selected, then selecting the new one, crashed WinUI when the explorer pane was closed (no containers). Also on main
+  before 2026-11-15; reproduced locally without input (a new subfolder while the pane was closed). Fix: deselect
+  before replacing `ItemsSource`. Lists in this app are given new `ItemsSource` lists instead of Clear/Add on a
+  bound `ObservableCollection` (the tasks list did crash once that way in a run that also rebuilt the tree – not
+  isolated).
+- `CommandBarFlyout` with `ShouldConstrainToRootBounds = false`, `ShowMode = Transient` and
+  `OverlayInputPassThroughElement` = the window's root: drawn above the ink, a pen tap beside it reaches the page.
+  It stays open over ContentDialogs – `Dialogs.Opening` closes it first. Its buttons are icon-only
+  (`LabelPosition = Collapsed`; labels wrapped) with tooltips.
+- Accelerators of the menu (Ctrl+A/C/V/X/D, Del) do not fire while a TextBox has focus (sandbox: Ctrl+A, Del in the
+  task box edited the text, the page selection stayed).
+- `RegisterApplicationRestart` (kernel32) is registered at start: Windows restarts the app after a crash (after
+  60 s of running) or an update restart; the start then offers the recovery copy. Not tested (needs a real crash).
+- Windows Sandbox: a second `wsb start` right after `wsb stop` fails with CO_E_APPSINGLEUSE – wait until the old
+  sandbox process is gone.
+
 ## Testing
 
-- Unit tests: `XournalStudio.Tests` compiles `Model/` and the non-UI explorer services (`ProjectTree`, `GitSync`,
-  `ProjectFiles`, `FolderWatcher`, `DebugLog`) directly (no app, no XAML).
+- Unit tests: `XournalStudio.Tests` compiles `Model/` and the non-UI services (`ProjectTree`, `GitSync`,
+  `ProjectFiles`, `FolderWatcher`, `DebugLog`, `Recovery`, `AppSettings`, `TaskFile`) directly (no app, no XAML).
 - UI test: `UiTests/Run-SandboxTest.ps1 -Document examples\Schaltungen.xopp` runs the installed app in
   Windows Sandbox (the sandbox window opens on the desktop – tell the user first) with synthetic pen/touch input,
   screenshots per step, and checks the saved file with the GTK Xournal Studio CLI (`--create-img`).
   Inside the sandbox: PowerShell 5.1 (Add-Type = C# 5), 1514x900 at 150 %. `-App <publish folder>` tests another
   build (never install to test), `-Test <script>` runs an experiment instead of `SandboxTest.ps1`. The tests start
-  with `{"ExplorerOpen":false}` in the config dir (with the pane open strokes begin beside the page). In a test
-  script never name a function `Erase` (PowerShell alias of Remove-Item).
+  with `{"ExplorerOpen":false,"ProjectFolder":"C:\\work"}` in the config dir (with the pane open strokes begin
+  beside the page) and a todo.txt in C:\work. Covered: eraser, barrel select/move, selection tool (lasso, scale,
+  undo), shapes, rectangle on the PDF page → copy → new page → paste (selected) → scale → duplicate → tap-select →
+  delete → undo, bitmap paste, tasks (add, keys in the text box, check), the save question on close, crash →
+  recovery offered → restored → "Nicht speichern" removes the copy. Coordinates are client DIPs: pixel = 34 + 1.5 *
+  DIP (y), 1.5 * DIP (x); an InfoBar above the pages shifts them. Clicking the already active pen button opens its
+  flyout (the next stroke only closes it). In a test script never name a function `Erase` (PowerShell alias of
+  Remove-Item); write scripts with the Write tool (shell heredocs turned `\t` in paths into tabs).
 - Test hooks: `XOURNAL_STUDIO_CONFIG_DIR`, `XOURNAL_STUDIO_LOG`, `XOURNAL_STUDIO_TEST_PAGE`.
 - `examples/` holds sanitized real documents; never commit the user's own files (they contain university
   material and personal data) – derive examples with `tools/make_examples.py` and check each page visually.
 
 ## Open work (as of 2026-11-15; update when done)
 
-1. **Git explorer – done 2026-11-15** (not yet tried by the user on the device; sync not run against the real
-   repo by Claude). **File functions – done 2026-11-15**: context menu (Öffnen, Neues Dokument, Neuer Ordner,
-   Umbenennen, Löschen to the recycle bin with confirmation, Im Explorer anzeigen, Als Pfad kopieren), F2/Del/
-   Ctrl+Shift+C, folder git colors, tree follows changes on disk. Unit-tested; in the app only the startup and the
-   watcher were checked (screenshots) – menus, dialogs, keys, recycle bin, launcher not yet tried by hand.
-   Flat since 2026-11-15 (see constraints): rename/delete act on exactly one item; files other than .xopp/.pdf
-   open in their Windows app (`Launcher.LaunchFileAsync`); renaming the open document's PDF makes the document
-   refer to the new name (dirty, written on save). Not done: drag & drop moving (TreeView's built-in
-   drag & drop reorders its data, it does not know files).
-2. **Lasso, shapes, PDF areas, ruler – done 2026-11-15** (tested with synthetic pen on the desktop: shapes, lasso,
-   live move, delete, ink copy/paste, undo, PDF area copy + paste at original size, barrel-button lasso (hold barrel,
-   sandbox), saved XML checked). Open: switching to `UnprocessedInput` once PR #12292 ships; copying pictures (only strokes are
-   copied with Ctrl+C); PDF areas only from PDF pages (no ink in the copy).
-3. **Pen eraser end – resolved 2026-11-15:** works in the sandbox; the failures were sparse synthetic strokes (see
-   Facts learned). Still part of the device test.
-4. **Device test by the user** of everything: latency, pressure, palm rejection, touch scroll/zoom. The pen's
-   buttons work on the device (eraser end, barrel lasso – confirmed by the user 2026-11-15).
-5. Not started, only if the user asks: text, inserting pages of another PDF, PDF export, page reordering.
+1. **Git explorer, file functions – done 2026-11-15** (not yet tried by the user on the device; sync not run against
+   the real repo by Claude). Context menu, F2/Del/Ctrl+Shift+C, folder git colors, tree follows changes on disk.
+   Flat (see constraints): rename/delete act on exactly one item; files other than .xopp/.pdf open in their Windows
+   app; renaming the open document's PDF makes the document refer to the new name. Not done: drag & drop moving.
+2. **Selection tool, shapes, ruler – done 2026-11-15** (sandbox, see Testing). Open: switching to `UnprocessedInput`
+   once PR #12292 ships; a tap selects pictures only (not strokes).
+3. **Saving by choice + crash recovery – done 2026-11-15** (sandbox: question on close, crash → offer → restore →
+   discard). Application Restart after a real crash/update not tested.
+4. **Tasks (todo.txt) – done 2026-11-15** (sandbox: add, check; unit tests for format and file edits).
+5. **Device test by the user** of everything: latency, pressure, palm rejection, touch scroll/zoom, the selection
+   tool with pen and finger, the selection's command bar, the tasks pane. The pen's buttons work on the device
+   (eraser end, barrel lasso – confirmed by the user 2026-11-15).
+6. Not started, only if the user asks: text, inserting pages of another PDF, PDF export, page reordering.
+
+## Questions for the user (2026-11-15 night, decided provisionally – confirm or change)
+
+1. **Tool after paste/duplicate:** the Auswählen tool becomes active (visible in the toolbar) so the pasted content
+   can be moved with the pen at once; it does not switch back to the pen by itself. Switch back automatically when
+   the selection is cleared?
+2. **Default name:** `2026-11-15-Notiz-22-05` (Xournal++'s German default `%F-Notiz-%H-%M`); a document opened from a
+   PDF suggests the PDF's name in its folder. OK, or the English `Note`?
+3. **Recovery interval:** 5 s after a change (and on focus loss). Fine, or less often?
+4. **Scaling** keeps the stroke width (as Xournal's file does) and the aspect ratio (corner handles only). Want
+   edge handles (stretch) or width scaling?
+5. **Barrel button** now uses the Auswählen tool's mode (lasso or rectangle) instead of always the lasso. OK?
+6. **todo.txt:** only `<project folder>/todo.txt` is shown (your Uni folder has exactly that one). Also
+   `*.todo.txt` or files in subfolders? New tasks get today's creation date; due date by picker; links to a page via
+   the link button (`doc:path#pN`, like the GTK fork). Reminders/notifications and quick-add date words ("morgen")
+   were left out (simple first).
+7. **"Meine behalten" after a sync conflict** no longer saves by itself (no saving without choice): the own version
+   stays open, unsaved, until Ctrl+S. OK?
+8. Earlier, still open: reset `examples/Schaltungen.xopp` (it has your test strokes)? Report the ink-over-dialog bug /
+   comment on PR #12292 (public)? PDF export needed?
