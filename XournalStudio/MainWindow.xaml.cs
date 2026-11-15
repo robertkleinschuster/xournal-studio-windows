@@ -156,7 +156,7 @@ public sealed partial class MainWindow : Window
             return;
         }
         closeConfirmed = true;
-        await session.IdleAsync(); // the recovery copy is gone before the process ends
+        await session.EndAsync(); // the recovery copy is gone before the process ends
         Close();
     }
 
@@ -323,6 +323,10 @@ public sealed partial class MainWindow : Window
                 return;
             }
             await session.OpenAsync(document);
+            if (!string.Equals(session.Document.FilePath, document, StringComparison.OrdinalIgnoreCase))
+            {
+                return; // not opened (the message says why)
+            }
             Root.UpdateLayout();
         }
         if (pageIndex >= 0)

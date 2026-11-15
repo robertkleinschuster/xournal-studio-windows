@@ -22,6 +22,7 @@ public sealed class DocumentSession
     private readonly Func<string?> projectFolder;
     private readonly Recovery recovery = Recovery.ForApp();
     private readonly Autosave autosave;
+    private readonly Func<bool> previewing;
     private readonly DateTime processStart = Recovery.CurrentProcessStart();
 
     public DocumentSession(WindowId window, PagesController pages, Dialogs dialogs, Messages messages,
@@ -33,6 +34,7 @@ public sealed class DocumentSession
         this.messages = messages;
         this.settings = settings;
         this.projectFolder = projectFolder;
+        this.previewing = previewing;
         autosave = new Autosave(recovery, Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread(), Snapshot, previewing);
         autosave.Failed += (_, e) => messages.Show(InfoBarSeverity.Warning, "Wiederherstellungskopie fehlgeschlagen",
             $"Nicht gespeicherte Änderungen sind bei einem Absturz nicht gesichert: {DebugLog.Describe(e)}");
@@ -159,11 +161,15 @@ public sealed class DocumentSession
         SetDirty(true);
     }
 
+    /// <summary>The window closes (the user saved or discarded the changes): the recovery copy goes.</summary>
+    public Task EndAsync()
+    {
+        autosave.Discard();
+        return autosave.Idle;
+    }
+
     /// <summary>The window lost focus (maybe for good: shut down, log off): the recovery copy is brought up to date.</summary>
     public void Deactivated() => autosave.WriteNow();
-
-    /// <summary>Completes when the recovery copy is written or deleted (before the process ends).</summary>
-    public Task IdleAsync() => autosave.Idle;
 
     /// <summary>Saves to the document's file (Ctrl+S); false if it has none, saving waits for a sync, or it failed.</summary>
     public bool Save()
@@ -171,6 +177,12 @@ public sealed class DocumentSession
         string? path = Document.FilePath;
         if (path == null)
         {
+            return false;
+        }
+        if (previewing())
+        {
+            // The drag shows content where it is not written yet; the file would get a mix.
+            messages.Show(InfoBarSeverity.Informational, "Nicht gespeichert", "Erst loslassen, dann speichern.");
             return false;
         }
         if (SaveBlocked)
@@ -277,10 +289,8 @@ public sealed class DocumentSession
         var choice = await AskSaveAsync(Document.FilePath != null
             ? "Ohne Speichern gehen die Änderungen seit dem letzten Speichern verloren."
             : "Das Dokument wurde noch nie gespeichert; ohne Speichern geht es verloren.");
-        if (choice == SaveChoice.NotSaved)
-        {
-            autosave.Discard(); // discarded by choice
-        }
+        // "Nicht speichern": the copy goes once another document is shown (Show) or the window closes (End) – if
+        // opening the next one fails, this one stays open with its changes and its copy.
         return choice != SaveChoice.Cancelled;
     }
 

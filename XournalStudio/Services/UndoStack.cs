@@ -65,7 +65,7 @@ public sealed class PageEdit(XoppPage page) : IPageEdit
         {
             s.Selected = false;
         }
-        var current = strokes.Select(page.Current).OfType<InkStroke>().ToList();
+        var current = page.CurrentAll(strokes).OfType<InkStroke>().ToList();
         current.ForEach(s => s.Selected = true);
         return current;
     }

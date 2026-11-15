@@ -135,14 +135,21 @@ public sealed class XoppPage
     /// The stroke on the page now for a stroke an edit remembers: itself, or the copy undo/redo put in its place;
     /// null if it is not on the page.
     /// </summary>
-    public InkStroke? Current(InkStroke stroke)
+    public InkStroke? Current(InkStroke stroke) => CurrentAll([stroke])[0];
+
+    /// <summary><see cref="Current"/> for many strokes, reading the ink's strokes once (null where gone).</summary>
+    public List<InkStroke?> CurrentAll(IEnumerable<InkStroke> strokes)
     {
-        uint id = stroke.Id;
-        while (replacedIds.TryGetValue(id, out uint next))
+        var byId = Ink?.GetStrokes().ToDictionary(s => s.Id) ?? [];
+        return strokes.Select(stroke =>
         {
-            id = next;
-        }
-        return Ink?.GetStrokes().FirstOrDefault(s => s.Id == id);
+            uint id = stroke.Id;
+            while (replacedIds.TryGetValue(id, out uint next))
+            {
+                id = next;
+            }
+            return byId.GetValueOrDefault(id);
+        }).ToList();
     }
 
     /// <summary>
@@ -157,9 +164,11 @@ public sealed class XoppPage
 
     public void RestorePlacement(Placement placement)
     {
-        foreach (var (remembered, transform, coordinates) in placement.Strokes)
+        var current = CurrentAll(placement.Strokes.Select(s => s.Stroke));
+        for (int i = 0; i < current.Count; i++)
         {
-            if (Current(remembered) is not { } stroke)
+            var (_, transform, coordinates) = placement.Strokes[i];
+            if (current[i] is not { } stroke)
             {
                 continue;
             }

@@ -89,9 +89,10 @@ public sealed class EditCommands(
 
     public async Task CutAsync()
     {
-        if (selection.Current is { HasContent: true } && await CopyAsync())
+        var copied = selection.Current;
+        if (copied is { HasContent: true } && await CopyAsync() && selection.Current == copied)
         {
-            Delete();
+            Delete(); // only if the selection is still the one copied (a tap may have changed it meanwhile)
         }
     }
 

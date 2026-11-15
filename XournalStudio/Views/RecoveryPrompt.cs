@@ -47,9 +47,7 @@ public sealed class RecoveryPrompt(Recovery recovery, Dialogs dialogs, Messages 
 
     // The document's name without extension (for the file in the recycle bin).
     private static string BaseName(RecoveryInfo info) =>
-        info.DocumentPath != null ? Path.GetFileNameWithoutExtension(info.DocumentPath)
-        : info.PdfPath != null ? Path.GetFileNameWithoutExtension(info.PdfPath)
-        : XoppDocument.DefaultName(info.CreatedAt ?? info.SavedAt);
+        XoppDocument.NameFor(info.DocumentPath, info.PdfPath, info.CreatedAt ?? info.SavedAt);
 
     private static string DisplayName(RecoveryInfo info) =>
         info.DocumentPath != null ? Path.GetFileName(info.DocumentPath) : BaseName(info) + " (nie gespeichert)";

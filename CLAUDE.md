@@ -103,7 +103,8 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   `StrokeConverter` (Xournal per-segment widths ↔ ink pressure), `XoppImage` (`<image>`/`<teximage>`),
   `XoppFormat` (creator, file version), `ShapeGeometry` (outlines of shapes and recognized shapes → stroke).
   Moved/scaled strokes: the ink by `PointTransform`, their original elements by `StrokeConverter.Transform`
-  (`XoppPage.TransformStrokes`/`RecordTransform`; widths stay, as Xournal); pictures change their attributes in
+  (`Selection.Preview` sets `PointTransform` live, `Commit` → `XoppPage.RecordTransform`; widths stay, as Xournal;
+  undo/redo restore an exact `Placement` captured before and after); pictures change their attributes in
   place. `XoppPage.ElementOf`/`AddStrokeElement` copy strokes as their elements (exact widths, unknown attributes).
   `XoppClip` (a copied group relative to its corner; clipboard only), `TodoTxt` (todo.txt lines, doc: links),
   `SelectMode`. `XoppDocument.Snapshot` (detached XML, PDF references as from a given base) + `Write` (any thread)
@@ -234,7 +235,8 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 
 - **`InkStroke.PointTransform` set on a stroke in the canvas' container is redrawn live** (sandbox 2026-11-15):
   moving and scaling selections preview through it; the pen width is not scaled (the drawn width stays, matching
-  Xournal's file where only the points change).
+  Xournal's file where only the points change). Windows ink's clipboard (`CopySelectedToClipboard`/`PasteFromClipboard`)
+  carries the transform: a scaled stroke pastes at its scaled size (sandbox step 03g2).
 - **TreeView crash** (0xC0000005/0xC0000374): replacing the tree's items while it still had an item of the old list
   selected, then selecting the new one, crashed WinUI when the explorer pane was closed (no containers). Also on main
   before 2026-11-15; reproduced locally without input (a new subfolder while the pane was closed). Fix: deselect

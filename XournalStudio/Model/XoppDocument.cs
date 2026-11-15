@@ -65,9 +65,13 @@ public sealed class XoppDocument
     /// The name the first save suggests: the background PDF's name, otherwise upstream Xournal++'s default
     /// "%F-Notiz-%H-%M" (German translation of "%F-Note-%H-%M") from the time the document was created.
     /// </summary>
-    public string SuggestedName => FilePath != null ? Path.GetFileNameWithoutExtension(FilePath)
-        : PdfPath != null ? Path.GetFileNameWithoutExtension(PdfPath)
-        : DefaultName(CreatedAt ?? DateTime.Now);
+    public string SuggestedName => NameFor(FilePath, PdfPath, CreatedAt ?? DateTime.Now);
+
+    /// <summary>The document's name without extension: its file's, else its PDF's, else Xournal's date-time name.</summary>
+    public static string NameFor(string? filePath, string? pdfPath, DateTime created) =>
+        filePath != null ? Path.GetFileNameWithoutExtension(filePath)
+        : pdfPath != null ? Path.GetFileNameWithoutExtension(pdfPath)
+        : DefaultName(created);
 
     /// <summary>
     /// Where PDF references of a copy are made relative to: the document's file, or for a document never saved a file

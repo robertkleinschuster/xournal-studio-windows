@@ -102,6 +102,9 @@ try {
     Shot '03f-selected-with-commands'
     [Inj]::PenStroke((L ((X 0.8) + 8) 438 ((X 0.8) + 110) 445), $false, 512)
     Shot '03g-scaled'
+    # Strokes alone go through Windows ink's clipboard: the scaled size must come along (PointTransform).
+    Focus; [Inj]::Ctrl(0x43); [Inj]::Ctrl(0x56); Start-Sleep 1; Shot '03g2-scaled-copy-pasted'
+    Focus; [Inj]::Ctrl(0x5A); Start-Sleep 1
     Focus; [Inj]::Ctrl(0x5A); Shot '03h-scale-undone'
 
     # Shape recognition (Windows ink analysis): a hand-drawn rectangle and circle become clean shapes.

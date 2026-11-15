@@ -22,7 +22,7 @@ public sealed class SelectionTool(UndoStack undo)
     private Gesture gesture;
     private PageView? view;
     private Point start;
-    private Point anchor, handle; // scaling: the fixed corner and the dragged one
+    private Point anchor, handle; // scaling: the fixed corner and where the pen pressed
     private bool moved;           // the pen left the start point (a closed lasso ends where it began: no tap)
     private Polyline? lasso;
     private Rectangle? rectangle;
@@ -49,7 +49,7 @@ public sealed class SelectionTool(UndoStack undo)
             if (corner >= 0)
             {
                 gesture = Gesture.Scale;
-                handle = Current.CornerOf(corner);
+                handle = p; // relative to where the pen pressed (the handle reaches beyond the corner)
                 anchor = Current.CornerOf((corner + 2) % 4);
             }
             else if (Current.Contains(p))
@@ -201,7 +201,7 @@ public sealed class SelectionTool(UndoStack undo)
         }
     }
 
-    // Uniform: the dragged corner's movement along the diagonal (pictures keep their aspect ratio, ink its look).
+    // Uniform: the pen's movement along the line from the fixed corner to where it pressed (pictures keep their aspect ratio, ink its look).
     private double ScaleFactor(Point p)
     {
         double dx = handle.X - anchor.X, dy = handle.Y - anchor.Y;

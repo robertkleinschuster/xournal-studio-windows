@@ -59,7 +59,7 @@ public sealed partial class TasksView : UserControl
     private void Reload()
     {
         var items = new List<TaskItem>();
-        List.ItemsSource = items;
+        List.ItemsSource = null; // filled below, then given as a new list
         bool exists = file?.Exists == true;
         NoFile.Visibility = exists ? Visibility.Collapsed : Visibility.Visible;
         AddPanel.Visibility = exists ? Visibility.Visible : Visibility.Collapsed;
