@@ -9,5 +9,7 @@
         <!-- Pictures (copied PDF areas, images) lie below the ink, like in Xournal's usual layering. -->
         <Canvas x:Name="ImagesLayer" IsHitTestVisible="False" />
         <InkCanvas x:Name="Canvas" />
+        <!-- Lasso, selection rectangle and shape preview of the custom tools (input arrives on the Sheet). -->
+        <Canvas x:Name="ToolLayer" IsHitTestVisible="False" />
     </Grid>
 </UserControl>

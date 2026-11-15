@@ -41,6 +41,7 @@ public static class ProjectTree
         }
         catch (Exception e) when (e is UnauthorizedAccessException or IOException)
         {
+            DebugLog.Write($"read folder {folder} (left out)", e);
             return entries;
         }
         foreach (string sub in folders.Order(StringComparer.CurrentCultureIgnoreCase))

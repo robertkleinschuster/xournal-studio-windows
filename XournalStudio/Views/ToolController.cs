@@ -2,6 +2,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Windows.UI;
 using Windows.UI.Core;
+using InkDrawingAttributes = Windows.UI.Input.Inking.InkDrawingAttributes;
 using InkInputProcessingMode = Microsoft.UI.Xaml.Controls.InkInputProcessingMode;
 
 namespace XournalStudio.Views;
@@ -10,6 +11,10 @@ namespace XournalStudio.Views;
 /// An InkToolbar drives a single InkCanvas, but every page has its own. The toolbar targets one of them and this
 /// copies the toolbar's tool (pen, highlighter, eraser) to all other pages' InkPresenters. The target follows the
 /// page in view (for the stencils, which belong to one presenter).
+/// While a custom tool (lasso, shapes, PDF area) is active the presenters take no input, as Microsoft's own samples
+/// do for modes without ink (<c>IsInputEnabled = false</c>): pen and mouse then arrive as XAML pointer events for
+/// <see cref="InkTools"/>. (The documented route, <c>UnprocessedInput</c>, has unreadable pointer data in the
+/// Windows App SDK so far – microsoft-ui-xaml PR #12292.)
 /// </summary>
 public sealed class ToolController
 {
@@ -29,11 +34,25 @@ public sealed class ToolController
     ];
 
     private readonly InkToolbar toolbar;
+    private readonly InkToolbarBallpointPenButton pen;
     private readonly List<PageView> views = new();
+
+    /// <summary>The active custom tool button, or null while a pen, the highlighter or the eraser is active.</summary>
+    public InkToolbarCustomToolButton? CustomTool => toolbar.ActiveTool as InkToolbarCustomToolButton;
+
+    public event EventHandler? CustomToolChanged;
+
+    /// <summary>Color and width of the pen button, for shapes.</summary>
+    public InkDrawingAttributes PenAttributes => new()
+    {
+        Color = (pen.SelectedBrush as SolidColorBrush)?.Color ?? PenColors[1],
+        Size = new Windows.Foundation.Size(pen.SelectedStrokeWidth, pen.SelectedStrokeWidth),
+    };
 
     public ToolController(InkToolbar toolbar, InkToolbarBallpointPenButton pen, InkToolbarHighlighterButton highlighter)
     {
         this.toolbar = toolbar;
+        this.pen = pen;
 
         pen.Palette = PenColors.Select(c => (Brush)new SolidColorBrush(c)).ToList();
         pen.SelectedBrushIndex = 1;
@@ -45,7 +64,11 @@ public sealed class ToolController
         highlighter.MaxStrokeWidth = 30;
         highlighter.SelectedStrokeWidth = 8.5;
 
-        toolbar.ActiveToolChanged += (_, _) => ApplyToAll();
+        toolbar.ActiveToolChanged += (_, _) =>
+        {
+            ApplyToAll();
+            CustomToolChanged?.Invoke(this, EventArgs.Empty);
+        };
         toolbar.InkDrawingAttributesChanged += (_, _) => ApplyToAll();
     }
 
@@ -80,6 +103,7 @@ public sealed class ToolController
     private void ApplyToAll()
     {
         bool erasing = toolbar.ActiveTool is InkToolbarEraserButton;
+        bool custom = CustomTool != null;
         var attributes = toolbar.InkDrawingAttributes;
         if (attributes != null)
         {
@@ -88,7 +112,9 @@ public sealed class ToolController
         }
         foreach (var view in views)
         {
-            view.Ink.InputProcessingConfiguration.Mode = erasing ? InkInputProcessingMode.Erasing : InkInputProcessingMode.Inking;
+            view.Ink.InputProcessingConfiguration.Mode =
+                custom ? InkInputProcessingMode.None : erasing ? InkInputProcessingMode.Erasing : InkInputProcessingMode.Inking;
+            view.Ink.IsInputEnabled = !custom;
             if (attributes != null)
             {
                 view.Ink.UpdateDefaultDrawingAttributes(attributes);

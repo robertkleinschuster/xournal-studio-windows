@@ -15,6 +15,7 @@ public sealed partial class MainWindow : Window
     private readonly AppSettings settings = AppSettings.Load();
     private readonly UndoStack undo = new();
     private readonly ToolController tools;
+    private readonly InkTools inkTools;
     private readonly DispatcherQueueTimer viewTimer;
 
     private XoppDocument document = XoppDocument.CreateNew();
@@ -35,6 +36,13 @@ public sealed partial class MainWindow : Window
         }
 
         tools = new ToolController(Toolbar, PenButton, HighlighterButton);
+        inkTools = new InkTools(undo, () => tools.PenAttributes) { Shape = settings.Shape };
+        inkTools.Message += (_, m) => ShowMessage(m.Severity, m.Title, m.Message);
+        ShapeChoice.SelectedIndex = (int)settings.Shape;
+        tools.CustomToolChanged += (_, _) => inkTools.Tool =
+            tools.CustomTool == LassoButton ? InkTool.Lasso :
+            tools.CustomTool == ShapeButton ? InkTool.Shape :
+            tools.CustomTool == PdfAreaButton ? InkTool.PdfArea : InkTool.None;
         RecognizeButton.IsChecked = settings.RecognizeShapes;
         RecognizeButton.Click += (_, _) =>
         {
@@ -103,7 +111,8 @@ public sealed partial class MainWindow : Window
                     }
                     catch (Exception e)
                     {
-                        ShowMessage(InfoBarSeverity.Warning, "PDF-Hintergrund nicht gefunden", $"{doc.PdfPath}: {e.Message}");
+                        DebugLog.Write("load PDF background", e);
+                        ShowMessage(InfoBarSeverity.Warning, "PDF-Hintergrund nicht gefunden", $"{doc.PdfPath}: {DebugLog.Describe(e)}");
                     }
                 }
                 ShowDocument(doc, pdfBackground);
@@ -113,7 +122,8 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception e)
         {
-            ShowMessage(InfoBarSeverity.Error, "Datei konnte nicht geöffnet werden", $"{path}: {e.Message}");
+            DebugLog.Write("open", e);
+            ShowMessage(InfoBarSeverity.Error, "Datei konnte nicht geöffnet werden", $"{path}: {DebugLog.Describe(e)}");
         }
     }
 
@@ -121,6 +131,7 @@ public sealed partial class MainWindow : Window
     {
         document = doc;
         pdf = pdfBackground;
+        inkTools.ClearSelection();
         undo.Clear();
         PagesPanel.Children.Clear();
         foreach (var page in doc.Pages)
@@ -138,6 +149,7 @@ public sealed partial class MainWindow : Window
     private PageView CreatePageView(XoppPage page)
     {
         var view = new PageView(page, pdf);
+        inkTools.Attach(view);
         view.Ink.StrokesCollected += (_, e) => OnStrokesCollected(view, e.Strokes);
         view.Ink.StrokesErased += (_, e) =>
         {
@@ -201,7 +213,8 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception e)
         {
-            ShowMessage(InfoBarSeverity.Error, "Speichern fehlgeschlagen", $"{document.FilePath}: {e.Message}");
+            DebugLog.Write("save", e);
+            ShowMessage(InfoBarSeverity.Error, "Speichern fehlgeschlagen", $"{document.FilePath}: {DebugLog.Describe(e)}");
             return false;
         }
     }
@@ -444,9 +457,30 @@ public sealed partial class MainWindow : Window
         return document.FilePath != null ? Save() : await SaveAsAsync();
     }
 
-    private void OnUndo(object sender, RoutedEventArgs e) => undo.Undo();
+    private void OnUndo(object sender, RoutedEventArgs e)
+    {
+        inkTools.ClearSelection(); // undo may replace the selected strokes
+        undo.Undo();
+    }
 
-    private void OnRedo(object sender, RoutedEventArgs e) => undo.Redo();
+    private void OnRedo(object sender, RoutedEventArgs e)
+    {
+        inkTools.ClearSelection();
+        undo.Redo();
+    }
+
+    private void OnCopy(object sender, RoutedEventArgs e) => inkTools.CopySelection();
+
+    private void OnDeleteSelection(object sender, RoutedEventArgs e) => inkTools.DeleteSelection();
+
+    private void OnShapeChoiceChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (ShapeChoice.SelectedIndex >= 0 && inkTools != null)
+        {
+            inkTools.Shape = settings.Shape = (ShapeKind)ShapeChoice.SelectedIndex;
+            settings.Save();
+        }
+    }
 
     private void OnInsertPage(object sender, RoutedEventArgs e)
     {
@@ -485,6 +519,7 @@ public sealed partial class MainWindow : Window
         }
         document.Pages.RemoveAt(index);
         PagesPanel.Children.RemoveAt(index);
+        inkTools.ClearSelection();
         undo.Forget(page);
         OnPagesChanged();
         SetDirty(true);
@@ -515,7 +550,7 @@ public sealed partial class MainWindow : Window
             }
             catch (Exception e)
             {
-                DebugLog.Write($"git root not found: {e.Message}");
+                DebugLog.Write("find git root", e);
                 return null;
             }
         }
@@ -597,12 +632,14 @@ public sealed partial class MainWindow : Window
         }
         catch (GitSyncConflictException ex)
         {
+            DebugLog.Write("sync conflict", ex);
             ShowMessage(InfoBarSeverity.Error, "Konflikt beim Synchronisieren",
                 $"{ex.Message}. Die eigenen Änderungen sind committet, aber nicht hochgeladen; den Konflikt mit Git lösen.");
         }
         catch (Exception ex)
         {
-            ShowMessage(InfoBarSeverity.Error, "Synchronisieren fehlgeschlagen", ex.Message);
+            DebugLog.Write("sync", ex);
+            ShowMessage(InfoBarSeverity.Error, "Synchronisieren fehlgeschlagen", DebugLog.Describe(ex));
         }
         finally
         {
@@ -707,12 +744,21 @@ public sealed partial class MainWindow : Window
 
     // ---------------------------------------------------------------- paste
 
+    private const double Grid = 14.17;
+
     /// <summary>
-    /// Pastes a bitmap from the clipboard onto the page in the middle of the view: at the left margin, below what is
-    /// already on it (on the next grid line), so parts of an exercise stack up on a graph page.
+    /// Pastes onto the page in the middle of the view, at the left margin below what is already on it (on the next
+    /// grid line), so parts of an exercise stack up on a graph page: a copied PDF area or bitmap (e.g. from the
+    /// Snipping Tool) as a picture, copied ink as strokes (Windows ink's own clipboard format).
     /// </summary>
     private async void OnPaste(object sender, RoutedEventArgs e)
     {
+        var page = document.Pages[CurrentPageIndex()];
+        if (!ClipboardService.HasPicture() && page.Ink!.CanPasteFromClipboard())
+        {
+            PasteInk(page);
+            return;
+        }
         System.Xml.Linq.XElement? image;
         try
         {
@@ -720,30 +766,45 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            ShowMessage(InfoBarSeverity.Warning, "Einfügen nicht möglich", ex.Message);
+            DebugLog.Write("paste", ex);
+            ShowMessage(InfoBarSeverity.Warning, "Einfügen nicht möglich", DebugLog.Describe(ex));
             return;
         }
         if (image == null)
         {
-            ShowMessage(InfoBarSeverity.Informational, "Kein Bild in der Zwischenablage",
-                "Einen Ausschnitt z. B. mit dem Ausschneidetool (Win+Umschalt+S) kopieren.");
+            ShowMessage(InfoBarSeverity.Informational, "Nichts zum Einfügen in der Zwischenablage",
+                "Einen PDF-Bereich oder Ausschnitt (Ausschneidetool: Win+Umschalt+S) kopieren, oder Striche mit dem Lasso.");
             return;
         }
 
-        var page = document.Pages[CurrentPageIndex()];
         var size = XoppImage.GetBounds(image);
-        const double Grid = 14.17;
         // Wider than the page: scaled down to fit between the margins.
         double scale = Math.Min(1, (page.Width - 2 * Grid) / size.Width);
-        double top = Math.Ceiling((page.ContentBottom() + 4) / Grid) * Grid;
-        if (top < Grid || top + size.Height * scale > page.Height)
-        {
-            top = Grid;
-        }
-        var placed = XoppImage.WithBounds(image, new Rect(Grid, top, size.Width * scale, size.Height * scale));
+        var placed = XoppImage.WithBounds(image,
+            new Rect(Grid, PasteTop(page, size.Height * scale), size.Width * scale, size.Height * scale));
         page.AddImage(placed);
         var edit = new PageEdit(page);
         edit.AddedImages.Add(placed);
         undo.Push(edit);
+    }
+
+    private void PasteInk(XoppPage page)
+    {
+        var ink = page.Ink!;
+        var before = ink.GetStrokes().Select(s => s.Id).ToHashSet();
+        ink.PasteFromClipboard(new Point(Grid, PasteTop(page, 0)));
+        var edit = new PageEdit(page);
+        foreach (var stroke in ink.GetStrokes().Where(s => !before.Contains(s.Id)))
+        {
+            stroke.Selected = false;
+            edit.AddedStrokes.Add(stroke);
+        }
+        undo.Push(edit);
+    }
+
+    private static double PasteTop(XoppPage page, double height)
+    {
+        double top = Math.Ceiling((page.ContentBottom() + 4) / Grid) * Grid;
+        return top < Grid || top + height > page.Height ? Grid : top;
     }
 }

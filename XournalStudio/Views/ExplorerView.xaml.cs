@@ -73,7 +73,7 @@ public sealed partial class ExplorerView : UserControl
             }
             catch (Exception e)
             {
-                DebugLog.Write($"git status failed: {e.Message}");
+                DebugLog.Write("git status", e);
             }
             return (tree, root, status);
         });

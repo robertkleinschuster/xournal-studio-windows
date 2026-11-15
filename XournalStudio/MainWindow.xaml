@@ -63,6 +63,18 @@
                     </MenuFlyoutItem.KeyboardAccelerators>
                 </MenuFlyoutItem>
                 <MenuFlyoutSeparator />
+                <MenuFlyoutItem Text="Kopieren" Click="OnCopy">
+                    <MenuFlyoutItem.Icon><SymbolIcon Symbol="Copy" /></MenuFlyoutItem.Icon>
+                    <MenuFlyoutItem.KeyboardAccelerators>
+                        <KeyboardAccelerator Modifiers="Control" Key="C" />
+                    </MenuFlyoutItem.KeyboardAccelerators>
+                </MenuFlyoutItem>
+                <MenuFlyoutItem Text="Auswahl löschen" Click="OnDeleteSelection">
+                    <MenuFlyoutItem.Icon><SymbolIcon Symbol="Delete" /></MenuFlyoutItem.Icon>
+                    <MenuFlyoutItem.KeyboardAccelerators>
+                        <KeyboardAccelerator Key="Delete" />
+                    </MenuFlyoutItem.KeyboardAccelerators>
+                </MenuFlyoutItem>
                 <MenuFlyoutItem Text="Einfügen" Click="OnPaste">
                     <MenuFlyoutItem.Icon><SymbolIcon Symbol="Paste" /></MenuFlyoutItem.Icon>
                     <MenuFlyoutItem.KeyboardAccelerators>
@@ -118,6 +130,25 @@
                 <InkToolbarEraserButton x:Name="EraserButton" IsClearAllVisible="False" ToolTipService.ToolTip="Radierer" AutomationProperties.Name="Radierer" />
                 <!-- Windows' own ruler and protractor: draw along the edge for straight lines; move/turn with fingers. -->
                 <InkToolbarStencilButton x:Name="StencilButton" ToolTipService.ToolTip="Lineal / Geodreieck" AutomationProperties.Name="Lineal" />
+                <!-- Custom tools (Microsoft's InkToolbar extension point); the ink takes no input while one is active. -->
+                <InkToolbarCustomToolButton x:Name="LassoButton" ToolTipService.ToolTip="Auswählen (Lasso): umfahren, dann verschieben; Entf löscht, Strg+C kopiert" AutomationProperties.Name="Auswählen">
+                    <FontIcon Glyph="&#xF1BE;" />
+                </InkToolbarCustomToolButton>
+                <InkToolbarCustomToolButton x:Name="ShapeButton" ToolTipService.ToolTip="Formen: Linie, Pfeil, Rechteck, Ellipse (nochmal tippen zum Wählen)" AutomationProperties.Name="Formen">
+                    <InkToolbarCustomToolButton.ConfigurationContent>
+                        <RadioButtons x:Name="ShapeChoice" Header="Form" SelectionChanged="OnShapeChoiceChanged">
+                            <x:String>Linie</x:String>
+                            <x:String>Pfeil</x:String>
+                            <x:String>Rechteck</x:String>
+                            <x:String>Ellipse</x:String>
+                        </RadioButtons>
+                    </InkToolbarCustomToolButton.ConfigurationContent>
+                    <!-- Line, rectangle, circle as outlines (PathIcon fills, so even-odd rings). -->
+                    <PathIcon Data="F0 M1,17.9 L7.9,11 L9,12.1 L2.1,19 Z M10,1 H19 V10 H10 Z M11.5,2.5 V8.5 H17.5 V2.5 Z M10,15 A4.5,4.5 0 1 0 19,15 A4.5,4.5 0 1 0 10,15 Z M11.5,15 A3,3 0 1 1 17.5,15 A3,3 0 1 1 11.5,15 Z" />
+                </InkToolbarCustomToolButton>
+                <InkToolbarCustomToolButton x:Name="PdfAreaButton" ToolTipService.ToolTip="PDF-Bereich kopieren: Rechteck ziehen, dann mit Strg+V auf einer Seite einfügen" AutomationProperties.Name="PDF-Bereich kopieren">
+                    <FontIcon Glyph="&#xF407;" />
+                </InkToolbarCustomToolButton>
                 <InkToolbarCustomToggleButton x:Name="RecognizeButton" AutomationProperties.Name="Formerkennung" ToolTipService.ToolTip="Formerkennung">
                     <FontIcon Glyph="&#xF4A5;" />
                 </InkToolbarCustomToggleButton>
@@ -145,7 +176,7 @@
             </SplitView.Pane>
             <Grid Background="{ThemeResource LayerFillColorDefaultBrush}"
                   BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1,1,0,0">
-                <ScrollView x:Name="Scroller" ZoomMode="Enabled" ContentOrientation="Vertical"
+                <ScrollView x:Name="Scroller" IgnoredInputKinds="Pen" ZoomMode="Enabled" ContentOrientation="Vertical"
                             MinZoomFactor="0.2" MaxZoomFactor="6"
                             HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Hidden"
                             ViewChanged="OnViewChanged" SizeChanged="OnScrollerSizeChanged">

@@ -20,6 +20,7 @@
     <!-- Explorer logic without UI. -->
     <Compile Include="..\XournalStudio\Services\ProjectTree.cs" Link="Services\ProjectTree.cs" />
     <Compile Include="..\XournalStudio\Services\GitSync.cs" Link="Services\GitSync.cs" />
+    <Compile Include="..\XournalStudio\Services\DebugLog.cs" Link="Services\DebugLog.cs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="LibGit2Sharp" Version="0.32.0" />

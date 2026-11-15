@@ -31,6 +31,15 @@ public static class XoppImage
         return new Rect(left, top, Math.Max(0, right - left), Math.Max(0, bottom - top));
     }
 
+    /// <summary>Sets the position of the element itself (all other attributes kept).</summary>
+    public static void SetBounds(XElement e, Rect bounds)
+    {
+        e.SetAttributeValue("left", Format(bounds.Left));
+        e.SetAttributeValue("top", Format(bounds.Top));
+        e.SetAttributeValue("right", Format(bounds.Right));
+        e.SetAttributeValue("bottom", Format(bounds.Bottom));
+    }
+
     /// <summary>A copy of the element at another position (same data, all other attributes kept).</summary>
     public static XElement WithBounds(XElement e, Rect bounds)
     {

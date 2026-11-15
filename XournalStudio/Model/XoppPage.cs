@@ -1,5 +1,6 @@
 using System.Xml.Linq;
 using Microsoft.UI.Xaml.Controls;
+using Windows.Foundation;
 using InkStroke = Windows.UI.Input.Inking.InkStroke;
 using Windows.UI;
 
@@ -18,6 +19,9 @@ public sealed class XoppPage
     // Stroke elements loaded from (or already written to) the file, by ink stroke id. Unchanged
     // strokes are written back as they were, so attributes this app ignores survive a save.
     private readonly Dictionary<uint, XElement> strokeElements = new();
+
+    // Undo/redo cannot re-add a removed stroke and adds a copy: old id -> id of the copy.
+    private readonly Dictionary<uint, uint> replacedIds = new();
 
     public double Width { get; }
     public double Height { get; }
@@ -114,10 +118,48 @@ public sealed class XoppPage
     /// <summary>Called when undo/redo puts a copy of a stroke back in place of the removed original.</summary>
     public void TransferStrokeIdentity(uint oldId, uint newId)
     {
+        replacedIds[oldId] = newId;
         if (strokeElements.Remove(oldId, out var e))
         {
             strokeElements[newId] = e;
         }
+    }
+
+    /// <summary>
+    /// The stroke on the page now for a stroke an edit remembers: itself, or the copy undo/redo put in its place;
+    /// null if it is not on the page.
+    /// </summary>
+    public InkStroke? Current(InkStroke stroke)
+    {
+        uint id = stroke.Id;
+        while (replacedIds.TryGetValue(id, out uint next))
+        {
+            id = next;
+        }
+        return Ink?.GetStrokes().FirstOrDefault(s => s.Id == id);
+    }
+
+    /// <summary>
+    /// Records that strokes were moved on the ink (e.g. by <c>MoveSelected</c>): their original elements get the
+    /// new coordinates; strokes drawn in this session are written from the ink anyway.
+    /// </summary>
+    public void MoveStrokes(IEnumerable<InkStroke> strokes, double dx, double dy)
+    {
+        foreach (var stroke in strokes)
+        {
+            if (strokeElements.TryGetValue(stroke.Id, out var e))
+            {
+                StrokeConverter.Translate(e, dx, dy);
+            }
+        }
+    }
+
+    /// <summary>Moves a picture (in place: its layer and position among the elements stay).</summary>
+    public void MoveImage(XElement image, double dx, double dy)
+    {
+        var bounds = XoppImage.GetBounds(image);
+        XoppImage.SetBounds(image, new Rect(bounds.X + dx, bounds.Y + dy, bounds.Width, bounds.Height));
+        ImagesChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>Pictures (&lt;image&gt;, &lt;teximage&gt;) of all layers, bottom to top.</summary>

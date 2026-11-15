@@ -1,14 +1,27 @@
 using System.Xml.Linq;
+using Windows.Foundation;
 using Windows.UI.Input.Inking;
 using XournalStudio.Model;
 
 namespace XournalStudio.Services;
 
+/// <summary>A change of one page that can be undone and redone. Recorded after it was made.</summary>
+public interface IPageEdit
+{
+    XoppPage Page { get; }
+
+    bool IsEmpty { get; }
+
+    void Undo();
+
+    void Redo();
+}
+
 /// <summary>
-/// One change of a page: strokes and pictures removed and added. It is recorded after it was made
-/// (by the InkPresenter or a tool), so <see cref="Undo"/> reverses it and <see cref="Redo"/> repeats it.
+/// Strokes and pictures removed and added (by the InkPresenter or a tool), so <see cref="Undo"/> reverses it and
+/// <see cref="Redo"/> repeats it.
 /// </summary>
-public sealed class PageEdit(XoppPage page)
+public sealed class PageEdit(XoppPage page) : IPageEdit
 {
     public XoppPage Page { get; } = page;
     public List<InkStroke> RemovedStrokes { get; private set; } = new();
@@ -34,23 +47,27 @@ public sealed class PageEdit(XoppPage page)
         AddedImages.ForEach(Page.AddImage);
     }
 
-    /// <summary>Removes strokes from the page's ink (they must belong to it).</summary>
+    /// <summary>Removes strokes (or the copies undo/redo put in their place) from the page's ink.</summary>
     public static void RemoveStrokes(XoppPage page, IReadOnlyCollection<InkStroke> strokes)
     {
         if (strokes.Count == 0)
         {
             return;
         }
-        var ink = page.Ink!;
-        foreach (var s in ink.GetStrokes())
+        SelectOnly(page, strokes);
+        page.Ink!.DeleteSelected();
+    }
+
+    /// <summary>Marks exactly these strokes (as they are on the page now) as selected; returns them.</summary>
+    public static List<InkStroke> SelectOnly(XoppPage page, IEnumerable<InkStroke> strokes)
+    {
+        foreach (var s in page.Ink!.GetStrokes())
         {
             s.Selected = false;
         }
-        foreach (var s in strokes)
-        {
-            s.Selected = true;
-        }
-        ink.DeleteSelected();
+        var current = strokes.Select(page.Current).OfType<InkStroke>().ToList();
+        current.ForEach(s => s.Selected = true);
+        return current;
     }
 
     // A removed stroke cannot be added again; its copy takes its place (also in the file).
@@ -68,11 +85,36 @@ public sealed class PageEdit(XoppPage page)
     }
 }
 
+/// <summary>Strokes and pictures moved by an offset (lasso selection dragged).</summary>
+public sealed class MoveEdit(XoppPage page, IReadOnlyList<InkStroke> strokes, IReadOnlyList<XElement> images, Point offset)
+    : IPageEdit
+{
+    public XoppPage Page { get; } = page;
+
+    public bool IsEmpty => (strokes.Count + images.Count == 0) || (offset.X == 0 && offset.Y == 0);
+
+    public void Undo() => Move(-offset.X, -offset.Y);
+
+    public void Redo() => Move(offset.X, offset.Y);
+
+    private void Move(double dx, double dy)
+    {
+        var current = PageEdit.SelectOnly(Page, strokes);
+        Page.Ink!.MoveSelected(new Point(dx, dy));
+        current.ForEach(s => s.Selected = false);
+        Page.MoveStrokes(current, dx, dy);
+        foreach (var image in images)
+        {
+            Page.MoveImage(image, dx, dy);
+        }
+    }
+}
+
 /// <summary>Undo/redo of page edits (the WinUI InkCanvas has no undo of its own).</summary>
 public sealed class UndoStack
 {
-    private readonly Stack<PageEdit> undo = new();
-    private readonly Stack<PageEdit> redo = new();
+    private readonly Stack<IPageEdit> undo = new();
+    private readonly Stack<IPageEdit> redo = new();
 
     public event EventHandler? Changed;
 
@@ -80,7 +122,7 @@ public sealed class UndoStack
     public bool CanRedo => redo.Count > 0;
 
     /// <summary>Records an edit that has already been made.</summary>
-    public void Push(PageEdit edit)
+    public void Push(IPageEdit edit)
     {
         if (edit.IsEmpty)
         {
@@ -126,7 +168,7 @@ public sealed class UndoStack
         }
     }
 
-    private static void Filter(Stack<PageEdit> stack, XoppPage page)
+    private static void Filter(Stack<IPageEdit> stack, XoppPage page)
     {
         var kept = stack.Where(e => e.Page != page).Reverse().ToList();
         stack.Clear();

@@ -1,5 +1,6 @@
 using System.Xml.Linq;
 using Microsoft.UI;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Windows.Foundation;
@@ -27,6 +28,19 @@ public sealed partial class PageView : UserControl
     public InkPresenter Ink => Canvas.InkPresenter;
 
     public InkCanvas InkCanvas => Canvas;
+
+    /// <summary>The page area; pointer input of the custom tools arrives here.</summary>
+    public UIElement Surface => Sheet;
+
+    /// <summary>Layer above the ink for tool feedback (lasso, selection, previews), in page points.</summary>
+    public Microsoft.UI.Xaml.Controls.Canvas Overlay => ToolLayer;
+
+    /// <summary>The background PDF of a PDF page, otherwise null.</summary>
+    public PdfBackground? Pdf => pdf;
+
+    /// <summary>The element showing a picture, while pictures are shown (near the viewport).</summary>
+    public Image? FindPicture(XElement picture) =>
+        ImagesLayer.Children.OfType<Image>().FirstOrDefault(i => i.Tag == picture);
 
     public PageView(XoppPage page, PdfBackground? pdf)
     {
@@ -120,7 +134,7 @@ public sealed partial class PageView : UserControl
         }
         catch (Exception e)
         {
-            DebugLog.Write($"picture not shown: {e.Message}");
+            DebugLog.Write("show picture", e);
         }
     }
 }

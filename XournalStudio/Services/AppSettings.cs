@@ -14,6 +14,8 @@ public sealed class AppSettings
 
     public bool RecognizeShapes { get; set; }
 
+    public Model.ShapeKind Shape { get; set; }
+
     private static string LocalAppData => Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
 
     private static string? TestFolder => Environment.GetEnvironmentVariable("XOURNAL_STUDIO_CONFIG_DIR");
@@ -32,8 +34,9 @@ public sealed class AppSettings
             string path = File.Exists(FilePath) || TestFolder != null ? FilePath : OldFilePath;
             return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(path)) ?? new AppSettings();
         }
-        catch (Exception)
+        catch (Exception e)
         {
+            DebugLog.Write("load settings (defaults used)", e);
             return new AppSettings();
         }
     }
@@ -45,9 +48,10 @@ public sealed class AppSettings
             Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
             File.WriteAllText(FilePath, JsonSerializer.Serialize(this));
         }
-        catch (Exception)
+        catch (Exception e)
         {
             // Settings are a convenience only.
+            DebugLog.Write("save settings", e);
         }
     }
 }

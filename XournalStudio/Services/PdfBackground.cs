@@ -36,6 +36,37 @@ public sealed class PdfBackground
         return sizes;
     }
 
+    /// <summary>
+    /// Renders an area of a page (in points) as PNG with <paramref name="pixelsPerPoint"/> (Windows PDF renderer,
+    /// <see cref="PdfPageRenderOptions.SourceRect"/>).
+    /// </summary>
+    public async Task<(byte[] Png, int Width, int Height)> RenderAreaAsync(int pageIndex, Windows.Foundation.Rect area,
+        double pixelsPerPoint)
+    {
+        await renderLock.WaitAsync();
+        try
+        {
+            using var page = pdf.GetPage((uint)pageIndex);
+            const double DipsPerPoint = 96.0 / 72;
+            var source = new Windows.Foundation.Rect(area.X * DipsPerPoint, area.Y * DipsPerPoint,
+                area.Width * DipsPerPoint, area.Height * DipsPerPoint);
+            using var stream = new InMemoryRandomAccessStream();
+            await page.RenderToStreamAsync(stream, new PdfPageRenderOptions
+            {
+                SourceRect = source,
+                DestinationWidth = (uint)Math.Max(1, Math.Round(area.Width * pixelsPerPoint)),
+                DestinationHeight = (uint)Math.Max(1, Math.Round(area.Height * pixelsPerPoint)),
+                BitmapEncoderId = Windows.Graphics.Imaging.BitmapEncoder.PngEncoderId,
+            });
+            stream.Seek(0);
+            return await PictureRenderer.ToPngAsync(stream);
+        }
+        finally
+        {
+            renderLock.Release();
+        }
+    }
+
     /// <summary>Renders a page into a bitmap that is <paramref name="pixelWidth"/> pixels wide. UI thread only.</summary>
     public async Task<BitmapImage?> RenderAsync(int pageIndex, uint pixelWidth)
     {

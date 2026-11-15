@@ -116,6 +116,22 @@ public static class StrokeConverter
             coords.ToString());
     }
 
+    /// <summary>Moves the points of a stroke element; its attributes (also unknown ones) stay as they are.</summary>
+    public static void Translate(XElement e, double dx, double dy)
+    {
+        var coords = ParseNumbers(e.Value);
+        var moved = new StringBuilder(coords.Count * 8);
+        for (int i = 0; i < coords.Count; i++)
+        {
+            if (i > 0)
+            {
+                moved.Append(' ');
+            }
+            moved.Append(Format(coords[i] + (i % 2 == 0 ? dx : dy)));
+        }
+        e.Value = moved.ToString();
+    }
+
     private static string Format(double v) => v.ToString("0.####", Inv);
 
     private static List<double> ParseNumbers(string s)

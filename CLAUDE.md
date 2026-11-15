@@ -17,6 +17,14 @@ arrows), math exercises long formulas in several colors.
 
 ## Constraints (agreed with the user)
 
+- **Doctrine: Microsoft's APIs do the work, the app only wires them up correctly.** Every feature is built the
+  way Microsoft builds it (docs, samples, the controls' own extension points): selecting, moving, deleting,
+  copying ink is `InkStrokeContainer`'s job, straight lines are the Windows ruler's, PDF rendering is
+  Windows.Data.Pdf's, sync is LibGit2Sharp's, and so on. App code connects input, feedback, undo and the .xopp
+  mapping – nothing more. When something seems to need own logic, first look for the API that does it; when an
+  API is broken, find the root cause (issue/PR) and stay as close to Microsoft's intended route as possible.
+  The user wants this to be ideal: rebuilding existing code to get closer to it is welcome.
+
 - **No home-made solutions, no hacks.** Use what exists: WinUI 3 controls, Windows features/APIs (Windows Ink,
   ink analysis, Windows.Data.Pdf, clipboard, pickers, ...) and established libraries (NuGet). Do not re-implement
   something a platform feature or library already does, and do not work around platform behavior (toggling input
@@ -45,9 +53,12 @@ arrows), math exercises long formulas in several colors.
   visible; scrollbars hidden; the left side is for the explorer. Touch never draws (it scrolls/zooms).
 - **Pen buttons:** eraser end / eraser button erases (native), barrel button should lasso once the lasso exists.
 - **Decisions (2026-11-15):** eraser = native Windows ink eraser (whole strokes; no pixel eraser, Windows has
-  none); shape recognition = Windows `InkAnalyzer`; lasso, shape tools and copying PDF areas wait until the
-  Windows App SDK delivers `InkPresenter.UnprocessedInput` (no workaround). Parts of an exercise come in via the
-  Snipping Tool + paste.
+  none); shape recognition = Windows `InkAnalyzer`; straight lines also with the Windows ruler (stencil button).
+  Lasso, shapes and PDF areas are `InkToolbarCustomToolButton`s built after Microsoft's pattern ("Pen interactions
+  and Windows Ink": selection layer, `SelectWithPolyLine`, `MoveSelected`); because `UnprocessedInput` has no
+  readable pointer data yet (PR #12292), a custom tool sets `InkPresenter.IsInputEnabled = false` (as Microsoft's
+  SimpleInk sample does for a non-ink mode) and input arrives as XAML pointer events. Agreed with the user. When an
+  SDK ships PR #12292: switch the input source to `UnprocessedInput` and add the barrel-button lasso.
 - German UI texts; code, comments and commits in English.
 
 ## Build, test, install
@@ -66,17 +77,35 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   save writes `<file>~` then replaces), `XoppPage` (page element; strokes live in the page's InkStrokeContainer,
   unchanged strokes are written back as their original elements, mapped by ink stroke id; pictures stay XML),
   `StrokeConverter` (Xournal per-segment widths ↔ ink pressure), `XoppImage` (`<image>`/`<teximage>`),
-  `XoppFormat` (creator, file version).
+  `XoppFormat` (creator, file version), `ShapeGeometry` (outlines of shapes and recognized shapes → stroke).
+  Moved strokes: `XoppPage.MoveStrokes` translates their original elements (`StrokeConverter.Translate`), moved
+  pictures change their attributes in place.
 - `Views/` – `PageView` (background: color + ruling or PDF page rendered at the current zoom near the viewport;
-  pictures layer; InkCanvas), `ToolController` (copies the InkToolbar's tool to all pages' presenters),
+  pictures layer; InkCanvas; overlay `ToolLayer` for tool feedback), `ToolController` (copies the InkToolbar's
+  tool to all pages' presenters; custom tool active → presenters `IsInputEnabled = false`, mode None),
+  `InkTools` (lasso/move/delete/copy, shapes, PDF area: pointer input on the page, live feedback on the overlay,
+  the work done by `InkStrokeContainer`),
   `ExplorerView` + `ExplorerItem` (TreeView of the project folder in the SplitView pane, git colors, sync button).
-- `Services/` – `UndoStack` + `PageEdit` (strokes/pictures removed/added; the InkCanvas has no undo),
+- `Services/` – `UndoStack` of `IPageEdit`: `PageEdit` (strokes/pictures removed/added) and `MoveEdit` (the
+  InkCanvas has no undo; strokes are resolved through `XoppPage.Current` because undo/redo re-adds copies),
   `ShapeRecognition` (InkAnalyzer result → clean stroke), `PdfBackground`, `PictureRenderer`,
-  `ClipboardService` (bitmap → `<image>`), `AppSettings`, `DebugLog`, `ProjectTree` (which files the explorer
+  `ClipboardService` (bitmap ↔ `<image>`; own format `XournalStudio.Image` keeps the size in points), `AppSettings`, `DebugLog`, `ProjectTree` (which files the explorer
   shows), `GitSync` (LibGit2Sharp: status; sync = commit all, fetch, rebase/fast-forward, push; conflicts are
   aborted), `GitCredentials` (reads Git for Windows' stored credential, see Facts learned).
 
 ## Facts learned (keep)
+
+- Custom tools: with `InkPresenter.IsInputEnabled = false` pen/mouse arrive as XAML pointer events
+  (`PointerDeviceType.Pen`); the `ScrollView` needs `IgnoredInputKinds="Pen"` or it captures the pen for panning.
+  `InkToolbarCustomToolButton.ConfigurationContent` gives the tool a native flyout (opens on the second tap, stays
+  open until a tap outside, like the pens' flyouts).
+- Clipboard: `Clipboard.Flush()` often failed with 0x800401D0 CLIPBRD_E_CANT_OPEN (another process – clipboard
+  history – opens it right after `SetContent`), and after a successful flush a custom string format came back as an
+  unreadable `IInspectable`. Not flushing: content stays while the app runs and the string arrives as `string`.
+- `PdfPage.RenderToStreamAsync` renders `DestinationWidth/Height` ×1.5 larger at 150 % display scale (DIPs);
+  harmless for copied areas (their size in points is stored separately).
+- `PathIcon` fills its geometry: outline icons need even-odd rings (`F0`).
+- Saving adds formatting whitespace (newlines) between elements; element content and attributes stay identical.
 
 - **The experimental InkCanvas renders and takes mouse/pen input above XAML popups** (ink over ContentDialogs, clicks on
   dialog buttons drew instead; keyboard worked; no child HWND involved). Agreed with the user: `ShowDialogAsync`
@@ -142,11 +171,10 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 
 1. **Git explorer – done 2026-11-15** (not yet tried by the user on the device; sync not run against the real
    repo by Claude). Possible next steps if asked: folder status colors, rename/delete files, new document in a folder.
-2. **Lasso, shape tools (line, arrow, rectangle, ellipse), copying PDF areas.** Decided to wait until the Windows
-   App SDK raises `InkPresenter.UnprocessedInput` (see Facts learned); re-test with each new release. Then: lasso
-   via `SelectWithPolyLine` + barrel button (`RightDragAction.LeaveUnprocessed`), copy area = render the rectangle
-   with `PdfPageRenderOptions.SourceRect` as PNG into a plain `<image>`. Until then parts of an exercise come in via
-   the Snipping Tool + paste. Pasted images can not be moved yet (needs the lasso).
+2. **Lasso, shapes, PDF areas, ruler – done 2026-11-15** (tested with synthetic pen on the desktop: shapes, lasso,
+   live move, delete, ink copy/paste, undo, PDF area copy + paste at original size, saved XML checked). Open: the
+   barrel-button lasso and switching to `UnprocessedInput` once PR #12292 ships; copying pictures (only strokes are
+   copied with Ctrl+C); PDF areas only from PDF pages (no ink in the copy).
 3. **Pen eraser end** did not erase in later sandbox runs (worked in the first one, native code only) – the user
    should check it on the device; if it fails there too, investigate before anything else.
 4. **Device test by the user** of everything: latency, pressure, palm rejection, touch scroll/zoom, the pen's
