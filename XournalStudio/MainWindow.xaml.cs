@@ -605,6 +605,12 @@ public sealed partial class MainWindow : Window
         {
             await OpenAsync(path);
         }
+        // The opened document takes the keyboard (as an app opened from File Explorer does): otherwise focus stays in
+        // the tree, and Del meant for a lasso selection would delete the file instead.
+        if (!Scroller.Focus(FocusState.Programmatic))
+        {
+            DebugLog.Write("focus document after opening it from the explorer: not focusable");
+        }
     }
 
     // ---------------------------------------------------------------- explorer: file commands

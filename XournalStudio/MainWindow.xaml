@@ -176,7 +176,7 @@
             </SplitView.Pane>
             <Grid Background="{ThemeResource LayerFillColorDefaultBrush}"
                   BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1,1,0,0">
-                <ScrollView x:Name="Scroller" IgnoredInputKinds="Pen" ZoomMode="Enabled" ContentOrientation="Vertical"
+                <ScrollView x:Name="Scroller" IsTabStop="True" IgnoredInputKinds="Pen" ZoomMode="Enabled" ContentOrientation="Vertical"
                             MinZoomFactor="0.2" MaxZoomFactor="6"
                             HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Hidden"
                             ViewChanged="OnViewChanged" SizeChanged="OnScrollerSizeChanged">
