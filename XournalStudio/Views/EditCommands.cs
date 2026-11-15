@@ -32,11 +32,8 @@ public sealed class EditCommands(
         var edit = new PageEdit(page);
         PageEdit.RemoveStrokes(page, current.Strokes);
         edit.RemovedStrokes.AddRange(current.Strokes);
-        foreach (var image in current.Images)
-        {
-            page.RemoveImage(image);
-            edit.RemovedImages.Add(image);
-        }
+        page.RemoveImages(current.Images);
+        edit.RemovedImages.AddRange(current.Images);
         selection.Clear();
         undo.Push(edit);
         return true;
@@ -175,10 +172,10 @@ public sealed class EditCommands(
             }
             else if (XoppImage.IsImage(e))
             {
-                page.AddImage(e);
                 edit.AddedImages.Add(e);
             }
         }
+        page.AddImages(edit.AddedImages);
         edit.AddedStrokes.AddRange(strokes);
         undo.Push(edit);
         activateSelectTool();

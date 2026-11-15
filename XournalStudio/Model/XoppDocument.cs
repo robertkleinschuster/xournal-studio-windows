@@ -150,7 +150,7 @@ public sealed class XoppDocument
         bool firstPdf = true;
         foreach (var page in Pages)
         {
-            var element = new XElement(page.ToXml());
+            var element = page.Snapshot();
             var background = element.Element("background");
             if (background != null && (string?)background.Attribute("type") == "pdf")
             {

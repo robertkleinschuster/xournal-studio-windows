@@ -60,6 +60,23 @@ public sealed class Autosave
         Enqueue($"write recovery copy {current}", () => recovery.WriteAsync(current, xml, info));
     }
 
+    /// <summary>
+    /// Writes the document now and then deletes <paramref name="oldId"/> (a restored copy) – only if the write
+    /// succeeded, so there is always one complete copy.
+    /// </summary>
+    public void WriteNowReplacing(string oldId)
+    {
+        timer.Stop();
+        pending = false;
+        string current = id;
+        var (xml, info) = snapshot();
+        Enqueue($"write recovery copy {current} replacing {oldId}", async () =>
+        {
+            await recovery.WriteAsync(current, xml, info);
+            recovery.Delete(oldId);
+        });
+    }
+
     /// <summary>Nothing to recover any more (saved, or discarded by the user): the copy goes.</summary>
     public void Discard()
     {
@@ -75,8 +92,7 @@ public sealed class Autosave
         id = Recovery.NewId();
     }
 
-    /// <summary>Deletes another copy (a restored one) after everything queued before.</summary>
-    public void Delete(string copyId) => Enqueue($"delete recovery copy {copyId}", () =>
+    private void Delete(string copyId) => Enqueue($"delete recovery copy {copyId}", () =>
     {
         recovery.Delete(copyId);
         return Task.CompletedTask;

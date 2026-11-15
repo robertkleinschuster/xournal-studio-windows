@@ -46,11 +46,11 @@ public class PictureTests
         int changes = 0;
         page.ImagesChanged += (_, _) => changes++;
         var added = XoppImage.Create(new Rect(0, 100, 10, 10), [1], 1, 1);
-        page.AddImage(added);
+        page.AddImages([added]);
         Assert.Equal(110, page.ContentBottom());
-        page.RemoveImage(page.Images.First());
+        page.RemoveImages([page.Images.First()]);
         Assert.Equal(2, page.Images.Count());
         Assert.Equal(2, changes);
-        Assert.Same(added, page.ToXml().Elements("layer").Last().Elements().Last());
+        Assert.True(XNode.DeepEquals(added, page.Snapshot().Elements("layer").Last().Elements().Last())); // a copy
     }
 }

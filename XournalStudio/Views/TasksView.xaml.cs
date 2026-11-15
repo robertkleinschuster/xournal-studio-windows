@@ -19,6 +19,7 @@ public sealed partial class TasksView : UserControl
     private TaskFile? file;
     private Dialogs? dialogs;
     private Func<(string? Document, int PageIndex)> currentPage = () => (null, -1);
+    private Func<bool> syncing = () => false;
 
     public TasksView()
     {
@@ -34,10 +35,12 @@ public sealed partial class TasksView : UserControl
     public event EventHandler? ShowsDoneChanged;
 
     /// <param name="page">The open document (null if never saved) and the page in view, for links.</param>
-    public void Initialize(Dialogs dialogs, Func<(string? Document, int PageIndex)> page)
+    /// <param name="isSyncing">True while git works on the folder: the file is not changed then.</param>
+    public void Initialize(Dialogs dialogs, Func<(string? Document, int PageIndex)> page, Func<bool> isSyncing)
     {
         this.dialogs = dialogs;
         currentPage = page;
+        syncing = isSyncing;
     }
 
     public bool ShowsDone
@@ -108,6 +111,12 @@ public sealed partial class TasksView : UserControl
     {
         if (file == null)
         {
+            return;
+        }
+        if (syncing())
+        {
+            // Git commits and checks out the folder right now (as documents, the file waits).
+            Failed?.Invoke(this, ("Synchronisierung läuft", "Aufgaben können geändert werden, sobald sie fertig ist."));
             return;
         }
         try

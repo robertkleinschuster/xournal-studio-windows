@@ -36,16 +36,16 @@ public sealed class PageEdit(XoppPage page) : IPageEdit
     {
         RemoveStrokes(Page, AddedStrokes);
         RemovedStrokes = RestoreStrokes(Page, RemovedStrokes);
-        AddedImages.ForEach(Page.RemoveImage);
-        RemovedImages.ForEach(Page.AddImage);
+        Page.RemoveImages(AddedImages);
+        Page.AddImages(RemovedImages);
     }
 
     public void Redo()
     {
         RemoveStrokes(Page, RemovedStrokes);
         AddedStrokes = RestoreStrokes(Page, AddedStrokes);
-        RemovedImages.ForEach(Page.RemoveImage);
-        AddedImages.ForEach(Page.AddImage);
+        Page.RemoveImages(RemovedImages);
+        Page.AddImages(AddedImages);
     }
 
     /// <summary>Removes strokes (or the copies undo/redo put in their place) from the page's ink.</summary>
@@ -105,10 +105,7 @@ public sealed class TransformEdit(XoppPage page, IReadOnlyList<InkStroke> stroke
     private void Apply(Matrix3x2 m)
     {
         Page.TransformStrokes(strokes.Select(Page.Current).OfType<InkStroke>(), m);
-        foreach (var image in images)
-        {
-            Page.TransformImage(image, m);
-        }
+        Page.TransformImages(images, m);
     }
 }
 

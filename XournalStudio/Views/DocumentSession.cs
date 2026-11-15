@@ -119,8 +119,7 @@ public sealed class DocumentSession
             doc.CreatedAt = info.CreatedAt;
             Show(doc, await LoadPdfAsync(doc));
             SetDirty(true);
-            autosave.WriteNow();          // the restored state is this session's copy now ...
-            autosave.Delete(entry.Id);    // ... and the old one goes once that is written
+            autosave.WriteNowReplacing(entry.Id); // the restored state is this session's copy now
             return true;
         }
         catch (Exception e)
@@ -200,6 +199,13 @@ public sealed class DocumentSession
     /// <summary>Saves where the user picks: suggested is the document's name in its folder, the PDF's or the project's.</summary>
     public async Task<bool> SaveAsAsync()
     {
+        if (SaveBlocked)
+        {
+            // Not deferred like Save: the picked place would have to wait somewhere unseen; the user saves again.
+            messages.Show(InfoBarSeverity.Informational, "Synchronisierung läuft",
+                "Speichern unter ist möglich, sobald die Synchronisierung fertig ist.");
+            return false;
+        }
         string? folder = Path.GetDirectoryName(Document.FilePath ?? Document.PdfPath) ?? projectFolder();
         var picker = new FileSavePicker(window) { SuggestedFileName = Document.SuggestedName };
         if (folder != null && Directory.Exists(folder))

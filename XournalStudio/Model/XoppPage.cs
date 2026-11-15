@@ -162,11 +162,14 @@ public sealed class XoppPage
         }
     }
 
-    /// <summary>Moves/scales a picture (in place: its layer and position among the elements stay).</summary>
-    public void TransformImage(XElement image, Matrix3x2 m)
+    /// <summary>Moves/scales pictures (in place: their layer and position among the elements stay).</summary>
+    public void TransformImages(IReadOnlyCollection<XElement> images, Matrix3x2 m)
     {
-        XoppImage.SetBounds(image, XoppImage.Transform(XoppImage.GetBounds(image), m));
-        ImagesChanged?.Invoke(this, EventArgs.Empty);
+        foreach (var image in images)
+        {
+            XoppImage.SetBounds(image, XoppImage.Transform(XoppImage.GetBounds(image), m));
+        }
+        RaiseImagesChanged(images);
     }
 
     /// <summary>The stroke as a .xopp element: its original element (exact widths, unknown attributes) or converted.</summary>
@@ -196,18 +199,27 @@ public sealed class XoppPage
     /// <summary>Raised when pictures are added or removed.</summary>
     public event EventHandler? ImagesChanged;
 
-    /// <summary>Adds a picture (new ones go to the top layer, like strokes).</summary>
-    public void AddImage(XElement image)
+    /// <summary>Adds pictures (new ones go to the top layer, like strokes).</summary>
+    public void AddImages(IReadOnlyCollection<XElement> images)
     {
-        element.Elements("layer").Last().Add(image);
-        ImagesChanged?.Invoke(this, EventArgs.Empty);
+        element.Elements("layer").Last().Add(images);
+        RaiseImagesChanged(images);
     }
 
-    public void RemoveImage(XElement image)
+    public void RemoveImages(IReadOnlyCollection<XElement> images)
     {
-        if (image.Parent != null)
+        foreach (var image in images.Where(i => i.Parent != null))
         {
             image.Remove();
+        }
+        RaiseImagesChanged(images);
+    }
+
+    // Once per change: the page view redraws all its pictures.
+    private void RaiseImagesChanged(IReadOnlyCollection<XElement> images)
+    {
+        if (images.Count > 0)
+        {
             ImagesChanged?.Invoke(this, EventArgs.Empty);
         }
     }
@@ -227,37 +239,52 @@ public sealed class XoppPage
         return bottom;
     }
 
-    /// <summary>Synchronizes the XML element with the ink and returns it.</summary>
-    public XElement ToXml()
+    /// <summary>
+    /// The page as it is now, as a detached copy (reading only: the page keeps every element it has, so an undo can
+    /// bring a deleted stroke back with its original element). Strokes on the ink are their original elements, strokes
+    /// drawn in this session are converted into the top layer, where Xournal draws by default as well; elements of
+    /// strokes no longer on the ink are left out; everything else (unknown elements too) is copied as it is.
+    /// </summary>
+    public XElement Snapshot()
     {
         if (Ink == null)
         {
-            return element; // never shown: unchanged
+            return new XElement(element); // never shown: unchanged
         }
         var strokes = Ink.GetStrokes();
-        var liveIds = strokes.Select(s => s.Id).ToHashSet();
-
-        foreach (var (id, e) in strokeElements.ToList())
+        var live = strokes.Select(s => s.Id).ToHashSet();
+        var idOf = strokeElements.ToDictionary(p => p.Value, p => p.Key);
+        var copy = new XElement(element.Name, element.Attributes());
+        XElement? topLayer = null;
+        foreach (var node in element.Nodes())
         {
-            if (!liveIds.Contains(id))
+            if (node is XElement { Name.LocalName: "layer" } layer)
             {
-                e.Remove();
-                strokeElements.Remove(id);
+                var layerCopy = new XElement(layer.Name, layer.Attributes());
+                foreach (var child in layer.Nodes())
+                {
+                    bool removed = child is XElement e && idOf.TryGetValue(e, out uint id) && !live.Contains(id);
+                    if (!removed)
+                    {
+                        layerCopy.Add(child is XElement el ? new XElement(el) : child);
+                    }
+                }
+                copy.Add(layerCopy);
+                topLayer = layerCopy;
+            }
+            else
+            {
+                copy.Add(node is XElement el ? new XElement(el) : node);
             }
         }
-
-        // New strokes go to the top layer, where Xournal draws by default as well.
-        var layer = element.Elements("layer").Last();
         foreach (var stroke in strokes)
         {
             if (!strokeElements.ContainsKey(stroke.Id))
             {
-                var e = StrokeConverter.ToXml(stroke);
-                layer.Add(e);
-                strokeElements[stroke.Id] = e;
+                topLayer!.Add(StrokeConverter.ToXml(stroke));
             }
         }
-        return element;
+        return copy;
     }
 
     private static XElement SolidBackground(string style) =>

@@ -68,6 +68,10 @@ public sealed class Selection
     /// <summary>The corner handle at <paramref name="p"/> (0 top-left, clockwise), or -1.</summary>
     public int HandleAt(Point p)
     {
+        if (Bounds.Contains(p))
+        {
+            return -1; // on the content it moves (small selections would otherwise be handles only)
+        }
         for (int i = 0; i < handles.Length; i++)
         {
             var c = Corner(Inflate(Bounds, Margin), i);
@@ -128,10 +132,7 @@ public sealed class Selection
         {
             Page.RecordTransform(stroke, m); // the ink shows it already
         }
-        foreach (var image in Images)
-        {
-            Page.TransformImage(image, m); // pictures are redrawn at the new place
-        }
+        Page.TransformImages(Images, m); // pictures are redrawn at the new place
         undo.Push(new TransformEdit(Page, Strokes.ToList(), Images.ToList(), m));
         Area = null;
         Bounds = ContentBounds();

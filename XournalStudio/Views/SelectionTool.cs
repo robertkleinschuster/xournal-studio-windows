@@ -89,10 +89,10 @@ public sealed class SelectionTool(UndoStack undo)
                 Selection.Place(rectangle!, new Rect(start, p));
                 break;
             case Gesture.Move:
-                Current!.Preview(Matrix3x2.CreateTranslation((float)(p.X - start.X), (float)(p.Y - start.Y)));
+                Current?.Preview(Matrix3x2.CreateTranslation((float)(p.X - start.X), (float)(p.Y - start.Y)));
                 break;
             case Gesture.Scale:
-                Current!.Preview(Matrix3x2.CreateScale((float)ScaleFactor(p), new Vector2((float)anchor.X, (float)anchor.Y)));
+                Current?.Preview(Matrix3x2.CreateScale((float)ScaleFactor(p), new Vector2((float)anchor.X, (float)anchor.Y)));
                 break;
         }
     }
@@ -119,8 +119,14 @@ public sealed class SelectionTool(UndoStack undo)
             case Gesture.Lasso or Gesture.Rectangle:
                 SelectPictureAt(page, p);
                 break;
-            case Gesture.Move or Gesture.Scale:
-                Current!.Commit(undo);
+            case Gesture.Move or Gesture.Scale when tap:
+                // A tap on the selection clears it (or selects the picture under the pen).
+                Current?.Revert();
+                Clear();
+                SelectPictureAt(page, p);
+                break;
+            case Gesture.Move or Gesture.Scale when Current != null:
+                Current.Commit(undo);
                 SelectionChanged?.Invoke(this, EventArgs.Empty);
                 break;
         }
@@ -148,11 +154,17 @@ public sealed class SelectionTool(UndoStack undo)
         }
     }
 
+    /// <summary>No selection (also in the middle of a drag: undo, delete or paste by keyboard; the drag is reverted).</summary>
     public void Clear()
     {
         if (Current == null)
         {
             return;
+        }
+        if (gesture is Gesture.Move or Gesture.Scale)
+        {
+            Current.Revert();
+            gesture = Gesture.None;
         }
         Current.Remove();
         Current = null;

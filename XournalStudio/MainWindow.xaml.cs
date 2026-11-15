@@ -89,7 +89,7 @@ public sealed partial class MainWindow : Window
         Explorer.Failed += (_, m) => messages.Show(InfoBarSeverity.Warning, m.Title, m.Message);
         SetExplorerOpen(settings.ExplorerOpen);
 
-        Tasks.Initialize(dialogs, () => (session.Document.FilePath, pages.CurrentIndex));
+        Tasks.Initialize(dialogs, () => (session.Document.FilePath, pages.CurrentIndex), () => sync.IsSyncing);
         Tasks.ShowsDone = settings.DoneTasksShown;
         Tasks.ShowsDoneChanged += (_, _) =>
         {
