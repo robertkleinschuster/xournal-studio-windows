@@ -48,7 +48,8 @@ public static class StrokeConverter
             Color = color,
             Size = new Size(width, width),
             PenTip = PenTipShape.Circle,
-            FitToCurve = true,
+            // Xournal++ draws the points as a polyline; Bezier fitting rounds the corners of shapes (rectangles).
+            FitToCurve = false,
             IgnorePressure = !hasPressure,
             DrawAsHighlighter = highlighter,
         };

@@ -133,6 +133,16 @@ public class FileFormatTests : IDisposable
     }
 
     [Fact]
+    public void StrokesAreDrawnAsPolylines()
+    {
+        // A rectangle (resistor) of five points must keep its corners, like in Xournal++.
+        var e = XElement.Parse("""<stroke tool="pen" color="#000000ff" width="1.41">10 10 50 10 50 30 10 30 10 10</stroke>""");
+        var stroke = StrokeConverter.FromXml(e)!;
+        Assert.False(stroke.DrawingAttributes.FitToCurve);
+        Assert.Equal(5, stroke.GetInkPoints().Count);
+    }
+
+    [Fact]
     public void HighlighterKeepsXournalAlpha()
     {
         var e = XElement.Parse("""<stroke tool="highlighter" color="#ffff007f" width="8.5">1 2 3 4</stroke>""");

@@ -67,7 +67,8 @@ public sealed class ToolController
         var attributes = toolbar.InkDrawingAttributes;
         if (attributes != null)
         {
-            attributes.FitToCurve = true;
+            // Polyline like Xournal++ and like loaded strokes: what is drawn looks the same after reloading.
+            attributes.FitToCurve = false;
         }
         foreach (var view in views)
         {
