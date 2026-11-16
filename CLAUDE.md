@@ -330,7 +330,7 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 - **Save As with attachments – as Xournal++ (user, 2026-11-16 morning):** attached PDF and picture backgrounds
   (`domain="attach"`, `<doc>.xopp.<filename>`) are copied next to the new file (`XoppDocument.CopyAttachments`, also for
   "Meine als Kopie speichern"), the file keeps `attach`, and the document refers to its own copy afterwards.
-- **Selection commands in the command row (decided by Claude 2026-11-16 night, user please confirm):** the transient
+- **Selection commands in the command row (decided by Claude 2026-11-16 night, confirmed by the user 2026-11-16 morning):** the transient
   CommandBarFlyout at the selection swallowed the barrel release (Facts), so a barrel move never stuck – the agreed
   core (barrel = lasso and move) wins over the flyout. Ausschneiden/Kopieren/Duplizieren/Löschen are contextual
   AppBarButtons in the command row (`SelectionCommands`); nothing lies over the page.

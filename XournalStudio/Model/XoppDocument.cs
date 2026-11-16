@@ -168,16 +168,38 @@ public sealed class XoppDocument
 
     private Dictionary<string, string> WriteWithAttachments(string path)
     {
-        var copies = CopyAttachments(path);
+        var copies = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         try
         {
-            Write(Snapshot(path, copies), path);
+            CopyAttachments(path, copies);
+            var snapshot = Snapshot(path, copies);
+            Write(snapshot, path);
+            // The PDF reference now is what this file says (attach where copied, a path where not).
+            if (snapshot.Root!.Elements("page").Elements("background")
+                    .FirstOrDefault(b => (string?)b.Attribute("type") == "pdf" && b.Attribute("filename") != null) is { } pdf)
+            {
+                loadedPdfReference = ((string?)pdf.Attribute("domain"), (string?)pdf.Attribute("filename"));
+            }
         }
-        catch
+        catch (Exception e)
         {
+            // Only the files made just now for this write are taken back; a failure doing so goes along with the cause.
+            var failures = new List<Exception>();
             foreach (var copy in copies.Values)
             {
-                File.Delete(copy); // only the files made just now for this write
+                try
+                {
+                    File.Delete(copy);
+                }
+                catch (Exception d) when (d is IOException or UnauthorizedAccessException)
+                {
+                    failures.Add(d);
+                }
+            }
+            if (failures.Count > 0)
+            {
+                throw new AggregateException("Speichern fehlgeschlagen; angelegte Kopien der Anhänge blieben liegen.",
+                    [e, .. failures]);
             }
             throw;
         }
@@ -187,11 +209,11 @@ public sealed class XoppDocument
     /// <summary>
     /// Copies the attached PDF and picture backgrounds (domain "attach": "&lt;document&gt;.&lt;filename&gt;") next to
     /// <paramref name="target"/> as "&lt;target&gt;.&lt;filename&gt;", as upstream does when it saves under another name.
-    /// Never over an existing file (then the reference is written as a path). Returns source → copy (full paths).
+    /// Never over an existing file (then the reference is written as a path). Each copy made goes into
+    /// <paramref name="copies"/> (source → copy, full paths) at once, so a failure takes back exactly those.
     /// </summary>
-    public Dictionary<string, string> CopyAttachments(string target)
+    private void CopyAttachments(string target, Dictionary<string, string> copies)
     {
-        var copies = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         void Copy(string? source, string filename)
         {
             if (source == null || !File.Exists(source))
@@ -217,7 +239,6 @@ public sealed class XoppDocument
                 Copy(page.BackgroundImagePath, name);
             }
         }
-        return copies;
     }
 
     private static bool SamePath(string a, string b) =>
@@ -281,22 +302,34 @@ public sealed class XoppDocument
     public static void Write(XDocument snapshot, string path)
     {
         string temp = path + "~";
-        using (var file = File.Create(temp))
-        using (var gzip = new GZipStream(file, CompressionLevel.Fastest))
-        using (var writer = XmlWriter.Create(gzip, new XmlWriterSettings
+        try
         {
-            Encoding = new UTF8Encoding(false),
-            Indent = true,
-            IndentChars = "",
-        }))
-        {
-            snapshot.Save(writer);
+            using (var file = File.Create(temp))
+            using (var gzip = new GZipStream(file, CompressionLevel.Fastest))
+            using (var writer = XmlWriter.Create(gzip, new XmlWriterSettings
+            {
+                Encoding = new UTF8Encoding(false),
+                Indent = true,
+                IndentChars = "",
+            }))
+            {
+                snapshot.Save(writer);
+            }
+            File.Move(temp, path, overwrite: true);
         }
-        File.Move(temp, path, overwrite: true);
+        catch
+        {
+            if (File.Exists(temp))
+            {
+                File.Delete(temp); // the half-written file of this write only (the document itself is untouched)
+            }
+            throw;
+        }
     }
 
     // The reference read from the file is written back as it was while it still names the PDF from where the
-    // document is saved (an attached PDF always: it travels with the document's name).
+    // document is saved – an attached one ("attach") only where it is the document's own attachment or the copy made of
+    // it for this write (never a file that merely has the name).
     private bool KeepsLoadedPdfReference(string target, IReadOnlyDictionary<string, string> copies)
     {
         var (domain, filename) = loadedPdfReference;

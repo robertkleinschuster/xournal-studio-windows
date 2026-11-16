@@ -249,6 +249,9 @@ public class FileFormatTests : IDisposable
         doc.SaveAs(third);
         Assert.Equal("someone else's", File.ReadAllText(third + ".bg.pdf"));
         Assert.Equal("other.xopp.bg.pdf", PdfFilename(third));
+        string fourth = Path.Combine(dir, "fourth.xopp");
+        doc.SaveAs(fourth); // the document now names its PDF by path (as the file says): nothing attached appears
+        Assert.False(File.Exists(fourth + ".bg.pdf"));
         // Ctrl+S at a renamed place copies nothing along.
         string renamed = Path.Combine(dir, "renamed.xopp");
         doc.Save(renamed);

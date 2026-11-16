@@ -175,6 +175,13 @@ public sealed class DocumentSession
     // Ctrl+S writes the document where it is; Save As (saveAs) takes its attachments along (XoppDocument.SaveAs).
     private bool Save(string path, bool saveAs)
     {
+        if (SaveBlocked && saveAs)
+        {
+            // Not deferred like Ctrl+S: the picked place would have to wait somewhere unseen; the user saves again.
+            messages.Show(InfoBarSeverity.Informational, "Synchronisierung läuft",
+                "Nicht gespeichert: Speichern unter ist möglich, sobald die Synchronisierung fertig ist.");
+            return false;
+        }
         if (SaveBlocked)
         {
             SaveRequested = true;
@@ -216,18 +223,7 @@ public sealed class DocumentSession
             return false;
         }
         string? picked = await PickSavePathAsync();
-        if (picked == null)
-        {
-            return false;
-        }
-        if (SaveBlocked)
-        {
-            // A sync began while the picker was open.
-            messages.Show(InfoBarSeverity.Informational, "Synchronisierung läuft",
-                "Nicht gespeichert: Speichern unter ist möglich, sobald die Synchronisierung fertig ist.");
-            return false;
-        }
-        return Save(picked, saveAs: true);
+        return picked != null && Save(picked, saveAs: true); // (refused there if a sync began while the picker was open)
     }
 
     private async Task<string?> PickSavePathAsync()
