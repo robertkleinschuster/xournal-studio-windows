@@ -305,6 +305,11 @@ public sealed class DocumentSession
         {
             return false;
         }
+        if (previewing())
+        {
+            messages.Show(InfoBarSeverity.Informational, "Nicht gespeichert", "Erst loslassen, dann speichern.");
+            return false;
+        }
         try
         {
             XoppDocument.Write(Document.Snapshot(path), path);

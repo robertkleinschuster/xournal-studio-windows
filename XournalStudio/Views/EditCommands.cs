@@ -51,12 +51,8 @@ public sealed class EditCommands(
         var images = current.Images.Where(i => i.Parent != null).ToList();
         edit.RemoveImages(images);
         selection.Clear();
-        if (edit.IsEmpty)
-        {
-            return false; // everything selected was erased meanwhile: no undo step, nothing changed
-        }
-        undo.Push(edit);
-        return true;
+        undo.Push(edit); // (an empty edit – everything selected was erased meanwhile – is not recorded)
+        return !edit.IsEmpty;
     }
 
     /// <summary>
@@ -111,8 +107,7 @@ public sealed class EditCommands(
         var copied = selection.Current;
         if (copied == null)
         {
-            messages.Show(InfoBarSeverity.Informational, "Nichts ausgewählt", "Erst etwas auswählen, dann ausschneiden.");
-            return;
+            return; // nothing selected: as copy, duplicate and delete
         }
         if (copied is { HasContent: false })
         {
