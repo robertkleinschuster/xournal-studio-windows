@@ -223,6 +223,7 @@ public sealed partial class PageView : UserControl
         {
             PdfImage.Source = null;
             renderedPixelWidth = requestedPixelWidth = 0;
+            backgroundMissing = false; // looked for again when the page comes back (a sync may have brought it)
             ImagesLayer.Children.Clear();
             picturesShown = false;
             return;
@@ -240,7 +241,7 @@ public sealed partial class PageView : UserControl
 
     // A picture background, stretched over the page as upstream draws it; decoded at about the shown size while the
     // page is near the viewport (freed with the PDF bitmaps otherwise), again when zoomed in a lot.
-    private bool backgroundMissing; // checked once: the picture is not looked for again on every viewport update
+    private bool backgroundMissing; // not looked for again on every scroll step while the page stays near the viewport
 
     private void ShowImageBackground(double pixelsPerPoint)
     {

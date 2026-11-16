@@ -341,9 +341,14 @@ public sealed class XoppPage
             // The laid-out box is the view's; estimated here (a line per paragraph at 1.2 × the size, about 0.6 × the
             // size per character, or the wrap width) – close enough to place pasted content below it. All four corners:
             // a matrix may turn or mirror the box.
-            var paragraphs = text.Content.Replace("\r\n", "\n").Split('\n', '\r');
-            float w = (float)(text.Wrap ?? paragraphs.Max(l => l.Length) * text.Size * 0.6);
-            float h = (float)(paragraphs.Length * text.Size * 1.2);
+            // A wrapped paragraph takes about (its estimated width / the wrap width) lines.
+            double charWidth = text.Size * 0.6;
+            var paragraphs = text.Lines;
+            float w = (float)(text.Wrap ?? paragraphs.Max(l => l.Length) * charWidth);
+            int lines = text.Wrap is { } wrap
+                ? paragraphs.Sum(l => Math.Max(1, (int)Math.Ceiling(l.Length * charWidth / wrap)))
+                : paragraphs.Length;
+            float h = (float)(lines * text.Size * 1.2);
             foreach (var corner in new[] { Vector2.Zero, new Vector2(w, 0), new Vector2(0, h), new Vector2(w, h) })
             {
                 bottom = Math.Max(bottom, Vector2.Transform(corner, text.Transform).Y);

@@ -229,7 +229,8 @@ public static class PdfExport
     private static XFont Font(string family, double size, XFontStyleEx style, HashSet<(string, XFontStyleEx)> missing)
     {
         var options = new XPdfFontOptions(PdfFontEncoding.Unicode);
-        if (!missing.Contains((family.ToLowerInvariant(), style)))
+        var key = (family.ToLowerInvariant(), style);
+        if (!missing.Contains(key))
         {
             try
             {
@@ -238,7 +239,7 @@ public static class PdfExport
             catch (InvalidOperationException e)
             {
                 DebugLog.Write($"export: font {family}: {e.GetType().Name} 0x{e.HResult:X8} {e.Message}; Arial instead");
-                missing.Add((family.ToLowerInvariant(), style));
+                missing.Add(key);
             }
         }
         return new XFont("Arial", size, style, options);
@@ -254,7 +255,7 @@ public static class PdfExport
         var state = g.Save();
         var m = text.Transform;
         g.MultiplyTransform(new XMatrix(m.M11, m.M12, m.M21, m.M22, m.M31, m.M32));
-        var lines = text.Content.Replace("\r\n", "\n").Split('\n');
+        var lines = text.Lines;
         if (text.Wrap is { } wrap)
         {
             var formatter = new XTextFormatter(g)
