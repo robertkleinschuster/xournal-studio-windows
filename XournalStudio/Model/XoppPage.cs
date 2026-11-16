@@ -246,7 +246,6 @@ public sealed class XoppPage
     /// </summary>
     public InkStroke? AddStrokeElement(XElement e)
     {
-        drawnStrokes = null; // found again if ever needed (pasted strokes come from ink and are ink)
         var stroke = StrokeConverter.FromXml(e);
         if (stroke == null)
         {
@@ -261,8 +260,8 @@ public sealed class XoppPage
     public IReadOnlyList<XElement> DrawnStrokes => drawnStrokes ??=
         element.Elements("layer").Elements("stroke").Where(StrokeConverter.NeedsOwnDrawing).ToList();
 
-    // Found once (the page view draws them once too): nothing edits these elements – they are not ink; adding a stroke
-    // element resets the list.
+    // Found once (the page view draws them once too): nothing edits these elements – they are not ink – and added
+    // strokes (pasted, duplicated: copies of ink) are kept beside the page's tree, never in it.
     private List<XElement>? drawnStrokes;
 
     /// <summary>Texts and links of all layers, bottom to top (shown, not edited).</summary>

@@ -381,6 +381,9 @@ public class FileFormatTests : IDisposable
         Assert.Null(StrokeConverter.ReadShape(XElement.Parse("""<stroke fill="128" color="#000000ff" width="0">0 0 5 5</stroke>"""))!.Bottom()); // no area to fill
         Assert.Null(StrokeConverter.ReadShape(XElement.Parse("""<stroke capStyle="butt" color="#000000ff" width="2">50 700</stroke>"""))!.Bottom()); // a butt dot is nothing
         Assert.Equal(11, StrokeConverter.ReadShape(XElement.Parse("""<stroke style="dash" color="#000000ff" width="2 2 0">0 0 10 10 10 800</stroke>"""))!.Bottom()); // only drawn segments
+        // Square ends: √2 · w/2 below an end, w/2 below an inner point – any point of a dashed line can be a dash end.
+        Assert.Equal(11, StrokeConverter.ReadShape(XElement.Parse("""<stroke capStyle="square" color="#000000ff" width="2">0 0 10 10 20 0</stroke>"""))!.Bottom()!.Value, 6);
+        Assert.Equal(10 + Math.Sqrt(2), StrokeConverter.ReadShape(XElement.Parse("""<stroke capStyle="square" style="dash" color="#000000ff" width="2">0 0 10 10 20 0</stroke>"""))!.Bottom()!.Value, 6);
         Assert.Empty(StrokeConverter.Dashes("cust: -3 2"));
     }
 

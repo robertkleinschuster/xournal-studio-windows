@@ -377,10 +377,17 @@ public sealed record StrokeShape(Color Color, bool Highlighter, double Width, IR
     public double? Bottom()
     {
         // A line reaches half its width below its points (round ends and joins too); a square end reaches half the width
-        // beyond the end, also sideways: up to √2 · width / 2 below an end point. (Gaps of dashes are counted as drawn.)
-        double Ends(StrokeLine l) => Cap == StrokeCap.Square
-            ? Math.Max(l.Points[0].Y, l.Points[^1].Y) + Math.Sqrt(2) * l.Width / 2
-            : double.NegativeInfinity;
+        // beyond the end, also sideways: up to √2 · width / 2 below it – at the line's two ends, or anywhere along a
+        // dashed line (every dash has such ends). Gaps of dashes are counted as drawn.
+        double Ends(StrokeLine l)
+        {
+            if (Cap != StrokeCap.Square)
+            {
+                return double.NegativeInfinity;
+            }
+            double lowest = DashesFor(l.Width) != null ? l.Points.Max(p => p.Y) : Math.Max(l.Points[0].Y, l.Points[^1].Y);
+            return lowest + Math.Sqrt(2) * l.Width / 2;
+        }
         var bottoms = Parts().Select(part => part switch
         {
             StrokeFill f => f.Points.Max(p => p.Y),
