@@ -24,7 +24,7 @@ public sealed class EditCommands(
     public bool Delete()
     {
         var current = selection.Current;
-        if (current == null || !current.HasContent)
+        if (current == null || !current.HasContent || selection.IsDragging)
         {
             return false;
         }
@@ -51,7 +51,7 @@ public sealed class EditCommands(
         {
             return false;
         }
-        if (current.IsPreviewing)
+        if (selection.IsDragging)
         {
             return false; // mid-drag the content is between two places
         }
@@ -101,9 +101,9 @@ public sealed class EditCommands(
     public async Task PasteAsync()
     {
         var view = pages.CurrentView;
-        if (view == null)
+        if (view == null || selection.IsDragging)
         {
-            return; // (a drag of the selection running meanwhile: selecting the pasted content reverts it, see Clear)
+            return; // mid-drag: the place below the content and the dragged content itself are not settled
         }
         try
         {
@@ -136,7 +136,7 @@ public sealed class EditCommands(
     public void Duplicate()
     {
         var current = selection.Current;
-        if (current == null || !current.HasContent || current.IsPreviewing)
+        if (current == null || !current.HasContent || selection.IsDragging)
         {
             return;
         }
@@ -172,7 +172,6 @@ public sealed class EditCommands(
     {
         var page = view.Page;
         var edit = new PageEdit(page);
-        var pictures = new List<XElement>();
         int skipped = 0;
         try
         {
@@ -191,19 +190,18 @@ public sealed class EditCommands(
                 }
                 else if (XoppImage.IsImage(e))
                 {
-                    pictures.Add(e);
+                    edit.AddedImages.Add(e); // recorded before attached: a take-back finds it
                 }
                 else
                 {
                     skipped++; // an element this app does not place
                 }
             }
-            page.AddImages(pictures); // last: the only step that can fail after it is none
-            edit.AddedImages.AddRange(pictures);
+            page.AddImages(edit.AddedImages);
         }
         catch
         {
-            TakeBack(page, edit.AddedStrokes); // nothing half added; the caller reports the original error
+            TakeBack(edit); // nothing half added; the caller reports the original error
             throw;
         }
         bool nothing = edit.AddedStrokes.Count == 0 && edit.AddedImages.Count == 0;
@@ -212,67 +210,82 @@ public sealed class EditCommands(
             // Said, not silently dropped: strokes that cannot be ink (drawn from a file only) and elements this app
             // does not place (from a clip of elsewhere; for a duplicate an error of this app).
             DebugLog.Write($"{operation}: {skipped} of {elements.Count} element(s) not added");
+            string why = skipped > 0
+                ? $"{skipped} Element(e) lassen sich hier nicht als Tinte oder Bild übernehmen."
+                : "Es gibt nichts, was sich hier übernehmen lässt.";
             if (nothing)
             {
-                ReportNothingAdded(skipped > 0
-                    ? $"{skipped} Element(e) lassen sich hier nicht als Tinte oder Bild übernehmen."
-                    : "Es gibt nichts, was sich hier übernehmen lässt.");
+                ReportNothingAdded(why);
                 return;
             }
-            messages.Show(InfoBarSeverity.Warning, "Nicht alles übernommen",
-                $"{skipped} Element(e) lassen sich hier nicht als Tinte oder Bild übernehmen.");
+            messages.Show(InfoBarSeverity.Warning, "Nicht alles übernommen", why);
         }
         undo.Push(edit);
-        activateSelectTool();
-        selection.Select(view, edit.AddedStrokes.ToList(), edit.AddedImages.ToList());
+        SelectAdded(view, edit.AddedStrokes.ToList(), edit.AddedImages.ToList());
+    }
+
+    // Selects what was just added (and undoable). A failure here is not a failed paste or duplicate: logged and said
+    // as what it is.
+    private void SelectAdded(PageView view, List<InkStroke> strokes, List<XElement> images)
+    {
+        try
+        {
+            activateSelectTool();
+            selection.Select(view, strokes, images);
+        }
+        catch (Exception e)
+        {
+            messages.Error("select added content", "Eingefügt, aber nicht ausgewählt", e);
+        }
     }
 
     private void PasteInk(PageView view)
     {
         var ink = view.Page.Ink!;
         var before = ink.GetStrokes().Select(s => s.Id).ToHashSet();
-        ink.PasteFromClipboard(new Point(Grid, PasteTop(view.Page, 0)));
-        var added = ink.GetStrokes().Where(s => !before.Contains(s.Id)).ToList();
-        if (added.Count == 0)
-        {
-            DebugLog.Write("paste ink: the clipboard's ink added no strokes");
-            ReportNothingAdded("Die Tinte in der Zwischenablage enthält keine Striche.");
-            return;
-        }
+        var edit = new PageEdit(view.Page);
         try
         {
+            ink.PasteFromClipboard(new Point(Grid, PasteTop(view.Page, 0)));
+            edit.AddedStrokes.AddRange(ink.GetStrokes().Where(s => !before.Contains(s.Id)));
+            if (edit.AddedStrokes.Count == 0)
+            {
+                DebugLog.Write("paste ink: the clipboard's ink added no strokes");
+                ReportNothingAdded("Die Tinte in der Zwischenablage enthält keine Striche.");
+                return;
+            }
             // Its height is only known now: below the page's end it goes to the top instead (as pictures do).
             var bounds = Rect.Empty;
-            added.ForEach(s => bounds.Union(s.BoundingRect));
+            edit.AddedStrokes.ForEach(s => bounds.Union(s.BoundingRect));
             if (bounds.Bottom > view.Page.Height)
             {
                 var up = Matrix3x2.CreateTranslation(0, (float)(Grid - bounds.Top));
-                added.ForEach(s => s.PointTransform *= up);
+                edit.AddedStrokes.ForEach(s => s.PointTransform *= up);
             }
-            added.ForEach(s => s.Selected = false);
+            edit.AddedStrokes.ForEach(s => s.Selected = false);
         }
         catch
         {
-            TakeBack(view.Page, added); // nothing half pasted; the caller reports the original error
+            // Strokes Windows ink added before it failed are taken back too (found by id).
+            edit.AddedStrokes.Clear();
+            edit.AddedStrokes.AddRange(ink.GetStrokes().Where(s => !before.Contains(s.Id)));
+            TakeBack(edit); // nothing half pasted; the caller reports the original error
             throw;
         }
-        var edit = new PageEdit(view.Page);
-        edit.AddedStrokes.AddRange(added);
         undo.Push(edit);
-        activateSelectTool();
-        selection.Select(view, added, []);
+        SelectAdded(view, edit.AddedStrokes.ToList(), []);
     }
 
     // Nothing was added: no undo step, the selection and tool stay as they were – and the user is told.
     private void ReportNothingAdded(string why) => messages.Show(InfoBarSeverity.Warning, "Nichts übernommen", why);
 
-    // Takes back strokes added by a paste or duplicate that failed; an error doing so is logged, the original one is
-    // what the caller reports.
-    private static void TakeBack(XoppPage page, List<InkStroke> strokes)
+    // Takes back what a paste or duplicate that failed had added – the edit's own undo; an error doing so is logged,
+    // the original one is what the caller reports.
+    private static void TakeBack(PageEdit edit)
     {
         try
         {
-            PageEdit.RemoveStrokes(page, strokes);
+            edit.Undo();
         }
         catch (Exception e)
         {

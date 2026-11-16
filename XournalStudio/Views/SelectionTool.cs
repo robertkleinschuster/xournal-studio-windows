@@ -31,6 +31,12 @@ public sealed class SelectionTool(UndoStack undo)
 
     public Selection? Current { get; private set; }
 
+    /// <summary>
+    /// The selection is being moved or scaled (pen down on it, also before the first move): commands that read or
+    /// change content wait for it to be put down (EditCommands), so a move is never lost or measured mid-way.
+    /// </summary>
+    public bool IsDragging => gesture is Gesture.Move or Gesture.Scale;
+
     /// <summary>A selection was made, changed (moved, scaled) or cleared.</summary>
     public event EventHandler? SelectionChanged;
 
