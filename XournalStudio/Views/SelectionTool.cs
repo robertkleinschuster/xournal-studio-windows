@@ -42,11 +42,11 @@ public sealed class SelectionTool(UndoStack undo)
     /// <summary>A selection was made, changed (moved, scaled) or cleared.</summary>
     public event EventHandler? SelectionChanged;
 
-    /// <param name="mode">Lasso or rectangle for a new selection (the barrel button always lassos).</param>
     /// <summary>A press at <paramref name="p"/> would move (inside) or scale (corner) the selection.</summary>
     public bool Grabs(PageView page, Point p) =>
         Current?.View == page && Current.HasContent && (Current.HandleAt(p) >= 0 || Current.Contains(p));
 
+    /// <param name="mode">Lasso or rectangle for a new selection (the barrel button always lassos).</param>
     public void Begin(PageView page, Point p, SelectMode mode)
     {
         view = page;

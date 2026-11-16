@@ -196,7 +196,10 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
             return; // (a hovering pen never moves, lassos or erases)
         }
         var samples = e.GetIntermediatePoints();
-        if (samples.Count == 0)
+        // Moving or scaling a selection needs only the newest position: each preview sets every selected stroke's
+        // transform and places the frame, and doing that per sample kept the UI thread busy while the ink (moved on its
+        // own thread) ran ahead of the frame (device 2026-11-16). A lasso, a shape and the eraser follow the whole path.
+        if (samples.Count == 0 || (running?.Tool == InkTool.Select && Selection.IsDragging))
         {
             MoveTo(view, point);
         }
