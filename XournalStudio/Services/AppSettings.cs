@@ -7,6 +7,9 @@ public sealed class AppSettings
 {
     public string? LastFile { get; set; }
 
+    /// <summary>Last viewport for each opened document path.</summary>
+    public Dictionary<string, DocumentPosition> DocumentPositions { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>Folder shown in the explorer (a git repository or any folder).</summary>
     public string? ProjectFolder { get; set; }
 
@@ -67,4 +70,10 @@ public sealed class AppSettings
             DebugLog.Write("save settings", e);
         }
     }
+}
+
+public sealed class DocumentPosition
+{
+    public double VerticalOffset { get; set; }
+    public float Zoom { get; set; }
 }

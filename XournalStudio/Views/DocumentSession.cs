@@ -69,12 +69,37 @@ public sealed class DocumentSession
     /// </summary>
     public void Show(XoppDocument doc, PdfBackground? pdf)
     {
+        RememberPosition();
         autosave.StartNewDocument();
         Document = doc;
         Pdf = pdf;
         pages.Show(doc, pdf);
+        pages.RestorePosition(PositionFor(doc));
         SetDirty(false);
         FilesChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private string? PositionKey(XoppDocument doc)
+    {
+        string? path = doc.FilePath ?? doc.PdfPath;
+        return path == null ? null : Path.GetFullPath(path).ToUpperInvariant();
+    }
+
+    private DocumentPosition? PositionFor(XoppDocument doc) =>
+        PositionKey(doc) is { } key && settings.DocumentPositions.TryGetValue(key, out var position) ? position : null;
+
+    private void RememberPosition()
+    {
+        if (PositionKey(Document) is not { } key || pages.Views.Any() == false)
+        {
+            return;
+        }
+        settings.DocumentPositions[key] = new DocumentPosition
+        {
+            VerticalOffset = pages.VerticalOffset,
+            Zoom = pages.ZoomFactor,
+        };
+        settings.Save();
     }
 
     public void ShowNew() => Show(XoppDocument.CreateNew(), null);
@@ -162,6 +187,7 @@ public sealed class DocumentSession
     /// <summary>The window closes (the user saved or discarded the changes): the recovery copy goes.</summary>
     public Task EndAsync()
     {
+        RememberPosition();
         autosave.Discard();
         return autosave.Idle;
     }

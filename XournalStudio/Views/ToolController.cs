@@ -129,8 +129,8 @@ public sealed class ToolController
         views.AddRange(pages);
         foreach (var view in views)
         {
-            // Pen draws (mouse too, for convenience); touch is left to the ScrollView for panning and zooming.
-            view.Ink.InputDeviceTypes = CoreInputDeviceTypes.Pen | CoreInputDeviceTypes.Mouse;
+            // Only the pen draws; touch is left to the ScrollView for panning and zooming.
+            view.Ink.InputDeviceTypes = CoreInputDeviceTypes.Pen;
         }
         if (toolbar.TargetInkCanvas == null || !views.Any(v => v.InkCanvas == toolbar.TargetInkCanvas))
         {

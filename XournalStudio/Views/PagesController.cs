@@ -84,6 +84,28 @@ public sealed class PagesController
 
     public PageView? CurrentView => Views.ElementAtOrDefault(CurrentIndex);
 
+    public double VerticalOffset => scroller.VerticalOffset;
+    public float ZoomFactor => requestedZoom ?? scroller.ZoomFactor;
+
+    public void RestorePosition(DocumentPosition? position)
+    {
+        if (position == null || position.Zoom < scroller.MinZoomFactor || position.Zoom > scroller.MaxZoomFactor)
+        {
+            return;
+        }
+        fitWidthPending = false;
+        requestedZoom = position.Zoom;
+        scroller.ZoomTo(position.Zoom, System.Numerics.Vector2.Zero,
+            new ScrollingZoomOptions(ScrollingAnimationMode.Disabled));
+        // ScrollView lays out the zoomed content asynchronously; restore its offset after that layout.
+        scroller.DispatcherQueue.TryEnqueue(() =>
+        {
+            panel.UpdateLayout();
+            scroller.ScrollTo(0, position.VerticalOffset,
+                new ScrollingScrollOptions(ScrollingAnimationMode.Disabled));
+        });
+    }
+
     public void Show(XoppDocument doc, PdfBackground? background)
     {
         document = doc;
