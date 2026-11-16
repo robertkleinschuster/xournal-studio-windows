@@ -264,11 +264,12 @@ public sealed partial class PageView : UserControl
         try
         {
             byte[] data = await Task.Run(() => File.ReadAllBytes(path));
-            var bitmap = await PictureRenderer.LoadAsync(data, wanted, "picture background");
+            var bitmap = await PictureRenderer.LoadAsync(data, wanted, $"picture background {path}");
             if (release == backgroundRelease && wanted > backgroundShown)
             {
                 PdfImage.Source = bitmap;
                 backgroundShown = wanted;
+                backgroundRequested = Math.Max(backgroundRequested, wanted); // requested ≥ shown, also after a failure
             }
         }
         catch (Exception e) // any failure of reading or decoding (async void: nothing may escape); logged

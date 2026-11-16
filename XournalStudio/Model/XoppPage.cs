@@ -358,7 +358,6 @@ public sealed class XoppPage
         return bottom;
     }
 
-
     /// <summary>
     /// The page as it is now, as a detached copy (reading only: the page keeps every element it has, so an undo can
     /// bring a deleted stroke back with its original element). Strokes on the ink are their original elements; strokes

@@ -215,15 +215,18 @@ public static class StrokeConverter
 
     private static string Format(double v) => v.ToString("0.####", Inv);
 
+    // Numbers of a stroke (coordinates, widths, dashes) by the file's one rule (XoppFormat.ReadNumber); the list ends
+    // at the first one that is not a number or beyond any page, so the coordinates stay in pairs.
     private static List<double> ParseNumbers(string s)
     {
         var result = new List<double>();
         foreach (var part in s.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
         {
-            if (double.TryParse(part, NumberStyles.Float, Inv, out double v))
+            if (XoppFormat.ReadNumber(part) is not { } v)
             {
-                result.Add(v);
+                break;
             }
+            result.Add(v);
         }
         return result;
     }

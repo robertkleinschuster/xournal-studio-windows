@@ -17,7 +17,8 @@ public sealed record XoppText(
     string Content, string Family, bool Bold, bool Italic, double Size, Color Color, Matrix3x2 Transform,
     double? Wrap, XoppTextAlignment Alignment, bool Justify)
 {
-    private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
+    // Larger than any font is meant to be (XAML and PDFsharp would have to lay out glyphs of that height).
+    private const double MaxFontSize = 1000;
 
     // Pango style words that may end a font description.
     private static readonly HashSet<string> StyleWords = new(StringComparer.OrdinalIgnoreCase)
@@ -51,7 +52,7 @@ public sealed record XoppText(
         };
         bool justify = (string?)e.Attribute("justify") is "true" or "1";
         double size = XoppFormat.ReadNumber(e, "size", 12);
-        return new XoppText(e.Value, family, bold, italic, size > 0 ? size : 12, // a font size must be positive
+        return new XoppText(e.Value, family, bold, italic, size is > 0 and <= MaxFontSize ? size : 12,
             XoppColor.Parse((string?)e.Attribute("color"), Microsoft.UI.Colors.Black), transform, wrap, alignment, justify);
     }
 
@@ -71,6 +72,4 @@ public sealed record XoppText(
         "monospace" or "mono" => "Courier New",
         _ => Family,
     };
-
-
 }

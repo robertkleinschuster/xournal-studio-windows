@@ -356,6 +356,12 @@ public class FileFormatTests : IDisposable
             </layer></page>
             """));
         Assert.Equal(20, page.ContentBottom()); // the hostile matrix is ignored for placing pasted content
+        Assert.Equal(12, XoppText.Read(XElement.Parse("""<text size="900000" x="0" y="0">x</text>""")).Size);
+
+        // Stroke numbers follow the same rule: the coordinates end at the first damaged one (still in pairs).
+        var damaged = StrokeConverter.ReadShape(XElement.Parse("""<stroke tool="pen" color="#000000ff" width="1">0 0 10 10 20 NaN 30 30</stroke>"""))!;
+        Assert.Equal(2, damaged.Points.Count);
+        Assert.Null(StrokeConverter.ReadShape(XElement.Parse("""<stroke tool="pen" color="#000000ff" width="1">1e400 0</stroke>""")));
     }
 
     // Whitespace-only text nodes depend on formatting, not content.
