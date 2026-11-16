@@ -9,6 +9,9 @@ $publish = Join-Path $root 'XournalStudio\bin\publish'
 $target = Join-Path $env:LOCALAPPDATA 'Programs\Xournal Studio for Windows'
 $programs = [Environment]::GetFolderPath('Programs')
 
+# The WinUI runtime with the ink fix (pinned download, see the script).
+& (Join-Path $root 'tools\Get-WinUIRuntime.ps1')
+
 if (-not $SkipTests) {
     dotnet test (Join-Path $root 'XournalStudio.Tests') -nologo -v q
     if ($LASTEXITCODE -ne 0) { throw 'Tests failed.' }
