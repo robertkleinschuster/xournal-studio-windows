@@ -300,11 +300,22 @@ public sealed partial class PageView : UserControl
         }
 
         requestedPixelWidth = wanted;
-        var bitmap = await pdf.RenderAsync(Page.PdfPageIndex, wanted);
-        if (requestedPixelWidth == wanted && bitmap != null)
+        try
         {
-            PdfImage.Source = bitmap;
-            renderedPixelWidth = wanted;
+            var bitmap = await pdf.RenderAsync(Page.PdfPageIndex, wanted);
+            if (requestedPixelWidth == wanted && bitmap != null)
+            {
+                PdfImage.Source = bitmap;
+                renderedPixelWidth = wanted;
+            }
+        }
+        catch (Exception e) // async void: nothing may escape; logged, the next viewport update tries again
+        {
+            DebugLog.Write($"render pdf page {Page.PdfPageIndex}", e);
+            if (requestedPixelWidth == wanted)
+            {
+                requestedPixelWidth = 0;
+            }
         }
     }
 

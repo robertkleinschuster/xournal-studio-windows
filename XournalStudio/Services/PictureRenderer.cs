@@ -14,26 +14,34 @@ public static class PictureRenderer
     public static async Task<ImageSource> LoadAsync(byte[] data, uint pixelWidth, string what)
     {
         using var stream = await ToStreamAsync(data);
-        var bitmap = new BitmapImage();
-        // Failures while decoding throw from SetSourceAsync; one reported later (when drawn) comes here.
-        bitmap.ImageFailed += (_, e) => DebugLog.Write($"{what}: ImageFailed {e.ErrorMessage}");
         if (XoppImage.IsPdf(data))
         {
             var pdf = await PdfDocument.LoadFromStreamAsync(stream);
             using var page = pdf.GetPage(0);
-            using var rendered = new InMemoryRandomAccessStream();
-            await page.RenderToStreamAsync(rendered, new PdfPageRenderOptions { DestinationWidth = pixelWidth });
-            rendered.Seek(0);
-            await bitmap.SetSourceAsync(rendered);
+            uint pixelHeight = (uint)Math.Max(1, Math.Round(pixelWidth * page.Size.Height / page.Size.Width));
+            using var rendered = await PdfRenderer.Shared.RenderAsync(page, null, pixelWidth, pixelHeight);
+            var source = new SoftwareBitmapSource();
+            await source.SetBitmapAsync(rendered);
+            return source;
         }
-        else
-        {
-            // Decode at about the size shown; large screenshots would otherwise stay in memory at full size.
-            bitmap.DecodePixelWidth = (int)pixelWidth;
-            bitmap.DecodePixelType = DecodePixelType.Physical;
-            await bitmap.SetSourceAsync(stream);
-        }
+        var bitmap = new BitmapImage();
+        // Failures while decoding throw from SetSourceAsync; one reported later (when drawn) comes here.
+        bitmap.ImageFailed += (_, e) => DebugLog.Write($"{what}: ImageFailed {e.ErrorMessage}");
+        // Decode at about the size shown; large screenshots would otherwise stay in memory at full size.
+        bitmap.DecodePixelWidth = (int)pixelWidth;
+        bitmap.DecodePixelType = DecodePixelType.Physical;
+        await bitmap.SetSourceAsync(stream);
         return bitmap;
+    }
+
+    /// <summary>Encodes a bitmap as PNG.</summary>
+    public static async Task<byte[]> ToPngAsync(SoftwareBitmap bitmap)
+    {
+        using var output = new InMemoryRandomAccessStream();
+        var encoder = await BitmapEncoder.CreateAsync(BitmapEncoder.PngEncoderId, output);
+        encoder.SetSoftwareBitmap(bitmap);
+        await encoder.FlushAsync();
+        return await ReadAllAsync(output);
     }
 
     /// <summary>Re-encodes any bitmap Windows can decode (clipboard DIB, JPEG, ...) as PNG.</summary>
@@ -41,11 +49,7 @@ public static class PictureRenderer
     {
         var decoder = await BitmapDecoder.CreateAsync(input);
         using var bitmap = await decoder.GetSoftwareBitmapAsync(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied);
-        using var output = new InMemoryRandomAccessStream();
-        var encoder = await BitmapEncoder.CreateAsync(BitmapEncoder.PngEncoderId, output);
-        encoder.SetSoftwareBitmap(bitmap);
-        await encoder.FlushAsync();
-        return (await ReadAllAsync(output), bitmap.PixelWidth, bitmap.PixelHeight);
+        return (await ToPngAsync(bitmap), bitmap.PixelWidth, bitmap.PixelHeight);
     }
 
     public static async Task<byte[]> ReadAllAsync(IRandomAccessStream stream)

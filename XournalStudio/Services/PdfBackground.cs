@@ -1,15 +1,14 @@
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Windows.Data.Pdf;
 using Windows.Storage;
-using Windows.Storage.Streams;
 
 namespace XournalStudio.Services;
 
-/// <summary>Renders pages of the background PDF with the Windows PDF renderer (Windows.Data.Pdf).</summary>
+/// <summary>Renders pages of the background PDF with the Windows PDF renderer (Windows.Data.Pdf, see <see cref="PdfRenderer"/>).</summary>
 public sealed class PdfBackground
 {
     private readonly PdfDocument pdf;
-    private readonly SemaphoreSlim renderLock = new(1, 1);
 
     private PdfBackground(PdfDocument pdf)
     {
@@ -36,59 +35,32 @@ public sealed class PdfBackground
         return sizes;
     }
 
-    /// <summary>
-    /// Renders an area of a page (in points) as PNG with <paramref name="pixelsPerPoint"/> (Windows PDF renderer,
-    /// <see cref="PdfPageRenderOptions.SourceRect"/>).
-    /// </summary>
+    /// <summary>Renders an area of a page (in points) as PNG with <paramref name="pixelsPerPoint"/>.</summary>
     public async Task<(byte[] Png, int Width, int Height)> RenderAreaAsync(int pageIndex, Windows.Foundation.Rect area,
         double pixelsPerPoint)
     {
-        await renderLock.WaitAsync();
-        try
-        {
-            using var page = pdf.GetPage((uint)pageIndex);
-            const double DipsPerPoint = 96.0 / 72;
-            var source = new Windows.Foundation.Rect(area.X * DipsPerPoint, area.Y * DipsPerPoint,
-                area.Width * DipsPerPoint, area.Height * DipsPerPoint);
-            using var stream = new InMemoryRandomAccessStream();
-            await page.RenderToStreamAsync(stream, new PdfPageRenderOptions
-            {
-                SourceRect = source,
-                DestinationWidth = (uint)Math.Max(1, Math.Round(area.Width * pixelsPerPoint)),
-                DestinationHeight = (uint)Math.Max(1, Math.Round(area.Height * pixelsPerPoint)),
-                BitmapEncoderId = Windows.Graphics.Imaging.BitmapEncoder.PngEncoderId,
-            });
-            stream.Seek(0);
-            return await PictureRenderer.ToPngAsync(stream);
-        }
-        finally
-        {
-            renderLock.Release();
-        }
+        using var page = pdf.GetPage((uint)pageIndex);
+        const double DipsPerPoint = 96.0 / 72;
+        var source = new Windows.Foundation.Rect(area.X * DipsPerPoint, area.Y * DipsPerPoint,
+            area.Width * DipsPerPoint, area.Height * DipsPerPoint);
+        using var bitmap = await PdfRenderer.Shared.RenderAsync(page, source,
+            (uint)Math.Max(1, Math.Round(area.Width * pixelsPerPoint)),
+            (uint)Math.Max(1, Math.Round(area.Height * pixelsPerPoint)));
+        return (await PictureRenderer.ToPngAsync(bitmap), bitmap.PixelWidth, bitmap.PixelHeight);
     }
 
-    /// <summary>Renders a page into a bitmap that is <paramref name="pixelWidth"/> pixels wide. UI thread only.</summary>
-    public async Task<BitmapImage?> RenderAsync(int pageIndex, uint pixelWidth)
+    /// <summary>Renders a page into an image that is <paramref name="pixelWidth"/> pixels wide. UI thread only.</summary>
+    public async Task<ImageSource?> RenderAsync(int pageIndex, uint pixelWidth)
     {
         if (pageIndex < 0 || pageIndex >= PageCount)
         {
             return null;
         }
-
-        await renderLock.WaitAsync();
-        try
-        {
-            using var page = pdf.GetPage((uint)pageIndex);
-            using var stream = new InMemoryRandomAccessStream();
-            await page.RenderToStreamAsync(stream, new PdfPageRenderOptions { DestinationWidth = pixelWidth });
-            stream.Seek(0);
-            var bitmap = new BitmapImage();
-            await bitmap.SetSourceAsync(stream);
-            return bitmap;
-        }
-        finally
-        {
-            renderLock.Release();
-        }
+        using var page = pdf.GetPage((uint)pageIndex);
+        uint pixelHeight = (uint)Math.Max(1, Math.Round(pixelWidth * page.Size.Height / page.Size.Width));
+        using var bitmap = await PdfRenderer.Shared.RenderAsync(page, null, pixelWidth, pixelHeight);
+        var source = new SoftwareBitmapSource();
+        await source.SetBitmapAsync(bitmap);
+        return source;
     }
 }

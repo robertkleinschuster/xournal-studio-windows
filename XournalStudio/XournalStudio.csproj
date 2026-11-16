@@ -43,6 +43,8 @@
     <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="2.6.6-experimental" />
     <PackageReference Include="Microsoft.WindowsAppSDK.DWrite" Version="2.6.6-experimental" />
     <PackageReference Include="PDFsharp" Version="6.2.4" />
+    <!-- Direct3D for Windows.Data.Pdf's DirectX interop (Services/PdfRenderer). -->
+    <PackageReference Include="Vortice.Direct3D11" Version="3.8.3" />
   </ItemGroup>
   <!-- Without the fork's runtime the custom tools get no readable pointer data: fail instead of building a broken app. -->
   <Target Name="RequireWinUISourceBuildRuntime" BeforeTargets="Build" Condition="!Exists('$(WinUISourceBuildRuntimeDirectory)Microsoft.UI.Xaml.dll')">

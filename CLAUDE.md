@@ -21,6 +21,15 @@ Guidance for Claude Code in this repository. Keep it current: add what is learne
   XamlParseException at start; minimal probe: a ScrollView declared in XAML crashes, one created in code works). The
   winmd metadata is identical to 2.6.6-experimental; not reported upstream yet (public, needs approval). Main also
   dropped static initializers for types without `.cctor` (157d7c9d) – harmless here.
+- **Exit hang = Windows.Data.Pdf + Intel driver (debugged 2026-11-16 with WinDbg/cdb, existed with every build):**
+  `PdfPage.RenderToStreamAsync` creates a D3D11 device of its own in a static (`s_pdfStaticsInstance`) that is only
+  released in Windows.Data.Pdf's DLL detach at process exit; there the Intel Iris Xe driver (igd10um64xe, 32.0.101.7088)
+  spun forever in the device's release (process left at 100 % of a core, only Task Manager could end it; intermittent).
+  Fix after Microsoft's interop route: `Services/PdfRenderer` renders with `PdfCreateRenderer`/
+  `IPdfRendererNative::RenderPageToSurface` (windows.data.pdf.interop.h) on a D3D11 device the app owns (Vortice.Direct3D11)
+  and releases it on close (`MainWindow.OnClosing`); `RenderToStreamAsync` is not used any more (loading a PDF alone does
+  not touch the GPU driver – probe). PdfPage/PdfDocument are agile: rendering runs on the thread pool. Debug a hang again
+  with `cdb -pv -p <pid> -c ".reload; ~*kn 60; .dump /ma hang.dmp; q"` (WinDbg from winget, symbols from msdl).
 - **Release snapshots (`winui3/release/*`) cannot be built outside Microsoft:** they need internal package versions
   (e.g. InteractiveExperiences 2.1.0-experimental-27200…); the restore opens Microsoft sign-in pages through the build's
   `VSS.NuGet.AuthHelper`. Never run a WinUI restore that can prompt interactively.
@@ -165,7 +174,8 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   a `FolderWatcher` change restarts a 400 ms timer, then the window refreshes the tree).
 - `Services/` – `UndoStack` of `IPageEdit`: `PageEdit` (strokes/pictures removed/added) and `TransformEdit` (the
   InkCanvas has no undo; strokes are resolved through `XoppPage.CurrentAll` because undo/redo re-adds copies),
-  `ShapeRecognition` (InkAnalyzer result → clean stroke), `PdfBackground`, `PictureRenderer`,
+  `ShapeRecognition` (InkAnalyzer result → clean stroke), `PdfBackground`, `PdfRenderer` (Windows.Data.Pdf on the
+  app's own D3D device, see "Current WinUI ink state"), `PictureRenderer`,
   `ClipboardService` (own format `XournalStudio.Clip` = a `XoppClip`, plus a bitmap for other apps; bitmaps of
   other apps paste as pictures, their ink (Windows ink's format) as strokes; copies are always the exact elements), `Recovery` (recovery copies +
   info JSON with the writing process id/start time; abandoned = that process is gone), `Autosave` (timer + ordered

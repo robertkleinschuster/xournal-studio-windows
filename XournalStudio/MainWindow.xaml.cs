@@ -216,7 +216,7 @@ public sealed partial class MainWindow : Window
         }
         closeConfirmed = true;
         await session.EndAsync(); // the recovery copy is gone before the process ends
-        await pages.UnloadAsync(); // the ink's GPU resources are released before the process ends (see there)
+        await Services.PdfRenderer.Shared.ShutdownAsync(); // its GPU device goes while the app still runs (see there)
         Close();
     }
 
