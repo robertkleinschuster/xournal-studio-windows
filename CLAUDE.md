@@ -324,9 +324,10 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   Verified in the sandbox: barrel lasso → barrel move is committed → Del deletes. Other options considered: a flyout
   inside the XAML tree (drawn under the ink), Win32 `GetPointerInfo` (app logic around a WinUI bug), a report to
   microsoft-ui-xaml (public, needs approval). The buttons stay in place and are enabled with a selection (nothing
-  jumps). Edit commands, undo and redo wait while a drag runs (`SelectionTool.IsDragging`, also before the first move);
-  saving, recovery copies and export while content is shown displaced (`IsPreviewing`: a snapshot writes strokes drawn
-  in this session through their PointTransform, which holds the preview) – each says "Erst loslassen".
+  jumps). Edit commands, undo and redo wait while a drag runs (`SelectionTool.IsDragging`, also before the first move) and
+  say "Erst loslassen". Saving, recovery copies and export never wait: a previewed move is registered with the page
+  (`XoppPage.BeginPreview`/`EndPreview`), which writes such strokes with their committed transform – a snapshot is
+  consistent at any moment. The row's buttons take no keyboard focus (`AllowFocusOnInteraction="False"`).
 - **Questions for the user (review findings kept deliberately, 2026-11-16):**
   - Save As of a document with an *attached* PDF or picture background (`domain="attach"`, `<doc>.xopp.bg…`): the new
     file refers to the old document's attachment by path; upstream copies the attachment next to the new file.

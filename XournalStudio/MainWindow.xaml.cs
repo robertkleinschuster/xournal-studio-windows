@@ -45,8 +45,7 @@ public sealed partial class MainWindow : Window
         inkTools.Selection.Mode = settings.SelectMode;
         pages = new PagesController(Scroller, PagesPanel, tools, inkTools, undo, () => RecognizeButton.IsChecked == true);
         dialogs = new Dialogs(() => Content.XamlRoot, () => pages.Views);
-        session = new DocumentSession(AppWindow.Id, pages, dialogs, messages, settings, () => ProjectFolder,
-            () => inkTools.Selection.Current?.IsPreviewing == true);
+        session = new DocumentSession(AppWindow.Id, pages, dialogs, messages, settings, () => ProjectFolder);
         sync = new SyncController(session, dialogs, messages);
         var explorerCommands = new ExplorerCommands(Explorer, session, sync, dialogs, messages, FocusDocument, RefreshExplorer, index =>
         {
@@ -55,8 +54,8 @@ public sealed partial class MainWindow : Window
         });
         edit = new EditCommands(inkTools.Selection, pages, undo, messages, () => Toolbar.ActiveTool = SelectButton);
         var selectionCommands = new SelectionCommands(CopySelectionButton,
-            [CutSelectionButton, DuplicateSelectionButton, DeleteSelectionButton], FocusDocument);
-        export = new PdfExportCommand(AppWindow.Id, session, messages, () => inkTools.Selection.Current?.IsPreviewing == true);
+            [CutSelectionButton, DuplicateSelectionButton, DeleteSelectionButton]);
+        export = new PdfExportCommand(AppWindow.Id, session, messages);
         inkTools.Selection.SelectionChanged += (_, _) => selectionCommands.ShowFor(inkTools.Selection.Current);
 
         ShapeChoice.SelectedIndex = (int)settings.Shape;

@@ -34,9 +34,8 @@ public sealed class SelectionTool(UndoStack undo)
     /// <summary>
     /// The selection is being moved or scaled (pen down on it, also before the first move): commands that read or
     /// change content wait for it to be put down (edit commands, undo/redo), so a move is never lost or measured mid-way.
-    /// Saving, recovery copies and export wait only while content is shown displaced (Selection.IsPreviewing): a
-    /// snapshot writes strokes drawn in this session through their PointTransform, which holds the preview – before the
-    /// first move it does not, so a pen resting on the selection never holds back a recovery copy.
+    /// Saving, recovery copies and export never wait: the page writes a previewed stroke with its committed transform
+    /// (XoppPage.BeginPreview), so a snapshot is consistent at any moment.
     /// </summary>
     public bool IsDragging => gesture is Gesture.Move or Gesture.Scale;
 

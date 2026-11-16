@@ -63,9 +63,6 @@ public sealed class Selection
 
     public bool HasContent => Strokes.Count + Images.Count > 0;
 
-    /// <summary>A drag shows a move/scale not written to the page yet.</summary>
-    public bool IsPreviewing => !live.IsIdentity;
-
     public static Brush AccentBrush => (Brush)Application.Current.Resources["AccentFillColorDefaultBrush"];
 
     /// <summary>The corner handle at <paramref name="p"/> (0 top-left, clockwise), or -1.</summary>
@@ -99,6 +96,7 @@ public sealed class Selection
             foreach (var stroke in Strokes)
             {
                 startTransforms[stroke] = stroke.PointTransform;
+                Page.BeginPreview(stroke, stroke.PointTransform);
             }
         }
         foreach (var stroke in Strokes)
@@ -123,10 +121,12 @@ public sealed class Selection
         live = Matrix3x2.Identity;
         if (m.IsIdentity)
         {
+            Page.EndPreview(startTransforms.Keys);
             startTransforms.Clear();
             return false;
         }
         var before = Page.CapturePlacement(Strokes, Images, s => startTransforms[s]);
+        Page.EndPreview(startTransforms.Keys);
         startTransforms.Clear();
         foreach (var stroke in Strokes)
         {
@@ -147,6 +147,7 @@ public sealed class Selection
         {
             Preview(Matrix3x2.Identity);
         }
+        Page.EndPreview(startTransforms.Keys);
         startTransforms.Clear();
     }
 

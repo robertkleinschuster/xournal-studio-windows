@@ -172,10 +172,11 @@ public static class StrokeConverter
         return stroke;
     }
 
-    public static XElement ToXml(InkStroke stroke)
+    /// <param name="committed">The stroke's transform as written (a move previewed on it is not); null: its PointTransform.</param>
+    public static XElement ToXml(InkStroke stroke, Matrix3x2? committed = null)
     {
         var attributes = stroke.DrawingAttributes;
-        var transform = stroke.PointTransform;
+        var transform = committed ?? stroke.PointTransform;
         var points = stroke.GetInkPoints();
         double width = attributes.Size.Width;
 

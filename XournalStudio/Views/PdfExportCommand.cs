@@ -9,15 +9,10 @@ namespace XournalStudio.Views;
 /// Datei → Als PDF exportieren: asks where (the document's name in its folder; never over its background PDF) and
 /// writes the document as it is now, saved or not, with <see cref="PdfExport"/> off the UI thread.
 /// </summary>
-public sealed class PdfExportCommand(WindowId window, DocumentSession session, Messages messages, Func<bool> previewing)
+public sealed class PdfExportCommand(WindowId window, DocumentSession session, Messages messages)
 {
     public async Task ExportAsync()
     {
-        if (previewing())
-        {
-            messages.Show(InfoBarSeverity.Informational, "Nicht exportiert", "Erst loslassen, dann exportieren.");
-            return;
-        }
         var doc = session.Document;
         string? background = doc.PdfPath;
         string folder = Path.GetDirectoryName(doc.FilePath ?? doc.PdfPath) ?? Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
@@ -35,12 +30,6 @@ public sealed class PdfExportCommand(WindowId window, DocumentSession session, M
         string? target = (await picker.PickSaveFileAsync())?.Path;
         if (target == null)
         {
-            return;
-        }
-        if (previewing())
-        {
-            // A drag began while the picker was open: the document is taken when it is put down.
-            messages.Show(InfoBarSeverity.Informational, "Nicht exportiert", "Erst loslassen, dann exportieren.");
             return;
         }
         if (background != null && ProjectFiles.SamePath(target, background))

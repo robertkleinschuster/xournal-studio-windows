@@ -22,11 +22,10 @@ public sealed class DocumentSession
     private readonly Func<string?> projectFolder;
     private readonly Recovery recovery = Recovery.ForApp();
     private readonly Autosave autosave;
-    private readonly Func<bool> previewing;
     private readonly DateTime processStart = Recovery.CurrentProcessStart();
 
     public DocumentSession(WindowId window, PagesController pages, Dialogs dialogs, Messages messages,
-        AppSettings settings, Func<string?> projectFolder, Func<bool> previewing)
+        AppSettings settings, Func<string?> projectFolder)
     {
         this.window = window;
         this.pages = pages;
@@ -34,8 +33,7 @@ public sealed class DocumentSession
         this.messages = messages;
         this.settings = settings;
         this.projectFolder = projectFolder;
-        this.previewing = previewing;
-        autosave = new Autosave(recovery, Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread(), Snapshot, previewing);
+        autosave = new Autosave(recovery, Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread(), Snapshot);
         autosave.Failed += (_, e) => messages.Show(InfoBarSeverity.Warning, "Wiederherstellungskopie fehlgeschlagen",
             $"Nicht gespeicherte Änderungen sind bei einem Absturz nicht gesichert: {DebugLog.Describe(e)}");
     }
@@ -179,12 +177,6 @@ public sealed class DocumentSession
         {
             return false;
         }
-        if (previewing())
-        {
-            // The drag shows content where it is not written yet; the file would get a mix.
-            messages.Show(InfoBarSeverity.Informational, "Nicht gespeichert", "Erst loslassen, dann speichern.");
-            return false;
-        }
         if (SaveBlocked)
         {
             SaveRequested = true;
@@ -303,11 +295,6 @@ public sealed class DocumentSession
         string? path = await PickSavePathAsync();
         if (path == null)
         {
-            return false;
-        }
-        if (previewing())
-        {
-            messages.Show(InfoBarSeverity.Informational, "Nicht gespeichert", "Erst loslassen, dann speichern.");
             return false;
         }
         try
