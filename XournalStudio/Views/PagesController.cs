@@ -127,6 +127,38 @@ public sealed class PagesController
         FitWidth();
     }
 
+    /// <summary>
+    /// Takes every page out of the tree before the window closes and waits until their InkCanvases are unloaded. WinUI
+    /// releases an InkCanvas' ink visual and GPU resources in its Unloaded handler, but closing a window ends the process
+    /// without unloading the tree (InkCanvas.cpp says so); with ink drawn in the session the Intel graphics driver then
+    /// hung the exiting process at 100 % CPU, unkillable (device 2026-11-16).
+    /// </summary>
+    public async Task UnloadAsync()
+    {
+        inkTools.CancelGestureOn(_ => true);
+        inkTools.Selection.Clear();
+        var unloaded = Views.Select(v => WhenUnloaded(v.InkCanvas)).ToList();
+        panel.Children.Clear();
+        tools.SetPages([]); // the toolbar lets go of its target canvas
+        var all = Task.WhenAll(unloaded);
+        if (await Task.WhenAny(all, Task.Delay(TimeSpan.FromSeconds(3))) != all)
+        {
+            DebugLog.Write($"close: {unloaded.Count(t => !t.IsCompleted)} of {unloaded.Count} ink canvases not unloaded after 3 s");
+        }
+    }
+
+    private static Task WhenUnloaded(FrameworkElement element)
+    {
+        var done = new TaskCompletionSource();
+        void OnUnloaded(object sender, RoutedEventArgs e)
+        {
+            element.Unloaded -= OnUnloaded;
+            done.TrySetResult();
+        }
+        element.Unloaded += OnUnloaded;
+        return done.Task;
+    }
+
     /// <summary>A graph page (size of the current one) after the page in view, scrolled into view.</summary>
     public void InsertAfterCurrent()
     {
@@ -229,10 +261,9 @@ public sealed class PagesController
             }
             if (tools.PartialErasing && !tools.EraserActive)
             {
-                // The pen's eraser end with partial erasing on: Windows ink erased whole strokes (WinUI ignores
-                // IsEraserInputEnabled = false). They are put back, and from the eraser end's next press on it goes to
-                // the partial eraser (ToolController.EraserEndTakenOver) until the tip hovers again – the rest of this
-                // touch erases nothing (see CLAUDE.md, question for the user).
+                // Fallback: the eraser end touched with partial erasing on before its hover handed it to the app
+                // (InkTools.TakeEraserEnd), and Windows ink erased whole strokes. They are put back, and from its next
+                // press on it goes to the partial eraser until the tip hovers again.
                 // (The copies are added on top: InkStrokeContainer has no insert at a position.)
                 PageEdit.RestoreStrokes(page, e.Strokes.ToList());
                 tools.EraserEndTakenOver = true; // the next eraser-end touch is a press the partial eraser gets (InkTools)

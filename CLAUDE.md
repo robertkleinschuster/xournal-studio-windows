@@ -32,8 +32,6 @@ Guidance for Claude Code in this repository. Keep it current: add what is learne
   touch (`InkTools.TakeEraserEnd`, only in range and while erasing is partial), a tip hover in range gives it back –
   partial erasing with the eraser end now works from the first touch. Handlers log exceptions themselves
   (`InkTools.Logged`): WinUI's forwarding would not hand them to `App.UnhandledException`.
-- The notes further below about XAML pointer events for custom tools, `IsPrimaryBarrelButtonInputEnabled = false` and
-  unreadable unprocessed args describe the old 2.6.6-experimental runtime and are historical.
 
 ## What this is
 
@@ -94,11 +92,12 @@ arrows), math exercises long formulas in several colors.
 - **Windows 11 only**, this machine's version (26200) – no compatibility layers.
 - **Right-handed UI:** nothing interactive at the right screen edge; one toolbar row, left-aligned; menu bar
   visible; scrollbars hidden; the left side is for the explorer. Touch never draws (it scrolls/zooms).
-- **Pen buttons:** eraser end / eraser button erases (native). Barrel button (user, 2026-11-15): hold barrel = lasso
-  (always, whatever mode the Auswählen tool has – user, 2026-11-16), with every tool and without switching the toolbar: the presenters
-  ignore barrel input (documented `InkInputConfiguration.IsPrimaryBarrelButtonInputEnabled = false`), it arrives as
-  XAML pointer events and `InkTools` hands it to the `SelectionTool`; a barrel drag inside the selection moves it, on
-  a corner handle scales it, a barrel tap clears it (or selects the picture under it).
+- **Pen buttons:** eraser end / eraser button erases (native; with partial erasing on, the app takes it on its
+  inverted hover). Barrel button (user, 2026-11-15): hold barrel = lasso (always, whatever mode the Auswählen tool has
+  – user, 2026-11-16), with every tool and without switching the toolbar: `RightDragAction.LeaveUnprocessed` leaves
+  it to `UnprocessedInput`, `InkTools` hands it to the `SelectionTool`; a barrel drag inside the selection moves it,
+  on a corner handle scales it, a barrel tap clears it (or selects the picture under it). The tip hovering over the
+  selection moves/scales it too (device 2026-11-16: the user expected that), elsewhere it inks.
 - **Saving only by choice, nothing lost** (user, 2026-11-15): whenever a document is left (another opened, window
   closed, file renamed/deleted in the explorer, sync) the same question Speichern / Nicht speichern / Abbrechen;
   no saving on focus loss. Unsaved changes are copied to `%LOCALAPPDATA%\XournalStudioForWindows\Recovery` (never
@@ -113,10 +112,8 @@ arrows), math exercises long formulas in several colors.
 - **Decisions (2026-11-15):** eraser = native Windows ink eraser (whole strokes; Windows has no partial eraser – the
   partial eraser is an agreed exception since 2026-11-16, see below); shape recognition = Windows `InkAnalyzer`; straight lines also with the Windows ruler (stencil button).
   Selection and shapes are `InkToolbarCustomToolButton`s built after Microsoft's pattern ("Pen interactions
-  and Windows Ink": selection layer, `SelectWithPolyLine`, strokes transformed by `InkStroke.PointTransform`); because `UnprocessedInput` has no
-  readable pointer data yet (PR #12292), a custom tool sets `InkPresenter.IsInputEnabled = false` (as Microsoft's
-  SimpleInk sample does for a non-ink mode) and input arrives as XAML pointer events. Agreed with the user. When an
-  SDK ships PR #12292: consider switching the custom tools' input source to `UnprocessedInput`.
+  and Windows Ink": selection layer, `SelectWithPolyLine`, strokes transformed by `InkStroke.PointTransform`), fed by
+  the presenters' `UnprocessedInput` (mode None for a custom tool) – see "Current WinUI ink state".
 - German UI texts; code, comments and commits in English.
 
 ## Build, test, install
@@ -152,8 +149,10 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   save, save-as with the suggested name/folder, the leave question, recovery offer and `Autosave`),
   `RecoveryPrompt`, `SyncController`, `ExplorerCommands` (what the explorer asks for), `Dialogs` (all
   ContentDialogs; hides the ink while one is open), `Messages` (InfoBar), `ToolController` (copies the InkToolbar's
-  tool to all pages' presenters; custom tool active → presenters `IsInputEnabled = false`, mode None),
-  `InkTools` (routes pen/mouse input on the page to `SelectionTool` or `ShapeTool`; barrel → selection),
+  tool to all pages' presenters; processing mode None for a custom tool and for hover takeovers – only the mode is
+  switched then),
+  `InkTools` (routes the presenters' unprocessed pen/mouse input to `SelectionTool`, `ShapeTool`, `PartialEraser`;
+  barrel → selection; hover takeovers of the eraser end and of the tip over the selection),
   `Selection` (selected strokes/pictures, frame + corner handles, live preview, commit as `TransformEdit`),
   `EditCommands` (cut/copy/paste/duplicate/delete/select all; pasted content placed at the left margin below the
   page's content and selected), `SelectionCommands` (enables the selection's buttons in the command row), `TasksView` + `TaskItem` (todo.txt pane), `PartialEraser`
@@ -181,8 +180,7 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 
 ## Facts learned (keep)
 
-- Custom tools: with `InkPresenter.IsInputEnabled = false` pen/mouse arrive as XAML pointer events
-  (`PointerDeviceType.Pen`); the `ScrollView` needs `IgnoredInputKinds="Pen"` or it captures the pen for panning.
+- The `ScrollView` keeps `IgnoredInputKinds="Pen"`: the pen never pans (it would capture the pen otherwise).
   `InkToolbarCustomToolButton.ConfigurationContent` gives the tool a native flyout (opens on the second tap, stays
   open until a tap outside, like the pens' flyouts).
 - Clipboard: `Clipboard.Flush()` often failed with 0x800401D0 CLIPBRD_E_CANT_OPEN (another process – clipboard
@@ -220,26 +218,15 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 - `InkStrokeContainer` has no public constructor and `InkPresenter.StrokeContainer` is read-only: pages adopt the
   canvas' container. A removed stroke cannot be re-added: undo adds `Clone()`s.
 - Windows ink draws a stroke of size s at pressure p about `s * (0.25 + 1.5 p)` wide (measured).
-- **`InkPresenter.UnprocessedInput` and `StrokeInput` ARE raised in 2.6.6-experimental** (mode `None` and
-  barrel + `RightDragAction.LeaveUnprocessed`: pressed, 16× moved, released, on the UI thread), **but their args are
-  `Windows.UI.Core.PointerEventArgs` whose `CurrentPoint` and `GetIntermediatePoints()` throw 0x80004021
-  CO_E_NOT_SUPPORTED** – no position. (An earlier note said the events never fire: wrong, the COMException inside the
-  handler was swallowed and hid the log line. Log first, then touch risky members in try/catch that logs.)
-  Root cause (WinUI bug, not our usage): WinUI hosts the presenter on its ink thread and forwards the OS args to the
-  UI thread, but `PointerPoint` is not marshalable. Fix: microsoft/microsoft-ui-xaml PR #12292 (open, not merged as
-  of 2026-11-15; reproduced with 2.5.4-experimental too). No app-side workaround exists – check the PR and re-test
-  with each new Windows App SDK release. 2.6.6-experimental is the newest package with InkCanvas (stable 2.6.5 has no
-  ink types in its metadata); `CoreInkIndependentInputSource` is not part of the WinUI 3 ink surface (InkToolbar.cpp
-  documents it as a dropped OS-internal capability).
-- **`InkPresenter.InputConfiguration.IsPrimaryBarrelButtonInputEnabled = false`** (documented: "ignore barrel input",
-  UWP sample ScenarioBarrelEraserIgnore) makes barrel-button input arrive as **XAML pointer events with readable
-  data** while the pen tool stays active: pressed/moved/released on the page, `PointerDeviceType.Pen`,
-  `IsBarrelButtonPressed = true`, `IsRightButtonPressed = true` while in contact (sandbox 2026-11-15). Used for
-  the barrel lasso (sandbox test steps 03b–03e: lasso, move, pen still inks, Del).
-- Pen input never reaches XAML pointer events while a presenter takes pen input, not even with the InkCanvas' hit
-  testing off. With the pen removed from `InkPresenter.InputDeviceTypes`, XAML pointer events arrive with
-  `PointerDeviceType.Pen` – but the `ScrollView` captures the pen for panning after ~100 ms unless it has
-  `IgnoredInputKinds="Pen"`; with that, pressed/moved/released all arrive (tested 2026-11-15).
+- **Unprocessed input (with PR #12292, device and probe 2026-11-16):** positions are InkCanvas coordinates; Entered/
+  Hovered/Exited arrive also while the presenters ink, with `IsInverted` (eraser end and Lenovo eraser button: the
+  button press makes the pen re-enter as a new pointer, `inv=1`; the touch then has `IsEraser`); barrel = `barrel=1
+  right=1 kind=RightButtonPressed`. Switching only `InputProcessingConfiguration.Mode` during a hover is fine – the
+  press then arrives unprocessed. Rewriting `InputDeviceTypes`/`UpdateDefaultDrawingAttributes` or having
+  `IsEraserInputEnabled = false` made the presenter drop the hovering pointer (Exited in range, no press). With the
+  stock 2.6.6-experimental runtime the args threw 0x80004021 CO_E_NOT_SUPPORTED (WinUI forwarded the OS args from its
+  ink thread; `PointerPoint` is not marshalable) – that is what PR #12292 fixes. Probe app for such questions:
+  `.local-build/probe-pen` (not committed; InkCanvas + log + switches, the user triggers pen events).
 - UI tests on the user's desktop: check that the test window is in the foreground before injecting input (the user
   works in parallel); otherwise strokes go nowhere and the test lies.
 - `InkAnalyzer` (Windows.UI.Input.Inking.Analysis) works in the unpackaged app; for circles/ellipses
@@ -327,8 +314,8 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
    the real repo by Claude). Context menu, F2/Del/Ctrl+Shift+C, folder git colors, tree follows changes on disk.
    Flat (see constraints): rename/delete act on exactly one item; files other than .xopp/.pdf open in their Windows
    app; renaming the open document's PDF makes the document refer to the new name. Not done: drag & drop moving.
-2. **Selection tool, shapes, ruler – done 2026-11-15** (sandbox, see Testing). Open: switching to `UnprocessedInput`
-   once PR #12292 ships; a tap selects pictures only (not strokes).
+2. **Selection tool, shapes, ruler – done 2026-11-15**, on `UnprocessedInput` since 2026-11-16 evening (sandbox and
+   device: lasso, barrel/tip move). Open: a tap selects pictures only (not strokes).
 3. **Saving by choice + crash recovery – done 2026-11-15** (sandbox: question on close, crash → offer → restore →
    discard). Application Restart after a real crash/update not tested.
 4. **Tasks (todo.txt) – done 2026-11-15** (sandbox: add, check; unit tests for format and file edits).
@@ -374,25 +361,10 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   say "Erst loslassen". Saving, recovery copies and export never wait: a previewed move is registered with the page
   (`XoppPage.BeginPreview`/`EndPreview`), which writes such strokes with their committed transform – a snapshot is
   consistent at any moment. The row's buttons take no keyboard focus (`AllowFocusOnInteraction="False"`).
-- **Resolved 2026-11-16 evening (unprocessed input with PR #12292, see top): the eraser end is taken on its inverted
-  hover and erases partially from its first touch; the history below is kept for context.** Earlier question for the
-  user – the eraser end's first touch (2026-11-16, reviews 47–54 went back and forth; only the real pen can decide): with partial erasing on and the pen tool active, Windows ink takes the eraser end's touch
-  (WinUI ignores `IsEraserInputEnabled = false`). Now: its first erase is put back, the eraser end is taken over, the
-  **rest of that first touch erases nothing**, and from the **next press** it erases partially; a gesture never begins
-  without a press (so nothing restarts after a cancel, from the gap between pages or after a tool change). The
-  alternative (in the code until 982d4f4): the first touch goes on partially from its next move – but then a pen still
-  touching after a cancel (page removed, document reloaded, tool changed) erases on, also on pages that move up under
-  it. Also to watch on the device: a quick flip from the eraser end to the tip that touches down without a hover the
-  app sees – that first tip stroke may not ink (the presenters get input back on that press).
-  User (2026-11-16 morning): tests it on the device. **Research (2026-11-16):** no supported API keeps the OS presenter
-  from erasing with the eraser end or tells the app the pen is inverted before it touches (InkInputProcessingConfiguration,
-  InputDeviceTypes, InputPointerSource, GetPointerPenInfo – the ink thread owns those messages – all ruled out). The
-  route after Microsoft's design: when an SDK ships microsoft-ui-xaml PR #12292, `UnprocessedInput.PointerHovered/
-  PointerEntered` (already raised while the pen inks, see the sandbox log) carry readable `IsInverted` → set the
-  presenters' `IsInputEnabled = false` on an inverted hover → partial from the first touch. Only possible earlier:
-  Raw Input on HID 0x0D/0x02 (In-Range, Invert) – a parallel input channel, device test only, needs the user's
-  approval as an exception. WPF had this natively (EraseByPoint, EditingModeInverted); WinRT/WinUI ink never had a
-  point eraser (issue #1530). No issue exists about IsEraserInputEnabled – filing one is public (approval).
+- **Eraser end with partial erasing (resolved 2026-11-16 evening):** taken on its inverted hover, so it erases
+  partially from its first touch; the earlier "first touch only arms it" compromise is gone (a native erase before the
+  hover was seen is still put back as a fallback, PagesController). WPF had a point eraser natively; WinRT/WinUI ink
+  never had one (issue #1530).
 - **Questions for the user (review findings kept deliberately, 2026-11-16):**
   - A picture background that fails while being drawn into the PDF is counted as "ohne Hintergrund" instead of
     failing the export (deliberate: one damaged picture should not stop the export).
@@ -401,14 +373,9 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   a toggle next to the eraser switches the eraser (tool and the pen's eraser end) between whole strokes (native) and
   partial, without changing the active tool. Partial: the radius is exact and shown as a circle at the pen (hover and
   while erasing) – exactly what is inside the circle disappears, nothing else (cut where the ink's edge, i.e. the
-  centerline plus half the stroke width, meets the circle). **Done 2026-11-16.** The eraser tool erases partially through
-  the app (presenters take no input). The pen's eraser end with the pen tool active: WinUI 2.6.6-experimental ignores
-  `InkInputConfiguration.IsEraserInputEnabled = false` (reads back false, the OS presenter still erases; WinUI forwards
-  it correctly – checked in its source), and no hover reaches XAML while a presenter takes pen input. So: Windows ink's
-  erase of the first touch is put back (`StrokesErased` → `PageEdit.RestoreStrokes`) and the presenters stop taking
-  input (`ToolController.EraserEndTakenOver`); from the second touch the eraser end erases partially, and when the tip
-  hovers again (visible to XAML now) the presenters take input again before it touches. Sandbox: first touch arms,
-  second cuts, the tip inks, undo works. User: "wichtig ist dass er robust funktioniert". Radius: context menu of the
-  toggle (1–20 pt, default 4).
+  centerline plus half the stroke width, meets the circle). **Done 2026-11-16.** The eraser tool erases partially
+  through the app (presenters in mode None); the eraser end/button with the pen tool active is taken on its inverted
+  hover (see above). User: "wichtig ist dass er robust funktioniert". Radius: context menu of the toggle (1–20 pt,
+  default 4).
 - **PDF export:** PDFsharp pinned to 6.2.4, the last MIT version (6.5.0 is AGPL-3.0 with license acceptance – a
   license change for this project is the user's decision).

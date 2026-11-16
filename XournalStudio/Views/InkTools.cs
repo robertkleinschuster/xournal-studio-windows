@@ -18,8 +18,9 @@ public enum InkTool
 /// Pointer input of the custom tools, after Microsoft's pattern for ink selection ("Pen interactions and Windows Ink"):
 /// pen/mouse input on the page goes to the active tool (<see cref="SelectionTool"/>, <see cref="ShapeTool"/>), which
 /// shows feedback on the page's overlay and leaves the work to the ink's own APIs. Touch is left to the ScrollView.
-/// The pen's barrel button selects with every tool: the presenters ignore barrel input
-/// (<c>IsPrimaryBarrelButtonInputEnabled = false</c>, see <see cref="ToolController"/>), so it arrives here as well.
+/// All of it is the presenters' <c>UnprocessedInput</c>: a custom tool sets their processing mode to None, the barrel
+/// button is left unprocessed (<c>RightDragAction.LeaveUnprocessed</c>), and hovers – reported also while the presenters
+/// ink – hand the pen to the app before it touches: the eraser end with partial erasing, the tip over the selection.
 /// </summary>
 public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
 {
@@ -59,6 +60,9 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
     /// <summary>The pen's eraser end hovers while erasing is partial: the presenters leave its input to the app.</summary>
     public Action TakeEraserEnd { get; set; } = () => { };
 
+    /// <summary>The pen's tip hovers over the selection (true) or away from it (false): see ToolController.SelectionTakenOver.</summary>
+    public Action<bool> TakeForSelection { get; set; } = _ => { };
+
     public InkTool Tool
     {
         get => tool;
@@ -85,6 +89,10 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
         input.PointerExited += (_, e) => Logged("Exited", () =>
         {
             eraser?.Hide();
+            if (running == null)
+            {
+                TakeForSelection(false); // off the page: the pen inks wherever it comes back
+            }
             EndIfLifted(e.CurrentPoint, e);
         });
         input.PointerLost += (_, e) => Logged("Lost", () =>
@@ -150,6 +158,10 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
         else if (eraserEnd)
         {
             return; // the eraser end erases natively
+        }
+        else if ((active is InkTool.None or InkTool.Shape) && Selection.Grabs(view, LocalPosition(view, point)))
+        {
+            active = InkTool.Select; // on the selection the tip moves or scales it, with every tool (hover takeover)
         }
         if (active == InkTool.None || !down)
         {
@@ -239,6 +251,8 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
             if (!eraserEnd)
             {
                 ReleaseEraserEnd(); // the pen's tip hovers: it will ink (a mouse moving gives nothing back)
+                // Over the selection the tip moves or scales it; elsewhere it inks.
+                TakeForSelection(Selection.Grabs(view, position));
             }
             else if (eraser != null)
             {

@@ -45,10 +45,10 @@ public sealed class ToolController
 
     /// <summary>
     /// The eraser erases partially (<see cref="PartialEraser"/>): with the eraser tool active the presenters take no
-    /// input (as for a custom tool) and the app erases. The pen's eraser end should come to the app the same way
-    /// (documented <c>InkInputConfiguration.IsEraserInputEnabled = false</c>), but 2.6.6-experimental ignores that
-    /// setting and erases whole strokes natively (sandbox 2026-11-16: the value reads back false, StrokesErased fires).
-    /// It stays set: an SDK that honors it hands the eraser end to the partial eraser without a change here.
+    /// input (as for a custom tool) and the app erases. The pen's eraser end/button is taken on its inverted hover
+    /// (<see cref="EraserEndTakenOver"/>). <c>InkInputConfiguration.IsEraserInputEnabled</c> stays at its default: set to
+    /// false it did not stop native erasing, and together with the takeover the presenter dropped the eraser pointer
+    /// (device 2026-11-16: Exited while in range, the press never arrived; a probe without it got the press).
     /// </summary>
     public bool PartialErasing
     {
@@ -64,8 +64,8 @@ public sealed class ToolController
 
     /// <summary>
     /// While the pen is turned over to its eraser end (partial erasing, pen tool active), the presenters take no input,
-    /// so the eraser end's next press reaches the partial eraser; set when Windows ink erased with it (see PagesController), cleared
-    /// when the tip hovers again – before it touches, so it inks as usual.
+    /// so the eraser end's press reaches the partial eraser; set on its inverted hover (InkTools) – or, as a fallback,
+    /// when Windows ink erased with it before (see PagesController) – and cleared when the tip hovers again.
     /// </summary>
     public bool EraserEndTakenOver
     {
@@ -74,7 +74,8 @@ public sealed class ToolController
         {
             if (eraserEndTakenOver != value)
             {
-                eraserEndTakenOver = value;                ApplyToAll();
+                eraserEndTakenOver = value;
+                ApplyMode();
             }
         }
     }
@@ -156,10 +157,55 @@ public sealed class ToolController
         }
     }
 
+    private bool selectionTakenOver;
+
+    /// <summary>
+    /// The pen's tip hovers over the selection: the presenters leave its input to the app, so a drag there moves or
+    /// scales the selection instead of inking (set and cleared by <see cref="InkTools"/> from the hover).
+    /// </summary>
+    public bool SelectionTakenOver
+    {
+        get => selectionTakenOver;
+        set
+        {
+            if (selectionTakenOver != value)
+            {
+                selectionTakenOver = value;
+                ApplyMode();
+            }
+        }
+    }
+
+    // The app takes the pen's input: a custom tool, partial erasing, or a hover-time takeover (eraser end, selection).
+    private InkInputProcessingMode Mode =>
+        CustomTool != null || selectionTakenOver || (partialErasing && (EraserActive || eraserEndTakenOver))
+            ? InkInputProcessingMode.None
+            : EraserActive ? InkInputProcessingMode.Erasing : InkInputProcessingMode.Inking;
+
+    /// <summary>
+    /// Switches only the processing mode – what a takeover during a hover may change. Rewriting the presenters' other
+    /// settings while the pen hovers makes them drop the pointer (device 2026-11-16: the eraser circle flashed, an
+    /// Exited followed, the press never arrived).
+    /// </summary>
+    private void ApplyMode()
+    {
+        var mode = Mode;
+        foreach (var view in views)
+        {
+            if (view.Ink.InputProcessingConfiguration.Mode != mode)
+            {
+                view.Ink.InputProcessingConfiguration.Mode = mode;
+            }
+        }
+    }
+
     private void ApplyToAll()
     {
         bool erasing = EraserActive;
-        bool custom = CustomTool != null || (partialErasing && (erasing || eraserEndTakenOver)); // the app takes the input
+        // Mouse can select or use app tools, but it must never create ink or native eraser strokes.
+        var devices = CustomTool != null || (partialErasing && erasing)
+            ? CoreInputDeviceTypes.Pen | CoreInputDeviceTypes.Mouse
+            : CoreInputDeviceTypes.Pen;
         var attributes = toolbar.InkDrawingAttributes;
         if (attributes != null)
         {
@@ -168,18 +214,15 @@ public sealed class ToolController
         }
         foreach (var view in views)
         {
-            view.Ink.InputProcessingConfiguration.Mode =
-                custom ? InkInputProcessingMode.None : erasing ? InkInputProcessingMode.Erasing : InkInputProcessingMode.Inking;
-            view.Ink.IsInputEnabled = true;
-            // Mouse can select or use app tools, but it must never create ink or native eraser strokes.
-            view.Ink.InputDeviceTypes = custom
-                ? CoreInputDeviceTypes.Pen | CoreInputDeviceTypes.Mouse
-                : CoreInputDeviceTypes.Pen;
-            view.Ink.InputConfiguration.IsEraserInputEnabled = !partialErasing;
+            if (view.Ink.InputDeviceTypes != devices)
+            {
+                view.Ink.InputDeviceTypes = devices;
+            }
             if (attributes != null)
             {
                 view.Ink.UpdateDefaultDrawingAttributes(attributes);
             }
         }
+        ApplyMode();
     }
 }

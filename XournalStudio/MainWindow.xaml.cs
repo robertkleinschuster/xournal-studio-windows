@@ -82,6 +82,15 @@ public sealed partial class MainWindow : Window
         inkTools.EraserToolActive = () => tools.EraserActive;
         inkTools.ReleaseEraserEnd = () => tools.EraserEndTakenOver = false;
         inkTools.TakeEraserEnd = () => tools.EraserEndTakenOver = true;
+        inkTools.TakeForSelection = over => tools.SelectionTakenOver = over;
+        // Without a selection there is nothing to grab: the pen inks again even before its next hover.
+        inkTools.Selection.SelectionChanged += (_, _) =>
+        {
+            if (inkTools.Selection.Current == null)
+            {
+                tools.SelectionTakenOver = false;
+            }
+        };
         EraserRadius.Value = settings.EraserRadius;
         PartialEraserButton.IsChecked = settings.PartialErasing;
         void ApplyEraserMode()
@@ -207,6 +216,7 @@ public sealed partial class MainWindow : Window
         }
         closeConfirmed = true;
         await session.EndAsync(); // the recovery copy is gone before the process ends
+        await pages.UnloadAsync(); // the ink's GPU resources are released before the process ends (see there)
         Close();
     }
 
