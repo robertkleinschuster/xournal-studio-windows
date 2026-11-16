@@ -346,7 +346,8 @@ public sealed class XoppPage
             var paragraphs = text.Paragraphs();
             float w = (float)(text.Wrap ?? paragraphs.Max(l => l.Length) * charWidth);
             double lines = text.Wrap is { } wrap
-                ? paragraphs.Sum(l => Math.Clamp(Math.Ceiling(l.Length * charWidth / wrap), 1, Math.Max(1, l.Length)))
+                ? paragraphs.Sum(l => Math.Clamp(Math.Ceiling(l.Length * charWidth / wrap), 1,
+                    Math.Max(1, new System.Globalization.StringInfo(l).LengthInTextElements))) // shown characters
                 : paragraphs.Length;
             float h = (float)(lines * text.Size * 1.2);
             foreach (var corner in new[] { Vector2.Zero, new Vector2(w, 0), new Vector2(0, h), new Vector2(w, h) })

@@ -223,6 +223,7 @@ public sealed partial class PageView : UserControl
         {
             PdfImage.Source = null;
             renderedPixelWidth = requestedPixelWidth = 0;
+            backgroundFailed = false; // looked for again when the page comes back (a sync may have brought it)
             ImagesLayer.Children.Clear();
             picturesShown = false;
             return;
@@ -240,21 +241,37 @@ public sealed partial class PageView : UserControl
 
     // A picture background, stretched over the page as upstream draws it; decoded at about the shown size while the
     // page is near the viewport (freed with the PDF bitmaps otherwise), again when zoomed in a lot.
-    private void ShowImageBackground(double pixelsPerPoint)
+    // A missing or unreadable picture (opened off the UI thread, decoded by BitmapImage.SetSourceAsync) is logged and
+    // not tried again until the page leaves the viewport and comes back.
+    private bool backgroundFailed;
+
+    private async void ShowImageBackground(double pixelsPerPoint)
     {
         string? path = Page.BackgroundImagePath;
         uint wanted = (uint)Math.Min(MaxPdfPixelWidth, Math.Ceiling(Page.Width * pixelsPerPoint));
-        // A missing or unreadable file fails asynchronously in BitmapImage (ImageFailed, logged; no file check on the UI
-        // thread); the failed source stays until the page leaves the viewport, then it is looked for again.
-        if (path == null || (PdfImage.Source != null && renderedPixelWidth * 1.6 >= wanted))
+        if (path == null || backgroundFailed || (PdfImage.Source != null && renderedPixelWidth * 1.6 >= wanted))
         {
             return;
         }
         var bitmap = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage { DecodePixelWidth = (int)wanted };
-        bitmap.ImageFailed += (_, e) => DebugLog.Write($"picture background {path}: {e.ErrorMessage}");
-        bitmap.UriSource = new Uri(path);
         PdfImage.Source = bitmap;
         renderedPixelWidth = wanted;
+        try
+        {
+            using var file = await Task.Run(() => File.OpenRead(path));
+            using var stream = file.AsRandomAccessStream();
+            await bitmap.SetSourceAsync(stream);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Runtime.InteropServices.COMException)
+        {
+            DebugLog.Write($"picture background {path}: {e.GetType().Name} 0x{e.HResult:X8} {e.Message}");
+            if (PdfImage.Source == bitmap) // not when the page has been released or reloaded meanwhile
+            {
+                backgroundFailed = true;
+                PdfImage.Source = null;
+                renderedPixelWidth = 0;
+            }
+        }
     }
 
     private async void RenderPdf(double pixelsPerPoint)

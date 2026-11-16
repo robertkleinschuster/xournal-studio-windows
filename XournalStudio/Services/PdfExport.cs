@@ -258,6 +258,8 @@ public static class PdfExport
         var lines = text.Paragraphs();
         if (text.Wrap is { } wrap)
         {
+            // XTextFormatter breaks at spaces only: a word wider than the wrap width runs past the box (the screen's
+            // TextBlock breaks it).
             var formatter = new XTextFormatter(g)
             {
                 Alignment = text.Justify ? XParagraphAlignment.Justify : text.Alignment switch
