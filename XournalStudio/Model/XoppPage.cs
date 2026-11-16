@@ -343,12 +343,12 @@ public sealed class XoppPage
             // a matrix may turn or mirror the box.
             // A wrapped paragraph takes about (its estimated width / the wrap width) lines, at most one per character.
             double charWidth = text.Size * 0.6;
-            var paragraphs = text.Paragraphs();
-            float w = (float)(text.Wrap ?? paragraphs.Max(l => l.Length) * charWidth);
+            // Characters as shown (text elements: an emoji or a letter with its accents is one).
+            var lengths = text.Paragraphs().Select(l => new System.Globalization.StringInfo(l).LengthInTextElements).ToList();
+            float w = (float)(text.Wrap ?? lengths.Max() * charWidth);
             double lines = text.Wrap is { } wrap
-                ? paragraphs.Sum(l => Math.Clamp(Math.Ceiling(l.Length * charWidth / wrap), 1,
-                    Math.Max(1, new System.Globalization.StringInfo(l).LengthInTextElements))) // shown characters
-                : paragraphs.Length;
+                ? lengths.Sum(n => Math.Clamp(Math.Ceiling(n * charWidth / wrap), 1, Math.Max(1, n)))
+                : lengths.Count;
             float h = (float)(lines * text.Size * 1.2);
             foreach (var corner in new[] { Vector2.Zero, new Vector2(w, 0), new Vector2(0, h), new Vector2(w, h) })
             {

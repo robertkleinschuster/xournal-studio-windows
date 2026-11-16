@@ -224,6 +224,7 @@ public sealed partial class PageView : UserControl
             PdfImage.Source = null;
             renderedPixelWidth = requestedPixelWidth = 0;
             backgroundFailed = false; // looked for again when the page comes back (a sync may have brought it)
+            backgroundLoad++; // a load still running is not shown
             ImagesLayer.Children.Clear();
             picturesShown = false;
             return;
@@ -240,35 +241,41 @@ public sealed partial class PageView : UserControl
     }
 
     // A picture background, stretched over the page as upstream draws it; decoded at about the shown size while the
-    // page is near the viewport (freed with the PDF bitmaps otherwise), again when zoomed in a lot.
-    // A missing or unreadable picture (opened off the UI thread, decoded by BitmapImage.SetSourceAsync) is logged and
-    // not tried again until the page leaves the viewport and comes back.
+    // page is near the viewport (freed with the PDF bitmaps otherwise), again when zoomed in a lot. The file is read
+    // into memory off the UI thread (not held open: a sync or rename is not blocked), decoded by
+    // BitmapImage.SetSourceAsync and shown when done (the previous bitmap stays until then). A picture that cannot be
+    // read or decoded is logged and not tried again until the page leaves the viewport and comes back.
     private bool backgroundFailed;
+    private int backgroundLoad; // which load may still be shown
 
     private async void ShowImageBackground(double pixelsPerPoint)
     {
         string? path = Page.BackgroundImagePath;
         uint wanted = (uint)Math.Min(MaxPdfPixelWidth, Math.Ceiling(Page.Width * pixelsPerPoint));
-        if (path == null || backgroundFailed || (PdfImage.Source != null && renderedPixelWidth * 1.6 >= wanted))
+        if (path == null || backgroundFailed || renderedPixelWidth * 1.6 >= wanted)
         {
             return;
         }
+        renderedPixelWidth = wanted; // requested: not started again on every viewport update
+        int load = ++backgroundLoad;
         var bitmap = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage { DecodePixelWidth = (int)wanted };
-        PdfImage.Source = bitmap;
-        renderedPixelWidth = wanted;
+        bitmap.ImageFailed += (_, e) => DebugLog.Write($"picture background {path}: ImageFailed {e.ErrorMessage}");
         try
         {
-            using var file = await Task.Run(() => File.OpenRead(path));
-            using var stream = file.AsRandomAccessStream();
+            byte[] data = await Task.Run(() => File.ReadAllBytes(path));
+            using var stream = new MemoryStream(data, writable: false).AsRandomAccessStream();
             await bitmap.SetSourceAsync(stream);
+            if (load == backgroundLoad)
+            {
+                PdfImage.Source = bitmap;
+            }
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Runtime.InteropServices.COMException)
+        catch (Exception e) // any failure of reading or decoding (async void: nothing may escape); logged
         {
             DebugLog.Write($"picture background {path}: {e.GetType().Name} 0x{e.HResult:X8} {e.Message}");
-            if (PdfImage.Source == bitmap) // not when the page has been released or reloaded meanwhile
+            if (load == backgroundLoad)
             {
                 backgroundFailed = true;
-                PdfImage.Source = null;
                 renderedPixelWidth = 0;
             }
         }
