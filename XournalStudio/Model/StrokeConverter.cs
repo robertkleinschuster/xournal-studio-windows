@@ -52,10 +52,9 @@ public static class StrokeConverter
             return null;
         }
         var widths = ParseNumbers((string?)e.Attribute("width") ?? "1");
-        // Width 0: a stroke drawn from the file has no outline (upstream: only its filling); one shown as ink is drawn
-        // 1 wide (FromXml), and so exported.
-        double width = widths.Count > 0 && widths[0] > 0 ? widths[0]
-            : widths.Count > 0 && widths[0] == 0 && NeedsOwnDrawing(e) ? 0 : 1;
+        // No positive width: a stroke drawn from the file has no line (upstream: only its filling, if any); one shown as
+        // ink is drawn 1 wide (FromXml), and so exported. Missing: 1.
+        double width = widths.Count == 0 ? 1 : widths[0] > 0 ? widths[0] : NeedsOwnDrawing(e) ? 0 : 1;
         var segments = new List<double>(Math.Max(0, count - 1));
         for (int i = 0; i < count - 1; i++)
         {
@@ -86,10 +85,16 @@ public static class StrokeConverter
         _ => [],
     };
 
-    // A dash pattern needs lengths of 0 or more, not all 0 (cairo, XAML and PDF draw no other): otherwise solid.
-    // Zero lengths are kept: upstream draws them as dots with round ends.
-    private static double[] Drawable(List<double> dashes) =>
-        dashes.All(d => d >= 0) && dashes.Any(d => d > 0) ? dashes.ToArray() : [];
+    // A dash pattern needs lengths of 0 or more, not all 0 (cairo, XAML and PDF draw no other), and a gap: the pattern
+    // repeats (an odd one with on and off swapped), so without a positive length in an "off" place it is solid. Zero
+    // "on" lengths are kept: upstream draws them as dots with round ends. One rule for the screen and the export.
+    private static double[] Drawable(List<double> dashes)
+    {
+        var cycle = dashes.Count % 2 == 1 ? dashes.Concat(dashes).ToList() : dashes;
+        bool drawable = dashes.All(d => d >= 0) && dashes.Any(d => d > 0) &&
+            cycle.Where((_, k) => k % 2 == 1).Any(gap => gap > 0);
+        return drawable ? dashes.ToArray() : [];
+    }
 
     /// <summary>
     /// A stroke Windows ink cannot draw as the file means it: filled, dashed, or with other than round ends. Such strokes
@@ -98,7 +103,15 @@ public static class StrokeConverter
     public static bool NeedsOwnDrawing(XElement e) =>
         (int.TryParse((string?)e.Attribute("fill"), NumberStyles.Integer, Inv, out int fill) && fill >= 0) ||
         IsLineStyle((string?)e.Attribute("style")) ||
-        (string?)e.Attribute("capStyle") is "butt" or "square";
+        (string?)e.Attribute("capStyle") is "butt" or "square" ||
+        IsDamaged(e);
+
+    // A number of the stroke this app cannot read (not a number, beyond any page, a stray coordinate): the stroke is
+    // shown as far as it can be read and never rewritten as ink or moved, so nothing of it is lost or misplaced.
+    private static bool IsDamaged(XElement e) =>
+        ReadPoints(e.Value).After.Count > 0 ||
+        ((string?)e.Attribute("width") ?? "1").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length !=
+            ParseNumbers((string?)e.Attribute("width") ?? "1").Count;
 
     // Any line style (also one this app or upstream cannot draw dashed): such a stroke is never rewritten as ink,
     // which would drop the attribute. Solid strokes carry none ("plain" is upstream's name for solid).

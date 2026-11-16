@@ -331,7 +331,8 @@ public sealed class XoppPage
         {
             bottom = Math.Max(bottom, XoppImage.GetBounds(image).Bottom);
         }
-        foreach (var shape in DrawnStrokes.Select(StrokeConverter.ReadShape).OfType<StrokeShape>())
+        foreach (var shape in DrawnStrokes.Select(StrokeConverter.ReadShape).OfType<StrokeShape>()
+            .Where(s => s.Width > 0 || s.Fill >= 0)) // a stroke with neither line nor filling shows nothing
         {
             double half = shape.SegmentWidths.Count > 0 ? shape.SegmentWidths.Max() / 2 : shape.Width / 2;
             bottom = Math.Max(bottom, shape.Points.Max(p => p.Y) + half);

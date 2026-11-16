@@ -371,7 +371,9 @@ public class FileFormatTests : IDisposable
         Assert.Equal([0, 3], StrokeConverter.Dashes("cust: 0 3")); // zero-length dashes: dots, as upstream
         Assert.Empty(StrokeConverter.Dashes("cust: 0 0"));
         Assert.True(StrokeConverter.NeedsOwnDrawing(XElement.Parse("""<stroke style="cust:3 2">0 0 1 1</stroke>"""))); // kept, never rewritten
-        Assert.Equal([3, 0], StrokeConverter.Dashes("cust: 3 0")); // zero gaps are kept (drawn solid)
+        Assert.Empty(StrokeConverter.Dashes("cust: 3 0")); // no gap: solid, on screen and in the export
+        Assert.Equal([3], StrokeConverter.Dashes("cust: 3")); // repeats as 3 on, 3 off
+        Assert.True(StrokeConverter.NeedsOwnDrawing(stroke)); // damaged: drawn from the file, never ink or moved
         Assert.Equal(1, StrokeConverter.ReadShape(XElement.Parse("""<stroke tool="pen" color="#000000ff" width="0">0 0 5 5</stroke>"""))!.Width); // as the ink
         Assert.Equal(0, StrokeConverter.ReadShape(XElement.Parse("""<stroke tool="pen" color="#000000ff" width="0" fill="128">0 0 5 5 0 5</stroke>"""))!.Width); // filling only
         Assert.Empty(StrokeConverter.Dashes("cust: -3 2"));
