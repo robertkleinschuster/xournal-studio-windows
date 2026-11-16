@@ -57,7 +57,6 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
     /// <summary>The pen's tip (or the mouse) is back: the presenters take ink input again.</summary>
     public Action ReleaseEraserEnd { get; set; } = () => { };
 
-
     public InkTool Tool
     {
         get => tool;
@@ -109,8 +108,7 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
     // off the surface, the mouse's left button up (as a gesture begins with it).
     private bool EndIfLifted(Microsoft.UI.Input.PointerPoint point, PointerRoutedEventArgs e)
     {
-        bool down = point.PointerDeviceType == PointerDeviceType.Mouse ? point.Properties.IsLeftButtonPressed : point.IsInContact;
-        if (running is not { } r || r.Pointer != e.Pointer.PointerId || down)
+        if (running is not { } r || r.Pointer != e.Pointer.PointerId || IsDown(point, e))
         {
             return false;
         }
@@ -133,7 +131,7 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
         }
         // The pen's barrel button may arrive as barrel or as right button (Lenovo pens).
         bool barrel = isPen && (point.Properties.IsBarrelButtonPressed || point.Properties.IsRightButtonPressed);
-        bool down = isPen ? point.IsInContact : point.Properties.IsLeftButtonPressed;
+        bool down = IsDown(point, e);
         var active = barrel ? InkTool.Select : tool;
         if (!barrel && Erases(isPen, IsEraserEnd(point))) // the barrel always lassos
         {
@@ -300,6 +298,11 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
         running = null;
         return taken;
     }
+
+    // The one test of "down" for a press and a lift: the pen on the surface, the mouse's left button pressed – by the
+    // pointer's device (e.Pointer), the same for both.
+    private static bool IsDown(Microsoft.UI.Input.PointerPoint point, PointerRoutedEventArgs e) =>
+        e.Pointer.PointerDeviceType == PointerDeviceType.Pen ? point.IsInContact : point.Properties.IsLeftButtonPressed;
 
     // The partial eraser takes the pen's eraser end, and with the eraser tool active also the pen tip and the mouse.
     private bool Erases(bool isPen, bool eraserEnd) =>

@@ -201,8 +201,9 @@ public sealed class PagesController
             if (tools.PartialErasing && !tools.EraserActive)
             {
                 // The pen's eraser end with partial erasing on: Windows ink erased whole strokes (WinUI ignores
-                // IsEraserInputEnabled = false). They are put back, and the eraser end goes to the partial eraser from
-                // now on (ToolController.EraserEndTakenOver) until the tip hovers again.
+                // IsEraserInputEnabled = false). They are put back, and from the eraser end's next press on it goes to
+                // the partial eraser (ToolController.EraserEndTakenOver) until the tip hovers again – the rest of this
+                // touch erases nothing (see CLAUDE.md, question for the user).
                 PageEdit.RestoreStrokes(page, e.Strokes.ToList());
                 tools.EraserEndTakenOver = true; // the next eraser-end touch is a press the partial eraser gets (InkTools)
                 return;

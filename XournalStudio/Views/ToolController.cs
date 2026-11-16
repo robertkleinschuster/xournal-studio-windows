@@ -68,7 +68,7 @@ public sealed class ToolController
 
     /// <summary>
     /// While the pen is turned over to its eraser end (partial erasing, pen tool active), the presenters take no input,
-    /// so the eraser end reaches the partial eraser; set when Windows ink erased with it (see PagesController), cleared
+    /// so the eraser end's next press reaches the partial eraser; set when Windows ink erased with it (see PagesController), cleared
     /// when the tip hovers again – before it touches, so it inks as usual.
     /// </summary>
     public bool EraserEndTakenOver

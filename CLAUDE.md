@@ -333,6 +333,15 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   say "Erst loslassen". Saving, recovery copies and export never wait: a previewed move is registered with the page
   (`XoppPage.BeginPreview`/`EndPreview`), which writes such strokes with their committed transform – a snapshot is
   consistent at any moment. The row's buttons take no keyboard focus (`AllowFocusOnInteraction="False"`).
+- **Question for the user – the eraser end's first touch (2026-11-16, reviews 47–54 went back and forth; only the
+  real pen can decide):** with partial erasing on and the pen tool active, Windows ink takes the eraser end's touch
+  (WinUI ignores `IsEraserInputEnabled = false`). Now: its first erase is put back, the eraser end is taken over, the
+  **rest of that first touch erases nothing**, and from the **next press** it erases partially; a gesture never begins
+  without a press (so nothing restarts after a cancel, from the gap between pages or after a tool change). The
+  alternative (in the code until 982d4f4): the first touch goes on partially from its next move – but then a pen still
+  touching after a cancel (page removed, document reloaded, tool changed) erases on, also on pages that move up under
+  it. Also to watch on the device: a quick flip from the eraser end to the tip that touches down without a hover the
+  app sees – that first tip stroke may not ink (the presenters get input back on that press).
 - **Questions for the user (review findings kept deliberately, 2026-11-16):**
   - Save As of a document with an *attached* PDF or picture background (`domain="attach"`, `<doc>.xopp.bg…`): the new
     file refers to the old document's attachment by path; upstream copies the attachment next to the new file.
