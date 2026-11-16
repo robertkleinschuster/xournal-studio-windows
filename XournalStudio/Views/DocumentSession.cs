@@ -170,13 +170,11 @@ public sealed class DocumentSession
     public void Deactivated() => autosave.WriteNow();
 
     /// <summary>Saves to the document's file (Ctrl+S); false if it has none, saving waits for a sync, or it failed.</summary>
-    public bool Save()
+    public bool Save() => Document.FilePath is { } path && Save(path, saveAs: false);
+
+    // Ctrl+S writes the document where it is; Save As (saveAs) takes its attachments along (XoppDocument.SaveAs).
+    private bool Save(string path, bool saveAs)
     {
-        string? path = Document.FilePath;
-        if (path == null)
-        {
-            return false;
-        }
         if (SaveBlocked)
         {
             SaveRequested = true;
@@ -186,7 +184,14 @@ public sealed class DocumentSession
         }
         try
         {
-            Document.Save(path);
+            if (saveAs)
+            {
+                Document.SaveAs(path);
+            }
+            else
+            {
+                Document.Save(path);
+            }
             SetDirty(false);
             settings.LastFile = path;
             settings.Save();
@@ -222,14 +227,7 @@ public sealed class DocumentSession
                 "Nicht gespeichert: Speichern unter ist möglich, sobald die Synchronisierung fertig ist.");
             return false;
         }
-        string? previous = Document.FilePath;
-        Document.FilePath = picked;
-        if (!Save())
-        {
-            Document.FilePath = previous;
-            return false;
-        }
-        return true;
+        return Save(picked, saveAs: true);
     }
 
     private async Task<string?> PickSavePathAsync()
@@ -299,8 +297,7 @@ public sealed class DocumentSession
         }
         try
         {
-            Document.CopyAttachments(path); // as upstream: the copy gets its own attachments
-            XoppDocument.Write(Document.Snapshot(path), path);
+            Document.SaveCopy(path); // as upstream: the copy gets its own attachments
             return true;
         }
         catch (Exception e)

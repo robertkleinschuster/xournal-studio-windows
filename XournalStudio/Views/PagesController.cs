@@ -199,7 +199,7 @@ public sealed class PagesController
         view.Ink.StrokesErased += (_, e) =>
         {
             // A selection must not keep strokes that are gone (it would copy, move or bring them back) – also when they
-            // are put back below: as copies, not the selected strokes.
+            // are put back below: as copies, not the selected strokes; the selection ends.
             var erased = e.Strokes.Select(s => s.Id).ToHashSet();
             if (inkTools.Selection.Current?.Strokes.Any(s => erased.Contains(s.Id)) == true)
             {

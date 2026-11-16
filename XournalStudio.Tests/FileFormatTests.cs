@@ -238,10 +238,21 @@ public class FileFormatTests : IDisposable
 
         // Save As, as upstream: the attachment goes along and the new file keeps "attach".
         string other = Path.Combine(dir, "other.xopp");
-        doc.Save(other);
+        doc.SaveAs(other);
         Assert.True(File.Exists(other + ".bg.pdf"));
         Assert.Equal("bg.pdf", PdfFilename(other));
         Assert.Equal(other + ".bg.pdf", doc.PdfPath);
+
+        // Another file of that name is never overwritten, nor taken for the attachment: the PDF is named by its path.
+        string third = Path.Combine(dir, "third.xopp");
+        File.WriteAllText(third + ".bg.pdf", "someone else's");
+        doc.SaveAs(third);
+        Assert.Equal("someone else's", File.ReadAllText(third + ".bg.pdf"));
+        Assert.Equal("other.xopp.bg.pdf", PdfFilename(third));
+        // Ctrl+S at a renamed place copies nothing along.
+        string renamed = Path.Combine(dir, "renamed.xopp");
+        doc.Save(renamed);
+        Assert.False(File.Exists(renamed + ".bg.pdf"));
     }
 
     [Fact]
@@ -316,7 +327,7 @@ public class FileFormatTests : IDisposable
         // Saved there (Save As): the attached picture goes along, the file keeps "attach" (as upstream).
         Directory.CreateDirectory(Path.Combine(dir, "sub"));
         string saved = Path.Combine(dir, "sub", "d.xopp");
-        doc.Save(saved);
+        doc.SaveAs(saved);
         Assert.True(File.Exists(saved + ".bg_1.png"));
         var savedBackground = ReadXml(saved).Root!.Elements("page").ElementAt(1).Element("background")!;
         Assert.Equal(("attach", "bg_1.png"), ((string?)savedBackground.Attribute("domain"), (string?)savedBackground.Attribute("filename")));
