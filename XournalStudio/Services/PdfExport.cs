@@ -37,7 +37,7 @@ public static class PdfExport
         {
             using var output = new PdfDocument();
             int pages = 0, skipped = 0, missing = 0;
-            var missingFonts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var missingFonts = new HashSet<(string, XFontStyleEx)>();
             foreach (var page in snapshot.Root!.Elements("page"))
             {
                 double width = (double?)page.Attribute("width") ?? XoppDocument.A4Width;
@@ -160,6 +160,10 @@ public static class PdfExport
             var fill = XColor.FromArgb(Math.Clamp(shape.Fill, 0, 255), shape.Color.R, shape.Color.G, shape.Color.B);
             g.DrawPolygon(new XSolidBrush(fill), points, XFillMode.Winding);
         }
+        if (shape.EvenWidth && shape.Width <= 0)
+        {
+            return; // width 0 is no line on screen either (a PDF pen of 0 would be a hairline)
+        }
         if (points.Length == 1)
         {
             g.DrawLine(Pen(shape.Width), points[0], points[0]); // a dot (round cap)
@@ -221,11 +225,11 @@ public static class PdfExport
     }
 
     // A family Windows does not have (e.g. a Linux font) falls back to Arial, as the screen's TextBlock falls back;
-    // tried once per family and export (missing).
-    private static XFont Font(string family, double size, XFontStyleEx style, HashSet<string> missing)
+    // tried once per family and style and export (missing).
+    private static XFont Font(string family, double size, XFontStyleEx style, HashSet<(string, XFontStyleEx)> missing)
     {
         var options = new XPdfFontOptions(PdfFontEncoding.Unicode);
-        if (!missing.Contains(family))
+        if (!missing.Contains((family.ToLowerInvariant(), style)))
         {
             try
             {
@@ -234,7 +238,7 @@ public static class PdfExport
             catch (InvalidOperationException e)
             {
                 DebugLog.Write($"export: font {family}: {e.GetType().Name} 0x{e.HResult:X8} {e.Message}; Arial instead");
-                missing.Add(family);
+                missing.Add((family.ToLowerInvariant(), style));
             }
         }
         return new XFont("Arial", size, style, options);
@@ -242,7 +246,7 @@ public static class PdfExport
 
     // As on screen: the font's family, style and size in points, the box placed by the text's transform, wrapped at its
     // width (if it has one) and aligned.
-    private static void DrawText(XGraphics g, XoppText text, HashSet<string> missingFonts)
+    private static void DrawText(XGraphics g, XoppText text, HashSet<(string, XFontStyleEx)> missingFonts)
     {
         var style = (text.Bold ? XFontStyleEx.Bold : XFontStyleEx.Regular) | (text.Italic ? XFontStyleEx.Italic : XFontStyleEx.Regular);
         var font = Font(text.WindowsFamily, text.Size, style, missingFonts);
