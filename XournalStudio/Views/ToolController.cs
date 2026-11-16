@@ -154,6 +154,7 @@ public sealed class ToolController
         if (page != null && toolbar.TargetInkCanvas != page.InkCanvas)
         {
             toolbar.TargetInkCanvas = page.InkCanvas;
+            ApplyMode(); // the toolbar may apply its tool's mode to its new target; the app's takeovers decide
         }
     }
 

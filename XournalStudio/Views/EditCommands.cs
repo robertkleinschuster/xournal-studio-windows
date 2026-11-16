@@ -208,21 +208,23 @@ public sealed class EditCommands(
         {
             current.Revert(); // the elements as before the drag (m includes the move)
             var source = current.Page;
-            var strokes = PageEdit.SelectOnly(source, current.Strokes); // what is still on the page
+            var strokes = PageEdit.SelectOnly(source, current.Strokes); // what is still on the page (now marked)
             var images = current.Images.Where(i => i.Parent != null).ToList();
             var elements = images.Select(i => XoppClip.Transformed(i, m))
                 .Concat(strokes.Select(s => XoppClip.Transformed(source.ElementOf(s), m))).ToList();
             if (AddElements(target, elements, "move to page", allOrNothing: true) is not { } adding)
             {
+                strokes.ForEach(s => s.Selected = false);
                 return; // nothing could be added (said): the content stays where it was
             }
             var removal = new PageEdit(source);
-            removal.RemovedStrokes.AddRange(PageEdit.SelectOnly(source, strokes));
-            source.Ink!.DeleteSelected();
+            removal.RemovedStrokes.AddRange(strokes);
+            source.Ink!.DeleteSelected(); // the strokes marked above
             removal.RemoveImages(images);
             selection.Clear();
             undo.Push(new CombinedEdit([removal, adding]));
-            SelectAdded(target, adding.AddedStrokes.ToList(), adding.AddedImages.ToList(), "move to page");
+            // Selected there, the tool stays (a barrel drag with the pen keeps the pen).
+            SelectAdded(target, adding.AddedStrokes.ToList(), adding.AddedImages.ToList(), "move to page", activateTool: false);
         }
         catch (Exception e)
         {
@@ -307,11 +309,15 @@ public sealed class EditCommands(
 
     // Selects what was just added (and undoable). A failure here is not a failed paste or duplicate: logged and said
     // as what it is.
-    private void SelectAdded(PageView view, List<InkStroke> strokes, List<XElement> images, string operation)
+    private void SelectAdded(PageView view, List<InkStroke> strokes, List<XElement> images, string operation,
+        bool activateTool = true)
     {
         try
         {
-            activateSelectTool();
+            if (activateTool)
+            {
+                activateSelectTool();
+            }
             selection.Select(view, strokes, images);
         }
         catch (Exception e)

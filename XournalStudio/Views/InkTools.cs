@@ -211,12 +211,10 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
         }
         else
         {
-            foreach (var sample in samples)
+            // Oldest first: the platform does not document the order of the history it reports.
+            foreach (var sample in samples.Where(s => s.PointerId == point.PointerId).OrderBy(s => s.Timestamp))
             {
-                if (sample.PointerId == point.PointerId)
-                {
-                    MoveTo(view, sample);
-                }
+                MoveTo(view, sample);
             }
         }
         e.Handled = true;
@@ -272,9 +270,13 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
                 // Over the selection the tip moves or scales it; elsewhere it inks.
                 TakeForSelection(Selection.Grabs(view, position));
             }
-            else if (eraser != null)
+            else
             {
-                TakeEraserEnd(); // erasing is partial: the eraser end's touches go to the partial eraser
+                TakeForSelection(false); // the eraser end erases, also over the selection (natively or partially)
+                if (eraser != null)
+                {
+                    TakeEraserEnd(); // erasing is partial: the eraser end's touches go to the partial eraser
+                }
             }
         }
         if (!IsDown(point) && Erases(isPen, eraserEnd)) // the circle while hovering
@@ -298,8 +300,7 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
         var point = e.CurrentPoint;
         if (!OwnsPointer(e))
         {
-            EndIfLifted(point, e); // another pointer's release
-            return;
+            return; // another pointer's release
         }
         Finish(LocalPosition(view, point));
         e.Handled = true;

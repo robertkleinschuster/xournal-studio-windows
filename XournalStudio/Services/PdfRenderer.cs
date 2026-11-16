@@ -70,7 +70,7 @@ public sealed class PdfRenderer
         {
             return Render(page, sourceDips, width, height);
         }
-        catch (COMException e) when (e.HResult is DxgiDeviceRemoved or DxgiDeviceReset)
+        catch (Exception e) when (e.HResult is DxgiDeviceRemoved or DxgiDeviceReset) // COMException or Vortice's SharpGenException
         {
             // The GPU was reset or removed (driver update, sleep): a new device, once.
             DebugLog.Write("pdf render: device lost, recreating", e);

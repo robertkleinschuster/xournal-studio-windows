@@ -317,7 +317,9 @@ public sealed class PagesController
         double scale = scroller.ZoomFactor * (scroller.XamlRoot?.RasterizationScale ?? 1.0);
         foreach (var view in Views)
         {
-            view.UpdateBackground(Intersects(BoundsInViewport(view), near), scale);
+            // The page of a dragged selection stays shown: its pictures are being moved (and may be far off by now).
+            bool dragged = inkTools.Selection.IsDragging && inkTools.Selection.Current?.View == view;
+            view.UpdateBackground(dragged || Intersects(BoundsInViewport(view), near), scale);
         }
         tools.SetCurrentPage(CurrentView);
     }
