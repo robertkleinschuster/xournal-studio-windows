@@ -197,6 +197,21 @@
             <AppBarButton x:Name="PasteButton" LabelPosition="Collapsed" Label="Einfügen" ToolTipService.ToolTip="Einfügen (Strg+V): Kopiertes oder einen Ausschnitt aus einer anderen App (Ausschneidetool: Win+Umschalt+S)" Click="OnPaste">
                 <AppBarButton.Icon><FontIcon Glyph="&#xE77F;" /></AppBarButton.Icon>
             </AppBarButton>
+            <!-- The selection's commands, shown while something is selected (SelectionCommands); compact, so the row keeps clear of the right edge. -->
+            <StackPanel x:Name="SelectionCommandsPanel" Orientation="Horizontal" Spacing="0" Visibility="Collapsed">
+                <AppBarButton x:Name="CutSelectionButton" Width="48" Icon="Cut" LabelPosition="Collapsed" Label="Ausschneiden"
+                              ToolTipService.ToolTip="Auswahl ausschneiden (Strg+X)" Click="OnCut" />
+                <AppBarButton Width="48" Icon="Copy" LabelPosition="Collapsed" Label="Kopieren"
+                              ToolTipService.ToolTip="Auswahl kopieren (Strg+C)" Click="OnCopy" />
+                <AppBarButton x:Name="DuplicateSelectionButton" Width="48" LabelPosition="Collapsed" Label="Duplizieren"
+                              ToolTipService.ToolTip="Auswahl duplizieren (Strg+D)" Click="OnDuplicate">
+                    <AppBarButton.Icon><FontIcon Glyph="&#xF413;" /></AppBarButton.Icon>
+                </AppBarButton>
+                <AppBarButton x:Name="DeleteSelectionButton" Width="48" LabelPosition="Collapsed" Label="Auswahl löschen"
+                              ToolTipService.ToolTip="Auswahl löschen (Entf)" Click="OnDeleteSelection">
+                    <AppBarButton.Icon><FontIcon Glyph="&#xE894;" /></AppBarButton.Icon>
+                </AppBarButton>
+            </StackPanel>
             <AppBarSeparator />
             <AppBarButton x:Name="InsertPageButton" Icon="Add" LabelPosition="Collapsed" Label="Seite einfügen"
                           ToolTipService.ToolTip="Seite einfügen" Click="OnInsertPage" />

@@ -46,7 +46,7 @@ public sealed partial class MainWindow : Window
         pages = new PagesController(Scroller, PagesPanel, tools, inkTools, undo, () => RecognizeButton.IsChecked == true);
         dialogs = new Dialogs(() => Content.XamlRoot, () => pages.Views);
         session = new DocumentSession(AppWindow.Id, pages, dialogs, messages, settings, () => ProjectFolder,
-            () => inkTools.Selection.Current?.IsPreviewing == true);
+            () => inkTools.Selection.IsDragging);
         sync = new SyncController(session, dialogs, messages);
         var explorerCommands = new ExplorerCommands(Explorer, session, sync, dialogs, messages, FocusDocument, RefreshExplorer, index =>
         {
@@ -54,11 +54,10 @@ public sealed partial class MainWindow : Window
             pages.ScrollToPage(index);
         });
         edit = new EditCommands(inkTools.Selection, pages, undo, messages, () => Toolbar.ActiveTool = SelectButton);
-        var selectionFlyout = new SelectionFlyout(edit, Root);
-        export = new PdfExportCommand(AppWindow.Id, session, messages, () => inkTools.Selection.Current?.IsPreviewing == true);
-        inkTools.Selection.SelectionChanged += (_, _) => selectionFlyout.ShowFor(inkTools.Selection.Current);
-        inkTools.Selection.DragStarted += (_, _) => selectionFlyout.Hide();
-        dialogs.Opening += (_, _) => selectionFlyout.Hide();
+        var selectionCommands = new SelectionCommands(SelectionCommandsPanel,
+            [CutSelectionButton, DuplicateSelectionButton, DeleteSelectionButton]);
+        export = new PdfExportCommand(AppWindow.Id, session, messages, () => inkTools.Selection.IsDragging);
+        inkTools.Selection.SelectionChanged += (_, _) => selectionCommands.ShowFor(inkTools.Selection.Current);
 
         ShapeChoice.SelectedIndex = (int)settings.Shape;
         SelectModeChoice.SelectedIndex = (int)settings.SelectMode;
@@ -238,12 +237,20 @@ public sealed partial class MainWindow : Window
 
     private void OnUndo(object sender, RoutedEventArgs e)
     {
+        if (edit.RefusedWhileDragging("Rückgängig"))
+        {
+            return;
+        }
         inkTools.Selection.Clear(); // undo may replace the selected strokes
         undo.Undo();
     }
 
     private void OnRedo(object sender, RoutedEventArgs e)
     {
+        if (edit.RefusedWhileDragging("Wiederholen"))
+        {
+            return;
+        }
         inkTools.Selection.Clear();
         undo.Redo();
     }

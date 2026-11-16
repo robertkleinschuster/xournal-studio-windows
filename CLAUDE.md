@@ -75,7 +75,8 @@ arrows), math exercises long formulas in several colors.
 - **One selection tool** (user, 2026-11-15: "Vereinheitlichung"): Auswählen = lasso or rectangle for strokes and
   pictures; a rectangle on a PDF page also marks that area – copying takes what is seen (rendered PDF + ink and
   pictures in it). Selected, pasted and duplicated content is selected the same way: move, scale (corners),
-  duplicate, cut/copy, delete (commands in a transient CommandBarFlyout at the selection, like selected text).
+  duplicate, cut/copy, delete (commands as contextual buttons in the command row while something is selected –
+  decided 2026-11-16 instead of a flyout at the selection, see Decided).
 - **Decisions (2026-11-15):** eraser = native Windows ink eraser (whole strokes; Windows has no partial eraser – the
   partial eraser is an agreed exception since 2026-11-16, see below); shape recognition = Windows `InkAnalyzer`; straight lines also with the Windows ruler (stencil button).
   Selection and shapes are `InkToolbarCustomToolButton`s built after Microsoft's pattern ("Pen interactions
@@ -120,7 +121,7 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   `InkTools` (routes pen/mouse input on the page to `SelectionTool` or `ShapeTool`; barrel → selection),
   `Selection` (selected strokes/pictures, frame + corner handles, live preview, commit as `TransformEdit`),
   `EditCommands` (cut/copy/paste/duplicate/delete/select all; pasted content placed at the left margin below the
-  page's content and selected), `SelectionFlyout`, `TasksView` + `TaskItem` (todo.txt pane), `PartialEraser`
+  page's content and selected), `SelectionCommands` (the selection's contextual buttons in the command row), `TasksView` + `TaskItem` (todo.txt pane), `PartialEraser`
   (circle cursor, cuts with `Model/StrokeEraser`, one undo step per drag), `PdfExportCommand` (picker, never over the
   background PDF),
   `ExplorerView` + `ExplorerItem` (TreeView of the project folder in the SplitView pane, git colors incl. folders,
@@ -248,8 +249,12 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   isolated).
 - `CommandBarFlyout` with `ShouldConstrainToRootBounds = false`, `ShowMode = Transient` and
   `OverlayInputPassThroughElement` = the window's root: drawn above the ink, a pen tap beside it reaches the page.
-  It stays open over ContentDialogs – `Dialogs.Opening` closes it first. Its buttons are icon-only
-  (`LabelPosition = Collapsed`; labels wrapped) with tooltips.
+  It stays open over ContentDialogs. **But while it is open, the release of a barrel drag (pen + right button)
+  reaches no XAML element** (sandbox 2026-11-16, synthetic pen): not the page's surface (`CapturePointer` returned
+  true), not the window root with `handledEventsToo`, no PointerCaptureLost/Canceled; pen-tip releases arrive, and
+  without the flyout the barrel release arrives. Hiding it at the press or at the first move does not help (the
+  windowed popup has the pointer from the press). So a barrel move was only previewed, never committed. Not used any
+  more for the selection (see Decided); never lay a windowed popup over the page where the barrel drags.
 - Accelerators of the menu (Ctrl+A/C/V/X/D, Del) do not fire while a TextBox has focus (sandbox: Ctrl+A, Del in the
   task box edited the text, the page selection stayed).
 - `RegisterApplicationRestart` (kernel32) is registered at start: Windows restarts the app after a crash (after
@@ -312,7 +317,14 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 - `examples/Schaltungen.xopp` reset. Reviews (12 rounds) converged on edge cases; `overnight` merged into main 2026-11-16 (f37018e).
 - PDF export approved and done 2026-11-16. Later candidates: pages of another PDF, page reordering, a text tool.
 - Still open: report the ink-over-dialog bug / comment on PR #12292 (public, needs approval).
-- **BLOCKER found 2026-11-16 03:30 (sandbox, synthetic pen) – needs the user's decision:** while the selection's
+- **Selection commands in the command row (decided by Claude 2026-11-16 night, user please confirm):** the transient
+  CommandBarFlyout at the selection swallowed the barrel release (Facts), so a barrel move never stuck – the agreed
+  core (barrel = lasso and move) wins over the flyout. Ausschneiden/Kopieren/Duplizieren/Löschen are contextual
+  AppBarButtons in the command row while something is selected (`SelectionCommands`); nothing lies over the page.
+  Verified in the sandbox: barrel lasso → barrel move is committed → Del deletes. Other options considered: a flyout
+  inside the XAML tree (drawn under the ink), Win32 `GetPointerInfo` (app logic around a WinUI bug), a report to
+  microsoft-ui-xaml (public, needs approval). Earlier text of the issue, for the record:
+  while the selection's
   CommandBarFlyout is open (transient, `ShouldConstrainToRootBounds = false` = a windowed popup, needed to be drawn
   above the ink), the **release of a barrel drag** (pen + right button) reaches no XAML element – not the page's
   surface (capture was taken: `CapturePointer` true), not the window root with `handledEventsToo`, no

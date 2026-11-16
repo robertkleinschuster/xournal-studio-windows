@@ -6,9 +6,6 @@ namespace XournalStudio.Views;
 /// <summary>The app's ContentDialogs: confirmations and name input, all shown through <see cref="ShowAsync"/>.</summary>
 public sealed class Dialogs(Func<XamlRoot> root, Func<IEnumerable<PageView>> pages)
 {
-    /// <summary>Raised before a dialog opens (flyouts at the page close: they would stay above the dialog).</summary>
-    public event EventHandler? Opening;
-
     // WinUI shows one ContentDialog at a time (a second ShowAsync throws): later ones wait for the open one.
     private readonly SemaphoreSlim oneAtATime = new(1, 1);
 
@@ -32,7 +29,6 @@ public sealed class Dialogs(Func<XamlRoot> root, Func<IEnumerable<PageView>> pag
 
     private async Task<ContentDialogResult> ShowNowAsync(ContentDialog dialog)
     {
-        Opening?.Invoke(this, EventArgs.Empty);
         dialog.XamlRoot = root();
         var views = pages().ToList();
         foreach (var view in views)

@@ -40,9 +40,6 @@ public sealed class SelectionTool(UndoStack undo)
     /// <summary>A selection was made, changed (moved, scaled) or cleared.</summary>
     public event EventHandler? SelectionChanged;
 
-    /// <summary>A drag began (the selection's commands make room).</summary>
-    public event EventHandler? DragStarted;
-
     /// <param name="mode">Lasso or rectangle for a new selection (the barrel button always lassos).</param>
     public void Begin(PageView page, Point p, SelectMode mode)
     {
@@ -81,7 +78,6 @@ public sealed class SelectionTool(UndoStack undo)
                 gesture = Gesture.Rectangle;
             }
         }
-        DragStarted?.Invoke(this, EventArgs.Empty);
     }
 
     public void Move(Point p)
@@ -161,7 +157,10 @@ public sealed class SelectionTool(UndoStack undo)
         }
     }
 
-    /// <summary>No selection (also in the middle of a drag: undo, delete or paste by keyboard; the drag is reverted).</summary>
+    /// <summary>
+    /// No selection. In the middle of a drag the drag is reverted – commands wait for it instead
+    /// (<see cref="EditCommands.RefusedWhileDragging"/>); a new selection by the pen ends it this way.
+    /// </summary>
     public void Clear()
     {
         if (Current == null)
