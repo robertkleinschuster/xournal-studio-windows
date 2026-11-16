@@ -390,11 +390,14 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 - **Pages stay (user, 2026-11-16 evening):** one InkCanvas per page as the file has them; a continuous canvas with
   pages only on export was considered and dropped (upstream .xopp keeps every element on one page, page sizes and
   backgrounds differ, a document-tall InkCanvas runs into surface size limits, every stroke across a boundary would
-  need a hidden decision). Instead a selection moves across pages: while dragged its page is drawn above the others
-  (`Canvas.ZIndex`), the running pen's events from another page's presenter are converted to the drag's page
-  (`InkTools.LocalPosition`), near the view's edge the pages scroll (`DragAutoScroll`, timer: it goes on while the pen
-  holds still), and dropped on another page the content moves there (`EditCommands.MoveToPage`: the file's own elements
-  added to the target, all or nothing, then taken from their page; one undo step `CombinedEdit` – `IPageEdit.Touches`
-  lets a deleted page drop it from the history). Undo is one history in time order for the document.
+  need a hidden decision). Instead a selection moves across pages. Each page's ink is drawn only within its page
+  (WinUI sizes the InkCanvas' `ContentExternalOutputLink` PlacementVisual to the control – ink moved beyond it by
+  `PointTransform` is cut off; z-order does not help), so as soon as the pen of a moved selection is over another page
+  the content goes there (`SelectionTool.HandOverIfOverOtherPage` → `EditCommands.TransferToPage`: the file's own
+  elements added to the target, all or nothing, then taken from their page) and the drag goes on from there
+  (`DragChangedPage` → `InkTools.FollowDrag`). The running pen's events from another page's presenter are converted to
+  the drag's page (`InkTools.LocalPosition`); near the view's edge the pages scroll (`DragAutoScroll`, timer: it goes on
+  while the pen holds still). The whole drag – hand-overs and the final move – is one undo step (`CombinedEdit`;
+  `IPageEdit.Touches` lets a deleted page drop it from the history). Undo is one history in time order for the document.
 - **PDF export:** PDFsharp pinned to 6.2.4, the last MIT version (6.5.0 is AGPL-3.0 with license acceptance – a
   license change for this project is the user's decision).

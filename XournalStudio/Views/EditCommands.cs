@@ -198,37 +198,39 @@ public sealed class EditCommands(
     }
 
     /// <summary>
-    /// Moves a selection dropped on another page there (one undo step for both pages): its elements, transformed by
-    /// <paramref name="m"/> from where they were before the drag into the target's coordinates, are added to the target
-    /// and selected there, then taken from their page. Nothing is taken if adding fails.
+    /// Hands a dragged selection over to another page: its elements, transformed by <paramref name="m"/> from where
+    /// they were before the drag into the target's coordinates, are added to the target, then taken from their page.
+    /// Returns what was added and the edit of both pages (not recorded: the drag records itself), or null when nothing
+    /// moved (the user was told) – all or nothing.
     /// </summary>
-    public void MoveToPage(Selection current, PageView target, Matrix3x2 m)
+    public (List<InkStroke> Strokes, List<XElement> Images, IPageEdit Edit)? TransferToPage(Selection current,
+        PageView target, Matrix3x2 m)
     {
+        List<InkStroke> strokes = [];
         try
         {
             current.Revert(); // the elements as before the drag (m includes the move)
             var source = current.Page;
-            var strokes = PageEdit.SelectOnly(source, current.Strokes); // what is still on the page (now marked)
+            strokes = PageEdit.SelectOnly(source, current.Strokes); // what is still on the page (now marked)
             var images = current.Images.Where(i => i.Parent != null).ToList();
             var elements = images.Select(i => XoppClip.Transformed(i, m))
                 .Concat(strokes.Select(s => XoppClip.Transformed(source.ElementOf(s), m))).ToList();
             if (AddElements(target, elements, "move to page", allOrNothing: true) is not { } adding)
             {
                 strokes.ForEach(s => s.Selected = false);
-                return; // nothing could be added (said): the content stays where it was
+                return null; // nothing could be added (said): the content stays where it was
             }
             var removal = new PageEdit(source);
             removal.RemovedStrokes.AddRange(strokes);
             source.Ink!.DeleteSelected(); // the strokes marked above
             removal.RemoveImages(images);
-            selection.Clear();
-            undo.Push(new CombinedEdit([removal, adding]));
-            // Selected there, the tool stays (a barrel drag with the pen keeps the pen).
-            SelectAdded(target, adding.AddedStrokes.ToList(), adding.AddedImages.ToList(), "move to page", activateTool: false);
+            return (adding.AddedStrokes.ToList(), adding.AddedImages.ToList(), new CombinedEdit([removal, adding]));
         }
         catch (Exception e)
         {
+            strokes.ForEach(s => s.Selected = false);
             messages.Error("move to page", "Verschieben auf die andere Seite nicht möglich", e);
+            return null;
         }
     }
 
@@ -309,15 +311,11 @@ public sealed class EditCommands(
 
     // Selects what was just added (and undoable). A failure here is not a failed paste or duplicate: logged and said
     // as what it is.
-    private void SelectAdded(PageView view, List<InkStroke> strokes, List<XElement> images, string operation,
-        bool activateTool = true)
+    private void SelectAdded(PageView view, List<InkStroke> strokes, List<XElement> images, string operation)
     {
         try
         {
-            if (activateTool)
-            {
-                activateSelectTool();
-            }
+            activateSelectTool();
             selection.Select(view, strokes, images);
         }
         catch (Exception e)

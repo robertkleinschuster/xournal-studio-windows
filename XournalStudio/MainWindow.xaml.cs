@@ -63,7 +63,8 @@ public sealed partial class MainWindow : Window
         // A selection dragged across pages: scrolling at the view's edge, dropped on another page it moves there.
         inkTools.AutoScroll = new DragAutoScroll(Scroller);
         inkTools.Selection.OtherPageAt = pages.OtherPageAt;
-        inkTools.Selection.MovedToPage += edit.MoveToPage;
+        inkTools.Selection.TransferToPage = edit.TransferToPage;
+        inkTools.Selection.DragChangedPage += inkTools.FollowDrag;
         var selectionCommands = new SelectionCommands(CopySelectionButton,
             [CutSelectionButton, DuplicateSelectionButton, DeleteSelectionButton]);
         export = new PdfExportCommand(AppWindow.Id, session, messages);

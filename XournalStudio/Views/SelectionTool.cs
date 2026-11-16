@@ -50,10 +50,19 @@ public sealed class SelectionTool(UndoStack undo)
     public Func<PageView, Point, (PageView Page, Vector2 Offset)?> OtherPageAt { get; set; } = (_, _) => null;
 
     /// <summary>
-    /// The selection was dropped on another page: the handler moves its content there with this transform (from its
-    /// place before the drag into the target page's coordinates) and selects it.
+    /// Moves a selection's content to another page with this transform (from its place before the drag into the target
+    /// page's coordinates); returns what is there now and the edit (not recorded), null if it stayed (set by the owner).
     /// </summary>
-    public event Action<Selection, PageView, Matrix3x2>? MovedToPage;
+    public Func<Selection, PageView, Matrix3x2, (List<InkStroke> Strokes, List<XElement> Images, IPageEdit Edit)?> TransferToPage
+    { get; set; } = (_, _, _) => null;
+
+    /// <summary>A dragged selection went on to another page: the drag continues there (the pen in its coordinates).</summary>
+    public event Action<PageView, Point>? DragChangedPage;
+
+    // The steps of the running drag that are already made (hand-overs to other pages); recorded as one undo step with
+    // the final move when the drag ends.
+    private readonly List<IPageEdit> dragEdits = new();
+    private bool handOverFailed; // once per drag: a failed hand-over is said once, the content stays on its page
 
     /// <summary>A press at <paramref name="p"/> would move (inside) or scale (corner) the selection.</summary>
     public bool Grabs(PageView page, Point p) =>
@@ -66,6 +75,8 @@ public sealed class SelectionTool(UndoStack undo)
         start = p;
         moved = false;
         gesture = Gesture.None;
+        dragEdits.Clear();
+        handOverFailed = false;
         if (Current?.View == page && Current.HasContent)
         {
             int corner = Current.HandleAt(p);
@@ -81,7 +92,7 @@ public sealed class SelectionTool(UndoStack undo)
             }
             if (gesture != Gesture.None)
             {
-                // Dragged content is drawn above the other pages (it may cross them), until the drag ends.
+                // The dragged pictures (XAML) are drawn above the neighbouring pages until the drag ends.
                 Canvas.SetZIndex(page, 1);
             }
         }
@@ -117,6 +128,7 @@ public sealed class SelectionTool(UndoStack undo)
                 break;
             case Gesture.Move:
                 Current?.Preview(Matrix3x2.CreateTranslation((float)(p.X - start.X), (float)(p.Y - start.Y)));
+                HandOverIfOverOtherPage(p);
                 break;
             case Gesture.Scale:
                 Current?.Preview(Matrix3x2.CreateScale((float)ScaleFactor(p), new Vector2((float)anchor.X, (float)anchor.Y)));
@@ -126,6 +138,11 @@ public sealed class SelectionTool(UndoStack undo)
 
     public void End(Point p)
     {
+        if (gesture == Gesture.Move)
+        {
+            HandOverIfOverOtherPage(p); // released over another page without a move there first
+            p = lastOnPage ?? p;
+        }
         var page = view!;
         var finished = gesture;
         var points = lasso?.Points.ToList();
@@ -153,15 +170,63 @@ public sealed class SelectionTool(UndoStack undo)
                 Clear();
                 SelectPictureAt(page, p);
                 break;
-            case Gesture.Move when Current != null && OtherPageAt(page, p) is { } target:
-                // Dropped on another page: the content goes there (as Xournal++ does), where it was shown.
-                MovedToPage?.Invoke(Current, target.Page, Current.Live * Matrix3x2.CreateTranslation(target.Offset));
-                break;
             case Gesture.Move or Gesture.Scale when Current != null:
-                Current.Commit(undo);
+                RecordDrag(Current.Commit());
                 SelectionChanged?.Invoke(this, EventArgs.Empty);
                 break;
         }
+        RecordDrag(null); // hand-overs of a drag that ended otherwise (they are made)
+    }
+
+    // The pen's last place, in the page's coordinates, after a hand-over during End (null: no hand-over).
+    private Point? lastOnPage;
+
+    /// <summary>
+    /// The pen of a moved selection is over another page: the content goes there now (as Xournal++ keeps every element
+    /// on one page; each page's ink is drawn only within the page, so content dragged beyond it would be cut off), and
+    /// the drag goes on from there.
+    /// </summary>
+    private void HandOverIfOverOtherPage(Point p)
+    {
+        lastOnPage = null;
+        if (handOverFailed || Current is not { } from || OtherPageAt(view!, p) is not { } target)
+        {
+            return;
+        }
+        if (TransferToPage(from, target.Page, from.Live * Matrix3x2.CreateTranslation(target.Offset)) is not { } moved)
+        {
+            handOverFailed = true; // the user was told; the drag goes on with the content on its page
+            return;
+        }
+        dragEdits.Add(moved.Edit);
+        from.Remove();
+        Canvas.SetZIndex(view!, 0);
+        view = target.Page;
+        Canvas.SetZIndex(view, 1);
+        var q = new Point(p.X + target.Offset.X, p.Y + target.Offset.Y);
+        start = q; // the content is where it was shown: the move goes on from here
+        lastOnPage = q;
+        Current = new Selection(view, moved.Strokes, moved.Images, null);
+        SelectionChanged?.Invoke(this, EventArgs.Empty);
+        DragChangedPage?.Invoke(view, q);
+    }
+
+    // Records the drag as one undo step: its hand-overs and its final move (if any).
+    private void RecordDrag(IPageEdit? last)
+    {
+        if (last != null)
+        {
+            dragEdits.Add(last);
+        }
+        if (dragEdits.Count == 1)
+        {
+            undo.Push(dragEdits[0]);
+        }
+        else if (dragEdits.Count > 1)
+        {
+            undo.Push(new CombinedEdit(dragEdits.ToList()));
+        }
+        dragEdits.Clear();
     }
 
     public void Cancel()
@@ -175,6 +240,7 @@ public sealed class SelectionTool(UndoStack undo)
             Current?.Revert();
             SelectionChanged?.Invoke(this, EventArgs.Empty);
         }
+        RecordDrag(null); // hand-overs already made stay (and can be undone)
         RemoveFeedback();
         gesture = Gesture.None;
     }
@@ -204,6 +270,7 @@ public sealed class SelectionTool(UndoStack undo)
         {
             Current.Revert();
             gesture = Gesture.None;
+            RecordDrag(null); // hand-overs already made stay (and can be undone)
         }
         Current.Remove();
         Current = null;

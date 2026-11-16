@@ -122,15 +122,15 @@ public sealed class Selection
         PlaceFeedback(XoppImage.Transform(Bounds, m));
     }
 
-    /// <summary>Writes the previewed transform to the page and records it for undo. False: nothing changed.</summary>
-    public bool Commit(UndoStack undo)
+    /// <summary>Writes the previewed transform to the page; returns its undo step (null: nothing changed).</summary>
+    public IPageEdit? Commit()
     {
         var m = live;
         live = Matrix3x2.Identity;
         if (m.IsIdentity)
         {
             EndPreview();
-            return false;
+            return null;
         }
         // A transform other than identity comes only from Preview, which set them (keys stay the same objects: CsWinRT
         // keeps one wrapper per ink stroke).
@@ -142,11 +142,11 @@ public sealed class Selection
             Page.RecordTransform(stroke, m); // the ink shows it already
         }
         Page.TransformImages(Images, m); // pictures are redrawn at the new place
-        undo.Push(new TransformEdit(Page, before, Page.CapturePlacement(Strokes, Images)));
+        var edit = new TransformEdit(Page, before, Page.CapturePlacement(Strokes, Images));
         Area = null;
         Bounds = ContentBounds();
         PlaceFeedback(Bounds);
-        return true;
+        return edit;
     }
 
     /// <summary>Back to where the drag began (the drag was canceled).</summary>

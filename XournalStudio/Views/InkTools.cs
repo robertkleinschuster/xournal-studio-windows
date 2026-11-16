@@ -60,6 +60,16 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
     /// <summary>The pen's eraser end hovers while erasing is partial: the presenters leave its input to the app.</summary>
     public Action TakeEraserEnd { get; set; } = () => { };
 
+    /// <summary>The dragged selection went on to another page (SelectionTool.DragChangedPage): the drag follows it.</summary>
+    public void FollowDrag(PageView page, Point p)
+    {
+        if (running is { Tool: InkTool.Select } r)
+        {
+            running = r with { Page = page };
+            last = p;
+        }
+    }
+
     /// <summary>Scrolls the pages while a selection drag holds the pen near the view's edge (set by the window).</summary>
     public DragAutoScroll? AutoScroll { get; set; }
 
