@@ -45,14 +45,17 @@ public static class StrokeConverter
     /// </summary>
     public static StrokeShape? ReadShape(XElement e)
     {
-        var points = ReadPoints(e.Value);
+        var points = ReadPoints(e.Value).Points;
         int count = points.Count;
         if (count == 0)
         {
             return null;
         }
         var widths = ParseNumbers((string?)e.Attribute("width") ?? "1");
-        double width = widths.Count > 0 && widths[0] > 0 ? widths[0] : 1; // as the ink (FromXml): screen = export
+        // Width 0: a stroke drawn from the file has no outline (upstream: only its filling); one shown as ink is drawn
+        // 1 wide (FromXml), and so exported.
+        double width = widths.Count > 0 && widths[0] > 0 ? widths[0]
+            : widths.Count > 0 && widths[0] == 0 && NeedsOwnDrawing(e) ? 0 : 1;
         var segments = new List<double>(Math.Max(0, count - 1));
         for (int i = 0; i < count - 1; i++)
         {
@@ -97,14 +100,13 @@ public static class StrokeConverter
         IsLineStyle((string?)e.Attribute("style")) ||
         (string?)e.Attribute("capStyle") is "butt" or "square";
 
-    // A style upstream's parseStyle recognizes – also a custom one too damaged to draw dashed: such a stroke is never
-    // rewritten as ink (that would drop its style).
-    private static bool IsLineStyle(string? style) =>
-        style is "dash" or "dashdot" or "dot" || style?.StartsWith("cust: ", StringComparison.Ordinal) == true;
+    // Any line style (also one this app or upstream cannot draw dashed): such a stroke is never rewritten as ink,
+    // which would drop the attribute. Solid strokes carry none ("plain" is upstream's name for solid).
+    private static bool IsLineStyle(string? style) => style is { Length: > 0 } and not "plain";
 
     public static InkStroke? FromXml(XElement e)
     {
-        var coords = ReadPoints(e.Value);
+        var coords = ReadPoints(e.Value).Points;
         int count = coords.Count;
         if (count == 0)
         {
@@ -198,47 +200,44 @@ public static class StrokeConverter
     /// </summary>
     public static void Transform(XElement e, Matrix3x2 m)
     {
-        // Pair by pair, as upstream reads the list: a readable pair is moved (in double: the file's numbers keep their
-        // precision, Vector2 would round them to float); a pair with a damaged number and a stray last number are
-        // written back exactly as read – never deleted.
-        var tokens = e.Value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-        var moved = new List<string>(tokens.Length);
-        for (int i = 0; i < tokens.Length; i += 2)
+        // Exactly the points shown and drawn as ink are moved (in double: the file's numbers keep their precision,
+        // Vector2 would round them to float); what follows them (a damaged number and everything after it, a stray
+        // last number) is written back exactly as read – never deleted.
+        var (points, after) = ReadPoints(e.Value);
+        var moved = new List<string>(points.Count * 2 + after.Count);
+        foreach (var p in points)
         {
-            if (i + 1 < tokens.Length && XoppFormat.ReadNumber(tokens[i]) is { } px && XoppFormat.ReadNumber(tokens[i + 1]) is { } py)
-            {
-                moved.Add(Format(px * m.M11 + py * m.M21 + m.M31));
-                moved.Add(Format(px * m.M12 + py * m.M22 + m.M32));
-            }
-            else
-            {
-                moved.AddRange(tokens.Skip(i).Take(2));
-            }
+            moved.Add(Format(p.X * m.M11 + p.Y * m.M21 + m.M31));
+            moved.Add(Format(p.X * m.M12 + p.Y * m.M22 + m.M32));
         }
+        moved.AddRange(after);
         e.Value = string.Join(' ', moved);
     }
 
     private static string Format(double v) => v.ToString("0.####", Inv);
 
-    // Widths and dashes by the file's one rule (XoppFormat.ReadNumber); the list ends at the first damaged one.
     /// <summary>
-    /// A stroke's points: its coordinate pairs by the file's one rule (XoppFormat.ReadNumber), a pair with a damaged
-    /// number left out – the same pairs <see cref="Transform"/> moves (it writes the damaged ones back as read).
+    /// A stroke's points: its coordinate pairs by the file's one rule (XoppFormat.ReadNumber), up to the first damaged
+    /// number – so point i keeps the width of segment i. The second part is what follows, as read. The one reader
+    /// for display, ink, bounds, export and <see cref="Transform"/>.
     /// </summary>
-    private static List<Point> ReadPoints(string s)
+    private static (List<Point> Points, List<string> After) ReadPoints(string s)
     {
         var tokens = s.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
         var points = new List<Point>(tokens.Length / 2);
-        for (int i = 0; i + 1 < tokens.Length; i += 2)
+        int i = 0;
+        for (; i + 1 < tokens.Length; i += 2)
         {
-            if (XoppFormat.ReadNumber(tokens[i]) is { } x && XoppFormat.ReadNumber(tokens[i + 1]) is { } y)
+            if (XoppFormat.ReadNumber(tokens[i]) is not { } x || XoppFormat.ReadNumber(tokens[i + 1]) is not { } y)
             {
-                points.Add(new Point(x, y));
+                break;
             }
+            points.Add(new Point(x, y));
         }
-        return points;
+        return (points, tokens.Skip(i).ToList());
     }
 
+    // Widths and dashes by the file's one rule (XoppFormat.ReadNumber); the list ends at the first damaged one.
     private static List<double> ParseNumbers(string s)
     {
         var result = new List<double>();
