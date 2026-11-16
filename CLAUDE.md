@@ -312,6 +312,21 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 - `examples/Schaltungen.xopp` reset. Reviews (12 rounds) converged on edge cases; `overnight` merged into main 2026-11-16 (f37018e).
 - PDF export approved and done 2026-11-16. Later candidates: pages of another PDF, page reordering, a text tool.
 - Still open: report the ink-over-dialog bug / comment on PR #12292 (public, needs approval).
+- **BLOCKER found 2026-11-16 03:30 (sandbox, synthetic pen) – needs the user's decision:** while the selection's
+  CommandBarFlyout is open (transient, `ShouldConstrainToRootBounds = false` = a windowed popup, needed to be drawn
+  above the ink), the **release of a barrel drag** (pen + right button) reaches no XAML element – not the page's
+  surface (capture was taken: `CapturePointer` true), not the window root with `handledEventsToo`, no
+  PointerCaptureLost/Canceled. Pen-tip releases arrive (the scale/duplicate steps work), and without the flyout the
+  barrel release arrives (tested). Effect: a barrel move of a selection that shows its command bar stays a preview –
+  never committed; the selection counts as dragged (save refused "Erst loslassen", edit commands refused) until the
+  next gesture, which reverts it. Existed before 2026-11-16 too (Del masked it: Clear reverts and deletes). Hiding
+  the flyout at the press or at the first move does not help (the popup has the pointer from the press). Not yet
+  verified with the real pen on the device. Options: (a) no command bar for barrel-made selections, and hide it while
+  the barrel is down near it if XAML sees barrel hover; (b) a command bar inside the XAML tree (constrained) – it is
+  then drawn under the ink (experimental InkCanvas, see Facts); (c) commands only in the menu/keys (no bar);
+  (d) read the pointer's state with Win32 `GetPointerInfo` when a command meets a "drag" whose release was lost
+  (platform API, but app logic around a WinUI bug); (e) report to microsoft-ui-xaml (public, needs approval).
+  `UiTests` step 03e shows it ("Löschen: nicht ausgeführt").
 - **Questions for the user (review findings kept deliberately, 2026-11-16):**
   - Save As of a document with an *attached* PDF or picture background (`domain="attach"`, `<doc>.xopp.bg…`): the new
     file refers to the old document's attachment by path; upstream copies the attachment next to the new file.

@@ -21,10 +21,25 @@ public sealed class EditCommands(
     private const double PdfAreaPixelsPerPoint = 3; // 216 dpi: sharp text when pasted at the original size
 
     /// <summary>Deletes the selected strokes and pictures (undoable). False: nothing selected.</summary>
+    /// <summary>
+    /// The one rule while the selection is being moved or scaled (<see cref="SelectionTool.IsDragging"/>): a command
+    /// that reads or changes content is refused and the user is told – the move is never lost or measured mid-way.
+    /// True: refused. Checked when a command starts and again after it waited (clipboard, rendering).
+    /// </summary>
+    public bool RefusedWhileDragging(string command)
+    {
+        if (!selection.IsDragging)
+        {
+            return false;
+        }
+        messages.Show(InfoBarSeverity.Informational, $"{command}: nicht ausgeführt", "Erst loslassen – die Auswahl wird gerade verschoben.");
+        return true;
+    }
+
     public bool Delete()
     {
         var current = selection.Current;
-        if (current == null || !current.HasContent || selection.IsDragging)
+        if (current == null || !current.HasContent || RefusedWhileDragging("Löschen"))
         {
             return false;
         }
@@ -51,7 +66,7 @@ public sealed class EditCommands(
         {
             return false;
         }
-        if (selection.IsDragging)
+        if (RefusedWhileDragging("Kopieren"))
         {
             return false; // mid-drag the content is between two places
         }
@@ -91,7 +106,7 @@ public sealed class EditCommands(
             messages.Show(InfoBarSeverity.Informational, "Nur kopieren", "Ein PDF-Bereich lässt sich kopieren, nicht ausschneiden.");
             return;
         }
-        if (copied != null && await CopyAsync() && selection.Current == copied)
+        if (copied != null && await CopyAsync() && selection.Current == copied && !RefusedWhileDragging("Ausschneiden (kopiert)"))
         {
             Delete(); // only if the selection is still the one copied (a tap may have changed it meanwhile)
         }
@@ -101,19 +116,27 @@ public sealed class EditCommands(
     public async Task PasteAsync()
     {
         var view = pages.CurrentView;
-        if (view == null || selection.IsDragging)
+        if (view == null || RefusedWhileDragging("Einfügen"))
         {
             return; // mid-drag: the place below the content and the dragged content itself are not settled
         }
         try
         {
             var clip = await ClipboardService.GetClipAsync();
+            if (RefusedWhileDragging("Einfügen"))
+            {
+                return; // a drag began while the clipboard was read
+            }
             if (clip == null && view.Page.Ink!.CanPasteFromClipboard())
             {
                 PasteInk(view);
                 return;
             }
             clip ??= await ClipboardService.GetBitmapAsClipAsync();
+            if (RefusedWhileDragging("Einfügen"))
+            {
+                return;
+            }
             if (clip == null)
             {
                 messages.Show(InfoBarSeverity.Informational, "Nichts zum Einfügen in der Zwischenablage",
@@ -136,7 +159,7 @@ public sealed class EditCommands(
     public void Duplicate()
     {
         var current = selection.Current;
-        if (current == null || !current.HasContent || selection.IsDragging)
+        if (current == null || !current.HasContent || RefusedWhileDragging("Duplizieren"))
         {
             return;
         }
@@ -158,7 +181,7 @@ public sealed class EditCommands(
     public void SelectAll()
     {
         var view = pages.CurrentView;
-        if (view == null)
+        if (view == null || RefusedWhileDragging("Alles auswählen"))
         {
             return;
         }
@@ -221,12 +244,12 @@ public sealed class EditCommands(
             messages.Show(InfoBarSeverity.Warning, "Nicht alles übernommen", why);
         }
         undo.Push(edit);
-        SelectAdded(view, edit.AddedStrokes.ToList(), edit.AddedImages.ToList());
+        SelectAdded(view, edit.AddedStrokes.ToList(), edit.AddedImages.ToList(), operation);
     }
 
     // Selects what was just added (and undoable). A failure here is not a failed paste or duplicate: logged and said
     // as what it is.
-    private void SelectAdded(PageView view, List<InkStroke> strokes, List<XElement> images)
+    private void SelectAdded(PageView view, List<InkStroke> strokes, List<XElement> images, string operation)
     {
         try
         {
@@ -235,7 +258,8 @@ public sealed class EditCommands(
         }
         catch (Exception e)
         {
-            messages.Error("select added content", "Eingefügt, aber nicht ausgewählt", e);
+            messages.Error($"{operation}: select the added content",
+                operation == "duplicate" ? "Dupliziert, aber nicht ausgewählt" : "Eingefügt, aber nicht ausgewählt", e);
         }
     }
 
@@ -266,30 +290,50 @@ public sealed class EditCommands(
         }
         catch
         {
-            // Strokes Windows ink added before it failed are taken back too (found by id).
-            edit.AddedStrokes.Clear();
-            edit.AddedStrokes.AddRange(ink.GetStrokes().Where(s => !before.Contains(s.Id)));
-            TakeBack(edit); // nothing half pasted; the caller reports the original error
+            // Strokes Windows ink added before it failed are taken back too (found by id); the caller reports the
+            // original error, nothing here may replace it.
+            try
+            {
+                edit.AddedStrokes.Clear();
+                edit.AddedStrokes.AddRange(ink.GetStrokes().Where(s => !before.Contains(s.Id)));
+            }
+            catch (Exception e)
+            {
+                DebugLog.Write("paste ink: finding the strokes to take back", e);
+            }
+            TakeBack(edit);
             throw;
         }
         undo.Push(edit);
-        SelectAdded(view, edit.AddedStrokes.ToList(), []);
+        SelectAdded(view, edit.AddedStrokes.ToList(), [], "paste");
     }
 
     // Nothing was added: no undo step, the selection and tool stay as they were – and the user is told.
     private void ReportNothingAdded(string why) => messages.Show(InfoBarSeverity.Warning, "Nichts übernommen", why);
 
-    // Takes back what a paste or duplicate that failed had added – the edit's own undo; an error doing so is logged,
-    // the original one is what the caller reports.
+    // Takes back what a paste or duplicate that failed had added: its strokes, and its pictures if they were attached
+    // (nothing else an undo does applies). An error doing so is logged; the original one is what the caller reports.
     private static void TakeBack(PageEdit edit)
     {
         try
         {
-            edit.Undo();
+            PageEdit.RemoveStrokes(edit.Page, edit.AddedStrokes);
         }
         catch (Exception e)
         {
-            DebugLog.Write("taking back a failed add", e);
+            DebugLog.Write("taking back the strokes of a failed add", e);
+        }
+        var attached = edit.AddedImages.Where(i => i.Parent != null).ToList();
+        if (attached.Count > 0)
+        {
+            try
+            {
+                edit.Page.RemoveImages(attached);
+            }
+            catch (Exception e)
+            {
+                DebugLog.Write("taking back the pictures of a failed add", e);
+            }
         }
     }
 
