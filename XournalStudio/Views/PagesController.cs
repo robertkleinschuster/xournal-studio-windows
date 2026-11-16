@@ -89,6 +89,7 @@ public sealed class PagesController
         document = doc;
         pdf = background;
         inkTools.CancelGestureOn(null); // a drag on the old pages ends with them
+        inkTools.ReleaseEraserEnd(); // the new pages' ink starts with the pen as ink
         inkTools.Selection.Clear();
         undo.Clear();
         panel.Children.Clear();
@@ -117,12 +118,17 @@ public sealed class PagesController
         ScrollIntoView(view);
     }
 
-    public void Remove(int index)
+    /// <summary>Removes this page (taken by the page, not an index: the document may have changed meanwhile).</summary>
+    public void Remove(XoppPage page)
     {
         var doc = document!;
-        var page = doc.Pages[index];
+        int index = doc.Pages.IndexOf(page);
+        if (index < 0)
+        {
+            return; // not in the shown document any more
+        }
         var view = panel.Children[index] as PageView;
-        inkTools.CancelGestureOn(view); // only a drag on the removed page
+        inkTools.CancelGestureOn(null); // any drag: the pages below move up under the pen
         if (inkTools.Selection.Current?.View == view)
         {
             inkTools.Selection.Clear(); // a selection on another page (and its drag) stays

@@ -33,7 +33,7 @@ public sealed class Selection
     public Selection(PageView view, List<InkStroke> strokes, List<XElement> images, Rect? area)
     {
         View = view;
-        Strokes = strokes;
+        Strokes = strokes.Distinct().ToList(); // each stroke once: its element is moved once
         Images = images;
         Area = area;
         Bounds = area ?? ContentBounds();
@@ -127,9 +127,8 @@ public sealed class Selection
             EndPreview();
             return false;
         }
-        // Where the drag began (without a preview the strokes' transforms are still the committed ones).
-        var begun = starts ?? new Dictionary<InkStroke, Matrix3x2>();
-        var before = Page.CapturePlacement(Strokes, Images, s => begun.TryGetValue(s, out var t) ? t : s.PointTransform);
+        var begun = starts!; // a transform other than identity comes only from Preview, which set them
+        var before = Page.CapturePlacement(Strokes, Images, s => begun[s]);
         EndPreview();
         foreach (var stroke in Strokes)
         {

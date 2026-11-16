@@ -323,7 +323,7 @@ public sealed partial class MainWindow : Window
         {
             return;
         }
-        pages.Remove(index);
+        pages.Remove(page);
     }
 
     private void OnFitWidth(object sender, RoutedEventArgs e) => pages.FitWidth();
