@@ -95,10 +95,11 @@ public sealed class Selection
     {
         if (starts == null)
         {
-            starts = Strokes.ToDictionary(s => s, s => s.PointTransform);
-            foreach (var (stroke, start) in starts)
+            starts = new Dictionary<InkStroke, Matrix3x2>();
+            foreach (var stroke in Strokes)
             {
-                Page.BeginPreview(stroke, start);
+                starts[stroke] = stroke.PointTransform; // (a stroke listed twice is taken once)
+                Page.BeginPreview(stroke, stroke.PointTransform);
             }
         }
         foreach (var (stroke, start) in starts)
@@ -126,8 +127,9 @@ public sealed class Selection
             EndPreview();
             return false;
         }
-        var begun = starts!;
-        var before = Page.CapturePlacement(Strokes, Images, s => begun[s]);
+        // Where the drag began (without a preview the strokes' transforms are still the committed ones).
+        var begun = starts ?? new Dictionary<InkStroke, Matrix3x2>();
+        var before = Page.CapturePlacement(Strokes, Images, s => begun.TryGetValue(s, out var t) ? t : s.PointTransform);
         EndPreview();
         foreach (var stroke in Strokes)
         {

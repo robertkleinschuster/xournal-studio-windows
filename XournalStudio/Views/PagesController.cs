@@ -121,10 +121,14 @@ public sealed class PagesController
     {
         var doc = document!;
         var page = doc.Pages[index];
-        inkTools.CancelGestureOn(panel.Children[index] as PageView); // only a drag on the removed page
+        var view = panel.Children[index] as PageView;
+        inkTools.CancelGestureOn(view); // only a drag on the removed page
+        if (inkTools.Selection.Current?.View == view)
+        {
+            inkTools.Selection.Clear(); // a selection on another page (and its drag) stays
+        }
         doc.Pages.RemoveAt(index);
         panel.Children.RemoveAt(index);
-        inkTools.Selection.Clear();
         undo.Forget(page);
         OnViewsChanged();
         PagesChanged?.Invoke(this, EventArgs.Empty);

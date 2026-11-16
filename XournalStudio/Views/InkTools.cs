@@ -47,7 +47,7 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
         get => tool;
         set
         {
-            CancelGesture();
+            CancelGestureOn(null);
             if (value != InkTool.Select)
             {
                 Selection.Clear();
@@ -63,7 +63,7 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
         view.Surface.PointerMoved += (_, e) => OnMoved(view, e);
         view.Surface.PointerReleased += (_, e) => OnReleased(view, e);
         view.Surface.PointerCaptureLost += (_, _) => Finish(view, last);
-        view.Surface.PointerCanceled += (_, _) => CancelGesture();
+        view.Surface.PointerCanceled += (_, _) => CancelGestureOn(null);
         view.Surface.PointerEntered += (_, e) => OnMoved(view, e); // the eraser's circle appears where the pen comes in
         view.Surface.PointerExited += (_, _) => Eraser?.Hide();
     }
@@ -207,8 +207,9 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
     }
 
     /// <summary>
-    /// Ends a running drag without its result because its page is replaced or removed (<paramref name="on"/>: only a drag
-    /// on that page; null: any). The pointer is let go and the eraser end given back to the ink.
+    /// Ends a running drag without its result – the one way to cancel: the tool changed, the pointer was canceled, or its
+    /// page is replaced or removed (<paramref name="on"/>: only a drag on that page; null: any). The pointer is let go.
+    /// (A taken-over eraser end stays with the app until the tip hovers again, as after any touch – it may still be down.)
     /// </summary>
     public void CancelGestureOn(PageView? on)
     {
@@ -217,13 +218,8 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
             return;
         }
         var page = gesturePage;
-        bool erasing = gesture == InkTool.PartialEraser;
         CancelGesture();
         page?.Surface.ReleasePointerCaptures(); // (its CaptureLost finds no gesture any more)
-        if (erasing)
-        {
-            ReleaseEraserEnd();
-        }
     }
 
     private void CancelGesture()
