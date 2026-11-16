@@ -33,8 +33,8 @@ public sealed class Selection
     public Selection(PageView view, List<InkStroke> strokes, List<XElement> images, Rect? area)
     {
         View = view;
-        Strokes = strokes.Distinct().ToList(); // each stroke once: its element is moved once
-        Images = images;
+        Strokes = strokes.Distinct().ToList(); // each stroke and picture once: its element is moved once
+        Images = images.Distinct().ToList();
         Area = area;
         Bounds = area ?? ContentBounds();
         frame = new Rectangle { Stroke = AccentBrush, StrokeThickness = 1, StrokeDashArray = [4, 2] };
@@ -127,7 +127,9 @@ public sealed class Selection
             EndPreview();
             return false;
         }
-        var begun = starts!; // a transform other than identity comes only from Preview, which set them
+        // A transform other than identity comes only from Preview, which set them (keys stay the same objects: CsWinRT
+        // keeps one wrapper per ink stroke).
+        var begun = starts!;
         var before = Page.CapturePlacement(Strokes, Images, s => begun[s]);
         EndPreview();
         foreach (var stroke in Strokes)

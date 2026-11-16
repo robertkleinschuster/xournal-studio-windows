@@ -39,9 +39,9 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
         get => eraser;
         set
         {
-            if (gesture == InkTool.PartialEraser)
+            if (value != eraser && gesture == InkTool.PartialEraser)
             {
-                CancelGestureOn(null); // the running erase ends with the eraser it began with
+                CancelGestureOn(_ => true); // the running erase ends with the eraser it began with
             }
             eraser = value;
         }
@@ -49,6 +49,7 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
 
     private PartialEraser? eraser;
     private uint gesturePointer;
+    private uint? cancelledPointer; // its gesture was cancelled while it was down: nothing new until it is lifted
 
     /// <summary>True while the toolbar's eraser is the active tool.</summary>
     public Func<bool> EraserToolActive { get; set; } = () => false;
@@ -61,7 +62,7 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
         get => tool;
         set
         {
-            CancelGestureOn(null);
+            CancelGestureOn(_ => true);
             if (value != InkTool.Select)
             {
                 Selection.Clear();
@@ -76,12 +77,20 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
         view.Surface.PointerPressed += (_, e) => OnPressed(view, e);
         view.Surface.PointerMoved += (_, e) => OnMoved(view, e);
         view.Surface.PointerReleased += (_, e) => OnReleased(view, e);
-        view.Surface.PointerCaptureLost += (_, _) => Finish(view, last);
+        // A running gesture belongs to its pointer: another one (a palm, a finger beside the pen) neither moves, finishes
+        // nor cancels it.
+        view.Surface.PointerCaptureLost += (_, e) =>
+        {
+            if (e.Pointer.PointerId == gesturePointer)
+            {
+                Finish(view, last);
+            }
+        };
         view.Surface.PointerCanceled += (_, e) =>
         {
             if (e.Pointer.PointerId == gesturePointer)
             {
-                CancelGestureOn(null); // only the gesture's own pointer (a palm or finger beside it is not)
+                CancelGestureOn(_ => true);
             }
         };
         view.Surface.PointerEntered += (_, e) => OnMoved(view, e); // the eraser's circle appears where the pen comes in
@@ -150,7 +159,7 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
             {
                 ReleaseEraserEnd(); // the tip hovers: it will ink
             }
-            if (isPen && point.IsInContact && IsEraserEnd(point) && Eraser != null)
+            if (isPen && point.IsInContact && IsEraserEnd(point) && Eraser != null && e.Pointer.PointerId != cancelledPointer)
             {
                 // The eraser end was taken over during its touch (see PagesController): erasing goes on from here.
                 last = point.Position;
@@ -173,7 +182,7 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
             }
             return;
         }
-        if (gesturePage != view)
+        if (gesturePage != view || e.Pointer.PointerId != gesturePointer)
         {
             return;
         }
@@ -195,7 +204,11 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
 
     private void OnReleased(PageView view, PointerRoutedEventArgs e)
     {
-        if (gesture == InkTool.None || gesturePage != view)
+        if (e.Pointer.PointerId == cancelledPointer)
+        {
+            cancelledPointer = null; // lifted: it may begin again
+        }
+        if (gesture == InkTool.None || gesturePage != view || e.Pointer.PointerId != gesturePointer)
         {
             return;
         }
@@ -211,12 +224,10 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
         {
             return;
         }
-        var finished = gesture;
-        gesture = InkTool.None; // before anything else: releasing the capture raises PointerCaptureLost
-        gesturePage = null;
+        var (finished, _) = TakeGesture();
         if (finished == InkTool.PartialEraser)
         {
-            Eraser!.End();
+            eraser!.End();
         }
         else if (finished == InkTool.Select)
         {
@@ -229,20 +240,20 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
     }
 
     /// <summary>
-    /// Ends a running drag without its result – the one way to cancel: the tool changed, the pointer was canceled, or its
-    /// page is replaced or removed (<paramref name="on"/>: only a drag on that page; null: any). The pointer is let go.
-    /// (A taken-over eraser end stays with the app until the tip hovers again, as after any touch – it may still be down.)
+    /// Ends a running drag without its result – the one way to cancel: the tool or eraser changed, its pointer was
+    /// canceled, or its page is replaced or removed (<paramref name="affected"/>: whether the drag's page is concerned).
+    /// The pointer is let go and begins nothing new until it is lifted. (A taken-over eraser end stays with the app until
+    /// the tip hovers again, as after any touch – it may still be down.)
     /// </summary>
-    public void CancelGestureOn(PageView? on)
+    public void CancelGestureOn(Func<PageView, bool> affected)
     {
-        if (gesture == InkTool.None || (on != null && gesturePage != on))
+        if (gesture == InkTool.None || gesturePage == null || !affected(gesturePage))
         {
             return;
         }
-        var page = gesturePage;
-        var cancelled = gesture;
-        gesture = InkTool.None; // first: releasing the capture raises CaptureLost, which then finds no gesture
-        gesturePage = null;
+        var pointer = gesturePointer;
+        var (cancelled, page) = TakeGesture();
+        cancelledPointer = pointer;
         if (cancelled == InkTool.Select)
         {
             Selection.Cancel();
@@ -256,6 +267,16 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
             eraser?.End(); // what was erased stays erased (and can be undone)
         }
         page?.Surface.ReleasePointerCaptures();
+    }
+
+    // The running gesture and its page, now ended – first of all: releasing a capture raises CaptureLost, which then
+    // finds no gesture.
+    private (InkTool Gesture, PageView? Page) TakeGesture()
+    {
+        var taken = (gesture, gesturePage);
+        gesture = InkTool.None;
+        gesturePage = null;
+        return taken;
     }
 
     // The partial eraser takes the pen's eraser end, and with the eraser tool active also the pen tip and the mouse.

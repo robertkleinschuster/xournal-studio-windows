@@ -88,8 +88,7 @@ public sealed class PagesController
     {
         document = doc;
         pdf = background;
-        inkTools.CancelGestureOn(null); // a drag on the old pages ends with them
-        inkTools.ReleaseEraserEnd(); // the new pages' ink starts with the pen as ink
+        inkTools.CancelGestureOn(_ => true); // a drag on the old pages ends with them
         inkTools.Selection.Clear();
         undo.Clear();
         panel.Children.Clear();
@@ -128,10 +127,11 @@ public sealed class PagesController
             return; // not in the shown document any more
         }
         var view = panel.Children[index] as PageView;
-        inkTools.CancelGestureOn(null); // any drag: the pages below move up under the pen
+        // A drag on this page or below ends: those pages move up under the pen. One above goes on.
+        inkTools.CancelGestureOn(page => panel.Children.IndexOf(page) >= index);
         if (inkTools.Selection.Current?.View == view)
         {
-            inkTools.Selection.Clear(); // a selection on another page (and its drag) stays
+            inkTools.Selection.Clear(); // a selection on another page stays
         }
         doc.Pages.RemoveAt(index);
         panel.Children.RemoveAt(index);
