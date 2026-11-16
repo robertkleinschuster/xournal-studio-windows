@@ -28,7 +28,7 @@ public static class XoppFormat
         }
         for (int i = 0; i < 6; i++)
         {
-            if (!float.TryParse(parts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out v[i]))
+            if (!float.TryParse(parts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out v[i]) || !float.IsFinite(v[i]))
             {
                 return null;
             }

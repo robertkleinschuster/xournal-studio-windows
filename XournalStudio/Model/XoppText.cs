@@ -41,7 +41,7 @@ public sealed record XoppText(
         }
         string family = words.Count > 0 ? string.Join(' ', words).TrimEnd(',') : "Sans";
 
-        var transform = XoppFormat.ReadMatrix(e) ?? Matrix3x2.CreateTranslation((float)Number(e, "x", 0), (float)Number(e, "y", 0));
+        var transform = XoppFormat.ReadMatrix(e) ?? Matrix3x2.CreateTranslation(Coordinate(e, "x"), Coordinate(e, "y"));
         double? wrap = double.TryParse((string?)e.Attribute("wrap"), NumberStyles.Float, Inv, out double w) && w > 0 && double.IsFinite(w) ? w : null;
         var alignment = (string?)e.Attribute("align") switch
         {
@@ -50,7 +50,8 @@ public sealed record XoppText(
             _ => XoppTextAlignment.Left,
         };
         bool justify = (string?)e.Attribute("justify") is "true" or "1";
-        return new XoppText(e.Value, family, bold, italic, Number(e, "size", 12),
+        double size = Number(e, "size", 12);
+        return new XoppText(e.Value, family, bold, italic, size > 0 ? size : 12, // a font size must be positive
             XoppColor.Parse((string?)e.Attribute("color"), Microsoft.UI.Colors.Black), transform, wrap, alignment, justify);
     }
 
@@ -70,6 +71,9 @@ public sealed record XoppText(
         "monospace" or "mono" => "Courier New",
         _ => Family,
     };
+
+    // A position as float (the transform's type): values beyond float's range count as missing.
+    private static float Coordinate(XElement e, string name) => (float)Number(e, name, 0) is var f && float.IsFinite(f) ? f : 0;
 
     private static double Number(XElement e, string name, double fallback) =>
         double.TryParse((string?)e.Attribute(name), NumberStyles.Float, Inv, out double v) && double.IsFinite(v) ? v : fallback;

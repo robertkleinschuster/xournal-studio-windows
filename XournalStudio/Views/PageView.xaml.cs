@@ -273,8 +273,8 @@ public sealed partial class PageView : UserControl
         }
         catch (Exception e) // any failure of reading or decoding (async void: nothing may escape); logged
         {
-            DebugLog.Write($"picture background {path}: {e.GetType().Name} 0x{e.HResult:X8} {e.Message}");
-            if (release == backgroundRelease)
+            DebugLog.Write($"picture background {path}", e);
+            if (release == backgroundRelease && wanted == backgroundRequested) // not a load a newer one replaced
             {
                 backgroundFailed = true; // a sharper decode failed: the shown one (if any) stays, not retried
                 backgroundRequested = backgroundShown;

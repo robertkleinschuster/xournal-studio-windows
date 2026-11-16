@@ -14,6 +14,8 @@ public static class PictureRenderer
     {
         using var stream = await ToStreamAsync(data);
         var bitmap = new BitmapImage();
+        // Failures while decoding throw from SetSourceAsync; one reported later (when drawn) comes here.
+        bitmap.ImageFailed += (_, e) => DebugLog.Write($"picture: ImageFailed {e.ErrorMessage}");
         if (XoppImage.IsPdf(data))
         {
             var pdf = await PdfDocument.LoadFromStreamAsync(stream);

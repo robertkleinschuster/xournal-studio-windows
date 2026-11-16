@@ -338,6 +338,16 @@ public class FileFormatTests : IDisposable
         Assert.Equal(Windows.UI.Color.FromArgb(255, 255, 0, 0), ruling[0].Color);
     }
 
+    [Fact]
+    public void InvalidNumbersOfTextsFallBack()
+    {
+        var text = XoppText.Read(XElement.Parse("""<text font="Sans" size="0" x="1e300" y="5" matrix="1 0 0 1 NaN 5">x</text>"""));
+        Assert.Equal(12, text.Size); // a font size must be positive
+        Assert.Equal(new System.Numerics.Vector2(0, 5), text.Transform.Translation); // matrix with NaN ignored, x beyond float
+        Assert.Null(XoppFormat.ReadMatrix(XElement.Parse("""<image matrix="1 0 0 1 Infinity 0"/>""")));
+        Assert.Equal(12, XoppText.Read(XElement.Parse("""<text size="-3" x="0" y="0">x</text>""")).Size);
+    }
+
     // Whitespace-only text nodes depend on formatting, not content.
     private static XElement Normalize(XElement e)
     {
