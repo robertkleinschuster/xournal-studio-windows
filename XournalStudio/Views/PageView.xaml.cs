@@ -116,12 +116,9 @@ public sealed partial class PageView : UserControl
                 continue;
             }
             var bounds = XoppImage.GetBounds(element);
-            bool resized = Math.Abs(bounds.Width - image.Width) > 0.5;
-            image.RenderTransform = null; // the selection's live preview
-            Microsoft.UI.Xaml.Controls.Canvas.SetLeft(image, bounds.Left);
-            Microsoft.UI.Xaml.Controls.Canvas.SetTop(image, bounds.Top);
-            image.Width = bounds.Width;
-            image.Height = bounds.Height;
+            bool resized = Math.Abs(bounds.Width - (double)image.GetValue(PlacedWidthProperty)) > 0.5;
+            Place(image, element); // also ends the selection's live preview
+            image.SetValue(PlacedWidthProperty, bounds.Width);
             if (resized)
             {
                 LoadPicture(image, element, (uint)Math.Clamp(bounds.Width * picturePixelsPerPoint, 1, MaxPdfPixelWidth));
@@ -180,12 +177,29 @@ public sealed partial class PageView : UserControl
         foreach (var element in Page.Images)
         {
             var bounds = XoppImage.GetBounds(element);
-            var image = new Image { Width = bounds.Width, Height = bounds.Height, Stretch = Stretch.Fill, Tag = element };
-            Microsoft.UI.Xaml.Controls.Canvas.SetLeft(image, bounds.Left);
-            Microsoft.UI.Xaml.Controls.Canvas.SetTop(image, bounds.Top);
+            var image = new Image { Stretch = Stretch.Fill, Tag = element };
+            Place(image, element);
+            image.SetValue(PlacedWidthProperty, bounds.Width);
             ImagesLayer.Children.Add(image);
             LoadPicture(image, element, (uint)Math.Clamp(bounds.Width * pixelsPerPoint, 1, MaxPdfPixelWidth));
         }
+    }
+
+    // The width on the page a picture was decoded for (to decode again when it is scaled).
+    private static readonly DependencyProperty PlacedWidthProperty =
+        DependencyProperty.RegisterAttached("PlacedWidth", typeof(double), typeof(PageView), new PropertyMetadata(0.0));
+
+    /// <summary>Places a picture as the file says (see <see cref="XoppImage.GetPlacement"/>), moved by <paramref name="preview"/>.</summary>
+    public static void Place(Image image, XElement element, System.Numerics.Matrix3x2? preview = null)
+    {
+        var placement = XoppImage.GetPlacement(element);
+        image.Width = placement.Size.Width;
+        image.Height = placement.Size.Height;
+        var m = placement.Transform * (preview ?? System.Numerics.Matrix3x2.Identity);
+        image.RenderTransform = new MatrixTransform
+        {
+            Matrix = new Matrix { M11 = m.M11, M12 = m.M12, M21 = m.M21, M22 = m.M22, OffsetX = m.M31, OffsetY = m.M32 },
+        };
     }
 
     private static async void LoadPicture(Image image, XElement element, uint pixelWidth)

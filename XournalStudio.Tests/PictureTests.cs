@@ -69,4 +69,24 @@ public class PictureTests
         var layer = page.Snapshot().Elements("layer").First();
         Assert.Equal("image", layer.Elements().First().Name.LocalName); // first in the first layer again, under the stroke
     }
+
+    [Fact]
+    public void PicturesPlacedByAMatrixKeepItWhenMoved()
+    {
+        // Version 5: natural size 200x100 px, scaled by 0.5 and turned by 90 degrees, at 300,50.
+        var e = XElement.Parse("""<image natural_size="200 100" matrix="0 0.5 -0.5 0 300 50">AA==</image>""");
+        Assert.Equal(new Rect(250, 50, 50, 100), XoppImage.GetBounds(e));
+        var placement = XoppImage.GetPlacement(e);
+        Assert.Equal(new Size(200, 100), placement.Size);
+
+        XoppImage.SetBounds(e, new Rect(260, 70, 50, 100)); // moved by 10,20
+        Assert.Equal(new Rect(260, 70, 50, 100), XoppImage.GetBounds(e));
+        Assert.Null(e.Attribute("left")); // still placed by its matrix
+        Assert.Equal("0 0.5 -0.5 0 310 70", (string?)e.Attribute("matrix"));
+
+        var legacy = XElement.Parse("""<image left="10" top="20" right="110" bottom="70">AA==</image>""");
+        var p = XoppImage.GetPlacement(legacy);
+        Assert.Equal(new Size(100, 50), p.Size);
+        Assert.Equal(new System.Numerics.Vector2(10, 20), p.Transform.Translation);
+    }
 }

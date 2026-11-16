@@ -147,12 +147,16 @@ public static class PdfExport
         {
             return;
         }
-        var bounds = XoppImage.GetBounds(element);
+        var placement = XoppImage.GetPlacement(element);
         var stream = new MemoryStream(data, writable: false);
         keepOpen.Add(stream);
         XImage image = XoppImage.IsPdf(data) ? XPdfForm.FromStream(stream) : XImage.FromStream(stream);
         keepOpen.Add(image);
-        g.DrawImage(image, bounds.X, bounds.Y, bounds.Width, bounds.Height);
+        var state = g.Save();
+        var m = placement.Transform;
+        g.MultiplyTransform(new XMatrix(m.M11, m.M12, m.M21, m.M22, m.M31, m.M32));
+        g.DrawImage(image, 0, 0, placement.Size.Width, placement.Size.Height);
+        g.Restore(state);
     }
 
     // As on screen: the font's family, style and size in points, the box placed by the text's transform, wrapped at its

@@ -109,12 +109,7 @@ public sealed class Selection
         {
             if (View.FindPicture(image) is { } picture)
             {
-                var b = XoppImage.GetBounds(image);
-                var local = Matrix3x2.CreateTranslation((float)b.X, (float)b.Y) * m * Matrix3x2.CreateTranslation(-(float)b.X, -(float)b.Y);
-                picture.RenderTransform = new MatrixTransform
-                {
-                    Matrix = new Matrix { M11 = local.M11, M12 = local.M12, M21 = local.M21, M22 = local.M22, OffsetX = local.M31, OffsetY = local.M32 },
-                };
+                PageView.Place(picture, image, m);
             }
         }
         live = m;

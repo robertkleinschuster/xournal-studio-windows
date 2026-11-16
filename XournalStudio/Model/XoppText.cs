@@ -40,7 +40,7 @@ public sealed record XoppText(
         }
         string family = words.Count > 0 ? string.Join(' ', words).TrimEnd(',') : "Sans";
 
-        var transform = Matrix(e) ?? Matrix3x2.CreateTranslation((float)Number(e, "x", 0), (float)Number(e, "y", 0));
+        var transform = XoppFormat.ReadMatrix(e) ?? Matrix3x2.CreateTranslation((float)Number(e, "x", 0), (float)Number(e, "y", 0));
         double? wrap = double.TryParse((string?)e.Attribute("wrap"), NumberStyles.Float, Inv, out double w) && w > 0 ? w : null;
         var alignment = (string?)e.Attribute("align") switch
         {
@@ -61,25 +61,6 @@ public sealed record XoppText(
         "monospace" or "mono" => "Courier New",
         _ => Family,
     };
-
-    /// <summary>The upstream "matrix" attribute: xx yx xy yy x0 y0 (cairo order).</summary>
-    public static Matrix3x2? Matrix(XElement e)
-    {
-        var parts = ((string?)e.Attribute("matrix") ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        var v = new float[6];
-        if (parts.Length != 6)
-        {
-            return null;
-        }
-        for (int i = 0; i < 6; i++)
-        {
-            if (!float.TryParse(parts[i], NumberStyles.Float, Inv, out v[i]))
-            {
-                return null;
-            }
-        }
-        return new Matrix3x2(v[0], v[1], v[2], v[3], v[4], v[5]);
-    }
 
     private static double Number(XElement e, string name, double fallback) =>
         double.TryParse((string?)e.Attribute(name), NumberStyles.Float, Inv, out double v) ? v : fallback;
