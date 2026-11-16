@@ -79,9 +79,9 @@ public sealed partial class MainWindow : Window
         void ApplyEraserMode()
         {
             bool partial = PartialEraserButton.IsChecked == true;
+            inkTools.Eraser = partial ? eraser : null; // first: a running erase ends while the app still has the pen
             tools.EraserEndTakenOver = false;
             tools.PartialErasing = partial;
-            inkTools.Eraser = partial ? eraser : null;
             if (!partial)
             {
                 eraser.Hide();

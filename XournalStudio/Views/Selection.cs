@@ -33,7 +33,7 @@ public sealed class Selection
     public Selection(PageView view, List<InkStroke> strokes, List<XElement> images, Rect? area)
     {
         View = view;
-        Strokes = strokes.Distinct().ToList(); // each stroke and picture once: its element is moved once
+        Strokes = strokes.DistinctBy(s => s.Id).ToList(); // each stroke and picture once: its element is moved once
         Images = images.Distinct().ToList();
         Area = area;
         Bounds = area ?? ContentBounds();

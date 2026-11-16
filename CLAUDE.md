@@ -263,6 +263,9 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   60 s of running) or an update restart; the start then offers the recovery copy. Not tested (needs a real crash).
 - Windows Sandbox: a second `wsb start` right after `wsb stop` fails with CO_E_APPSINGLEUSE – wait until the old
   sandbox process is gone.
+- `dotnet test XournalStudio.Tests` crashed the test host twice on 2026-11-16 ("Der Testhostprozess ist abgestürzt",
+  "Fatal error", no stack; 32/33 of 73 tests ran), both times the first run right after a build; every repeat ran all
+  73, and `--blame-crash` did not reproduce it. Not investigated further – if it recurs, keep the `--blame-crash` dump.
 
 ## Testing
 

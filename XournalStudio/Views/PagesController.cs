@@ -89,6 +89,9 @@ public sealed class PagesController
         document = doc;
         pdf = background;
         inkTools.CancelGestureOn(_ => true); // a drag on the old pages ends with them
+        // A new document starts with the pen as ink (otherwise its first tip stroke could stay without ink until a hover
+        // reaches a page); an eraser end still touching while a document is replaced is the rare case.
+        inkTools.ReleaseEraserEnd();
         inkTools.Selection.Clear();
         undo.Clear();
         panel.Children.Clear();
@@ -128,7 +131,7 @@ public sealed class PagesController
         }
         var view = panel.Children[index] as PageView;
         // A drag on this page or below ends: those pages move up under the pen. One above goes on.
-        inkTools.CancelGestureOn(page => panel.Children.IndexOf(page) >= index);
+        inkTools.CancelGestureOn(gestureView => panel.Children.IndexOf(gestureView) >= index);
         if (inkTools.Selection.Current?.View == view)
         {
             inkTools.Selection.Clear(); // a selection on another page stays
