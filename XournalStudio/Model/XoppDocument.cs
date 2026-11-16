@@ -128,6 +128,7 @@ public sealed class XoppDocument
             doc.loadedPdfReference = ((string?)firstPdf.Attribute("domain"), (string?)firstPdf.Attribute("filename"));
             doc.PdfPath = ResolvePdfPath(referenceBase, doc.loadedPdfReference.Domain, doc.loadedPdfReference.Filename);
         }
+        ResolvePictureBackgrounds(doc.Pages, referenceBase);
         return doc;
     }
 
@@ -240,6 +241,35 @@ public sealed class XoppDocument
             new XAttribute("creator", XoppFormat.Creator),
             new XAttribute("fileversion", XoppFormat.FileVersion),
             new XElement("title", "Xournal++ document - see https://xournalpp.github.io/")));
+
+    // Picture backgrounds as upstream's LoadHandler::setBgPixmap: "attach" = "<document>.<filename>", "absolute" = the
+    // file (relative to the document's folder if not rooted), "clone" = the background of page number <filename>.
+    private static void ResolvePictureBackgrounds(List<XoppPage> pages, string referenceBase)
+    {
+        string dir = Path.GetDirectoryName(Path.GetFullPath(referenceBase))!;
+        foreach (var page in pages.Where(p => p.IsImageBackground))
+        {
+            var bg = page.Background;
+            string? domain = (string?)bg.Attribute("domain");
+            string? filename = (string?)bg.Attribute("filename");
+            if (string.IsNullOrEmpty(filename))
+            {
+                continue;
+            }
+            if (domain == "clone")
+            {
+                if (int.TryParse(filename, out int index) && index >= 0 && index < pages.Count)
+                {
+                    page.BackgroundImagePath = pages[index].BackgroundImagePath;
+                }
+                continue;
+            }
+            string path = domain == "attach"
+                ? referenceBase + "." + filename
+                : Path.GetFullPath(Path.Combine(dir, filename));
+            page.BackgroundImagePath = File.Exists(path) ? path : null; // not found: white, as upstream logs an error
+        }
+    }
 
     private static string? ResolvePdfPath(string xoppPath, string? domain, string? filename)
     {

@@ -7,7 +7,8 @@ using Windows.UI;
 
 namespace XournalStudio.Model;
 
-public enum BackgroundStyle { Plain, Lined, Ruled, Graph, Dotted }
+/// <summary>The "style" of a solid background (upstream PageTypeFormat; "lined" = ruled with a margin line).</summary>
+public enum BackgroundStyle { Plain, Lined, Ruled, Graph, Dotted, Staves, IsoDotted, IsoGraph }
 
 /// <summary>Where a removed picture was: its layer and its position among the layer's elements.</summary>
 public sealed record ImagePlace(System.Xml.Linq.XElement Image, System.Xml.Linq.XElement Layer, int Index);
@@ -55,6 +56,15 @@ public sealed class XoppPage
 
     public BackgroundStyle Style => StyleOf(Background);
 
+    /// <summary>The background's "config" attribute (ruling parameters, see <see cref="BackgroundRuling"/>).</summary>
+    public string? BackgroundConfig => (string?)Background.Attribute("config");
+
+    /// <summary>A picture as background (type "pixmap").</summary>
+    public bool IsImageBackground => (string?)Background.Attribute("type") == "pixmap";
+
+    /// <summary>The file of a picture background, resolved when the document was loaded (null: none or not found).</summary>
+    public string? BackgroundImagePath { get; set; }
+
     /// <summary>0-based page index in the background PDF of a &lt;background&gt; element.</summary>
     public static int PdfPageIndexOf(XElement background)
     {
@@ -74,6 +84,9 @@ public sealed class XoppPage
         "ruled" => BackgroundStyle.Ruled,
         "graph" => BackgroundStyle.Graph,
         "dotted" => BackgroundStyle.Dotted,
+        "staves" => BackgroundStyle.Staves,
+        "isodotted" => BackgroundStyle.IsoDotted,
+        "isograph" => BackgroundStyle.IsoGraph,
         _ => BackgroundStyle.Plain,
     };
 

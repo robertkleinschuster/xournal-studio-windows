@@ -5,7 +5,8 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <Grid x:Name="Sheet" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="0.5">
         <Image x:Name="PdfImage" Stretch="Fill" />
-        <Path x:Name="Pattern" />
+        <!-- Ruling of solid backgrounds (one Path per color and width). -->
+        <Canvas x:Name="RulingLayer" IsHitTestVisible="False" />
         <!-- Pictures (copied PDF areas, images) lie below the ink, like in Xournal's usual layering. -->
         <Canvas x:Name="ImagesLayer" IsHitTestVisible="False" />
         <!-- Texts of the file (shown, not edited), above the pictures and below the ink as well. -->

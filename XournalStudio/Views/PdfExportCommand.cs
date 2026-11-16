@@ -46,7 +46,9 @@ public sealed class PdfExportCommand(WindowId window, DocumentSession session, M
         try
         {
             var snapshot = doc.Snapshot(doc.ReferenceBase);
-            var result = await Task.Run(() => PdfExport.Write(snapshot, background, target));
+            var pictures = doc.Pages.Select(page => page.BackgroundImagePath).ToList();
+            var result = await Task.Run(() => PdfExport.Write(snapshot, background, target,
+                i => i < pictures.Count ? pictures[i] : null));
             string pages = result.Pages == 1 ? "1 Seite" : $"{result.Pages} Seiten";
             string text = $"{Path.GetFileName(target)} ({pages}).";
             if (result.MissingBackgrounds > 0)

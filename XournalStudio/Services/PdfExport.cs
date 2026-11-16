@@ -23,7 +23,9 @@ public static class PdfExport
         PdfSharp.Fonts.GlobalFontSettings.UseWindowsFontsUnderWindows = true;
     }
 
-    public static PdfExportResult Write(XDocument snapshot, string? backgroundPdf, string target)
+    /// <param name="pictureBackground">The file of page <c>i</c>'s picture background (resolved when loading), or null.</param>
+    public static PdfExportResult Write(XDocument snapshot, string? backgroundPdf, string target,
+        Func<int, string?>? pictureBackground = null)
     {
         if (ProjectFiles.SamePath(backgroundPdf, target))
         {
@@ -51,6 +53,18 @@ public static class PdfExport
                             background ??= XPdfForm.FromFile(backgroundPdf);
                             background.PageNumber = Math.Min(XoppPage.PdfPageIndexOf(bg) + 1, background.PageCount);
                             g.DrawImage(background, 0, 0, width, height);
+                        }
+                        else if ((string?)bg.Attribute("type") == "pixmap")
+                        {
+                            if (pictureBackground?.Invoke(pages) is { } file)
+                            {
+                                using var picture = XImage.FromFile(file);
+                                g.DrawImage(picture, 0, 0, width, height);
+                            }
+                            else
+                            {
+                                missing++;
+                            }
                         }
                         else if (!XoppPage.IsPdfBackground(bg))
                         {
@@ -97,20 +111,21 @@ public static class PdfExport
 
     private static void DrawSolid(XGraphics g, XElement background, double width, double height)
     {
-        g.DrawRectangle(new XSolidBrush(ToX(XoppPage.ColorOf(background))), 0, 0, width, height);
-        if (BackgroundRuling.For(XoppPage.StyleOf(background), width, height) is not { } ruling)
+        var paper = XoppPage.ColorOf(background);
+        g.DrawRectangle(new XSolidBrush(ToX(paper)), 0, 0, width, height);
+        foreach (var ruling in BackgroundRuling.For(XoppPage.StyleOf(background), (string?)background.Attribute("config"), paper, width, height))
         {
-            return;
-        }
-        var pen = new XPen(ToX(ruling.Color), Ruling.LineWidth);
-        foreach (var (from, to) in ruling.Lines)
-        {
-            g.DrawLine(pen, from.X, from.Y, to.X, to.Y);
-        }
-        var dot = new XSolidBrush(ToX(ruling.Color));
-        foreach (var p in ruling.Dots)
-        {
-            g.DrawEllipse(dot, p.X - Ruling.DotRadius, p.Y - Ruling.DotRadius, 2 * Ruling.DotRadius, 2 * Ruling.DotRadius);
+            var pen = new XPen(ToX(ruling.Color), ruling.Width);
+            foreach (var (from, to) in ruling.Lines)
+            {
+                g.DrawLine(pen, from.X, from.Y, to.X, to.Y);
+            }
+            var dot = new XSolidBrush(ToX(ruling.Color));
+            double r = ruling.Width / 2;
+            foreach (var p in ruling.Dots)
+            {
+                g.DrawEllipse(dot, p.X - r, p.Y - r, 2 * r, 2 * r);
+            }
         }
     }
 

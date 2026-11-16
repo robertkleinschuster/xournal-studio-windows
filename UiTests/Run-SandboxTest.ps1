@@ -19,7 +19,7 @@ if (Test-Path $Work) { Remove-Item -Recurse -Force $Work }
 New-Item -ItemType Directory -Force "$Work\data", "$Work\out" | Out-Null
 robocopy $App "$Work\app" /MIR /NFL /NDL /NJH /NJS /MT:16 | Out-Null
 Copy-Item $Document "$Work\data\test.xopp"
-Get-ChildItem (Split-Path $Document) -Filter *.pdf | Copy-Item -Destination "$Work\data"
+Get-ChildItem (Split-Path $Document) -File | Where-Object { $_.Extension -in '.pdf', '.png', '.jpg' } | Copy-Item -Destination "$Work\data"
 Copy-Item "$PSScriptRoot\Inj.cs" $Work
 Copy-Item $Test "$Work\test.ps1"
 

@@ -50,12 +50,13 @@ public sealed partial class PageView : UserControl
 
         Width = page.Width;
         Height = page.Height;
-        Sheet.Background = new SolidColorBrush(page.IsPdf ? Colors.White : page.BackgroundColor);
-        if (!page.IsPdf)
+        Sheet.Background = new SolidColorBrush(page.IsPdf || page.IsImageBackground ? Colors.White : page.BackgroundColor);
+        if (!page.IsPdf && !page.IsImageBackground)
         {
-            Pattern.Data = BackgroundPattern.Create(page.Style, page.Width, page.Height, out Color lineColor);
-            Pattern.Stroke = new SolidColorBrush(lineColor);
-            Pattern.StrokeThickness = Ruling.LineWidth;
+            foreach (var ruling in BackgroundRuling.For(page.Style, page.BackgroundConfig, page.BackgroundColor, page.Width, page.Height))
+            {
+                RulingLayer.Children.Add(BackgroundPattern.Create(ruling));
+            }
         }
 
         page.AttachInk(Canvas.InkPresenter.StrokeContainer);
@@ -144,7 +145,28 @@ public sealed partial class PageView : UserControl
         {
             ShowPictures(pixelsPerPoint);
         }
+        if (Page.IsImageBackground)
+        {
+            ShowImageBackground(pixelsPerPoint);
+        }
         RenderPdf(pixelsPerPoint);
+    }
+
+    // A picture background, stretched over the page as upstream draws it; decoded at about the shown size while the
+    // page is near the viewport (freed with the PDF bitmaps otherwise), again when zoomed in a lot.
+    private void ShowImageBackground(double pixelsPerPoint)
+    {
+        string? path = Page.BackgroundImagePath;
+        uint wanted = (uint)Math.Min(MaxPdfPixelWidth, Math.Ceiling(Page.Width * pixelsPerPoint));
+        if (path == null || (PdfImage.Source != null && renderedPixelWidth * 1.6 >= wanted))
+        {
+            return;
+        }
+        var bitmap = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage { DecodePixelWidth = (int)wanted };
+        bitmap.ImageFailed += (_, e) => DebugLog.Write($"picture background {path}: {e.ErrorMessage}");
+        bitmap.UriSource = new Uri(path);
+        PdfImage.Source = bitmap;
+        renderedPixelWidth = wanted;
     }
 
     private async void RenderPdf(double pixelsPerPoint)
@@ -215,26 +237,28 @@ public sealed partial class PageView : UserControl
     }
 }
 
-/// <summary>A page's ruling (<see cref="BackgroundRuling"/>) as XAML geometry.</summary>
+/// <summary>A page's ruling lines of one color and width (<see cref="RulingLines"/>) as a XAML Path.</summary>
 internal static class BackgroundPattern
 {
-    public static Geometry? Create(BackgroundStyle style, double width, double height, out Color color)
+    public static Microsoft.UI.Xaml.Shapes.Path Create(RulingLines ruling)
     {
-        var ruling = BackgroundRuling.For(style, width, height);
-        color = ruling?.Color ?? Colors.Transparent;
-        if (ruling == null)
-        {
-            return null;
-        }
         var group = new GeometryGroup();
         foreach (var (from, to) in ruling.Lines)
         {
             group.Children.Add(new LineGeometry { StartPoint = from, EndPoint = to });
         }
+        double r = ruling.Width / 2;
         foreach (var dot in ruling.Dots)
         {
-            group.Children.Add(new EllipseGeometry { Center = dot, RadiusX = Ruling.DotRadius, RadiusY = Ruling.DotRadius });
+            group.Children.Add(new EllipseGeometry { Center = dot, RadiusX = r, RadiusY = r });
         }
-        return group;
+        var brush = new SolidColorBrush(ruling.Color);
+        return new Microsoft.UI.Xaml.Shapes.Path
+        {
+            Data = group,
+            Stroke = ruling.Lines.Count > 0 ? brush : null,
+            StrokeThickness = ruling.Width,
+            Fill = ruling.Dots.Count > 0 ? brush : null,
+        };
     }
 }

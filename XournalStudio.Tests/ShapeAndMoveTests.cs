@@ -97,4 +97,38 @@ public class ShapeAndMoveTests
         Assert.Equal("x", (string?)placed[1].Attribute("extra"));
         Assert.Equal("1.41 1.2", (string?)placed[1].Attribute("width"));
     }
+
+    private static readonly Windows.UI.Color Paper = Windows.UI.Color.FromArgb(255, 255, 255, 255);
+
+    [Fact]
+    public void RulingsFollowUpstreamsBackgroundViews()
+    {
+        const double W = 595.27559, H = 841.88976;
+        var graph = Assert.Single(BackgroundRuling.For(BackgroundStyle.Graph, null, Paper, W, H));
+        Assert.Equal(41 + 59, graph.Lines.Count); // 5 mm squares, none on the sheet's edge
+        Assert.Equal(0.5, graph.Width);
+
+        var ruled = Assert.Single(BackgroundRuling.For(BackgroundStyle.Ruled, null, Paper, W, H));
+        Assert.Equal(80, ruled.Lines[0].From.Y);
+        Assert.Equal(80 + 29 * 24, ruled.Lines[^1].From.Y); // header 80, footer 60, 24 apart
+
+        var lined = BackgroundRuling.For(BackgroundStyle.Lined, "m1=-72", Paper, W, H);
+        Assert.Equal(2, lined.Count);
+        Assert.Equal(W - 72, lined[1].Lines.Single().From.X, 3); // negative margin: on the right
+        Assert.Equal(255, lined[1].Color.R); // deeppink
+
+        var bold = BackgroundRuling.For(BackgroundStyle.Graph, "m1=40,rm=1,bli=5,blw=1.2", Paper, W, H);
+        Assert.Equal(2, bold.Count);
+        Assert.Equal(1.2, bold[1].Width);
+        Assert.All(bold.SelectMany(r => r.Lines), l => Assert.True(l.From.X >= 40 - 1e-9 && l.To.X <= W - 40 + 1e-9));
+
+        Assert.NotEmpty(Assert.Single(BackgroundRuling.For(BackgroundStyle.IsoDotted, null, Paper, W, H)).Dots);
+        Assert.NotEmpty(Assert.Single(BackgroundRuling.For(BackgroundStyle.IsoGraph, null, Paper, W, H)).Lines);
+        var staves = Assert.Single(BackgroundRuling.For(BackgroundStyle.Staves, null, Paper, W, H)).Lines;
+        Assert.Equal(12 * 7, staves.Count); // 5 lines and 2 bars per staff, 62.5 pt apart from 80 to 60 above the end
+        Assert.Empty(BackgroundRuling.For(BackgroundStyle.Plain, null, Paper, W, H));
+
+        var dark = Windows.UI.Color.FromArgb(255, 30, 30, 30);
+        Assert.Equal(0x43, Assert.Single(BackgroundRuling.For(BackgroundStyle.Graph, null, dark, W, H)).Color.R); // alt color
+    }
 }
