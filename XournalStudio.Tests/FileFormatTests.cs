@@ -362,6 +362,13 @@ public class FileFormatTests : IDisposable
         var damaged = StrokeConverter.ReadShape(XElement.Parse("""<stroke tool="pen" color="#000000ff" width="1">0 0 10 10 20 NaN 30 30</stroke>"""))!;
         Assert.Equal(2, damaged.Points.Count);
         Assert.Null(StrokeConverter.ReadShape(XElement.Parse("""<stroke tool="pen" color="#000000ff" width="1">1e400 0</stroke>""")));
+
+        // Moving a damaged stroke moves its readable pairs and keeps the rest exactly (never deleted).
+        var stroke = XElement.Parse("""<stroke tool="pen" color="#000000ff" width="1">0 0 10 10 20 NaN 30 30</stroke>""");
+        StrokeConverter.Transform(stroke, System.Numerics.Matrix3x2.CreateTranslation(5, 0));
+        Assert.Equal("5 0 15 10 20 NaN 30 30", stroke.Value);
+        Assert.Empty(StrokeConverter.Dashes("cust: 0 0"));
+        Assert.Empty(StrokeConverter.Dashes("cust: -3 2"));
     }
 
     // Whitespace-only text nodes depend on formatting, not content.

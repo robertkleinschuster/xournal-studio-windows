@@ -84,9 +84,13 @@ public static class StrokeConverter
         "dash" => [6, 3],
         "dashdot" => [6, 3, 0.5, 3],
         "dot" => [0.5, 3],
-        string s when s.StartsWith("cust: ", StringComparison.Ordinal) => ParseNumbers(s[6..]).ToArray(),
+        string s when s.StartsWith("cust: ", StringComparison.Ordinal) => Drawable(ParseNumbers(s[6..])),
         _ => [],
     };
+
+    // A dash pattern needs positive lengths (negative or all-zero ones are invalid in XAML and PDF): otherwise solid.
+    private static double[] Drawable(List<double> dashes) =>
+        dashes.All(d => d >= 0) && dashes.Any(d => d > 0) ? dashes.ToArray() : [];
 
     /// <summary>
     /// A stroke Windows ink cannot draw as the file means it: filled, dashed, or with other than round ends. Such strokes
@@ -193,30 +197,34 @@ public static class StrokeConverter
     /// </summary>
     public static void Transform(XElement e, Matrix3x2 m)
     {
-        var coords = ParseNumbers(e.Value);
-        var moved = new StringBuilder(coords.Count * 8);
-        for (int i = 0; i + 1 < coords.Count; i += 2)
+        var tokens = e.Value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        var coords = ParseNumbers(e.Value); // the readable pairs at the start
+        var moved = new StringBuilder(e.Value.Length + 16);
+        int pairs = coords.Count / 2;
+        for (int i = 0; i < pairs; i++)
         {
             if (i > 0)
             {
                 moved.Append(' ');
             }
             // In double: the file's numbers keep their precision (Vector2 would round them to float).
-            double x = coords[i] * m.M11 + coords[i + 1] * m.M21 + m.M31;
-            double y = coords[i] * m.M12 + coords[i + 1] * m.M22 + m.M32;
+            double x = coords[2 * i] * m.M11 + coords[2 * i + 1] * m.M21 + m.M31;
+            double y = coords[2 * i] * m.M12 + coords[2 * i + 1] * m.M22 + m.M32;
             moved.Append(Format(x)).Append(' ').Append(Format(y));
         }
-        if (coords.Count % 2 == 1)
+        // What is not a readable pair (a stray number, a damaged rest) is written back exactly as read: never deleted.
+        foreach (var rest in tokens.Skip(2 * pairs))
         {
-            moved.Append(' ').Append(Format(coords[^1])); // a stray number is written back as read
+            moved.Append(moved.Length > 0 ? " " : "").Append(rest);
         }
         e.Value = moved.ToString();
     }
 
     private static string Format(double v) => v.ToString("0.####", Inv);
 
-    // Numbers of a stroke (coordinates, widths, dashes) by the file's one rule (XoppFormat.ReadNumber); the list ends
-    // at the first one that is not a number or beyond any page, so the coordinates stay in pairs.
+    // Numbers of a stroke (coordinates, widths, dashes) by the file's one rule (XoppFormat.ReadNumber), for showing
+    // and reading as ink; the list ends at the first one that is not a number or beyond any page, so the coordinates
+    // stay in pairs. The element itself keeps everything (Transform writes the rest back as read).
     private static List<double> ParseNumbers(string s)
     {
         var result = new List<double>();

@@ -150,7 +150,10 @@ public sealed partial class PageView : UserControl
                 for (int i = 0; i + 1 < shape.Points.Count; i++)
                 {
                     var (a, b) = (shape.Points[i], shape.Points[i + 1]);
-                    DrawnStrokesLayer.Children.Add(Line(Points([a, b]), shape.SegmentWidths[i], drawn));
+                    if (shape.SegmentWidths[i] > 0) // width 0 or below is no line (as in the export)
+                    {
+                        DrawnStrokesLayer.Children.Add(Line(Points([a, b]), shape.SegmentWidths[i], drawn));
+                    }
                     drawn += Math.Sqrt((b.X - a.X) * (b.X - a.X) + (b.Y - a.Y) * (b.Y - a.Y));
                 }
             }
@@ -269,7 +272,7 @@ public sealed partial class PageView : UserControl
             {
                 PdfImage.Source = bitmap;
                 backgroundShown = wanted;
-                backgroundRequested = Math.Max(backgroundRequested, wanted); // requested ≥ shown, also after a failure
+                backgroundRequested = Math.Max(backgroundRequested, wanted); // requested ≥ shown (a failure lowers it)
             }
         }
         catch (Exception e) // any failure of reading or decoding (async void: nothing may escape); logged

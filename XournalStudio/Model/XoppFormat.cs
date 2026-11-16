@@ -18,14 +18,15 @@ public static class XoppFormat
     public const string Creator = "Xournal Studio for Windows";
 
     /// <summary>
-    /// Largest magnitude a position, size or matrix entry of a file may have: pages are a few hundred points, so a
-    /// value beyond a million cannot be meant (damaged file). Keeps every computation in float range.
+    /// Largest magnitude a number of a file may have (positions, sizes, matrices of texts and pictures; stroke
+    /// coordinates, widths and dashes): pages are a few hundred points, so a value beyond a million cannot be meant
+    /// (damaged file). Keeps every computation in float range. Values beyond it are not shown, but kept in the file.
     /// </summary>
     public const double NumberLimit = 1_000_000;
 
     /// <summary>
     /// A number of the file (invariant culture), or null when it is missing, not a number, or beyond
-    /// <see cref="NumberLimit"/> – the one rule for positions, sizes and matrices of texts and pictures.
+    /// <see cref="NumberLimit"/> – the one rule for the numbers of texts, pictures and strokes.
     /// </summary>
     public static double? ReadNumber(string? text) =>
         double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double v) && Math.Abs(v) <= NumberLimit
