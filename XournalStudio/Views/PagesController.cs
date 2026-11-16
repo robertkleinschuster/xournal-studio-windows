@@ -88,7 +88,7 @@ public sealed class PagesController
     {
         document = doc;
         pdf = background;
-        inkTools.CancelGesture(); // a drag on the old pages ends with them
+        inkTools.CancelGestureOn(null); // a drag on the old pages ends with them
         inkTools.Selection.Clear();
         undo.Clear();
         panel.Children.Clear();
@@ -121,9 +121,9 @@ public sealed class PagesController
     {
         var doc = document!;
         var page = doc.Pages[index];
+        inkTools.CancelGestureOn(panel.Children[index] as PageView); // only a drag on the removed page
         doc.Pages.RemoveAt(index);
         panel.Children.RemoveAt(index);
-        inkTools.CancelGesture();
         inkTools.Selection.Clear();
         undo.Forget(page);
         OnViewsChanged();

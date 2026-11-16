@@ -25,7 +25,9 @@ public sealed class Selection
 
     private readonly Rectangle frame;
     private readonly Rectangle[] handles;
-    private bool previewing; // the strokes' committed transforms are with the page (XoppPage.BeginPreview)
+    // The strokes' transforms when the drag began (null: no drag); the page gets them too, for snapshots
+    // (XoppPage.BeginPreview).
+    private Dictionary<InkStroke, Matrix3x2>? starts;
     private Matrix3x2 live = Matrix3x2.Identity;
 
     public Selection(PageView view, List<InkStroke> strokes, List<XElement> images, Rect? area)
@@ -91,17 +93,17 @@ public sealed class Selection
     /// <summary>Shows the content transformed by <paramref name="m"/> (relative to where it was when the drag began).</summary>
     public void Preview(Matrix3x2 m)
     {
-        if (!previewing)
+        if (starts == null)
         {
-            foreach (var stroke in Strokes)
+            starts = Strokes.ToDictionary(s => s, s => s.PointTransform);
+            foreach (var (stroke, start) in starts)
             {
-                Page.BeginPreview(stroke, stroke.PointTransform);
+                Page.BeginPreview(stroke, start);
             }
-            previewing = true;
         }
-        foreach (var stroke in Strokes)
+        foreach (var (stroke, start) in starts)
         {
-            stroke.PointTransform = Page.CommittedTransform(stroke)!.Value * m;
+            stroke.PointTransform = start * m;
         }
         foreach (var image in Images)
         {
@@ -124,7 +126,8 @@ public sealed class Selection
             EndPreview();
             return false;
         }
-        var before = Page.CapturePlacement(Strokes, Images, s => Page.CommittedTransform(s)!.Value);
+        var begun = starts!;
+        var before = Page.CapturePlacement(Strokes, Images, s => begun[s]);
         EndPreview();
         foreach (var stroke in Strokes)
         {
@@ -151,8 +154,11 @@ public sealed class Selection
     // Every way out of a drag (commit, nothing moved, revert) ends the page's preview of the strokes.
     private void EndPreview()
     {
-        Page.EndPreview(Strokes);
-        previewing = false;
+        if (starts != null)
+        {
+            Page.EndPreview(starts.Keys);
+            starts = null;
+        }
     }
 
     public void Remove()

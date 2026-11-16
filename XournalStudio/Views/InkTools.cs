@@ -206,8 +206,27 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
         }
     }
 
-    /// <summary>Ends a running drag without its result (the pages are replaced or removed under it).</summary>
-    public void CancelGesture()
+    /// <summary>
+    /// Ends a running drag without its result because its page is replaced or removed (<paramref name="on"/>: only a drag
+    /// on that page; null: any). The pointer is let go and the eraser end given back to the ink.
+    /// </summary>
+    public void CancelGestureOn(PageView? on)
+    {
+        if (gesture == InkTool.None || (on != null && gesturePage != on))
+        {
+            return;
+        }
+        var page = gesturePage;
+        bool erasing = gesture == InkTool.PartialEraser;
+        CancelGesture();
+        page?.Surface.ReleasePointerCaptures(); // (its CaptureLost finds no gesture any more)
+        if (erasing)
+        {
+            ReleaseEraserEnd();
+        }
+    }
+
+    private void CancelGesture()
     {
         if (gesture == InkTool.Select)
         {
