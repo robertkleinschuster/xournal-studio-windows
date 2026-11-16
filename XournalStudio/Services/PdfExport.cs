@@ -37,6 +37,7 @@ public static class PdfExport
         {
             using var output = new PdfDocument();
             int pages = 0, skipped = 0, missing = 0;
+            var missingFonts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var page in snapshot.Root!.Elements("page"))
             {
                 double width = (double?)page.Attribute("width") ?? XoppDocument.A4Width;
@@ -56,12 +57,7 @@ public static class PdfExport
                         }
                         else if ((string?)bg.Attribute("type") == "pixmap")
                         {
-                            if (pictureBackground?.Invoke(pages) is { } file && OpenPicture(file) is { } picture)
-                            {
-                                keepOpen.Add(picture);
-                                g.DrawImage(picture, 0, 0, width, height);
-                            }
-                            else
+                            if (pictureBackground?.Invoke(pages) is not { } file || !DrawPictureBackground(g, file, width, height, keepOpen))
                             {
                                 missing++;
                             }
@@ -87,7 +83,7 @@ public static class PdfExport
                         }
                         else if (XoppText.IsText(element))
                         {
-                            DrawText(g, XoppText.Read(element));
+                            DrawText(g, XoppText.Read(element), missingFonts);
                         }
                         else
                         {
@@ -177,24 +173,31 @@ public static class PdfExport
             double drawn = 0;
             for (int i = 0; i < points.Length - 1; i++)
             {
-                g.DrawLine(Pen(shape.SegmentWidths[i], drawn), points[i], points[i + 1]);
+                if (shape.SegmentWidths[i] > 0) // width 0 is no line (a PDF pen of 0 would be a hairline)
+                {
+                    g.DrawLine(Pen(shape.SegmentWidths[i], drawn), points[i], points[i + 1]);
+                }
                 drawn += (points[i + 1] - points[i]).Length;
             }
         }
     }
 
-    // A picture background PDFsharp cannot read (format, damaged, locked) leaves its page white, as on screen.
-    private static XImage? OpenPicture(string file)
+    // A picture background PDFsharp cannot read (missing, format, damaged, locked) leaves its page white, as on screen.
+    // PDFsharp reads the whole file and decodes it here (FromFile + DrawImage), not when saving.
+    private static bool DrawPictureBackground(XGraphics g, string file, double width, double height, List<IDisposable> keepOpen)
     {
         try
         {
-            return XImage.FromFile(file);
+            var picture = XImage.FromFile(file);
+            keepOpen.Add(picture);
+            g.DrawImage(picture, 0, 0, width, height);
+            return true;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException or
             ArgumentException or NotSupportedException or FormatException)
         {
             DebugLog.Write($"export: picture background {file}: {e.GetType().Name} 0x{e.HResult:X8} {e.Message}");
-            return null;
+            return false;
         }
     }
 
@@ -217,27 +220,32 @@ public static class PdfExport
         g.Restore(state);
     }
 
-    // A family Windows does not have (e.g. a Linux font) falls back to Arial, as the screen's TextBlock falls back.
-    private static XFont Font(string family, double size, XFontStyleEx style)
+    // A family Windows does not have (e.g. a Linux font) falls back to Arial, as the screen's TextBlock falls back;
+    // tried once per family and export (missing).
+    private static XFont Font(string family, double size, XFontStyleEx style, HashSet<string> missing)
     {
         var options = new XPdfFontOptions(PdfFontEncoding.Unicode);
-        try
+        if (!missing.Contains(family))
         {
-            return new XFont(family, size, style, options);
+            try
+            {
+                return new XFont(family, size, style, options);
+            }
+            catch (InvalidOperationException e)
+            {
+                DebugLog.Write($"export: font {family}: {e.GetType().Name} 0x{e.HResult:X8} {e.Message}; Arial instead");
+                missing.Add(family);
+            }
         }
-        catch (InvalidOperationException e)
-        {
-            DebugLog.Write($"export: font {family}: {e.GetType().Name} 0x{e.HResult:X8} {e.Message}; Arial instead");
-            return new XFont("Arial", size, style, options);
-        }
+        return new XFont("Arial", size, style, options);
     }
 
     // As on screen: the font's family, style and size in points, the box placed by the text's transform, wrapped at its
     // width (if it has one) and aligned.
-    private static void DrawText(XGraphics g, XoppText text)
+    private static void DrawText(XGraphics g, XoppText text, HashSet<string> missingFonts)
     {
         var style = (text.Bold ? XFontStyleEx.Bold : XFontStyleEx.Regular) | (text.Italic ? XFontStyleEx.Italic : XFontStyleEx.Regular);
-        var font = Font(text.WindowsFamily, text.Size, style);
+        var font = Font(text.WindowsFamily, text.Size, style, missingFonts);
         var brush = new XSolidBrush(ToX(text.Color));
         var state = g.Save();
         var m = text.Transform;

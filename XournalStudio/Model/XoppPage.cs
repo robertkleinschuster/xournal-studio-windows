@@ -62,7 +62,7 @@ public sealed class XoppPage
     /// <summary>A picture as background (type "pixmap").</summary>
     public bool IsImageBackground => (string?)Background.Attribute("type") == "pixmap";
 
-    /// <summary>The file of a picture background, resolved when the document was loaded (null: none or not found).</summary>
+    /// <summary>The file a picture background names, resolved when the document was loaded (it may be missing; null: none).</summary>
     public string? BackgroundImagePath { get; set; }
 
     /// <summary>The page whose picture background this page's "clone" background shows (null: not a clone).</summary>
@@ -338,11 +338,16 @@ public sealed class XoppPage
         }
         foreach (var text in Texts.Select(XoppText.Read))
         {
-            // The laid-out height is the view's; one line per paragraph at 1.2 × the size is close enough to place
-            // pasted content below it (wrapped texts may reach a little lower).
-            int lines = text.Content.Split('\n').Length;
-            var corner = Vector2.Transform(new Vector2(0, (float)(lines * text.Size * 1.2)), text.Transform);
-            bottom = Math.Max(bottom, Math.Max(corner.Y, text.Transform.Translation.Y));
+            // The laid-out box is the view's; estimated here (a line per paragraph at 1.2 × the size, about 0.6 × the
+            // size per character, or the wrap width) – close enough to place pasted content below it. All four corners:
+            // a matrix may turn or mirror the box.
+            var paragraphs = text.Content.Replace("\r\n", "\n").Split('\n');
+            float w = (float)(text.Wrap ?? paragraphs.Max(l => l.Length) * text.Size * 0.6);
+            float h = (float)(paragraphs.Length * text.Size * 1.2);
+            foreach (var corner in new[] { Vector2.Zero, new Vector2(w, 0), new Vector2(0, h), new Vector2(w, h) })
+            {
+                bottom = Math.Max(bottom, Vector2.Transform(corner, text.Transform).Y);
+            }
         }
         return bottom;
     }

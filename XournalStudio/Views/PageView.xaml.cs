@@ -240,12 +240,23 @@ public sealed partial class PageView : UserControl
 
     // A picture background, stretched over the page as upstream draws it; decoded at about the shown size while the
     // page is near the viewport (freed with the PDF bitmaps otherwise), again when zoomed in a lot.
+    private bool missingBackgroundLogged;
+
     private void ShowImageBackground(double pixelsPerPoint)
     {
         string? path = Page.BackgroundImagePath;
         uint wanted = (uint)Math.Min(MaxPdfPixelWidth, Math.Ceiling(Page.Width * pixelsPerPoint));
         if (path == null || (PdfImage.Source != null && renderedPixelWidth * 1.6 >= wanted))
         {
+            return;
+        }
+        if (!File.Exists(path))
+        {
+            if (!missingBackgroundLogged)
+            {
+                DebugLog.Write($"picture background not found: {path}");
+                missingBackgroundLogged = true;
+            }
             return;
         }
         var bitmap = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage { DecodePixelWidth = (int)wanted };

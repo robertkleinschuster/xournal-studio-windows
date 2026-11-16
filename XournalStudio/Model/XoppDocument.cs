@@ -235,6 +235,10 @@ public sealed class XoppDocument
         string? domain = (string?)background.Attribute("domain");
         string? filename = (string?)background.Attribute("filename");
         string? path = page.BackgroundImagePath;
+        if (path == null)
+        {
+            return; // names nothing this app can resolve: kept as it was
+        }
         if (page.BackgroundCloneSource is { } source)
         {
             int index = Pages.IndexOf(source);
@@ -243,12 +247,9 @@ public sealed class XoppDocument
                 background.SetAttributeValue("filename", index.ToString(System.Globalization.CultureInfo.InvariantCulture));
                 return;
             }
+            // its page was removed or is no longer before it: the clone names the picture itself
         }
-        else if (path == null || filename == null || string.Equals(PictureFile(target, domain, filename), Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase))
-        {
-            return; // not found when loaded: kept as it was
-        }
-        if (path == null)
+        else if (filename != null && string.Equals(PictureFile(target, domain, filename), Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
@@ -305,7 +306,7 @@ public sealed class XoppDocument
                 continue;
             }
             string path = PictureFile(referenceBase, domain, filename);
-            page.BackgroundImagePath = File.Exists(path) ? path : null; // not found: white, as upstream logs an error
+            page.BackgroundImagePath = path; // also when missing (white, as upstream): saving keeps naming it
         }
     }
 

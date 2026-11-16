@@ -53,7 +53,8 @@ public sealed class PdfExportCommand(WindowId window, DocumentSession session, M
             string text = $"{Path.GetFileName(target)} ({pages}).";
             if (result.MissingBackgrounds > 0)
             {
-                text += $" {result.MissingBackgrounds} Seite(n) ohne ihren Hintergrund (PDF oder Bild nicht gefunden oder nicht lesbar).";
+                text += $" {result.MissingBackgrounds} Seite(n) ohne ihren Hintergrund (nicht gefunden oder nicht lesbar"
+                    + (background != null && !File.Exists(background) ? $"; PDF: {background})." : ").");
             }
             if (result.SkippedElements > 0)
             {

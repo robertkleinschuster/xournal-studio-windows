@@ -305,6 +305,14 @@ public class FileFormatTests : IDisposable
         Assert.Equal(("absolute", "../a.xopp.bg_1.png"), ((string?)moved[1].Attribute("domain"), (string?)moved[1].Attribute("filename")));
         Assert.Equal("../pics/p.png", (string?)moved[2].Attribute("filename"));
         Assert.Equal(("clone", "1"), ((string?)moved[3].Attribute("domain"), (string?)moved[3].Attribute("filename")));
+
+        // A missing picture keeps being named (from the new place too); a clone whose page is gone names the picture.
+        File.Delete(Path.Combine(dir, "pics", "p.png"));
+        doc = XoppDocument.Load(path);
+        doc.Pages.RemoveAt(0);
+        var after = doc.Snapshot(Path.Combine(dir, "sub", "c.xopp")).Root!.Elements("page").Select(p => p.Element("background")!).ToList();
+        Assert.Equal("../pics/p.png", (string?)after[0].Attribute("filename"));
+        Assert.Equal(("absolute", "../a.xopp.bg_1.png"), ((string?)after[1].Attribute("domain"), (string?)after[1].Attribute("filename")));
     }
 
     [Fact]
