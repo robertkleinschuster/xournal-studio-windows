@@ -37,6 +37,12 @@ public sealed class PdfExportCommand(WindowId window, DocumentSession session, M
         {
             return;
         }
+        if (previewing())
+        {
+            // A drag began while the picker was open: the document is taken when it is put down.
+            messages.Show(InfoBarSeverity.Informational, "Nicht exportiert", "Erst loslassen, dann exportieren.");
+            return;
+        }
         if (background != null && ProjectFiles.SamePath(target, background))
         {
             messages.Show(InfoBarSeverity.Warning, "Nicht exportiert",

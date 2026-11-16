@@ -51,6 +51,10 @@ public sealed class EditCommands(
         var images = current.Images.Where(i => i.Parent != null).ToList();
         edit.RemoveImages(images);
         selection.Clear();
+        if (edit.IsEmpty)
+        {
+            return false; // everything selected was erased meanwhile: no undo step, nothing changed
+        }
         undo.Push(edit);
         return true;
     }
@@ -105,12 +109,17 @@ public sealed class EditCommands(
             return;
         }
         var copied = selection.Current;
+        if (copied == null)
+        {
+            messages.Show(InfoBarSeverity.Informational, "Nichts ausgewählt", "Erst etwas auswählen, dann ausschneiden.");
+            return;
+        }
         if (copied is { HasContent: false })
         {
             messages.Show(InfoBarSeverity.Informational, "Nur kopieren", "Ein PDF-Bereich lässt sich kopieren, nicht ausschneiden.");
             return;
         }
-        if (copied != null && await CopyAsync() && selection.Current == copied && !RefusedWhileDragging("Ausschneiden (kopiert)"))
+        if (await CopyAsync() && selection.Current == copied && !RefusedWhileDragging("Ausschneiden (kopiert)"))
         {
             Delete(); // only if the selection is still the one copied (a tap may have changed it meanwhile)
         }
@@ -248,13 +257,12 @@ public sealed class EditCommands(
             messages.Show(InfoBarSeverity.Warning, "Nicht alles übernommen", why);
         }
         undo.Push(edit);
-        SelectAdded(view, edit.AddedStrokes.ToList(), edit.AddedImages.ToList(), operation,
-            operation == "duplicate" ? "Dupliziert, aber nicht ausgewählt" : "Eingefügt, aber nicht ausgewählt");
+        SelectAdded(view, edit.AddedStrokes.ToList(), edit.AddedImages.ToList(), operation);
     }
 
     // Selects what was just added (and undoable). A failure here is not a failed paste or duplicate: logged and said
     // as what it is.
-    private void SelectAdded(PageView view, List<InkStroke> strokes, List<XElement> images, string operation, string failedTitle)
+    private void SelectAdded(PageView view, List<InkStroke> strokes, List<XElement> images, string operation)
     {
         try
         {
@@ -263,7 +271,8 @@ public sealed class EditCommands(
         }
         catch (Exception e)
         {
-            messages.Error($"{operation}: select the added content", failedTitle, e);
+            messages.Error($"{operation}: select the added content",
+                operation == "duplicate" ? "Dupliziert, aber nicht ausgewählt" : "Eingefügt, aber nicht ausgewählt", e);
         }
     }
 
@@ -310,7 +319,7 @@ public sealed class EditCommands(
             throw;
         }
         undo.Push(edit);
-        SelectAdded(view, edit.AddedStrokes.ToList(), [], "paste ink", "Eingefügt, aber nicht ausgewählt");
+        SelectAdded(view, edit.AddedStrokes.ToList(), [], "paste ink");
     }
 
     // Nothing was added: no undo step, the selection and tool stay as they were – and the user is told.

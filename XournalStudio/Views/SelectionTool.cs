@@ -33,9 +33,9 @@ public sealed class SelectionTool(UndoStack undo)
 
     /// <summary>
     /// The selection is being moved or scaled (pen down on it, also before the first move): commands that read or
-    /// change content wait for it to be put down (EditCommands), so a move is never lost or measured mid-way. (Saving,
-    /// recovery copies and export ask something else – whether content is shown displaced, Selection.IsPreviewing – so
-    /// a pen resting on the selection never holds back a recovery copy.)
+    /// change content wait for it to be put down – the edit commands, undo/redo, saving, recovery copies and export (one
+    /// rule; a recovery copy waits and is written within seconds after the pen is lifted). A move is never lost, saved
+    /// half-way or measured mid-way.
     /// </summary>
     public bool IsDragging => gesture is Gesture.Move or Gesture.Scale;
 

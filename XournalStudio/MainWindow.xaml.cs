@@ -46,7 +46,7 @@ public sealed partial class MainWindow : Window
         pages = new PagesController(Scroller, PagesPanel, tools, inkTools, undo, () => RecognizeButton.IsChecked == true);
         dialogs = new Dialogs(() => Content.XamlRoot, () => pages.Views);
         session = new DocumentSession(AppWindow.Id, pages, dialogs, messages, settings, () => ProjectFolder,
-            () => inkTools.Selection.Current?.IsPreviewing == true); // content shown displaced: not saved so
+            () => inkTools.Selection.IsDragging);
         sync = new SyncController(session, dialogs, messages);
         var explorerCommands = new ExplorerCommands(Explorer, session, sync, dialogs, messages, FocusDocument, RefreshExplorer, index =>
         {
@@ -56,7 +56,7 @@ public sealed partial class MainWindow : Window
         edit = new EditCommands(inkTools.Selection, pages, undo, messages, () => Toolbar.ActiveTool = SelectButton);
         var selectionCommands = new SelectionCommands(CopySelectionButton,
             [CutSelectionButton, DuplicateSelectionButton, DeleteSelectionButton]);
-        export = new PdfExportCommand(AppWindow.Id, session, messages, () => inkTools.Selection.Current?.IsPreviewing == true);
+        export = new PdfExportCommand(AppWindow.Id, session, messages, () => inkTools.Selection.IsDragging);
         inkTools.Selection.SelectionChanged += (_, _) => selectionCommands.ShowFor(inkTools.Selection.Current);
 
         ShapeChoice.SelectedIndex = (int)settings.Shape;
@@ -255,15 +255,27 @@ public sealed partial class MainWindow : Window
         undo.Redo();
     }
 
-    private async void OnCut(object sender, RoutedEventArgs e) => await edit.CutAsync();
+    private async void OnCut(object sender, RoutedEventArgs e)
+    {
+        await edit.CutAsync();
+        FocusDocument(); // the row's button may be disabled now: focus stays with the document, not the next control
+    }
 
     private async void OnCopy(object sender, RoutedEventArgs e) => await edit.CopyAsync();
 
     private async void OnPaste(object sender, RoutedEventArgs e) => await edit.PasteAsync();
 
-    private void OnDuplicate(object sender, RoutedEventArgs e) => edit.Duplicate();
+    private void OnDuplicate(object sender, RoutedEventArgs e)
+    {
+        edit.Duplicate();
+        FocusDocument();
+    }
 
-    private void OnDeleteSelection(object sender, RoutedEventArgs e) => edit.Delete();
+    private void OnDeleteSelection(object sender, RoutedEventArgs e)
+    {
+        edit.Delete();
+        FocusDocument();
+    }
 
     private void OnSelectAll(object sender, RoutedEventArgs e) => edit.SelectAll();
 

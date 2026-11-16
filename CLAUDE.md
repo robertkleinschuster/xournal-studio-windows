@@ -75,8 +75,8 @@ arrows), math exercises long formulas in several colors.
 - **One selection tool** (user, 2026-11-15: "Vereinheitlichung"): Auswählen = lasso or rectangle for strokes and
   pictures; a rectangle on a PDF page also marks that area – copying takes what is seen (rendered PDF + ink and
   pictures in it). Selected, pasted and duplicated content is selected the same way: move, scale (corners),
-  duplicate, cut/copy, delete (commands as contextual buttons in the command row while something is selected –
-  decided 2026-11-16 instead of a flyout at the selection, see Decided).
+  duplicate, cut/copy, delete (buttons in the command row, enabled while something is selected – decided 2026-11-16
+  instead of a flyout at the selection, see Decided).
 - **Decisions (2026-11-15):** eraser = native Windows ink eraser (whole strokes; Windows has no partial eraser – the
   partial eraser is an agreed exception since 2026-11-16, see below); shape recognition = Windows `InkAnalyzer`; straight lines also with the Windows ruler (stencil button).
   Selection and shapes are `InkToolbarCustomToolButton`s built after Microsoft's pattern ("Pen interactions
@@ -121,7 +121,7 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   `InkTools` (routes pen/mouse input on the page to `SelectionTool` or `ShapeTool`; barrel → selection),
   `Selection` (selected strokes/pictures, frame + corner handles, live preview, commit as `TransformEdit`),
   `EditCommands` (cut/copy/paste/duplicate/delete/select all; pasted content placed at the left margin below the
-  page's content and selected), `SelectionCommands` (the selection's contextual buttons in the command row), `TasksView` + `TaskItem` (todo.txt pane), `PartialEraser`
+  page's content and selected), `SelectionCommands` (enables the selection's buttons in the command row), `TasksView` + `TaskItem` (todo.txt pane), `PartialEraser`
   (circle cursor, cuts with `Model/StrokeEraser`, one undo step per drag), `PdfExportCommand` (picker, never over the
   background PDF),
   `ExplorerView` + `ExplorerItem` (TreeView of the project folder in the SplitView pane, git colors incl. folders,
@@ -324,8 +324,8 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   Verified in the sandbox: barrel lasso → barrel move is committed → Del deletes. Other options considered: a flyout
   inside the XAML tree (drawn under the ink), Win32 `GetPointerInfo` (app logic around a WinUI bug), a report to
   microsoft-ui-xaml (public, needs approval). The buttons stay in place and are enabled with a selection (nothing
-  jumps). Saving/recovery/export wait while content is shown displaced (`IsPreviewing`), edit commands, undo and redo
-  while a drag runs (`SelectionTool.IsDragging`, also before the first move) – each says "Erst loslassen".
+  jumps). Everything that reads or writes content waits while a drag runs (`SelectionTool.IsDragging`, also before the first
+  move): edit commands, undo/redo, saving, recovery copies (written within seconds after), export – "Erst loslassen".
 - **Questions for the user (review findings kept deliberately, 2026-11-16):**
   - Save As of a document with an *attached* PDF or picture background (`domain="attach"`, `<doc>.xopp.bg…`): the new
     file refers to the old document's attachment by path; upstream copies the attachment next to the new file.
