@@ -169,6 +169,12 @@ public sealed class EditCommands(
         {
             if (e.Name == "stroke")
             {
+                if (StrokeConverter.NeedsOwnDrawing(e))
+                {
+                    // Not from an ink selection of this app (styled or damaged): it cannot be added as ink.
+                    DebugLog.Write("paste: skipped a stroke that is drawn from the file, not ink");
+                    continue;
+                }
                 if (page.AddStrokeElement(e) is { } stroke)
                 {
                     strokes.Add(stroke);

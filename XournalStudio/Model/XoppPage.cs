@@ -246,6 +246,12 @@ public sealed class XoppPage
     /// </summary>
     public InkStroke? AddStrokeElement(XElement e)
     {
+        if (StrokeConverter.NeedsOwnDrawing(e))
+        {
+            // Only copies of ink come here (selections are ink); a stroke drawn from the file must never become ink,
+            // which would show it differently than the file means it.
+            throw new ArgumentException("A stroke drawn from the file (styled or damaged) cannot be added as ink.", nameof(e));
+        }
         var stroke = StrokeConverter.FromXml(e);
         if (stroke == null)
         {
@@ -261,7 +267,7 @@ public sealed class XoppPage
         element.Elements("layer").Elements("stroke").Where(StrokeConverter.NeedsOwnDrawing).ToList();
 
     // Found once (the page view draws them once too): nothing edits these elements – they are not ink – and added
-    // strokes (pasted, duplicated: copies of ink) are kept beside the page's tree, never in it.
+    // strokes are ink (AddStrokeElement refuses others), kept beside the page's tree, never in it.
     private List<XElement>? drawnStrokes;
 
     /// <summary>Texts and links of all layers, bottom to top (shown, not edited).</summary>
