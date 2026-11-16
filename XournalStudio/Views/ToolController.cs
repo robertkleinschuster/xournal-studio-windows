@@ -38,12 +38,15 @@ public sealed class ToolController
 
     private readonly InkToolbar toolbar;
     private readonly InkToolbarBallpointPenButton pen;
+    private readonly InkToolbarHighlighterButton highlighter;
     private readonly List<PageView> views = new();
 
     /// <summary>The active custom tool button, or null while a pen, the highlighter or the eraser is active.</summary>
     public InkToolbarCustomToolButton? CustomTool => toolbar.ActiveTool as InkToolbarCustomToolButton;
 
     public event EventHandler? CustomToolChanged;
+
+    public event EventHandler? StrokeWidthsChanged;
 
     private bool partialErasing;
 
@@ -94,28 +97,38 @@ public sealed class ToolController
         Size = new Windows.Foundation.Size(pen.SelectedStrokeWidth, pen.SelectedStrokeWidth),
     };
 
-    public ToolController(InkToolbar toolbar, InkToolbarBallpointPenButton pen, InkToolbarHighlighterButton highlighter)
+    public ToolController(InkToolbar toolbar, InkToolbarBallpointPenButton pen, InkToolbarHighlighterButton highlighter,
+        double penStrokeWidth = 1.41, double highlighterStrokeWidth = 8.5)
     {
         this.toolbar = toolbar;
         this.pen = pen;
+        this.highlighter = highlighter;
 
         pen.Palette = PenColors.Select(c => (Brush)new SolidColorBrush(c)).ToList();
         pen.SelectedBrushIndex = 1;
         // Xournal's pen widths: fine 0.85, medium 1.41, thick 2.26.
         pen.MinStrokeWidth = 0.5;
         pen.MaxStrokeWidth = 6;
-        pen.SelectedStrokeWidth = 1.41;
+        pen.SelectedStrokeWidth = Math.Clamp(penStrokeWidth, pen.MinStrokeWidth, pen.MaxStrokeWidth);
         highlighter.MinStrokeWidth = 2;
         highlighter.MaxStrokeWidth = 30;
-        highlighter.SelectedStrokeWidth = 8.5;
+        highlighter.SelectedStrokeWidth = Math.Clamp(highlighterStrokeWidth, highlighter.MinStrokeWidth, highlighter.MaxStrokeWidth);
 
         toolbar.ActiveToolChanged += (_, _) =>
         {
             ApplyToAll();
             CustomToolChanged?.Invoke(this, EventArgs.Empty);
         };
-        toolbar.InkDrawingAttributesChanged += (_, _) => ApplyToAll();
+        toolbar.InkDrawingAttributesChanged += (_, _) =>
+        {
+            ApplyToAll();
+            StrokeWidthsChanged?.Invoke(this, EventArgs.Empty);
+        };
     }
+
+    public double PenStrokeWidth => pen.SelectedStrokeWidth;
+
+    public double HighlighterStrokeWidth => highlighter.SelectedStrokeWidth;
 
     /// <summary>Barrel-button input bypasses the presenter (lasso, see the class summary).</summary>
     public static void Attach(PageView view)

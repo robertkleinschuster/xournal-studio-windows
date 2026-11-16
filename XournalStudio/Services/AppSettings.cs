@@ -22,6 +22,10 @@ public sealed class AppSettings
 
     public bool RecognizeShapes { get; set; }
 
+    public double PenStrokeWidth { get; set; } = 1.41;
+
+    public double HighlighterStrokeWidth { get; set; } = 8.5;
+
     public Model.ShapeKind Shape { get; set; }
 
     public Model.SelectMode SelectMode { get; set; }

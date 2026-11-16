@@ -54,7 +54,7 @@ public sealed class PartialEraser(UndoStack undo, Action<IReadOnlyCollection<Ink
         edit = new PageEdit(view.Page);
         last = p;
         Hover(view, p);
-        EraseAt(p);
+        EraseAt([p]);
     }
 
     /// <summary>Erases along the way from the last point (in steps of half the radius: nothing is skipped).</summary>
@@ -66,10 +66,12 @@ public sealed class PartialEraser(UndoStack undo, Action<IReadOnlyCollection<Ink
         }
         double dx = p.X - last.X, dy = p.Y - last.Y;
         int steps = Math.Max(1, (int)Math.Ceiling(Math.Sqrt(dx * dx + dy * dy) / (Radius / 2)));
+        var centers = new List<Point>(steps);
         for (int i = 1; i <= steps; i++)
         {
-            EraseAt(new Point(last.X + dx * i / steps, last.Y + dy * i / steps));
+            centers.Add(new Point(last.X + dx * i / steps, last.Y + dy * i / steps));
         }
+        EraseAt(centers);
         last = p;
         Hover(page, p);
     }
@@ -85,16 +87,24 @@ public sealed class PartialEraser(UndoStack undo, Action<IReadOnlyCollection<Ink
         page = null;
     }
 
-    private void EraseAt(Point center)
+    /// <summary>Applies one pointer event's swept eraser circles in a single pass over the page's strokes.</summary>
+    private void EraseAt(IReadOnlyList<Point> centers)
     {
+        if (centers.Count == 0)
+        {
+            return;
+        }
         var xopp = page!.Page;
         var ink = xopp.Ink!;
-        var reach = new Rect(center.X - Radius, center.Y - Radius, 2 * Radius, 2 * Radius);
-        var removed = new List<InkStroke>();
-        foreach (var stroke in ink.GetStrokes().ToList())
+        double left = centers.Min(p => p.X) - Radius, right = centers.Max(p => p.X) + Radius;
+        double top = centers.Min(p => p.Y) - Radius, bottom = centers.Max(p => p.Y) + Radius;
+        var sweepBounds = new Rect(left, top, right - left, bottom - top);
+        var removed = new List<(InkStroke Stroke, List<List<InkSample>> Pieces,
+            Windows.UI.Input.Inking.InkDrawingAttributes Attributes)>();
+        foreach (var stroke in ink.GetStrokes())
         {
             var bounds = stroke.BoundingRect; // includes the stroke's width
-            bounds.Intersect(reach);
+            bounds.Intersect(sweepBounds);
             if (bounds.IsEmpty)
             {
                 continue;
@@ -106,12 +116,38 @@ public sealed class PartialEraser(UndoStack undo, Action<IReadOnlyCollection<Ink
                 var at = System.Numerics.Vector2.Transform(new((float)p.Position.X, (float)p.Position.Y), transform);
                 return new InkSample(new Point(at.X, at.Y), p.Pressure);
             }).ToList();
-            var pieces = StrokeEraser.Erase(samples, s => StrokeConverter.DrawnWidth(attributes, s.Pressure) / 2, center, Radius);
-            if (pieces == null)
+            var halfWidth = (InkSample s) => StrokeConverter.DrawnWidth(attributes, s.Pressure) / 2;
+            List<List<InkSample>> pieces = [samples];
+            bool touched = false;
+            foreach (var center in centers)
             {
-                continue;
+                var next = new List<List<InkSample>>();
+                foreach (var piece in pieces)
+                {
+                    var cut = StrokeEraser.Erase(piece, halfWidth, center, Radius);
+                    if (cut == null)
+                    {
+                        next.Add(piece);
+                    }
+                    else
+                    {
+                        touched = true;
+                        next.AddRange(cut);
+                    }
+                }
+                pieces = next;
+                if (pieces.Count == 0)
+                {
+                    break;
+                }
             }
-            removed.Add(stroke);
+            if (touched)
+            {
+                removed.Add((stroke, pieces, attributes));
+            }
+        }
+        foreach (var (stroke, pieces, attributes) in removed)
+        {
             if (!edit!.AddedStrokes.Remove(stroke))
             {
                 edit.RemovedStrokes.Add(stroke); // was there before this drag
@@ -123,12 +159,15 @@ public sealed class PartialEraser(UndoStack undo, Action<IReadOnlyCollection<Ink
                 edit.AddedStrokes.Add(rest);
             }
         }
-        if (removed.Count > 0)
+        if (removed.Count != 0)
         {
             // The touched strokes come from the ink itself (no identity lookup); no other stroke is ever left selected.
-            removed.ForEach(s => s.Selected = true);
+            foreach (var (stroke, _, _) in removed)
+            {
+                stroke.Selected = true;
+            }
             ink.DeleteSelected();
-            erased(removed);
+            erased(removed.Select(r => r.Stroke).ToList());
         }
     }
 }

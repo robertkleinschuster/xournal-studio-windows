@@ -39,7 +39,14 @@ public sealed partial class MainWindow : Window
         }
 
         messages = new Messages(Info);
-        tools = new ToolController(Toolbar, PenButton, HighlighterButton);
+        tools = new ToolController(Toolbar, PenButton, HighlighterButton,
+            settings.PenStrokeWidth, settings.HighlighterStrokeWidth);
+        tools.StrokeWidthsChanged += (_, _) =>
+        {
+            settings.PenStrokeWidth = tools.PenStrokeWidth;
+            settings.HighlighterStrokeWidth = tools.HighlighterStrokeWidth;
+            settings.Save();
+        };
         inkTools = new InkTools(undo, () => tools.PenAttributes);
         inkTools.Shapes.Shape = settings.Shape;
         inkTools.Selection.Mode = settings.SelectMode;
