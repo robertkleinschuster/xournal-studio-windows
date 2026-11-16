@@ -147,7 +147,7 @@ public static class PdfExport
         XPen Pen(double width, double offset = 0)
         {
             var pen = new XPen(color, width) { LineCap = cap, LineJoin = XLineJoin.Round };
-            if (shape.Dashes is { Length: > 0 } dashes && width > 0)
+            if (shape.Dashes is { Length: > 0 } dashes && width > 0 && double.IsFinite(dashes.Max() / width))
             {
                 pen.DashPattern = dashes.Select(d => d / width).ToArray();
                 pen.DashOffset = offset / width;

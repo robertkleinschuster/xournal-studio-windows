@@ -116,7 +116,7 @@ public sealed partial class PageView : UserControl
             // XAML dash lengths are in multiples of the thickness; the file's are in points.
             DoubleCollection? Dash(double width)
             {
-                if (shape.Dashes is not { Length: > 0 } dashes || width <= 0)
+                if (shape.Dashes is not { Length: > 0 } dashes || width <= 0 || !double.IsFinite(dashes.Max() / width))
                 {
                     return null;
                 }
@@ -248,7 +248,7 @@ public sealed partial class PageView : UserControl
     // page is near the viewport (freed with the PDF bitmaps otherwise), again when zoomed in a lot. The file is read
     // into memory off the UI thread (not held open: a sync or rename is not blocked) and decoded like the pictures
     // (PictureRenderer); a decoded bitmap is shown when it is sharper than the one shown (the previous one stays
-    // meanwhile). A picture that cannot be read or decoded while nothing is shown is logged and not tried again until
+    // meanwhile). A picture that cannot be read or decoded is logged and not tried again (the shown one, if any, stays) until
     // the page leaves the viewport and comes back.
     private bool backgroundFailed;
     private uint backgroundRequested, backgroundShown; // pixel widths

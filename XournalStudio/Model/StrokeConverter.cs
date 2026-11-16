@@ -57,7 +57,7 @@ public static class StrokeConverter
             points.Add(new Point(coords[2 * i], coords[2 * i + 1]));
         }
         var widths = ParseNumbers((string?)e.Attribute("width") ?? "1");
-        double width = widths.Count > 0 && widths[0] > 0 ? widths[0] : 1;
+        double width = widths.Count > 0 && widths[0] >= 0 ? widths[0] : 1; // 0: no line, as upstream
         var segments = new List<double>(Math.Max(0, count - 1));
         for (int i = 0; i < count - 1; i++)
         {
@@ -88,9 +88,8 @@ public static class StrokeConverter
         _ => [],
     };
 
-    // A dash pattern needs positive lengths (negative or all-zero ones are invalid in XAML and PDF): otherwise solid.
-    private static double[] Drawable(List<double> dashes) =>
-        dashes.All(d => d >= 0) && dashes.Any(d => d > 0) ? dashes.ToArray() : [];
+    // A dash pattern needs positive lengths (PDFsharp rejects zero and negative ones): otherwise drawn solid.
+    private static double[] Drawable(List<double> dashes) => dashes.Count > 0 && dashes.All(d => d > 0) ? dashes.ToArray() : [];
 
     /// <summary>
     /// A stroke Windows ink cannot draw as the file means it: filled, dashed, or with other than round ends. Such strokes
@@ -98,7 +97,9 @@ public static class StrokeConverter
     /// </summary>
     public static bool NeedsOwnDrawing(XElement e) =>
         (int.TryParse((string?)e.Attribute("fill"), NumberStyles.Integer, Inv, out int fill) && fill >= 0) ||
-        Dashes((string?)e.Attribute("style")).Length > 0 ||
+        // any line style (also a custom one too damaged to draw dashed): never rewritten as ink
+        (string?)e.Attribute("style") is "dash" or "dashdot" or "dot" ||
+        ((string?)e.Attribute("style"))?.StartsWith("cust:", StringComparison.Ordinal) == true ||
         (string?)e.Attribute("capStyle") is "butt" or "square";
 
     public static InkStroke? FromXml(XElement e)
@@ -197,27 +198,24 @@ public static class StrokeConverter
     /// </summary>
     public static void Transform(XElement e, Matrix3x2 m)
     {
+        // Pair by pair, as upstream reads the list: a readable pair is moved (in double: the file's numbers keep their
+        // precision, Vector2 would round them to float); a pair with a damaged number and a stray last number are
+        // written back exactly as read – never deleted.
         var tokens = e.Value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-        var coords = ParseNumbers(e.Value); // the readable pairs at the start
-        var moved = new StringBuilder(e.Value.Length + 16);
-        int pairs = coords.Count / 2;
-        for (int i = 0; i < pairs; i++)
+        var moved = new List<string>(tokens.Length);
+        for (int i = 0; i < tokens.Length; i += 2)
         {
-            if (i > 0)
+            if (i + 1 < tokens.Length && XoppFormat.ReadNumber(tokens[i]) is { } px && XoppFormat.ReadNumber(tokens[i + 1]) is { } py)
             {
-                moved.Append(' ');
+                moved.Add(Format(px * m.M11 + py * m.M21 + m.M31));
+                moved.Add(Format(px * m.M12 + py * m.M22 + m.M32));
             }
-            // In double: the file's numbers keep their precision (Vector2 would round them to float).
-            double x = coords[2 * i] * m.M11 + coords[2 * i + 1] * m.M21 + m.M31;
-            double y = coords[2 * i] * m.M12 + coords[2 * i + 1] * m.M22 + m.M32;
-            moved.Append(Format(x)).Append(' ').Append(Format(y));
+            else
+            {
+                moved.AddRange(tokens.Skip(i).Take(2));
+            }
         }
-        // What is not a readable pair (a stray number, a damaged rest) is written back exactly as read: never deleted.
-        foreach (var rest in tokens.Skip(2 * pairs))
-        {
-            moved.Append(moved.Length > 0 ? " " : "").Append(rest);
-        }
-        e.Value = moved.ToString();
+        e.Value = string.Join(' ', moved);
     }
 
     private static string Format(double v) => v.ToString("0.####", Inv);
