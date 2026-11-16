@@ -309,7 +309,12 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
    square-ended strokes (shown and exported from the file by `PageView.ShowDrawnStrokes`/`PdfExport`, not editable as
    ink; a filled highlighter's line over its filling comes out a little stronger – XAML and PDFsharp have no group
    opacity here, a Canvas' Opacity + BitmapCache did not group). Not supported: upstream's newer zip container format.
-7. Not started, only if the user asks: inserting pages of another PDF, page reordering, a text tool.
+7. **Night 2026-11-16, reviews 9–55:** display of every upstream element, picture/text matrices, all backgrounds,
+   styled strokes; the selection's commands moved to the command row (barrel release, see Decided); snapshots
+   consistent during a drag; gestures belong to their pointer and begin only with a press; Save As takes attachments
+   along. Merged into main 2026-11-16 morning (user: "du kannst gerne mergen"). Reviews were still finding edge cases
+   (mostly the eraser end, now a question for the user) – not a clean round.
+8. Not started, only if the user asks: inserting pages of another PDF, page reordering, a text tool.
 
 ## Decided with the user (2026-11-16 morning)
 
@@ -345,6 +350,15 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   touching after a cancel (page removed, document reloaded, tool changed) erases on, also on pages that move up under
   it. Also to watch on the device: a quick flip from the eraser end to the tip that touches down without a hover the
   app sees – that first tip stroke may not ink (the presenters get input back on that press).
+  User (2026-11-16 morning): tests it on the device. **Research (2026-11-16):** no supported API keeps the OS presenter
+  from erasing with the eraser end or tells the app the pen is inverted before it touches (InkInputProcessingConfiguration,
+  InputDeviceTypes, InputPointerSource, GetPointerPenInfo – the ink thread owns those messages – all ruled out). The
+  route after Microsoft's design: when an SDK ships microsoft-ui-xaml PR #12292, `UnprocessedInput.PointerHovered/
+  PointerEntered` (already raised while the pen inks, see the sandbox log) carry readable `IsInverted` → set the
+  presenters' `IsInputEnabled = false` on an inverted hover → partial from the first touch. Only possible earlier:
+  Raw Input on HID 0x0D/0x02 (In-Range, Invert) – a parallel input channel, device test only, needs the user's
+  approval as an exception. WPF had this natively (EraseByPoint, EditingModeInverted); WinRT/WinUI ink never had a
+  point eraser (issue #1530). No issue exists about IsEraserInputEnabled – filing one is public (approval).
 - **Questions for the user (review findings kept deliberately, 2026-11-16):**
   - A picture background that fails while being drawn into the PDF is counted as "ohne Hintergrund" instead of
     failing the export (deliberate: one damaged picture should not stop the export).
