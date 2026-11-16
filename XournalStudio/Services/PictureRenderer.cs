@@ -10,12 +10,13 @@ namespace XournalStudio.Services;
 /// <summary>Decodes picture data of .xopp files: PNG/JPEG, or a one-page PDF (copied areas, LaTeX).</summary>
 public static class PictureRenderer
 {
-    public static async Task<ImageSource> LoadAsync(byte[] data, uint pixelWidth)
+    /// <param name="what">Names the picture in the log.</param>
+    public static async Task<ImageSource> LoadAsync(byte[] data, uint pixelWidth, string what)
     {
         using var stream = await ToStreamAsync(data);
         var bitmap = new BitmapImage();
         // Failures while decoding throw from SetSourceAsync; one reported later (when drawn) comes here.
-        bitmap.ImageFailed += (_, e) => DebugLog.Write($"picture: ImageFailed {e.ErrorMessage}");
+        bitmap.ImageFailed += (_, e) => DebugLog.Write($"{what}: ImageFailed {e.ErrorMessage}");
         if (XoppImage.IsPdf(data))
         {
             var pdf = await PdfDocument.LoadFromStreamAsync(stream);

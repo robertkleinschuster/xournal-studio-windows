@@ -264,11 +264,12 @@ public sealed partial class PageView : UserControl
         try
         {
             byte[] data = await Task.Run(() => File.ReadAllBytes(path));
-            var bitmap = await PictureRenderer.LoadAsync(data, wanted);
+            var bitmap = await PictureRenderer.LoadAsync(data, wanted, path);
             if (release == backgroundRelease && wanted > backgroundShown)
             {
                 PdfImage.Source = bitmap;
                 backgroundShown = wanted;
+                backgroundRequested = Math.Max(backgroundRequested, wanted);
             }
         }
         catch (Exception e) // any failure of reading or decoding (async void: nothing may escape); logged
@@ -341,7 +342,7 @@ public sealed partial class PageView : UserControl
     {
         try
         {
-            image.Source = await PictureRenderer.LoadAsync(XoppImage.GetData(element), pixelWidth);
+            image.Source = await PictureRenderer.LoadAsync(XoppImage.GetData(element), pixelWidth, "picture on a page");
         }
         catch (Exception e)
         {

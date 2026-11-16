@@ -59,7 +59,8 @@ public static class XoppImage
     {
         var parts = ((string?)e.Attribute("natural_size") ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries);
         return parts.Length == 2 && double.TryParse(parts[0], NumberStyles.Float, Inv, out double w) &&
-            double.TryParse(parts[1], NumberStyles.Float, Inv, out double h) && w > 0 && h > 0 ? new Size(w, h) : null;
+            double.TryParse(parts[1], NumberStyles.Float, Inv, out double h) && w > 0 && h > 0 && double.IsFinite(w) &&
+            double.IsFinite(h) ? new Size(w, h) : null;
     }
 
     private static Rect LegacyBounds(XElement e)
@@ -116,7 +117,7 @@ public static class XoppImage
     public static bool IsPdf(byte[] data) => data.Length > 4 && data[0] == '%' && data[1] == 'P' && data[2] == 'D' && data[3] == 'F';
 
     private static double Number(XElement e, string name) =>
-        double.TryParse((string?)e.Attribute(name), NumberStyles.Float, Inv, out double v) ? v : 0;
+        double.TryParse((string?)e.Attribute(name), NumberStyles.Float, Inv, out double v) && double.IsFinite(v) ? v : 0;
 
     private static string Format(double v) => v.ToString("0.####", Inv);
 }

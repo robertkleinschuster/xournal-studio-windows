@@ -346,6 +346,16 @@ public class FileFormatTests : IDisposable
         Assert.Equal(new System.Numerics.Vector2(0, 5), text.Transform.Translation); // matrix with NaN ignored, x beyond float
         Assert.Null(XoppFormat.ReadMatrix(XElement.Parse("""<image matrix="1 0 0 1 Infinity 0"/>""")));
         Assert.Equal(12, XoppText.Read(XElement.Parse("""<text size="-3" x="0" y="0">x</text>""")).Size);
+        var huge = XoppText.Read(XElement.Parse("""<text size="1e300" wrap="1e300" x="0" y="0">x</text>"""));
+        Assert.Equal(12, huge.Size);
+        Assert.Null(huge.Wrap);
+        var page = XoppPage.FromXml(XElement.Parse("""
+            <page width="100" height="100"><background type="solid" color="#ffffffff" style="plain"/><layer>
+            <image left="NaN" top="0" right="10" bottom="20">AAAA</image>
+            <image left="0" top="0" right="1" bottom="1" natural_size="1 1" matrix="3e38 0 0 3e38 0 0">AAAA</image>
+            </layer></page>
+            """));
+        Assert.Equal(20, page.ContentBottom()); // the hostile matrix is ignored for placing pasted content
     }
 
     // Whitespace-only text nodes depend on formatting, not content.
