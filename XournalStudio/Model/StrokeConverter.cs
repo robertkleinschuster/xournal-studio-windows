@@ -309,10 +309,6 @@ public static class XoppColor
 
 public enum StrokeCap { Round, Butt, Square }
 
-/// <summary>
-/// A stroke as Xournal draws it (see <see cref="StrokeConverter.ReadShape"/>): <paramref name="Fill"/> is the alpha
-/// (0–255) of the filled outline, -1 for none; <paramref name="Dashes"/> in page points, empty for solid.
-/// </summary>
 /// <summary>A part of a drawn stroke (<see cref="StrokeShape.Parts"/>), in page points.</summary>
 public abstract record StrokePart;
 
@@ -325,6 +321,10 @@ public sealed record StrokeDot(Point Center, double Size, bool Square) : StrokeP
 /// <summary>A polyline of one width; <paramref name="DashOffset"/> = the length drawn before it (in points).</summary>
 public sealed record StrokeLine(IReadOnlyList<Point> Points, double Width, double DashOffset) : StrokePart;
 
+/// <summary>
+/// A stroke as Xournal draws it (see <see cref="StrokeConverter.ReadShape"/>): <paramref name="Fill"/> is the alpha
+/// (0–255) of the filled outline, -1 for none; <paramref name="Dashes"/> in page points, empty for solid.
+/// </summary>
 public sealed record StrokeShape(Color Color, bool Highlighter, double Width, IReadOnlyList<Point> Points,
     IReadOnlyList<double> SegmentWidths, int Fill = -1, double[]? Dashes = null, StrokeCap Cap = StrokeCap.Round)
 {
@@ -376,14 +376,17 @@ public sealed record StrokeShape(Color Color, bool Highlighter, double Width, IR
     /// <summary>The lowest point of what is drawn (<see cref="Parts"/>), or null when nothing is.</summary>
     public double? Bottom()
     {
-        // A square end reaches half the width beyond the end, also sideways: up to √2 · width / 2 lower.
-        double reach = Cap == StrokeCap.Square ? Math.Sqrt(2) : 1;
+        // A line reaches half its width below its points (round ends and joins too); a square end reaches half the width
+        // beyond the end, also sideways: up to √2 · width / 2 below an end point. (Gaps of dashes are counted as drawn.)
+        double Ends(StrokeLine l) => Cap == StrokeCap.Square
+            ? Math.Max(l.Points[0].Y, l.Points[^1].Y) + Math.Sqrt(2) * l.Width / 2
+            : double.NegativeInfinity;
         var bottoms = Parts().Select(part => part switch
         {
             StrokeFill f => f.Points.Max(p => p.Y),
             StrokeDot d => d.Center.Y + d.Size / 2,
-            StrokeLine l => l.Points.Max(p => p.Y) + l.Width / 2 * reach,
-            _ => double.NegativeInfinity,
+            StrokeLine l => Math.Max(l.Points.Max(p => p.Y) + l.Width / 2, Ends(l)),
+            _ => throw new InvalidOperationException(part.GetType().Name),
         }).ToList();
         return bottoms.Count > 0 ? bottoms.Max() : null;
     }

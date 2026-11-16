@@ -181,6 +181,8 @@ public static class PdfExport
                 case StrokeLine line:
                     g.DrawLines(Pen(line), Points(line.Points)); // one path: a translucent highlighter has no darker joints
                     break;
+                default:
+                    throw new InvalidOperationException(part.GetType().Name); // as the screen: every part is drawn
             }
         }
     }
