@@ -183,18 +183,23 @@ public sealed class EditCommands(
             {
                 edit.AddedImages.Add(e);
             }
+            else
+            {
+                skipped++; // an element this app does not place (a text, ...)
+            }
         }
         if (skipped > 0)
         {
-            // Strokes that cannot be ink (no points; styled or damaged ones this app only draws from a file) – said,
-            // not silently dropped.
-            DebugLog.Write($"paste: {skipped} stroke(s) not added (no points, or drawn from a file only)");
-            messages.Show(InfoBarSeverity.Warning, "Nicht alles eingefügt",
-                $"{skipped} Strich(e) lassen sich hier nicht als Tinte einfügen.");
+            // What cannot be added (strokes without points or only drawn from a file, texts, ...) – said, not
+            // silently dropped (paste and duplicate alike).
+            DebugLog.Write($"add: {skipped} element(s) not added (strokes that cannot be ink, or not placeable)");
+            messages.Show(InfoBarSeverity.Warning, "Nicht alles übernommen",
+                $"{skipped} Element(e) lassen sich hier nicht als Tinte oder Bild übernehmen.");
         }
         if (strokes.Count == 0 && edit.AddedImages.Count == 0)
         {
-            return; // nothing added: no undo step, no empty selection
+            selection.Clear(); // nothing added: no undo step, and the previous selection is not taken for the result
+            return;
         }
         page.AddImages(edit.AddedImages);
         edit.AddedStrokes.AddRange(strokes);
