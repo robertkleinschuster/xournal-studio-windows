@@ -60,6 +60,9 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
     /// <summary>The pen's eraser end hovers while erasing is partial: the presenters leave its input to the app.</summary>
     public Action TakeEraserEnd { get; set; } = () => { };
 
+    /// <summary>Scrolls the pages while a selection drag holds the pen near the view's edge (set by the window).</summary>
+    public DragAutoScroll? AutoScroll { get; set; }
+
     /// <summary>The pen's tip hovers over the selection (true) or away from it (false): see ToolController.SelectionTakenOver.</summary>
     public Action<bool> TakeForSelection { get; set; } = _ => { };
 
@@ -122,6 +125,9 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
     // The running gesture is on this page and of this pointer.
     private bool Owns(PageView view, CorePointerEventArgs e) =>
         running is { } r && r.Page == view && r.Pointer == e.CurrentPoint.PointerId;
+
+    // The running gesture's pen, on whichever page it is now (a drag may cross pages; see LocalPosition).
+    private bool OwnsPointer(CorePointerEventArgs e) => running is { } r && r.Pointer == e.CurrentPoint.PointerId;
 
     // A hover, exit, or release may be the first event to report a lifted pointer; finish at its last local point.
     private bool EndIfLifted(Windows.UI.Input.PointerPoint point, CorePointerEventArgs e)
@@ -191,7 +197,7 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
             return;
         }
         var point = e.CurrentPoint;
-        if (EndIfLifted(point, e) || !Owns(view, e))
+        if (EndIfLifted(point, e) || !OwnsPointer(e))
         {
             return; // (a hovering pen never moves, lassos or erases)
         }
@@ -226,6 +232,15 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
                 break;
             case InkTool.Select:
                 Selection.Move(last);
+                // Near the view's edge the pages scroll; the drag follows the content moving under the pen.
+                AutoScroll?.Track(running!.Page, last, p =>
+                {
+                    if (running is { Tool: InkTool.Select })
+                    {
+                        last = p;
+                        Selection.Move(p);
+                    }
+                });
                 break;
             case InkTool.Shape:
                 Shapes.Move(last);
@@ -281,9 +296,9 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
     private void OnReleased(PageView view, CorePointerEventArgs e)
     {
         var point = e.CurrentPoint;
-        if (!Owns(view, e))
+        if (!OwnsPointer(e))
         {
-            EndIfLifted(point, e); // released over another page
+            EndIfLifted(point, e); // another pointer's release
             return;
         }
         Finish(LocalPosition(view, point));
@@ -348,6 +363,7 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
     {
         var taken = running;
         running = null;
+        AutoScroll?.Stop();
         return taken;
     }
 
@@ -365,7 +381,12 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
 
     // The presenter reports positions in its own (the InkCanvas') coordinates – the coordinates of its strokes and of
     // the page's overlay, which share the InkCanvas' place in the sheet. No transform (sandbox log 2026-11-16).
-    private static Point LocalPosition(PageView view, Windows.UI.Input.PointerPoint point) => point.Position;
+    // Over another page than the running gesture's (a drag crossing pages), its presenter reports in its own coordinates:
+    // converted to the gesture's page (pages differ by a translation).
+    private Point LocalPosition(PageView view, Windows.UI.Input.PointerPoint point) =>
+        running is { } r && r.Page != view
+            ? view.InkCanvas.TransformToVisual(r.Page.InkCanvas).TransformPoint(point.Position)
+            : point.Position;
 
     // The partial eraser takes the pen's eraser end, and with the eraser tool active also the pen tip and the mouse.
     private bool Erases(bool isPen, bool eraserEnd) =>

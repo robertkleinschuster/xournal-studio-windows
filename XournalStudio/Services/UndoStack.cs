@@ -5,10 +5,11 @@ using XournalStudio.Model;
 
 namespace XournalStudio.Services;
 
-/// <summary>A change of one page that can be undone and redone. Recorded after it was made.</summary>
+/// <summary>A change of pages that can be undone and redone. Recorded after it was made.</summary>
 public interface IPageEdit
 {
-    XoppPage Page { get; }
+    /// <summary>Whether the edit changes <paramref name="page"/> (its history goes with the page).</summary>
+    bool Touches(XoppPage page);
 
     bool IsEmpty { get; }
 
@@ -38,6 +39,8 @@ public sealed class PageEdit(XoppPage page) : IPageEdit
     }
 
     public bool IsEmpty => RemovedStrokes.Count + AddedStrokes.Count + RemovedImages.Count + AddedImages.Count == 0;
+
+    public bool Touches(XoppPage page) => page == Page;
 
     public void Undo()
     {
@@ -103,9 +106,35 @@ public sealed class TransformEdit(XoppPage page, Placement before, Placement aft
 
     public bool IsEmpty => before.Strokes.Count + before.Images.Count == 0;
 
+    public bool Touches(XoppPage page) => page == Page;
+
     public void Undo() => Page.RestorePlacement(before);
 
     public void Redo() => Page.RestorePlacement(after);
+}
+
+/// <summary>Edits of several pages as one step (content moved to another page: taken from one, added to the other).</summary>
+public sealed class CombinedEdit(IReadOnlyList<IPageEdit> edits) : IPageEdit
+{
+    public bool IsEmpty => edits.All(e => e.IsEmpty);
+
+    public bool Touches(XoppPage page) => edits.Any(e => e.Touches(page));
+
+    public void Undo()
+    {
+        for (int i = edits.Count - 1; i >= 0; i--)
+        {
+            edits[i].Undo();
+        }
+    }
+
+    public void Redo()
+    {
+        foreach (var edit in edits)
+        {
+            edit.Redo();
+        }
+    }
 }
 
 /// <summary>Undo/redo of page edits (the WinUI InkCanvas has no undo of its own).</summary>
@@ -168,7 +197,7 @@ public sealed class UndoStack
 
     private static void Filter(Stack<IPageEdit> stack, XoppPage page)
     {
-        var kept = stack.Where(e => e.Page != page).Reverse().ToList();
+        var kept = stack.Where(e => !e.Touches(page)).Reverse().ToList();
         stack.Clear();
         foreach (var e in kept)
         {

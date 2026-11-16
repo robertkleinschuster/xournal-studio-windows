@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml.Shapes;
 using Windows.Foundation;
 using XournalStudio.Model;
 using XournalStudio.Services;
+using Canvas = Microsoft.UI.Xaml.Controls.Canvas;
 using InkStroke = Windows.UI.Input.Inking.InkStroke;
 
 namespace XournalStudio.Views;
@@ -42,6 +43,18 @@ public sealed class SelectionTool(UndoStack undo)
     /// <summary>A selection was made, changed (moved, scaled) or cleared.</summary>
     public event EventHandler? SelectionChanged;
 
+    /// <summary>
+    /// Another page under a point of <c>page</c> (page points), with the offset from <c>page</c>'s coordinates to its
+    /// own; null over the page itself or between pages (set by the pages' owner).
+    /// </summary>
+    public Func<PageView, Point, (PageView Page, Vector2 Offset)?> OtherPageAt { get; set; } = (_, _) => null;
+
+    /// <summary>
+    /// The selection was dropped on another page: the handler moves its content there with this transform (from its
+    /// place before the drag into the target page's coordinates) and selects it.
+    /// </summary>
+    public event Action<Selection, PageView, Matrix3x2>? MovedToPage;
+
     /// <summary>A press at <paramref name="p"/> would move (inside) or scale (corner) the selection.</summary>
     public bool Grabs(PageView page, Point p) =>
         Current?.View == page && Current.HasContent && (Current.HandleAt(p) >= 0 || Current.Contains(p));
@@ -65,6 +78,11 @@ public sealed class SelectionTool(UndoStack undo)
             else if (Current.Contains(p))
             {
                 gesture = Gesture.Move;
+            }
+            if (gesture != Gesture.None)
+            {
+                // Dragged content is drawn above the other pages (it may cross them), until the drag ends.
+                Canvas.SetZIndex(page, 1);
             }
         }
         if (gesture == Gesture.None)
@@ -111,6 +129,7 @@ public sealed class SelectionTool(UndoStack undo)
         var page = view!;
         var finished = gesture;
         var points = lasso?.Points.ToList();
+        Canvas.SetZIndex(page, 0);
         RemoveFeedback();
         gesture = Gesture.None;
         bool tap = !moved && Math.Abs(p.X - start.X) + Math.Abs(p.Y - start.Y) < 3;
@@ -134,6 +153,10 @@ public sealed class SelectionTool(UndoStack undo)
                 Clear();
                 SelectPictureAt(page, p);
                 break;
+            case Gesture.Move when Current != null && OtherPageAt(page, p) is { } target:
+                // Dropped on another page: the content goes there (as Xournal++ does), where it was shown.
+                MovedToPage?.Invoke(Current, target.Page, Current.Live * Matrix3x2.CreateTranslation(target.Offset));
+                break;
             case Gesture.Move or Gesture.Scale when Current != null:
                 Current.Commit(undo);
                 SelectionChanged?.Invoke(this, EventArgs.Empty);
@@ -143,6 +166,10 @@ public sealed class SelectionTool(UndoStack undo)
 
     public void Cancel()
     {
+        if (view != null)
+        {
+            Canvas.SetZIndex(view, 0);
+        }
         if (gesture is Gesture.Move or Gesture.Scale)
         {
             Current?.Revert();

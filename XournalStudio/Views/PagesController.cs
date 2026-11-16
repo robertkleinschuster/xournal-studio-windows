@@ -127,6 +127,27 @@ public sealed class PagesController
         FitWidth();
     }
 
+    /// <summary>
+    /// The page under a point given in <paramref name="from"/>'s coordinates (page points), if it is another page, with
+    /// the offset from <paramref name="from"/>'s coordinates to its own (pages differ by a translation: same zoom).
+    /// </summary>
+    public (PageView Page, System.Numerics.Vector2 Offset)? OtherPageAt(PageView from, Point p)
+    {
+        foreach (var view in Views)
+        {
+            if (view == from)
+            {
+                continue;
+            }
+            var q = from.InkCanvas.TransformToVisual(view.InkCanvas).TransformPoint(p);
+            if (q.X >= 0 && q.Y >= 0 && q.X <= view.Page.Width && q.Y <= view.Page.Height)
+            {
+                return (view, new System.Numerics.Vector2((float)(q.X - p.X), (float)(q.Y - p.Y)));
+            }
+        }
+        return null;
+    }
+
     /// <summary>A graph page (size of the current one) after the page in view, scrolled into view.</summary>
     public void InsertAfterCurrent()
     {

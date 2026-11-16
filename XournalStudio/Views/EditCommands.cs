@@ -197,9 +197,53 @@ public sealed class EditCommands(
         selection.Select(view, view.Page.Ink!.GetStrokes().ToList(), view.Page.Images.ToList());
     }
 
-    // Adds stroke and picture elements to the page (undoable) and selects them; operation names it in the log. All or
-    // nothing: if adding fails, what was added is taken back before the error is reported.
+    /// <summary>
+    /// Moves a selection dropped on another page there (one undo step for both pages): its elements, transformed by
+    /// <paramref name="m"/> from where they were before the drag into the target's coordinates, are added to the target
+    /// and selected there, then taken from their page. Nothing is taken if adding fails.
+    /// </summary>
+    public void MoveToPage(Selection current, PageView target, Matrix3x2 m)
+    {
+        try
+        {
+            current.Revert(); // the elements as before the drag (m includes the move)
+            var source = current.Page;
+            var strokes = PageEdit.SelectOnly(source, current.Strokes); // what is still on the page
+            var images = current.Images.Where(i => i.Parent != null).ToList();
+            var elements = images.Select(i => XoppClip.Transformed(i, m))
+                .Concat(strokes.Select(s => XoppClip.Transformed(source.ElementOf(s), m))).ToList();
+            if (AddElements(target, elements, "move to page", allOrNothing: true) is not { } adding)
+            {
+                return; // nothing could be added (said): the content stays where it was
+            }
+            var removal = new PageEdit(source);
+            removal.RemovedStrokes.AddRange(PageEdit.SelectOnly(source, strokes));
+            source.Ink!.DeleteSelected();
+            removal.RemoveImages(images);
+            selection.Clear();
+            undo.Push(new CombinedEdit([removal, adding]));
+            SelectAdded(target, adding.AddedStrokes.ToList(), adding.AddedImages.ToList(), "move to page");
+        }
+        catch (Exception e)
+        {
+            messages.Error("move to page", "Verschieben auf die andere Seite nicht möglich", e);
+        }
+    }
+
+    // Adds stroke and picture elements to the page (undoable) and selects them; operation names it in the log.
     private void Add(PageView view, List<XElement> elements, string operation)
+    {
+        if (AddElements(view, elements, operation) is { } edit)
+        {
+            undo.Push(edit);
+            SelectAdded(view, edit.AddedStrokes.ToList(), edit.AddedImages.ToList(), operation);
+        }
+    }
+
+    // Adds stroke and picture elements to the page; the edit is not recorded yet. If adding fails, what was added is
+    // taken back before the error is reported. Null: nothing was added (the user was told) – with allOrNothing also
+    // when an element could not be added (a move must not lose what stays behind).
+    private PageEdit? AddElements(PageView view, List<XElement> elements, string operation, bool allOrNothing = false)
     {
         var page = view.Page;
         var edit = new PageEdit(page);
@@ -241,18 +285,24 @@ public sealed class EditCommands(
             // Said, not silently dropped: strokes that cannot be ink (drawn from a file only) and elements this app
             // does not place (from a clip of elsewhere; for a duplicate an error of this app).
             DebugLog.Write($"{operation}: {skipped} of {elements.Count} element(s) not added");
+            if (allOrNothing && skipped > 0)
+            {
+                TakeBack(edit);
+                messages.Show(InfoBarSeverity.Warning, "Nicht verschoben",
+                    $"{skipped} Element(e) lassen sich dort nicht als Tinte oder Bild übernehmen; alles bleibt auf seiner Seite.");
+                return null;
+            }
             string why = skipped > 0
                 ? $"{skipped} Element(e) lassen sich hier nicht als Tinte oder Bild übernehmen."
                 : "Es gibt nichts, was sich hier übernehmen lässt.";
             if (nothing)
             {
                 ReportNothingAdded(why);
-                return;
+                return null;
             }
             messages.Show(InfoBarSeverity.Warning, "Nicht alles übernommen", why);
         }
-        undo.Push(edit);
-        SelectAdded(view, edit.AddedStrokes.ToList(), edit.AddedImages.ToList(), operation);
+        return edit;
     }
 
     // Selects what was just added (and undoable). A failure here is not a failed paste or duplicate: logged and said

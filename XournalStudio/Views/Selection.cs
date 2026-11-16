@@ -92,6 +92,9 @@ public sealed class Selection
     /// <summary>A corner of the content (0 top-left, clockwise).</summary>
     public Point CornerOf(int index) => Corner(Bounds, index);
 
+    /// <summary>The previewed transform (identity while not dragged).</summary>
+    public Matrix3x2 Live => live;
+
     /// <summary>Shows the content transformed by <paramref name="m"/> (relative to where it was when the drag began).</summary>
     public void Preview(Matrix3x2 m)
     {

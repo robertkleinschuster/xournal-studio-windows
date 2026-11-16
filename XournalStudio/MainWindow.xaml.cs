@@ -60,6 +60,10 @@ public sealed partial class MainWindow : Window
             pages.ScrollToPage(index);
         });
         edit = new EditCommands(inkTools.Selection, pages, undo, messages, () => Toolbar.ActiveTool = SelectButton);
+        // A selection dragged across pages: scrolling at the view's edge, dropped on another page it moves there.
+        inkTools.AutoScroll = new DragAutoScroll(Scroller);
+        inkTools.Selection.OtherPageAt = pages.OtherPageAt;
+        inkTools.Selection.MovedToPage += edit.MoveToPage;
         var selectionCommands = new SelectionCommands(CopySelectionButton,
             [CutSelectionButton, DuplicateSelectionButton, DeleteSelectionButton]);
         export = new PdfExportCommand(AppWindow.Id, session, messages);

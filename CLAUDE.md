@@ -387,5 +387,14 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   through the app (presenters in mode None); the eraser end/button with the pen tool active is taken on its inverted
   hover (see above). User: "wichtig ist dass er robust funktioniert". Radius: context menu of the toggle (1–20 pt,
   default 4).
+- **Pages stay (user, 2026-11-16 evening):** one InkCanvas per page as the file has them; a continuous canvas with
+  pages only on export was considered and dropped (upstream .xopp keeps every element on one page, page sizes and
+  backgrounds differ, a document-tall InkCanvas runs into surface size limits, every stroke across a boundary would
+  need a hidden decision). Instead a selection moves across pages: while dragged its page is drawn above the others
+  (`Canvas.ZIndex`), the running pen's events from another page's presenter are converted to the drag's page
+  (`InkTools.LocalPosition`), near the view's edge the pages scroll (`DragAutoScroll`, timer: it goes on while the pen
+  holds still), and dropped on another page the content moves there (`EditCommands.MoveToPage`: the file's own elements
+  added to the target, all or nothing, then taken from their page; one undo step `CombinedEdit` – `IPageEdit.Touches`
+  lets a deleted page drop it from the history). Undo is one history in time order for the document.
 - **PDF export:** PDFsharp pinned to 6.2.4, the last MIT version (6.5.0 is AGPL-3.0 with license acceptance – a
   license change for this project is the user's decision).
