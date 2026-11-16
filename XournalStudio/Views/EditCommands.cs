@@ -101,9 +101,9 @@ public sealed class EditCommands(
     public async Task PasteAsync()
     {
         var view = pages.CurrentView;
-        if (view == null)
+        if (view == null || selection.Current?.IsPreviewing == true)
         {
-            return;
+            return; // mid-drag the selection is between two places: it would be replaced before it is put down
         }
         try
         {
@@ -159,55 +159,63 @@ public sealed class EditCommands(
         selection.Select(view, view.Page.Ink!.GetStrokes().ToList(), view.Page.Images.ToList());
     }
 
-    // Adds stroke and picture elements to the page (undoable) and selects them; operation names it in the log.
-    // (Nothing here throws on file content: reading strokes and pictures is guarded, so a paste is never half done.)
+    // Adds stroke and picture elements to the page (undoable) and selects them; operation names it in the log. All or
+    // nothing: if adding fails, what was added is taken back before the error is reported.
     private void Add(PageView view, List<XElement> elements, string operation)
     {
         var page = view.Page;
         var edit = new PageEdit(page);
-        var strokes = new List<InkStroke>();
         int skipped = 0;
-        foreach (var e in elements)
+        try
         {
-            if (e.Name == "stroke")
+            foreach (var e in elements)
             {
-                if (page.AddStrokeElement(e) is { } stroke)
+                if (e.Name == "stroke")
                 {
-                    strokes.Add(stroke);
+                    if (page.AddStrokeElement(e) is { } stroke)
+                    {
+                        edit.AddedStrokes.Add(stroke);
+                    }
+                    else
+                    {
+                        skipped++;
+                    }
+                }
+                else if (XoppImage.IsImage(e))
+                {
+                    edit.AddedImages.Add(e);
                 }
                 else
                 {
-                    skipped++;
+                    skipped++; // an element this app does not place
                 }
             }
-            else if (XoppImage.IsImage(e))
-            {
-                edit.AddedImages.Add(e);
-            }
-            else
-            {
-                skipped++; // only in a clip from elsewhere: copies of this app hold strokes and pictures only
-            }
+            page.AddImages(edit.AddedImages);
         }
-        if (skipped > 0)
+        catch
         {
-            // What cannot be added (from a clip of elsewhere: strokes that cannot be ink, elements this app does not
-            // place; for a duplicate it would be an error of this app) – said, not silently dropped.
-            DebugLog.Write($"{operation}: {skipped} of {elements.Count} element(s) not added (strokes that cannot be ink, or not placeable)");
-            messages.Show(InfoBarSeverity.Warning, "Nicht alles übernommen",
-                $"{skipped} Element(e) lassen sich hier nicht als Tinte oder Bild übernehmen.");
+            edit.Undo(); // nothing half added; the caller reports the error
+            throw;
         }
-        if (strokes.Count == 0 && edit.AddedImages.Count == 0)
+        bool nothing = edit.AddedStrokes.Count == 0 && edit.AddedImages.Count == 0;
+        if (skipped > 0 || nothing)
         {
-            // Nothing added: no undo step; the selection and tool stay as they were.
-            DebugLog.Write($"{operation}: nothing added ({elements.Count} element(s))");
-            return;
+            // Said, not silently dropped: strokes that cannot be ink (drawn from a file only) and elements this app
+            // does not place (from a clip of elsewhere; for a duplicate an error of this app). Nothing added: the
+            // selection and tool stay as they were, and the message says so.
+            DebugLog.Write($"{operation}: {skipped} of {elements.Count} element(s) not added");
+            messages.Show(InfoBarSeverity.Warning, nothing ? "Nichts übernommen" : "Nicht alles übernommen",
+                skipped > 0
+                    ? $"{skipped} Element(e) lassen sich hier nicht als Tinte oder Bild übernehmen."
+                    : "Die Zwischenablage enthält nichts, was sich hier einfügen lässt.");
         }
-        page.AddImages(edit.AddedImages);
-        edit.AddedStrokes.AddRange(strokes);
+        if (nothing)
+        {
+            return; // no undo step
+        }
         undo.Push(edit);
         activateSelectTool();
-        selection.Select(view, strokes, edit.AddedImages.ToList());
+        selection.Select(view, edit.AddedStrokes.ToList(), edit.AddedImages.ToList());
     }
 
     private void PasteInk(PageView view)
@@ -225,6 +233,12 @@ public sealed class EditCommands(
             added.ForEach(s => s.PointTransform *= up);
         }
         added.ForEach(s => s.Selected = false);
+        if (added.Count == 0)
+        {
+            DebugLog.Write("paste ink: the clipboard's ink added no strokes");
+            messages.Show(InfoBarSeverity.Warning, "Nichts übernommen", "Die Tinte in der Zwischenablage enthält keine Striche.");
+            return; // no undo step, selection and tool as they were
+        }
         var edit = new PageEdit(view.Page);
         edit.AddedStrokes.AddRange(added);
         undo.Push(edit);
