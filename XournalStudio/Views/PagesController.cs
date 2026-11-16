@@ -198,21 +198,23 @@ public sealed class PagesController
         view.Ink.StrokesCollected += (_, e) => OnStrokesCollected(view, e.Strokes);
         view.Ink.StrokesErased += (_, e) =>
         {
+            // A selection must not keep strokes that are gone (it would copy, move or bring them back) – also when they
+            // are put back below: as copies, not the selected strokes.
+            var erased = e.Strokes.Select(s => s.Id).ToHashSet();
+            if (inkTools.Selection.Current?.Strokes.Any(s => erased.Contains(s.Id)) == true)
+            {
+                inkTools.Selection.Clear();
+            }
             if (tools.PartialErasing && !tools.EraserActive)
             {
                 // The pen's eraser end with partial erasing on: Windows ink erased whole strokes (WinUI ignores
                 // IsEraserInputEnabled = false). They are put back, and from the eraser end's next press on it goes to
                 // the partial eraser (ToolController.EraserEndTakenOver) until the tip hovers again – the rest of this
                 // touch erases nothing (see CLAUDE.md, question for the user).
+                // (The copies are added on top: InkStrokeContainer has no insert at a position.)
                 PageEdit.RestoreStrokes(page, e.Strokes.ToList());
                 tools.EraserEndTakenOver = true; // the next eraser-end touch is a press the partial eraser gets (InkTools)
                 return;
-            }
-            // A selection must not keep strokes that are gone (it would copy, move or bring them back).
-            var erased = e.Strokes.Select(s => s.Id).ToHashSet();
-            if (inkTools.Selection.Current?.Strokes.Any(s => erased.Contains(s.Id)) == true)
-            {
-                inkTools.Selection.Clear();
             }
             var edit = new PageEdit(page);
             edit.RemovedStrokes.AddRange(e.Strokes);
