@@ -142,48 +142,45 @@ public static class PdfExport
             StrokeCap.Square => XLineCap.Square,
             _ => XLineCap.Round,
         };
-        // Dashes in multiples of the width (as GDI+); offset = the length already drawn, so the pattern runs on over
-        // the segments of a stroke with pressure as upstream draws it. (Which patterns are dashed: StrokeConverter.)
-        XPen Pen(double width, double offset = 0)
+        // Dashes in multiples of the width (as GDI+; which patterns are dashed: StrokeShape.DashesFor); the offset runs
+        // the pattern on over the segments of a stroke with pressure as upstream draws it.
+        XPen Pen(StrokeLine line)
         {
-            var pen = new XPen(color, width) { LineCap = cap, LineJoin = XLineJoin.Round };
-            if (shape.DashesFor(width) is { } dashes)
+            var pen = new XPen(color, line.Width) { LineCap = cap, LineJoin = XLineJoin.Round };
+            if (shape.DashesFor(line.Width) is { } dashes)
             {
                 // PDFsharp rejects zero lengths (the PDF format allows them): a zero one becomes very short – a dash of
                 // it is still a dot with round ends.
                 pen.DashPattern = dashes.Select(d => Math.Max(d, 1e-3)).ToArray();
-                pen.DashOffset = offset / width;
+                pen.DashOffset = line.DashOffset / line.Width;
             }
             return pen;
         }
-        var points = shape.Points.Select(p => new XPoint(p.X, p.Y)).ToArray();
-        if (shape.Fill >= 0 && points.Length > 2)
+        static XPoint[] Points(IReadOnlyList<Windows.Foundation.Point> points) => points.Select(p => new XPoint(p.X, p.Y)).ToArray();
+        // What is drawn: StrokeShape.Parts, the same as on screen.
+        foreach (var part in shape.Parts())
         {
-            var fill = XColor.FromArgb(Math.Clamp(shape.Fill, 0, 255), shape.Color.R, shape.Color.G, shape.Color.B);
-            g.DrawPolygon(new XSolidBrush(fill), points, XFillMode.Winding);
-        }
-        if (shape.EvenWidth && shape.Width <= 0)
-        {
-            return; // width 0 is no line on screen either (a PDF pen of 0 would be a hairline)
-        }
-        if (points.Length == 1)
-        {
-            g.DrawLine(Pen(shape.Width), points[0], points[0]); // a dot (round cap)
-        }
-        else if (shape.EvenWidth)
-        {
-            g.DrawLines(Pen(shape.Width), points); // one path: a translucent highlighter has no darker joints
-        }
-        else
-        {
-            double drawn = 0;
-            for (int i = 0; i < points.Length - 1; i++)
+            switch (part)
             {
-                if (shape.SegmentWidths[i] > 0) // width 0 is no line (a PDF pen of 0 would be a hairline)
-                {
-                    g.DrawLine(Pen(shape.SegmentWidths[i], drawn), points[i], points[i + 1]);
-                }
-                drawn += (points[i + 1] - points[i]).Length;
+                case StrokeFill fill:
+                    var filling = XColor.FromArgb(Math.Clamp(shape.Fill, 0, 255), shape.Color.R, shape.Color.G, shape.Color.B);
+                    g.DrawPolygon(new XSolidBrush(filling), Points(fill.Points), XFillMode.Winding);
+                    break;
+                case StrokeDot dot:
+                    var brush = new XSolidBrush(color);
+                    double r = dot.Size / 2;
+                    if (dot.Square)
+                    {
+                        g.DrawRectangle(brush, dot.Center.X - r, dot.Center.Y - r, dot.Size, dot.Size);
+                    }
+                    else
+                    {
+                        g.DrawEllipse(brush, dot.Center.X - r, dot.Center.Y - r, dot.Size, dot.Size);
+                    }
+                    break;
+                case StrokeLine line:
+                    g.DrawLines(Pen(line), Points(line.Points)); // one path: a translucent highlighter has no darker joints
+                    break;
             }
         }
     }

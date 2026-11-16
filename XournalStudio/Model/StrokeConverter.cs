@@ -313,6 +313,18 @@ public enum StrokeCap { Round, Butt, Square }
 /// A stroke as Xournal draws it (see <see cref="StrokeConverter.ReadShape"/>): <paramref name="Fill"/> is the alpha
 /// (0–255) of the filled outline, -1 for none; <paramref name="Dashes"/> in page points, empty for solid.
 /// </summary>
+/// <summary>A part of a drawn stroke (<see cref="StrokeShape.Parts"/>), in page points.</summary>
+public abstract record StrokePart;
+
+/// <summary>The filled outline.</summary>
+public sealed record StrokeFill(IReadOnlyList<Point> Points) : StrokePart;
+
+/// <summary>A one-point stroke: a circle, or a square for square ends, of the stroke's width.</summary>
+public sealed record StrokeDot(Point Center, double Size, bool Square) : StrokePart;
+
+/// <summary>A polyline of one width; <paramref name="DashOffset"/> = the length drawn before it (in points).</summary>
+public sealed record StrokeLine(IReadOnlyList<Point> Points, double Width, double DashOffset) : StrokePart;
+
 public sealed record StrokeShape(Color Color, bool Highlighter, double Width, IReadOnlyList<Point> Points,
     IReadOnlyList<double> SegmentWidths, int Fill = -1, double[]? Dashes = null, StrokeCap Cap = StrokeCap.Round)
 {
@@ -320,10 +332,61 @@ public sealed record StrokeShape(Color Color, bool Highlighter, double Width, IR
     public bool EvenWidth => SegmentWidths.All(w => w == Width);
 
     /// <summary>
-    /// Whether any part of the stroke is drawn (as PageView and PdfExport draw it): a line of positive width (the
-    /// segments' widths for a pressure stroke) or a filling of at least three points.
+    /// What is drawn of the stroke, bottom to top – the one description the screen (PageView) and the export
+    /// (PdfExport) both draw: the filling (three points or more), then a dot (one point: its end shape, nothing for
+    /// butt ends) or the line (one polyline; with pressure one per segment of positive width, the dashes running on).
     /// </summary>
-    public bool Visible => (EvenWidth ? Width > 0 : SegmentWidths.Any(w => w > 0)) || (Fill >= 0 && Points.Count > 2);
+    public IReadOnlyList<StrokePart> Parts()
+    {
+        var parts = new List<StrokePart>();
+        if (Fill >= 0 && Points.Count > 2)
+        {
+            parts.Add(new StrokeFill(Points));
+        }
+        if (Points.Count == 1)
+        {
+            if (Width > 0 && Cap != StrokeCap.Butt)
+            {
+                parts.Add(new StrokeDot(Points[0], Width, Cap == StrokeCap.Square));
+            }
+        }
+        else if (EvenWidth)
+        {
+            if (Width > 0)
+            {
+                parts.Add(new StrokeLine(Points, Width, 0));
+            }
+        }
+        else
+        {
+            double drawn = 0;
+            for (int i = 0; i + 1 < Points.Count; i++)
+            {
+                var (a, b) = (Points[i], Points[i + 1]);
+                if (SegmentWidths[i] > 0)
+                {
+                    parts.Add(new StrokeLine([a, b], SegmentWidths[i], drawn));
+                }
+                drawn += Math.Sqrt((b.X - a.X) * (b.X - a.X) + (b.Y - a.Y) * (b.Y - a.Y));
+            }
+        }
+        return parts;
+    }
+
+    /// <summary>The lowest point of what is drawn (<see cref="Parts"/>), or null when nothing is.</summary>
+    public double? Bottom()
+    {
+        // A square end reaches half the width beyond the end, also sideways: up to √2 · width / 2 lower.
+        double reach = Cap == StrokeCap.Square ? Math.Sqrt(2) : 1;
+        var bottoms = Parts().Select(part => part switch
+        {
+            StrokeFill f => f.Points.Max(p => p.Y),
+            StrokeDot d => d.Center.Y + d.Size / 2,
+            StrokeLine l => l.Points.Max(p => p.Y) + l.Width / 2 * reach,
+            _ => double.NegativeInfinity,
+        }).ToList();
+        return bottoms.Count > 0 ? bottoms.Max() : null;
+    }
 
     /// <summary>
     /// The dash pattern for a line of <paramref name="width"/> in multiples of it (as XAML and PDF pens take it), or

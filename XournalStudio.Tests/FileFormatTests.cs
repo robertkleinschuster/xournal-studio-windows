@@ -377,8 +377,10 @@ public class FileFormatTests : IDisposable
         Assert.Equal(1, StrokeConverter.ReadShape(XElement.Parse("""<stroke tool="pen" color="#000000ff" width="0">0 0 5 5</stroke>"""))!.Width); // as the ink
         Assert.Equal(0, StrokeConverter.ReadShape(XElement.Parse("""<stroke tool="pen" color="#000000ff" width="0" fill="128">0 0 5 5 0 5</stroke>"""))!.Width); // filling only
         Assert.Equal(1, StrokeConverter.ReadShape(XElement.Parse("""<stroke tool="pen" color="#000000ff" width="0">0 0 10 10 20 NaN</stroke>"""))!.Width); // damaged: as the ink did
-        Assert.False(StrokeConverter.ReadShape(XElement.Parse("""<stroke style="dash" color="#000000ff" width="2 0 0">0 0 5 5 9 9</stroke>"""))!.Visible); // no segment drawn
-        Assert.False(StrokeConverter.ReadShape(XElement.Parse("""<stroke fill="128" color="#000000ff" width="0">0 0 5 5</stroke>"""))!.Visible); // no area to fill
+        Assert.False(StrokeConverter.ReadShape(XElement.Parse("""<stroke style="dash" color="#000000ff" width="2 0 0">0 0 5 5 9 9</stroke>"""))!.Bottom() != null); // no segment drawn
+        Assert.False(StrokeConverter.ReadShape(XElement.Parse("""<stroke fill="128" color="#000000ff" width="0">0 0 5 5</stroke>"""))!.Bottom() != null); // no area to fill
+        Assert.Null(StrokeConverter.ReadShape(XElement.Parse("""<stroke capStyle="butt" color="#000000ff" width="2">50 700</stroke>"""))!.Bottom()); // a butt dot is nothing
+        Assert.Equal(11, StrokeConverter.ReadShape(XElement.Parse("""<stroke style="dash" color="#000000ff" width="2 2 0">0 0 10 10 10 800</stroke>"""))!.Bottom()); // only drawn segments
         Assert.Empty(StrokeConverter.Dashes("cust: -3 2"));
     }
 

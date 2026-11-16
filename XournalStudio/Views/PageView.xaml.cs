@@ -72,7 +72,10 @@ public sealed partial class PageView : UserControl
         ShowDrawnStrokes();
     }
 
-    /// <summary>Filled, dashed or butt/square-ended strokes as upstream draws them: the filling, then the line.</summary>
+    /// <summary>
+    /// The strokes shown from the file (filled, styled or damaged ones, <see cref="StrokeConverter.NeedsOwnDrawing"/>):
+    /// their <see cref="StrokeShape.Parts"/>, as the export draws them.
+    /// </summary>
     private void ShowDrawnStrokes()
     {
         foreach (var element in Page.DrawnStrokes)
@@ -81,103 +84,83 @@ public sealed partial class PageView : UserControl
             {
                 continue;
             }
-            // A PointCollection belongs to one shape: the filling and the line get their own.
-            PointCollection Points(IEnumerable<Point> from)
-            {
-                var collection = new PointCollection();
-                foreach (var p in from)
-                {
-                    collection.Add(p);
-                }
-                return collection;
-            }
             // A filled highlighter upstream is one translucent shape (filling and line drawn opaque into a mask, blended
             // with the filling's alpha). XAML applies opacity per shape (a Canvas' Opacity and BitmapCache did not group
             // them, sandbox 2026-11-16): both get that alpha, the line over the filling comes out a little stronger.
-            byte highlighterAlpha = (byte)Math.Clamp(shape.Fill, 0, 255);
             var color = shape.Highlighter && shape.Fill >= 0
-                ? Color.FromArgb(highlighterAlpha, shape.Color.R, shape.Color.G, shape.Color.B)
+                ? Color.FromArgb((byte)Math.Clamp(shape.Fill, 0, 255), shape.Color.R, shape.Color.G, shape.Color.B)
                 : shape.Color;
-            if (shape.Fill >= 0)
-            {
-                DrawnStrokesLayer.Children.Add(new Microsoft.UI.Xaml.Shapes.Polygon
-                {
-                    Points = Points(shape.Points),
-                    Fill = new SolidColorBrush(Color.FromArgb((byte)Math.Clamp(shape.Fill, 0, 255), color.R, color.G, color.B)),
-                    FillRule = FillRule.Nonzero,
-                });
-            }
             var cap = shape.Cap switch
             {
                 StrokeCap.Butt => PenLineCap.Flat,
                 StrokeCap.Square => PenLineCap.Square,
                 _ => PenLineCap.Round,
             };
-            // XAML dash lengths are in multiples of the thickness; the file's are in points.
-            DoubleCollection? Dash(double width)
+            foreach (var part in shape.Parts())
             {
-                if (shape.DashesFor(width) is not { } dashes)
+                DrawnStrokesLayer.Children.Add(part switch
                 {
-                    return null;
-                }
-                var collection = new DoubleCollection();
-                foreach (var d in dashes)
-                {
-                    collection.Add(d);
-                }
-                return collection;
-            }
-            // offset = the length already drawn: the dashes run on over the segments of a stroke with pressure.
-            Microsoft.UI.Xaml.Shapes.Shape Line(PointCollection pts, double width, double offset = 0)
-            {
-                var dash = Dash(width);
-                return new Microsoft.UI.Xaml.Shapes.Polyline
-                {
-                    StrokeDashOffset = dash != null ? offset / width : 0,
-                    Points = pts,
-                    Stroke = new SolidColorBrush(color),
-                    StrokeThickness = width,
-                    StrokeStartLineCap = cap,
-                    StrokeEndLineCap = cap,
-                    StrokeDashCap = cap,
-                    StrokeLineJoin = PenLineJoin.Round,
-                    StrokeDashArray = dash,
-                };
-            }
-            if (shape.Points.Count == 1)
-            {
-                // A dot, as the export draws it (a line from the point to itself): its end shape, nothing for butt ends.
-                if (shape.Cap != StrokeCap.Butt && shape.Width > 0)
-                {
-                    var p0 = shape.Points[0];
-                    Microsoft.UI.Xaml.Shapes.Shape dot = shape.Cap == StrokeCap.Round
-                        ? new Microsoft.UI.Xaml.Shapes.Ellipse()
-                        : new Microsoft.UI.Xaml.Shapes.Rectangle();
-                    dot.Width = dot.Height = shape.Width;
-                    dot.Fill = new SolidColorBrush(color);
-                    Microsoft.UI.Xaml.Controls.Canvas.SetLeft(dot, p0.X - shape.Width / 2);
-                    Microsoft.UI.Xaml.Controls.Canvas.SetTop(dot, p0.Y - shape.Width / 2);
-                    DrawnStrokesLayer.Children.Add(dot);
-                }
-            }
-            else if (shape.EvenWidth)
-            {
-                DrawnStrokesLayer.Children.Add(Line(Points(shape.Points), shape.Width));
-            }
-            else
-            {
-                double drawn = 0;
-                for (int i = 0; i + 1 < shape.Points.Count; i++)
-                {
-                    var (a, b) = (shape.Points[i], shape.Points[i + 1]);
-                    if (shape.SegmentWidths[i] > 0) // width 0 or below is no line (as in the export)
+                    StrokeFill fill => new Microsoft.UI.Xaml.Shapes.Polygon
                     {
-                        DrawnStrokesLayer.Children.Add(Line(Points([a, b]), shape.SegmentWidths[i], drawn));
-                    }
-                    drawn += Math.Sqrt((b.X - a.X) * (b.X - a.X) + (b.Y - a.Y) * (b.Y - a.Y));
-                }
+                        Points = PointsOf(fill.Points),
+                        Fill = new SolidColorBrush(Color.FromArgb((byte)Math.Clamp(shape.Fill, 0, 255), color.R, color.G, color.B)),
+                        FillRule = FillRule.Nonzero,
+                    },
+                    StrokeDot dot => Dot(dot, color),
+                    StrokeLine line => Line(shape, line, color, cap),
+                    _ => throw new InvalidOperationException(part.GetType().Name),
+                });
             }
         }
+    }
+
+    // A PointCollection belongs to one shape: each part gets its own.
+    private static PointCollection PointsOf(IEnumerable<Point> points)
+    {
+        var collection = new PointCollection();
+        foreach (var p in points)
+        {
+            collection.Add(p);
+        }
+        return collection;
+    }
+
+    private static Microsoft.UI.Xaml.Shapes.Shape Dot(StrokeDot dot, Color color)
+    {
+        Microsoft.UI.Xaml.Shapes.Shape shape = dot.Square
+            ? new Microsoft.UI.Xaml.Shapes.Rectangle()
+            : new Microsoft.UI.Xaml.Shapes.Ellipse();
+        shape.Width = shape.Height = dot.Size;
+        shape.Fill = new SolidColorBrush(color);
+        Microsoft.UI.Xaml.Controls.Canvas.SetLeft(shape, dot.Center.X - dot.Size / 2);
+        Microsoft.UI.Xaml.Controls.Canvas.SetTop(shape, dot.Center.Y - dot.Size / 2);
+        return shape;
+    }
+
+    // XAML dash lengths and offset are in multiples of the thickness (StrokeShape.DashesFor).
+    private static Microsoft.UI.Xaml.Shapes.Shape Line(StrokeShape shape, StrokeLine line, Color color, PenLineCap cap)
+    {
+        DoubleCollection? dash = null;
+        if (shape.DashesFor(line.Width) is { } dashes)
+        {
+            dash = new DoubleCollection();
+            foreach (var d in dashes)
+            {
+                dash.Add(d);
+            }
+        }
+        return new Microsoft.UI.Xaml.Shapes.Polyline
+        {
+            Points = PointsOf(line.Points),
+            Stroke = new SolidColorBrush(color),
+            StrokeThickness = line.Width,
+            StrokeStartLineCap = cap,
+            StrokeEndLineCap = cap,
+            StrokeDashCap = cap,
+            StrokeLineJoin = PenLineJoin.Round,
+            StrokeDashArray = dash,
+            StrokeDashOffset = dash != null ? line.DashOffset / line.Width : 0,
+        };
     }
 
     /// <summary>The file's texts (and links) as TextBlocks: font, size, color, wrap width, alignment and placement as stored.</summary>

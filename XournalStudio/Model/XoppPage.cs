@@ -257,8 +257,12 @@ public sealed class XoppPage
     }
 
     /// <summary>Strokes shown from the file, not edited (<see cref="StrokeConverter.NeedsOwnDrawing"/>).</summary>
-    public IEnumerable<XElement> DrawnStrokes =>
-        element.Elements("layer").Elements("stroke").Where(StrokeConverter.NeedsOwnDrawing);
+    public IReadOnlyList<XElement> DrawnStrokes => drawnStrokes ??=
+        element.Elements("layer").Elements("stroke").Where(StrokeConverter.NeedsOwnDrawing).ToList();
+
+    // Found once (the page view draws them once too): nothing edits these elements – they are not ink – and nothing
+    // adds such an element (pasted strokes come from ink selections and are ink).
+    private List<XElement>? drawnStrokes;
 
     /// <summary>Texts and links of all layers, bottom to top (shown, not edited).</summary>
     public IEnumerable<XElement> Texts => element.Elements("layer").Elements().Where(XoppText.IsText);
@@ -331,10 +335,12 @@ public sealed class XoppPage
         {
             bottom = Math.Max(bottom, XoppImage.GetBounds(image).Bottom);
         }
-        foreach (var shape in DrawnStrokes.Select(StrokeConverter.ReadShape).OfType<StrokeShape>().Where(s => s.Visible))
+        foreach (var shape in DrawnStrokes.Select(StrokeConverter.ReadShape).OfType<StrokeShape>())
         {
-            double half = shape.SegmentWidths.Count > 0 ? shape.SegmentWidths.Max() / 2 : shape.Width / 2;
-            bottom = Math.Max(bottom, shape.Points.Max(p => p.Y) + half);
+            if (shape.Bottom() is { } lowest) // only what is drawn
+            {
+                bottom = Math.Max(bottom, lowest);
+            }
         }
         foreach (var text in Texts.Select(XoppText.Read))
         {
