@@ -255,7 +255,7 @@ public static class PdfExport
         var state = g.Save();
         var m = text.Transform;
         g.MultiplyTransform(new XMatrix(m.M11, m.M12, m.M21, m.M22, m.M31, m.M32));
-        var lines = text.Lines;
+        var lines = text.Paragraphs();
         if (text.Wrap is { } wrap)
         {
             var formatter = new XTextFormatter(g)
@@ -267,7 +267,7 @@ public static class PdfExport
                     _ => XParagraphAlignment.Left,
                 },
             };
-            formatter.DrawString(text.Content, font, brush, new XRect(0, 0, wrap, 100_000));
+            formatter.DrawString(string.Join('\n', lines), font, brush, new XRect(0, 0, wrap, 100_000));
         }
         else
         {

@@ -223,7 +223,6 @@ public sealed partial class PageView : UserControl
         {
             PdfImage.Source = null;
             renderedPixelWidth = requestedPixelWidth = 0;
-            backgroundMissing = false; // looked for again when the page comes back (a sync may have brought it)
             ImagesLayer.Children.Clear();
             picturesShown = false;
             return;
@@ -241,20 +240,14 @@ public sealed partial class PageView : UserControl
 
     // A picture background, stretched over the page as upstream draws it; decoded at about the shown size while the
     // page is near the viewport (freed with the PDF bitmaps otherwise), again when zoomed in a lot.
-    private bool backgroundMissing; // not looked for again on every scroll step while the page stays near the viewport
-
     private void ShowImageBackground(double pixelsPerPoint)
     {
         string? path = Page.BackgroundImagePath;
         uint wanted = (uint)Math.Min(MaxPdfPixelWidth, Math.Ceiling(Page.Width * pixelsPerPoint));
-        if (path == null || backgroundMissing || (PdfImage.Source != null && renderedPixelWidth * 1.6 >= wanted))
+        // A missing or unreadable file fails asynchronously in BitmapImage (ImageFailed, logged; no file check on the UI
+        // thread); the failed source stays until the page leaves the viewport, then it is looked for again.
+        if (path == null || (PdfImage.Source != null && renderedPixelWidth * 1.6 >= wanted))
         {
-            return;
-        }
-        if (!File.Exists(path))
-        {
-            DebugLog.Write($"picture background not found: {path}");
-            backgroundMissing = true;
             return;
         }
         var bitmap = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage { DecodePixelWidth = (int)wanted };

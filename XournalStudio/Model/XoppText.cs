@@ -54,8 +54,13 @@ public sealed record XoppText(
             XoppColor.Parse((string?)e.Attribute("color"), Microsoft.UI.Colors.Black), transform, wrap, alignment, justify);
     }
 
-    /// <summary>The text's paragraphs (line breaks "\r\n", "\n" or "\r", as the screen's TextBlock breaks them).</summary>
-    public string[] Lines => Content.Replace("\r\n", "\n").Split('\n', '\r');
+    private static readonly char[] ParagraphBreaks = ['\n', '\r', '\u0085', '\u2028', '\u2029'];
+
+    /// <summary>
+    /// The text's paragraphs: split where DirectWrite (the screen's TextBlock) starts a new line – CR LF, LF, CR, NEL,
+    /// LINE SEPARATOR, PARAGRAPH SEPARATOR. One rule for the export and the estimates.
+    /// </summary>
+    public string[] Paragraphs() => Content.Replace("\r\n", "\n").Split(ParagraphBreaks);
 
     /// <summary>The font family Windows has for a Pango family name (Pango's aliases on Windows).</summary>
     public string WindowsFamily => Family.ToLowerInvariant() switch

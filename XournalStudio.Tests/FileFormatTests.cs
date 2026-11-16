@@ -327,6 +327,13 @@ public class FileFormatTests : IDisposable
             """));
         Assert.Equal(124, page.ContentBottom(), 3); // two lines of 1.2 × 10 below y = 100
         Assert.True(XoppText.Read(XElement.Parse("""<text font="Sans oblique" size="10" x="0" y="0">x</text>""")).Italic);
+
+        // Wrapped: about (estimated width / wrap) lines, never more than one per character, no overflow.
+        XoppPage Wrapped(string wrap, string content) => XoppPage.FromXml(XElement.Parse(
+            $"""<page width="200" height="300"><background type="solid" color="#ffffffff" style="plain"/><layer><text font="Sans" size="10" x="0" y="0" wrap="{wrap}">{content}</text></layer></page>"""));
+        Assert.Equal(3 * 12, Wrapped("100", new string('x', 40)).ContentBottom(), 3); // 40 × 6 pt = 240 pt → 3 lines
+        Assert.Equal(11 * 12, Wrapped("1e-6", "Hello World").ContentBottom(), 3);
+        Assert.Equal(3, XoppText.Read(XElement.Parse("<text size=\"10\" x=\"0\" y=\"0\">a\u2029b\u2028c</text>")).Paragraphs().Length);
         var ruling = BackgroundRuling.For(BackgroundStyle.Ruled, "f1=0xff0000", Windows.UI.Color.FromArgb(255, 255, 255, 255), 100, 300);
         Assert.Equal(Windows.UI.Color.FromArgb(255, 255, 0, 0), ruling[0].Color);
     }

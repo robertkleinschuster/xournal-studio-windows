@@ -312,6 +312,14 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 - `examples/Schaltungen.xopp` reset. Reviews (12 rounds) converged on edge cases; `overnight` merged into main 2026-11-16 (f37018e).
 - PDF export approved and done 2026-11-16. Later candidates: pages of another PDF, page reordering, a text tool.
 - Still open: report the ink-over-dialog bug / comment on PR #12292 (public, needs approval).
+- **Questions for the user (review findings kept deliberately, 2026-11-16):**
+  - Save As of a document with an *attached* PDF or picture background (`domain="attach"`, `<doc>.xopp.bg…`): the new
+    file refers to the old document's attachment by path; upstream copies the attachment next to the new file.
+    Copying would create files on each Save As; referring breaks the new document if the old one's attachment is
+    deleted. Which one? (The user's documents use relative PDF paths, no attachments – checked 2026-11-15.)
+  - A picture background that fails while being drawn into the PDF is counted as "ohne Hintergrund" instead of
+    failing the export (deliberate: one damaged picture should not stop the export).
+  - A "clone" picture background remembers its source page by reference; a future page reordering must keep it.
 - **Partial eraser approved (user, 2026-11-16)** as a deliberate exception (Windows ink erases whole strokes only):
   a toggle next to the eraser switches the eraser (tool and the pen's eraser end) between whole strokes (native) and
   partial, without changing the active tool. Partial: the radius is exact and shown as a circle at the pen (hover and
