@@ -206,7 +206,8 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
         }
     }
 
-    private void CancelGesture()
+    /// <summary>Ends a running drag without its result (the pages are replaced or removed under it).</summary>
+    public void CancelGesture()
     {
         if (gesture == InkTool.Select)
         {

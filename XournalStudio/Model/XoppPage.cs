@@ -217,13 +217,15 @@ public sealed class XoppPage
         }
     }
 
-    /// <summary>The ink already shows the stroke transformed (live while dragging): only its element follows.</summary>
     /// <summary>
     /// A move/scale is previewed on this stroke (its PointTransform shows it): until it is committed or reverted the
     /// page writes the stroke with <paramref name="committed"/>, so a snapshot (saving, recovery copy, export) never holds
     /// a half-done move – whenever it is taken.
     /// </summary>
     public void BeginPreview(InkStroke stroke, Matrix3x2 committed) => previewed[stroke.Id] = committed;
+
+    /// <summary>The transform written for a stroke while a move is previewed on it (see <see cref="BeginPreview"/>), or null.</summary>
+    public Matrix3x2? CommittedTransform(InkStroke stroke) => previewed.TryGetValue(stroke.Id, out var t) ? t : null;
 
     /// <summary>The preview of these strokes ended (committed or reverted): their PointTransform is written again.</summary>
     public void EndPreview(IEnumerable<InkStroke> strokes)
@@ -237,6 +239,7 @@ public sealed class XoppPage
     // Stroke id → its committed transform while a move is previewed on it.
     private readonly Dictionary<uint, Matrix3x2> previewed = new();
 
+    /// <summary>The ink already shows the stroke transformed (live while dragging): only its element follows.</summary>
     public void RecordTransform(InkStroke stroke, Matrix3x2 m)
     {
         if (strokeElements.TryGetValue(stroke.Id, out var e))
@@ -431,7 +434,7 @@ public sealed class XoppPage
         {
             if (!strokeElements.TryGetValue(stroke.Id, out var e))
             {
-                topLayer!.Add(StrokeConverter.ToXml(stroke, previewed.TryGetValue(stroke.Id, out var t) ? t : null));
+                topLayer!.Add(StrokeConverter.ToXml(stroke, CommittedTransform(stroke)));
             }
             else if (e.Parent == null)
             {

@@ -25,7 +25,7 @@ public sealed class Selection
 
     private readonly Rectangle frame;
     private readonly Rectangle[] handles;
-    private readonly Dictionary<InkStroke, Matrix3x2> startTransforms = new();
+    private bool previewing; // the strokes' committed transforms are with the page (XoppPage.BeginPreview)
     private Matrix3x2 live = Matrix3x2.Identity;
 
     public Selection(PageView view, List<InkStroke> strokes, List<XElement> images, Rect? area)
@@ -91,17 +91,17 @@ public sealed class Selection
     /// <summary>Shows the content transformed by <paramref name="m"/> (relative to where it was when the drag began).</summary>
     public void Preview(Matrix3x2 m)
     {
-        if (startTransforms.Count == 0)
+        if (!previewing)
         {
             foreach (var stroke in Strokes)
             {
-                startTransforms[stroke] = stroke.PointTransform;
                 Page.BeginPreview(stroke, stroke.PointTransform);
             }
+            previewing = true;
         }
         foreach (var stroke in Strokes)
         {
-            stroke.PointTransform = startTransforms[stroke] * m;
+            stroke.PointTransform = Page.CommittedTransform(stroke)!.Value * m;
         }
         foreach (var image in Images)
         {
@@ -121,13 +121,11 @@ public sealed class Selection
         live = Matrix3x2.Identity;
         if (m.IsIdentity)
         {
-            Page.EndPreview(startTransforms.Keys);
-            startTransforms.Clear();
+            EndPreview();
             return false;
         }
-        var before = Page.CapturePlacement(Strokes, Images, s => startTransforms[s]);
-        Page.EndPreview(startTransforms.Keys);
-        startTransforms.Clear();
+        var before = Page.CapturePlacement(Strokes, Images, s => Page.CommittedTransform(s)!.Value);
+        EndPreview();
         foreach (var stroke in Strokes)
         {
             Page.RecordTransform(stroke, m); // the ink shows it already
@@ -147,8 +145,14 @@ public sealed class Selection
         {
             Preview(Matrix3x2.Identity);
         }
-        Page.EndPreview(startTransforms.Keys);
-        startTransforms.Clear();
+        EndPreview();
+    }
+
+    // Every way out of a drag (commit, nothing moved, revert) ends the page's preview of the strokes.
+    private void EndPreview()
+    {
+        Page.EndPreview(Strokes);
+        previewing = false;
     }
 
     public void Remove()

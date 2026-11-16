@@ -104,7 +104,9 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   `StrokeConverter` (Xournal per-segment widths ↔ ink pressure), `XoppImage` (`<image>`/`<teximage>`),
   `XoppFormat` (creator, file version), `ShapeGeometry` (outlines of shapes and recognized shapes → stroke).
   Moved/scaled strokes: the ink by `PointTransform`, their original elements by `StrokeConverter.Transform`
-  (`Selection.Preview` sets `PointTransform` live, `Commit` → `XoppPage.RecordTransform`; widths stay, as Xournal;
+  (`Selection.Preview` sets `PointTransform` live and registers the committed transforms with the page –
+  `XoppPage.BeginPreview`, read back by `CommittedTransform`, ended by every exit of a drag – so a snapshot writes
+  strokes drawn in this session unmoved; `Commit` → `XoppPage.RecordTransform`; widths stay, as Xournal;
   undo/redo restore an exact `Placement` captured before and after); pictures change their attributes in
   place. `XoppPage.ElementOf`/`AddStrokeElement` copy strokes as their elements (exact widths, unknown attributes).
   `XoppClip` (a copied group relative to its corner; clipboard only), `TodoTxt` (todo.txt lines, doc: links),

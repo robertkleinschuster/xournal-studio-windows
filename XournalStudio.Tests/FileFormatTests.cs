@@ -391,6 +391,16 @@ public class FileFormatTests : IDisposable
         Assert.Empty(StrokeConverter.Dashes("cust: -3 2"));
     }
 
+    [Fact]
+    public void APreviewedMoveIsNotWrittenTheCommittedTransformIs()
+    {
+        var stroke = StrokeConverter.FromXml(XElement.Parse("""<stroke tool="pen" color="#000000ff" width="1">0 0 10 0</stroke>"""))!;
+        stroke.PointTransform = System.Numerics.Matrix3x2.CreateTranslation(100, 0); // a move shown, not committed
+        var written = StrokeConverter.ToXml(stroke, System.Numerics.Matrix3x2.Identity);
+        Assert.StartsWith("0 0 ", written.Value);
+        Assert.StartsWith("100 0 ", StrokeConverter.ToXml(stroke).Value); // without a preview: what the ink shows
+    }
+
     // Whitespace-only text nodes depend on formatting, not content.
     private static XElement Normalize(XElement e)
     {

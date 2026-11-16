@@ -10,8 +10,8 @@ namespace XournalStudio.Views;
 /// reaches the app – the selection could not be moved with the barrel (sandbox 2026-11-16, see CLAUDE.md). Nothing
 /// here lies over the page.
 /// </summary>
-/// (The buttons take no keyboard focus – AllowFocusOnInteraction="False", as toolbar buttons – so disabling one never
-/// moves the focus, and the keys keep working on the page.)
+/// (The buttons take no focus – AllowFocusOnInteraction="False", IsTabStop="False" – so disabling one never moves it;
+/// their clicks give it to the document, see MainWindow.OnRow*.)
 public sealed class SelectionCommands(Control copy, IReadOnlyList<Control> contentCommands)
 {
     public void ShowFor(Selection? selection)

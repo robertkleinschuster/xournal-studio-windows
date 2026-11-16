@@ -199,16 +199,16 @@
             </AppBarButton>
             <!-- The selection's commands, enabled while something is selected (SelectionCommands); compact, so the row keeps clear of the right edge. -->
             <StackPanel Orientation="Horizontal" Spacing="0">
-                <AppBarButton x:Name="CutSelectionButton" Width="48" AllowFocusOnInteraction="False" IsEnabled="False" Icon="Cut" LabelPosition="Collapsed" Label="Ausschneiden"
-                              ToolTipService.ToolTip="Auswahl ausschneiden (Strg+X)" Click="OnCut" />
-                <AppBarButton x:Name="CopySelectionButton" Width="48" AllowFocusOnInteraction="False" IsEnabled="False" Icon="Copy" LabelPosition="Collapsed" Label="Kopieren"
-                              ToolTipService.ToolTip="Auswahl kopieren (Strg+C)" Click="OnCopy" />
-                <AppBarButton x:Name="DuplicateSelectionButton" Width="48" AllowFocusOnInteraction="False" IsEnabled="False" LabelPosition="Collapsed" Label="Duplizieren"
-                              ToolTipService.ToolTip="Auswahl duplizieren (Strg+D)" Click="OnDuplicate">
+                <AppBarButton x:Name="CutSelectionButton" Width="48" AllowFocusOnInteraction="False" IsTabStop="False" IsEnabled="False" Icon="Cut" LabelPosition="Collapsed" Label="Ausschneiden"
+                              ToolTipService.ToolTip="Auswahl ausschneiden (Strg+X)" Click="OnRowCut" />
+                <AppBarButton x:Name="CopySelectionButton" Width="48" AllowFocusOnInteraction="False" IsTabStop="False" IsEnabled="False" Icon="Copy" LabelPosition="Collapsed" Label="Kopieren"
+                              ToolTipService.ToolTip="Auswahl kopieren (Strg+C)" Click="OnRowCopy" />
+                <AppBarButton x:Name="DuplicateSelectionButton" Width="48" AllowFocusOnInteraction="False" IsTabStop="False" IsEnabled="False" LabelPosition="Collapsed" Label="Duplizieren"
+                              ToolTipService.ToolTip="Auswahl duplizieren (Strg+D)" Click="OnRowDuplicate">
                     <AppBarButton.Icon><FontIcon Glyph="&#xF413;" /></AppBarButton.Icon>
                 </AppBarButton>
-                <AppBarButton x:Name="DeleteSelectionButton" Width="48" AllowFocusOnInteraction="False" IsEnabled="False" LabelPosition="Collapsed" Label="Auswahl löschen"
-                              ToolTipService.ToolTip="Auswahl löschen (Entf)" Click="OnDeleteSelection">
+                <AppBarButton x:Name="DeleteSelectionButton" Width="48" AllowFocusOnInteraction="False" IsTabStop="False" IsEnabled="False" LabelPosition="Collapsed" Label="Auswahl löschen"
+                              ToolTipService.ToolTip="Auswahl löschen (Entf)" Click="OnRowDelete">
                     <AppBarButton.Icon><FontIcon Glyph="&#xE894;" /></AppBarButton.Icon>
                 </AppBarButton>
             </StackPanel>

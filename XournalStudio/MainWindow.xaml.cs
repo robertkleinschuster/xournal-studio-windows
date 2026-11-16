@@ -264,6 +264,33 @@ public sealed partial class MainWindow : Window
 
     private void OnDeleteSelection(object sender, RoutedEventArgs e) => edit.Delete();
 
+    // The selection's buttons in the command row take no focus; a click on one is work on the page, so the keyboard
+    // focus goes to the document (out of the tasks box, where the accelerators would not fire). The menu and its
+    // accelerators leave the focus where it is.
+    private async void OnRowCut(object sender, RoutedEventArgs e)
+    {
+        FocusDocument();
+        await edit.CutAsync();
+    }
+
+    private async void OnRowCopy(object sender, RoutedEventArgs e)
+    {
+        FocusDocument();
+        await edit.CopyAsync();
+    }
+
+    private void OnRowDuplicate(object sender, RoutedEventArgs e)
+    {
+        FocusDocument();
+        edit.Duplicate();
+    }
+
+    private void OnRowDelete(object sender, RoutedEventArgs e)
+    {
+        FocusDocument();
+        edit.Delete();
+    }
+
     private void OnSelectAll(object sender, RoutedEventArgs e) => edit.SelectAll();
 
     private void OnShapeChoiceChanged(object sender, SelectionChangedEventArgs e)
