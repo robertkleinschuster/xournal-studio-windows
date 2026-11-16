@@ -130,8 +130,7 @@ public sealed class PagesController
             return; // not in the shown document any more
         }
         var view = panel.Children[index] as PageView;
-        // A drag on this page or below ends: those pages move up under the pen. One above goes on. (An eraser end still
-        // touching erases on where it is then – what the pen does counts; undoable.)
+        // A drag on this page or below ends: those pages move up under the pen. One above goes on.
         inkTools.CancelGestureOn(gestureView => panel.Children.IndexOf(gestureView) >= index);
         if (inkTools.Selection.Current?.View == view)
         {
@@ -205,7 +204,7 @@ public sealed class PagesController
                 // IsEraserInputEnabled = false). They are put back, and the eraser end goes to the partial eraser from
                 // now on (ToolController.EraserEndTakenOver) until the tip hovers again.
                 PageEdit.RestoreStrokes(page, e.Strokes.ToList());
-                tools.EraserEndTakenOver = true; // this touch goes on as a partial erase (InkTools)
+                tools.EraserEndTakenOver = true; // the next eraser-end touch is a press the partial eraser gets (InkTools)
                 return;
             }
             // A selection must not keep strokes that are gone (it would copy, move or bring them back).
