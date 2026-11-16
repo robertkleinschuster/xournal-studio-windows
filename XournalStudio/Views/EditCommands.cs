@@ -124,7 +124,7 @@ public sealed class EditCommands(
             double scale = size.Width > 0 ? Math.Min(1, (view.Page.Width - 2 * Grid) / size.Width) : 1;
             var place = Matrix3x2.CreateScale((float)scale) *
                 Matrix3x2.CreateTranslation((float)Grid, (float)PasteTop(view.Page, size.Height * scale));
-            Add(view, XoppClip.Place(clip, place));
+            Add(view, XoppClip.Place(clip, place), "paste");
         }
         catch (Exception e)
         {
@@ -144,7 +144,7 @@ public sealed class EditCommands(
         var elements = current.Images.Select(i => XoppClip.Transformed(i, offset))
             .Concat(current.Strokes.Select(s => XoppClip.Transformed(current.Page.ElementOf(s), offset)))
             .ToList();
-        Add(current.View, elements);
+        Add(current.View, elements, "duplicate");
     }
 
     /// <summary>Selects everything on the page in view.</summary>
@@ -159,8 +159,9 @@ public sealed class EditCommands(
         selection.Select(view, view.Page.Ink!.GetStrokes().ToList(), view.Page.Images.ToList());
     }
 
-    // Adds stroke and picture elements to the page (undoable) and selects them.
-    private void Add(PageView view, List<XElement> elements)
+    // Adds stroke and picture elements to the page (undoable) and selects them; operation names it in the log.
+    // (Nothing here throws on file content: reading strokes and pictures is guarded, so a paste is never half done.)
+    private void Add(PageView view, List<XElement> elements, string operation)
     {
         var page = view.Page;
         var edit = new PageEdit(page);
@@ -185,20 +186,21 @@ public sealed class EditCommands(
             }
             else
             {
-                skipped++; // an element this app does not place (a text, ...)
+                skipped++; // only in a clip from elsewhere: copies of this app hold strokes and pictures only
             }
         }
         if (skipped > 0)
         {
-            // What cannot be added (strokes without points or only drawn from a file, texts, ...) – said, not
-            // silently dropped (paste and duplicate alike).
-            DebugLog.Write($"add: {skipped} element(s) not added (strokes that cannot be ink, or not placeable)");
+            // What cannot be added (from a clip of elsewhere: strokes that cannot be ink, elements this app does not
+            // place; for a duplicate it would be an error of this app) – said, not silently dropped.
+            DebugLog.Write($"{operation}: {skipped} of {elements.Count} element(s) not added (strokes that cannot be ink, or not placeable)");
             messages.Show(InfoBarSeverity.Warning, "Nicht alles übernommen",
                 $"{skipped} Element(e) lassen sich hier nicht als Tinte oder Bild übernehmen.");
         }
         if (strokes.Count == 0 && edit.AddedImages.Count == 0)
         {
-            selection.Clear(); // nothing added: no undo step, and the previous selection is not taken for the result
+            // Nothing added: no undo step; the selection and tool stay as they were.
+            DebugLog.Write($"{operation}: nothing added ({elements.Count} element(s))");
             return;
         }
         page.AddImages(edit.AddedImages);

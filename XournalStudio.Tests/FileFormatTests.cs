@@ -385,7 +385,7 @@ public class FileFormatTests : IDisposable
         // (an upper bound there).
         Assert.Equal(11, StrokeConverter.ReadShape(XElement.Parse("""<stroke capStyle="square" color="#000000ff" width="2">0 0 10 10 20 0</stroke>"""))!.Bottom()!.Value, 6);
         Assert.Equal(10 + Math.Sqrt(2), StrokeConverter.ReadShape(XElement.Parse("""<stroke capStyle="square" style="dash" color="#000000ff" width="2">0 0 10 10 20 0</stroke>"""))!.Bottom()!.Value, 6);
-        // Dashes that cannot be drawn at this width (DashesFor: solid) count as solid, as they are drawn.
+        // Dashes that cannot be drawn at this width are solid (DashesFor null) – the rule drawing and Bottom() share.
         var solid = StrokeConverter.ReadShape(XElement.Parse("""<stroke capStyle="square" style="cust: 900000 1" color="#000000ff" width="1e-303">0 0 10 10 20 0</stroke>"""))!;
         Assert.Null(solid.DashesFor(solid.Width));
         Assert.Empty(StrokeConverter.Dashes("cust: -3 2"));
