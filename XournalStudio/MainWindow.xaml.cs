@@ -46,7 +46,7 @@ public sealed partial class MainWindow : Window
         pages = new PagesController(Scroller, PagesPanel, tools, inkTools, undo, () => RecognizeButton.IsChecked == true);
         dialogs = new Dialogs(() => Content.XamlRoot, () => pages.Views);
         session = new DocumentSession(AppWindow.Id, pages, dialogs, messages, settings, () => ProjectFolder,
-            () => inkTools.Selection.IsDragging);
+            () => inkTools.Selection.Current?.IsPreviewing == true); // content shown displaced: not saved so
         sync = new SyncController(session, dialogs, messages);
         var explorerCommands = new ExplorerCommands(Explorer, session, sync, dialogs, messages, FocusDocument, RefreshExplorer, index =>
         {
@@ -54,9 +54,9 @@ public sealed partial class MainWindow : Window
             pages.ScrollToPage(index);
         });
         edit = new EditCommands(inkTools.Selection, pages, undo, messages, () => Toolbar.ActiveTool = SelectButton);
-        var selectionCommands = new SelectionCommands(SelectionCommandsPanel,
+        var selectionCommands = new SelectionCommands(CopySelectionButton,
             [CutSelectionButton, DuplicateSelectionButton, DeleteSelectionButton]);
-        export = new PdfExportCommand(AppWindow.Id, session, messages, () => inkTools.Selection.IsDragging);
+        export = new PdfExportCommand(AppWindow.Id, session, messages, () => inkTools.Selection.Current?.IsPreviewing == true);
         inkTools.Selection.SelectionChanged += (_, _) => selectionCommands.ShowFor(inkTools.Selection.Current);
 
         ShapeChoice.SelectedIndex = (int)settings.Shape;

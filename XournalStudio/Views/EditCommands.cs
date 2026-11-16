@@ -20,7 +20,6 @@ public sealed class EditCommands(
     private const double Grid = 14.17;              // Xournal's graph spacing (5 mm)
     private const double PdfAreaPixelsPerPoint = 3; // 216 dpi: sharp text when pasted at the original size
 
-    /// <summary>Deletes the selected strokes and pictures (undoable). False: nothing selected.</summary>
     /// <summary>
     /// The one rule while the selection is being moved or scaled (<see cref="SelectionTool.IsDragging"/>): a command
     /// that reads or changes content is refused and the user is told – the move is never lost or measured mid-way.
@@ -36,6 +35,7 @@ public sealed class EditCommands(
         return true;
     }
 
+    /// <summary>Deletes the selected strokes and pictures (undoable). False: nothing selected (or refused mid-drag).</summary>
     public bool Delete()
     {
         var current = selection.Current;
@@ -100,6 +100,10 @@ public sealed class EditCommands(
 
     public async Task CutAsync()
     {
+        if (RefusedWhileDragging("Ausschneiden"))
+        {
+            return;
+        }
         var copied = selection.Current;
         if (copied is { HasContent: false })
         {
@@ -244,12 +248,13 @@ public sealed class EditCommands(
             messages.Show(InfoBarSeverity.Warning, "Nicht alles übernommen", why);
         }
         undo.Push(edit);
-        SelectAdded(view, edit.AddedStrokes.ToList(), edit.AddedImages.ToList(), operation);
+        SelectAdded(view, edit.AddedStrokes.ToList(), edit.AddedImages.ToList(), operation,
+            operation == "duplicate" ? "Dupliziert, aber nicht ausgewählt" : "Eingefügt, aber nicht ausgewählt");
     }
 
     // Selects what was just added (and undoable). A failure here is not a failed paste or duplicate: logged and said
     // as what it is.
-    private void SelectAdded(PageView view, List<InkStroke> strokes, List<XElement> images, string operation)
+    private void SelectAdded(PageView view, List<InkStroke> strokes, List<XElement> images, string operation, string failedTitle)
     {
         try
         {
@@ -258,8 +263,7 @@ public sealed class EditCommands(
         }
         catch (Exception e)
         {
-            messages.Error($"{operation}: select the added content",
-                operation == "duplicate" ? "Dupliziert, aber nicht ausgewählt" : "Eingefügt, aber nicht ausgewählt", e);
+            messages.Error($"{operation}: select the added content", failedTitle, e);
         }
     }
 
@@ -294,8 +298,9 @@ public sealed class EditCommands(
             // original error, nothing here may replace it.
             try
             {
+                var found = ink.GetStrokes().Where(s => !before.Contains(s.Id)).ToList(); // the list stays if this fails
                 edit.AddedStrokes.Clear();
-                edit.AddedStrokes.AddRange(ink.GetStrokes().Where(s => !before.Contains(s.Id)));
+                edit.AddedStrokes.AddRange(found);
             }
             catch (Exception e)
             {
@@ -305,7 +310,7 @@ public sealed class EditCommands(
             throw;
         }
         undo.Push(edit);
-        SelectAdded(view, edit.AddedStrokes.ToList(), [], "paste");
+        SelectAdded(view, edit.AddedStrokes.ToList(), [], "paste ink", "Eingefügt, aber nicht ausgewählt");
     }
 
     // Nothing was added: no undo step, the selection and tool stay as they were – and the user is told.
