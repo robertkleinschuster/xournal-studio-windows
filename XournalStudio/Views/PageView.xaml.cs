@@ -69,6 +69,87 @@ public sealed partial class PageView : UserControl
         };
         page.ImagesMoved += (_, moved) => MovePictures(moved);
         ShowTexts();
+        ShowDrawnStrokes();
+    }
+
+    /// <summary>Filled, dashed or butt/square-ended strokes as upstream draws them: the filling, then the line.</summary>
+    private void ShowDrawnStrokes()
+    {
+        foreach (var element in Page.DrawnStrokes)
+        {
+            if (StrokeConverter.ReadShape(element) is not { } shape)
+            {
+                continue;
+            }
+            // A PointCollection belongs to one shape: the filling and the line get their own.
+            PointCollection Points(IEnumerable<Point> from)
+            {
+                var collection = new PointCollection();
+                foreach (var p in from)
+                {
+                    collection.Add(p);
+                }
+                return collection;
+            }
+            // A filled highlighter upstream is one translucent shape (filling and line drawn opaque into a mask, blended
+            // with the filling's alpha). XAML applies opacity per shape (a Canvas' Opacity and BitmapCache did not group
+            // them, sandbox 2026-11-16): both get that alpha, the line over the filling comes out a little stronger.
+            byte highlighterAlpha = (byte)Math.Clamp(shape.Fill, 0, 255);
+            var color = shape.Highlighter && shape.Fill >= 0
+                ? Color.FromArgb(highlighterAlpha, shape.Color.R, shape.Color.G, shape.Color.B)
+                : shape.Color;
+            if (shape.Fill >= 0)
+            {
+                DrawnStrokesLayer.Children.Add(new Microsoft.UI.Xaml.Shapes.Polygon
+                {
+                    Points = Points(shape.Points),
+                    Fill = new SolidColorBrush(Color.FromArgb((byte)Math.Clamp(shape.Fill, 0, 255), color.R, color.G, color.B)),
+                    FillRule = FillRule.Nonzero,
+                });
+            }
+            var cap = shape.Cap switch
+            {
+                StrokeCap.Butt => PenLineCap.Flat,
+                StrokeCap.Square => PenLineCap.Square,
+                _ => PenLineCap.Round,
+            };
+            // XAML dash lengths are in multiples of the thickness; the file's are in points.
+            DoubleCollection? Dash(double width)
+            {
+                if (shape.Dashes is not { Length: > 0 } dashes)
+                {
+                    return null;
+                }
+                var collection = new DoubleCollection();
+                foreach (var d in dashes)
+                {
+                    collection.Add(d / width);
+                }
+                return collection;
+            }
+            Microsoft.UI.Xaml.Shapes.Shape Line(PointCollection pts, double width) => new Microsoft.UI.Xaml.Shapes.Polyline
+            {
+                Points = pts,
+                Stroke = new SolidColorBrush(color),
+                StrokeThickness = width,
+                StrokeStartLineCap = cap,
+                StrokeEndLineCap = cap,
+                StrokeDashCap = cap,
+                StrokeLineJoin = PenLineJoin.Round,
+                StrokeDashArray = Dash(width),
+            };
+            if (shape.EvenWidth)
+            {
+                DrawnStrokesLayer.Children.Add(Line(Points(shape.Points), shape.Width));
+            }
+            else
+            {
+                for (int i = 0; i + 1 < shape.Points.Count; i++)
+                {
+                    DrawnStrokesLayer.Children.Add(Line(Points([shape.Points[i], shape.Points[i + 1]]), shape.SegmentWidths[i]));
+                }
+            }
+        }
     }
 
     /// <summary>The file's texts (and links) as TextBlocks: font, size, color, wrap width, alignment and placement as stored.</summary>

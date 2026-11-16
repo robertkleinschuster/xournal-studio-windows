@@ -117,7 +117,7 @@ public sealed class XoppPage
     public static XoppPage FromXml(XElement element)
     {
         var page = new XoppPage(element);
-        foreach (var strokeElement in element.Elements("layer").Elements("stroke"))
+        foreach (var strokeElement in element.Elements("layer").Elements("stroke").Where(e => !StrokeConverter.NeedsOwnDrawing(e)))
         {
             var stroke = StrokeConverter.FromXml(strokeElement);
             if (stroke != null)
@@ -252,6 +252,10 @@ public sealed class XoppPage
         strokeElements[stroke.Id] = e; // written with the new strokes, in drawing order (see Snapshot)
         return stroke;
     }
+
+    /// <summary>Strokes Windows ink cannot draw as stored (filled, dashed, other ends): shown from the file, not edited.</summary>
+    public IEnumerable<XElement> DrawnStrokes =>
+        element.Elements("layer").Elements("stroke").Where(StrokeConverter.NeedsOwnDrawing);
 
     /// <summary>Texts and links of all layers, bottom to top (shown, not edited).</summary>
     public IEnumerable<XElement> Texts => element.Elements("layer").Elements().Where(XoppText.IsText);

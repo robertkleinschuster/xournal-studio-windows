@@ -258,6 +258,26 @@ public class FileFormatTests : IDisposable
         Assert.Null(placed.Wrap);
     }
 
+    [Fact]
+    public void FilledAndDashedStrokesAreKeptAndDrawnFromTheFile()
+    {
+        var page = XoppPage.FromXml(XElement.Parse("""
+            <page width="100" height="100"><background type="solid" color="#ffffffff" style="plain"/><layer>
+            <stroke tool="pen" color="#ff0000ff" width="2" fill="128">0 0 50 0 25 40 0 0</stroke>
+            <stroke tool="pen" color="#000000ff" width="1" style="cust: 2 1.5">0 50 90 50</stroke>
+            <stroke tool="pen" color="#000000ff" width="1" capStyle="butt">0 60 90 60</stroke>
+            <stroke tool="pen" color="#000000ff" width="1" capStyle="round">0 70 90 70</stroke>
+            </layer></page>
+            """));
+        Assert.Single(page.Strokes); // only the plain one is ink
+        Assert.Equal(3, page.DrawnStrokes.Count());
+        Assert.Equal([2, 1.5], StrokeConverter.Dashes("cust: 2 1.5"));
+        Assert.Equal([6, 3, 0.5, 3], StrokeConverter.Dashes("dashdot"));
+        var filled = StrokeConverter.ReadShape(page.DrawnStrokes.First())!;
+        Assert.Equal(128, filled.Fill);
+        Assert.Equal(3, page.Snapshot().Elements("layer").Single().Elements("stroke").Count(e => e.Attribute("fill") != null || e.Attribute("style") != null || (string?)e.Attribute("capStyle") == "butt"));
+    }
+
     // Whitespace-only text nodes depend on formatting, not content.
     private static XElement Normalize(XElement e)
     {

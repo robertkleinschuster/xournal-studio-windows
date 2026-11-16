@@ -135,9 +135,32 @@ public static class PdfExport
         {
             return;
         }
-        var color = ToX(shape.Color);
-        XPen Pen(double width) => new(color, width) { LineCap = XLineCap.Round, LineJoin = XLineJoin.Round };
+        // A filled highlighter upstream is one translucent shape with the filling's alpha (a transparency group PDFsharp
+        // cannot write): filling and line both get that alpha, the line over the filling comes out a little stronger.
+        var color = shape.Highlighter && shape.Fill >= 0
+            ? XColor.FromArgb(Math.Clamp(shape.Fill, 0, 255), shape.Color.R, shape.Color.G, shape.Color.B)
+            : ToX(shape.Color);
+        var cap = shape.Cap switch
+        {
+            StrokeCap.Butt => XLineCap.Flat,
+            StrokeCap.Square => XLineCap.Square,
+            _ => XLineCap.Round,
+        };
+        XPen Pen(double width)
+        {
+            var pen = new XPen(color, width) { LineCap = cap, LineJoin = XLineJoin.Round };
+            if (shape.Dashes is { Length: > 0 } dashes)
+            {
+                pen.DashPattern = dashes.Select(d => d / width).ToArray(); // in multiples of the width, as GDI+
+            }
+            return pen;
+        }
         var points = shape.Points.Select(p => new XPoint(p.X, p.Y)).ToArray();
+        if (shape.Fill >= 0 && points.Length > 2)
+        {
+            var fill = XColor.FromArgb(Math.Clamp(shape.Fill, 0, 255), shape.Color.R, shape.Color.G, shape.Color.B);
+            g.DrawPolygon(new XSolidBrush(fill), points, XFillMode.Winding);
+        }
         if (points.Length == 1)
         {
             g.DrawLine(Pen(shape.Width), points[0], points[0]); // a dot (round cap)

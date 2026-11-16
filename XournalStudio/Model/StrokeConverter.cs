@@ -64,9 +64,38 @@ public static class StrokeConverter
             segments.Add(widths.Count > 1 ? widths[Math.Min(i + 1, widths.Count - 1)] : width);
         }
         bool highlighter = (string?)e.Attribute("tool") == "highlighter";
+        int fill = int.TryParse((string?)e.Attribute("fill"), NumberStyles.Integer, Inv, out int f) ? f : -1;
+        var cap = (string?)e.Attribute("capStyle") switch
+        {
+            "butt" => StrokeCap.Butt,
+            "square" => StrokeCap.Square,
+            _ => StrokeCap.Round,
+        };
         return new StrokeShape(XoppColor.Parse((string?)e.Attribute("color"), Microsoft.UI.Colors.Black), highlighter,
-            width, points, segments);
+            width, points, segments, fill, Dashes((string?)e.Attribute("style")), cap);
     }
+
+    /// <summary>
+    /// The dash pattern of the "style" attribute in page points (upstream StrokeStyle::parseStyle: "dash", "dashdot",
+    /// "dot" or "cust: a b ..."); empty for a solid line.
+    /// </summary>
+    public static double[] Dashes(string? style) => style switch
+    {
+        "dash" => [6, 3],
+        "dashdot" => [6, 3, 0.5, 3],
+        "dot" => [0.5, 3],
+        string s when s.StartsWith("cust: ", StringComparison.Ordinal) => ParseNumbers(s[6..]).ToArray(),
+        _ => [],
+    };
+
+    /// <summary>
+    /// A stroke Windows ink cannot draw as the file means it: filled, dashed, or with other than round ends. Such strokes
+    /// are shown (and exported) from the file, not edited as ink; the file keeps them as they are.
+    /// </summary>
+    public static bool NeedsOwnDrawing(XElement e) =>
+        (int.TryParse((string?)e.Attribute("fill"), NumberStyles.Integer, Inv, out int fill) && fill >= 0) ||
+        Dashes((string?)e.Attribute("style")).Length > 0 ||
+        (string?)e.Attribute("capStyle") is "butt" or "square";
 
     public static InkStroke? FromXml(XElement e)
     {
@@ -238,9 +267,14 @@ public static class XoppColor
     public static string Format(Color c) => $"#{c.R:x2}{c.G:x2}{c.B:x2}{c.A:x2}";
 }
 
-/// <summary>A stroke as Xournal draws it (see <see cref="StrokeConverter.ReadShape"/>).</summary>
+public enum StrokeCap { Round, Butt, Square }
+
+/// <summary>
+/// A stroke as Xournal draws it (see <see cref="StrokeConverter.ReadShape"/>): <paramref name="Fill"/> is the alpha
+/// (0–255) of the filled outline, -1 for none; <paramref name="Dashes"/> in page points, empty for solid.
+/// </summary>
 public sealed record StrokeShape(Color Color, bool Highlighter, double Width, IReadOnlyList<Point> Points,
-    IReadOnlyList<double> SegmentWidths)
+    IReadOnlyList<double> SegmentWidths, int Fill = -1, double[]? Dashes = null, StrokeCap Cap = StrokeCap.Round)
 {
     /// <summary>True when all segments have the stroke's width (no pressure): drawn as one polyline.</summary>
     public bool EvenWidth => SegmentWidths.All(w => w == Width);

@@ -11,6 +11,8 @@
         <Canvas x:Name="ImagesLayer" IsHitTestVisible="False" />
         <!-- Texts of the file (shown, not edited), above the pictures and below the ink as well. -->
         <Canvas x:Name="TextsLayer" IsHitTestVisible="False" />
+        <!-- Filled or dashed strokes of the file, drawn as stored (Windows ink cannot), below the ink. -->
+        <Canvas x:Name="DrawnStrokesLayer" IsHitTestVisible="False" />
         <InkCanvas x:Name="Canvas" />
         <!-- Lasso, selection rectangle and shape preview of the custom tools (input arrives on the Sheet). -->
         <Canvas x:Name="ToolLayer" IsHitTestVisible="False" />

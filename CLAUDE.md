@@ -295,8 +295,10 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 6. **PDF export – done 2026-11-16** (Datei → Als PDF exportieren, Ctrl+E; `PdfExport` with PDFsharp, checked
    visually with both examples). **Partial eraser – done 2026-11-16** (see Decided). **Showing every upstream
    element – in progress 2026-11-16** (user: "zumindest in der Anzeige sollten wir xopp vollständig reproduzieren"):
-   text first (the only gap in the user's documents: 1 text in 31 files), then image/text `matrix`, other
-   backgrounds (pixmap, isograph, ...), stroke fill/line style/caps, links.
+   Done: texts and links, image/text `matrix`, all backgrounds (rulings with `config`, pixmap), filled/dashed/butt- or
+   square-ended strokes (shown and exported from the file by `PageView.ShowDrawnStrokes`/`PdfExport`, not editable as
+   ink; a filled highlighter's line over its filling comes out a little stronger – XAML and PDFsharp have no group
+   opacity here, a Canvas' Opacity + BitmapCache did not group). Not supported: upstream's newer zip container format.
 7. Not started, only if the user asks: inserting pages of another PDF, page reordering, a text tool.
 
 ## Decided with the user (2026-11-16 morning)
