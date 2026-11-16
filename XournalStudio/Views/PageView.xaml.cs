@@ -128,19 +128,39 @@ public sealed partial class PageView : UserControl
                 return collection;
             }
             // offset = the length already drawn: the dashes run on over the segments of a stroke with pressure.
-            Microsoft.UI.Xaml.Shapes.Shape Line(PointCollection pts, double width, double offset = 0) => new Microsoft.UI.Xaml.Shapes.Polyline
+            Microsoft.UI.Xaml.Shapes.Shape Line(PointCollection pts, double width, double offset = 0)
             {
-                StrokeDashOffset = Dash(width) != null ? offset / width : 0,
-                Points = pts,
-                Stroke = new SolidColorBrush(color),
-                StrokeThickness = width,
-                StrokeStartLineCap = cap,
-                StrokeEndLineCap = cap,
-                StrokeDashCap = cap,
-                StrokeLineJoin = PenLineJoin.Round,
-                StrokeDashArray = Dash(width),
-            };
-            if (shape.EvenWidth)
+                var dash = Dash(width);
+                return new Microsoft.UI.Xaml.Shapes.Polyline
+                {
+                    StrokeDashOffset = dash != null ? offset / width : 0,
+                    Points = pts,
+                    Stroke = new SolidColorBrush(color),
+                    StrokeThickness = width,
+                    StrokeStartLineCap = cap,
+                    StrokeEndLineCap = cap,
+                    StrokeDashCap = cap,
+                    StrokeLineJoin = PenLineJoin.Round,
+                    StrokeDashArray = dash,
+                };
+            }
+            if (shape.Points.Count == 1)
+            {
+                // A dot, as the export draws it (a line from the point to itself): its end shape, nothing for butt ends.
+                if (shape.Cap != StrokeCap.Butt && shape.Width > 0)
+                {
+                    var p0 = shape.Points[0];
+                    Microsoft.UI.Xaml.Shapes.Shape dot = shape.Cap == StrokeCap.Round
+                        ? new Microsoft.UI.Xaml.Shapes.Ellipse()
+                        : new Microsoft.UI.Xaml.Shapes.Rectangle();
+                    dot.Width = dot.Height = shape.Width;
+                    dot.Fill = new SolidColorBrush(color);
+                    Microsoft.UI.Xaml.Controls.Canvas.SetLeft(dot, p0.X - shape.Width / 2);
+                    Microsoft.UI.Xaml.Controls.Canvas.SetTop(dot, p0.Y - shape.Width / 2);
+                    DrawnStrokesLayer.Children.Add(dot);
+                }
+            }
+            else if (shape.EvenWidth)
             {
                 DrawnStrokesLayer.Children.Add(Line(Points(shape.Points), shape.Width));
             }

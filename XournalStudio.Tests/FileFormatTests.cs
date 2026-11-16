@@ -376,6 +376,9 @@ public class FileFormatTests : IDisposable
         Assert.True(StrokeConverter.NeedsOwnDrawing(stroke)); // damaged: drawn from the file, never ink or moved
         Assert.Equal(1, StrokeConverter.ReadShape(XElement.Parse("""<stroke tool="pen" color="#000000ff" width="0">0 0 5 5</stroke>"""))!.Width); // as the ink
         Assert.Equal(0, StrokeConverter.ReadShape(XElement.Parse("""<stroke tool="pen" color="#000000ff" width="0" fill="128">0 0 5 5 0 5</stroke>"""))!.Width); // filling only
+        Assert.Equal(1, StrokeConverter.ReadShape(XElement.Parse("""<stroke tool="pen" color="#000000ff" width="0">0 0 10 10 20 NaN</stroke>"""))!.Width); // damaged: as the ink did
+        Assert.False(StrokeConverter.ReadShape(XElement.Parse("""<stroke style="dash" color="#000000ff" width="2 0 0">0 0 5 5 9 9</stroke>"""))!.Visible); // no segment drawn
+        Assert.False(StrokeConverter.ReadShape(XElement.Parse("""<stroke fill="128" color="#000000ff" width="0">0 0 5 5</stroke>"""))!.Visible); // no area to fill
         Assert.Empty(StrokeConverter.Dashes("cust: -3 2"));
     }
 

@@ -97,8 +97,9 @@ public static class StrokeConverter
     }
 
     /// <summary>
-    /// A stroke Windows ink cannot draw as the file means it: filled, dashed, or with other than round ends. Such strokes
-    /// are shown (and exported) from the file, not edited as ink; the file keeps them as they are.
+    /// A stroke shown (and exported) from the file, not edited as ink, so the file keeps it as it is: one Windows ink
+    /// cannot draw as the file means it (filled, with a line style, with other than round ends) or a damaged one (a
+    /// number this app cannot read).
     /// </summary>
     public static bool NeedsOwnDrawing(XElement e) => IsStyled(e) || IsDamaged(e);
 
@@ -318,8 +319,11 @@ public sealed record StrokeShape(Color Color, bool Highlighter, double Width, IR
     /// <summary>True when all segments have the stroke's width (no pressure): drawn as one polyline.</summary>
     public bool EvenWidth => SegmentWidths.All(w => w == Width);
 
-    /// <summary>Whether any part of the stroke is drawn: a line of positive width or a filling.</summary>
-    public bool Visible => Fill >= 0 || Width > 0 || SegmentWidths.Any(w => w > 0);
+    /// <summary>
+    /// Whether any part of the stroke is drawn (as PageView and PdfExport draw it): a line of positive width (the
+    /// segments' widths for a pressure stroke) or a filling of at least three points.
+    /// </summary>
+    public bool Visible => (EvenWidth ? Width > 0 : SegmentWidths.Any(w => w > 0)) || (Fill >= 0 && Points.Count > 2);
 
     /// <summary>
     /// The dash pattern for a line of <paramref name="width"/> in multiples of it (as XAML and PDF pens take it), or

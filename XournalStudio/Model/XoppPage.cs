@@ -256,12 +256,9 @@ public sealed class XoppPage
         return stroke;
     }
 
-    /// <summary>Strokes Windows ink cannot draw as stored (filled, dashed, other ends): shown from the file, not edited.</summary>
-    public IReadOnlyList<XElement> DrawnStrokes => drawnStrokes ??=
-        element.Elements("layer").Elements("stroke").Where(StrokeConverter.NeedsOwnDrawing).ToList();
-
-    // Found once: these strokes are never edited (not ink), so the list does not change.
-    private List<XElement>? drawnStrokes;
+    /// <summary>Strokes shown from the file, not edited (<see cref="StrokeConverter.NeedsOwnDrawing"/>).</summary>
+    public IEnumerable<XElement> DrawnStrokes =>
+        element.Elements("layer").Elements("stroke").Where(StrokeConverter.NeedsOwnDrawing);
 
     /// <summary>Texts and links of all layers, bottom to top (shown, not edited).</summary>
     public IEnumerable<XElement> Texts => element.Elements("layer").Elements().Where(XoppText.IsText);
