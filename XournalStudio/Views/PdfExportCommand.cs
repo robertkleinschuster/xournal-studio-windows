@@ -48,10 +48,18 @@ public sealed class PdfExportCommand(WindowId window, DocumentSession session, M
             var snapshot = doc.Snapshot(doc.ReferenceBase);
             var result = await Task.Run(() => PdfExport.Write(snapshot, background, target));
             string pages = result.Pages == 1 ? "1 Seite" : $"{result.Pages} Seiten";
-            messages.Show(InfoBarSeverity.Success, "Als PDF exportiert", result.SkippedElements == 0
-                ? $"{Path.GetFileName(target)} ({pages})."
-                : $"{Path.GetFileName(target)} ({pages}). {result.SkippedElements} Element(e), die diese App noch nicht " +
-                  "darstellt (z. B. Text), fehlen darin.");
+            string text = $"{Path.GetFileName(target)} ({pages}).";
+            if (result.MissingBackgrounds > 0)
+            {
+                text += $" {result.MissingBackgrounds} Seite(n) ohne ihre PDF (nicht gefunden: {background ?? "keine PDF"}).";
+            }
+            if (result.SkippedElements > 0)
+            {
+                text += $" {result.SkippedElements} Element(e), die diese App noch nicht darstellt, fehlen darin.";
+            }
+            bool complete = result.MissingBackgrounds + result.SkippedElements == 0;
+            messages.Show(complete ? InfoBarSeverity.Success : InfoBarSeverity.Warning,
+                complete ? "Als PDF exportiert" : "Als PDF exportiert – unvollständig", text);
         }
         catch (Exception e)
         {

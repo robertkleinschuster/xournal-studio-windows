@@ -119,6 +119,16 @@ try {
     [Inj]::Shot("$out\03i-partial-erased-circle.png"); "shot 03i-partial-erased-circle"
     [Inj]::PenFrame((X 0.52), 480, 0x22000, 0, 0)
     Focus; [Inj]::Ctrl(0x5A); Shot '03j-partial-undone'
+    # The eraser end with the pen active: its first touch hands it to the partial eraser (Windows ink's erase is put
+    # back), the next one cuts; hovering with the tip gives the pen back.
+    Button 'InkToolbarBallpointPenButton'
+    [Inj]::PenStroke((L (X 0.3) 500 (X 0.7) 500), $false, 512)
+    [Inj]::PenStroke((L (X 0.4) 485 (X 0.4) 515), $true, 512)
+    [Inj]::PenStroke((L (X 0.55) 485 (X 0.55) 515), $true, 512)
+    for ($k = 0; $k -lt 4; $k++) { [Inj]::PenFrame((X 0.3) + 3 * $k, 460, 0x22002, 0, 0) }
+    [Inj]::PenStroke((L (X 0.3) 460 (X 0.7) 460), $false, 512)
+    Shot '03k-eraser-end-partial-then-ink'
+    Focus; [Inj]::Ctrl(0x5A); [Inj]::Ctrl(0x5A); [Inj]::Ctrl(0x5A)
     Button 'PartialEraserButton' 'Teilweise radieren'
     Button 'SelectButton' 'Auswählen'
 

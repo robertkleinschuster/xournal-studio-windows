@@ -156,7 +156,7 @@
                 <!-- How the eraser (tool and the pen's eraser end) erases: whole strokes (Windows) or exactly the circle
                      shown at the pen. A toggle, so the active tool stays. -->
                 <InkToolbarCustomToggleButton x:Name="PartialEraserButton" AutomationProperties.Name="Teilweise radieren"
-                                              ToolTipService.ToolTip="Teilweise radieren: der Radierer löscht genau den Kreis am Stift (Größe: rechte Maustaste oder gedrückt halten). Das Radierer-Ende des Stifts löscht vorerst immer ganze Striche.">
+                                              ToolTipService.ToolTip="Teilweise radieren: der Radierer löscht genau den Kreis am Stift (Größe: rechte Maustaste oder gedrückt halten). Auch das Radierer-Ende des Stifts: nach dem Umdrehen radiert es ab der zweiten Berührung teilweise (die erste stellt um).">
                     <InkToolbarCustomToggleButton.ContextFlyout>
                         <Flyout>
                             <Slider x:Name="EraserRadius" Header="Radius (Punkt)" Minimum="1" Maximum="20" StepFrequency="0.5"

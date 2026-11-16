@@ -111,7 +111,6 @@ public sealed class PartialEraser(UndoStack undo, Action<IReadOnlyCollection<Ink
             {
                 continue;
             }
-            PageEdit.RemoveStrokes(xopp, [stroke]);
             removed.Add(stroke);
             if (!edit!.AddedStrokes.Remove(stroke))
             {
@@ -126,6 +125,9 @@ public sealed class PartialEraser(UndoStack undo, Action<IReadOnlyCollection<Ink
         }
         if (removed.Count > 0)
         {
+            // The touched strokes come from the ink itself (no identity lookup); no other stroke is ever left selected.
+            removed.ForEach(s => s.Selected = true);
+            ink.DeleteSelected();
             erased(removed);
         }
     }

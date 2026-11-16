@@ -48,4 +48,16 @@ public class StrokeEraserTests
         var pieces = StrokeEraser.Erase(samples, Half, new Point(100, 0), 49)!; // cut at x = 50
         Assert.Equal(0.4f, Assert.Single(pieces)[^1].Pressure, 4);
     }
+
+    [Fact]
+    public void ASegmentInsideOnlyForItsWiderNeighbourKeepsItsStart()
+    {
+        // a is wide (half width 6), b and c thin (1): the circle (r 2 at 0,0) reaches b only through a's width.
+        var samples = new List<InkSample> { new(new Point(-10, 0), 1f), new(new Point(7, 0), 0f), new(new Point(30, 0), 0f) };
+        double Half(InkSample s) => s.Pressure > 0.5 ? 6 : 1;
+        var pieces = StrokeEraser.Erase(samples, Half, new Point(0, 0), 2)!;
+        var last = pieces[^1];
+        Assert.Equal(new Point(30, 0), last[^1].Position);
+        Assert.Equal(7, last[0].Position.X, 9); // b→c (outside for its own width) is kept from b on
+    }
 }

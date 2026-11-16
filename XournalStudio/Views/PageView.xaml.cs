@@ -55,6 +55,7 @@ public sealed partial class PageView : UserControl
         {
             Pattern.Data = BackgroundPattern.Create(page.Style, page.Width, page.Height, out Color lineColor);
             Pattern.Stroke = new SolidColorBrush(lineColor);
+            Pattern.StrokeThickness = Ruling.LineWidth;
         }
 
         page.AttachInk(Canvas.InkPresenter.StrokeContainer);

@@ -78,8 +78,8 @@ public sealed class PageEdit(XoppPage page) : IPageEdit
         return current;
     }
 
-    // A removed stroke cannot be added again; its copy takes its place (also in the file).
-    private static List<InkStroke> RestoreStrokes(XoppPage page, List<InkStroke> strokes)
+    /// <summary>Puts removed strokes back: a removed stroke cannot be added again, its copy takes its place (also in the file).</summary>
+    public static List<InkStroke> RestoreStrokes(XoppPage page, List<InkStroke> strokes)
     {
         var copies = new List<InkStroke>(strokes.Count);
         foreach (var s in strokes)

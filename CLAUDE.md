@@ -76,8 +76,8 @@ arrows), math exercises long formulas in several colors.
   pictures; a rectangle on a PDF page also marks that area – copying takes what is seen (rendered PDF + ink and
   pictures in it). Selected, pasted and duplicated content is selected the same way: move, scale (corners),
   duplicate, cut/copy, delete (commands in a transient CommandBarFlyout at the selection, like selected text).
-- **Decisions (2026-11-15):** eraser = native Windows ink eraser (whole strokes; no pixel eraser, Windows has
-  none); shape recognition = Windows `InkAnalyzer`; straight lines also with the Windows ruler (stencil button).
+- **Decisions (2026-11-15):** eraser = native Windows ink eraser (whole strokes; Windows has no partial eraser – the
+  partial eraser is an agreed exception since 2026-11-16, see below); shape recognition = Windows `InkAnalyzer`; straight lines also with the Windows ruler (stencil button).
   Selection and shapes are `InkToolbarCustomToolButton`s built after Microsoft's pattern ("Pen interactions
   and Windows Ink": selection layer, `SelectWithPolyLine`, strokes transformed by `InkStroke.PointTransform`); because `UnprocessedInput` has no
   readable pointer data yet (PR #12292), a custom tool sets `InkPresenter.IsInputEnabled = false` (as Microsoft's
@@ -120,19 +120,22 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   `InkTools` (routes pen/mouse input on the page to `SelectionTool` or `ShapeTool`; barrel → selection),
   `Selection` (selected strokes/pictures, frame + corner handles, live preview, commit as `TransformEdit`),
   `EditCommands` (cut/copy/paste/duplicate/delete/select all; pasted content placed at the left margin below the
-  page's content and selected), `SelectionFlyout`, `TasksView` + `TaskItem` (todo.txt pane),
+  page's content and selected), `SelectionFlyout`, `TasksView` + `TaskItem` (todo.txt pane), `PartialEraser`
+  (circle cursor, cuts with `Model/StrokeEraser`, one undo step per drag), `PdfExportCommand` (picker, never over the
+  background PDF),
   `ExplorerView` + `ExplorerItem` (TreeView of the project folder in the SplitView pane, git colors incl. folders,
   sync button; context menus `ItemMenu`/`FolderMenu` and F2/Del/Ctrl+Shift+C on the tree raise `CommandRequested`,
   which `MainWindow` carries out because the open document may be affected; "Im Explorer anzeigen" = WinRT
   `Launcher.LaunchFolderPathAsync` with `ItemsToSelect`, "Als Pfad kopieren" = quoted path like File Explorer;
   a `FolderWatcher` change restarts a 400 ms timer, then the window refreshes the tree).
 - `Services/` – `UndoStack` of `IPageEdit`: `PageEdit` (strokes/pictures removed/added) and `TransformEdit` (the
-  InkCanvas has no undo; strokes are resolved through `XoppPage.Current` because undo/redo re-adds copies),
+  InkCanvas has no undo; strokes are resolved through `XoppPage.CurrentAll` because undo/redo re-adds copies),
   `ShapeRecognition` (InkAnalyzer result → clean stroke), `PdfBackground`, `PictureRenderer`,
   `ClipboardService` (own format `XournalStudio.Clip` = a `XoppClip`, plus a bitmap for other apps; bitmaps of
   other apps paste as pictures, their ink (Windows ink's format) as strokes; copies are always the exact elements), `Recovery` (recovery copies +
   info JSON with the writing process id/start time; abandoned = that process is gone), `Autosave` (timer + ordered
-  write/delete queue), `TaskFile` (todo.txt line edits, re-read before each change), `AppSettings`, `DebugLog`, `ProjectTree` (the folder as it is on
+  write/delete queue), `TaskFile` (todo.txt line edits, re-read before each change), `PdfExport` (PDFsharp: imported PDF pages as
+  vectors, `Model/BackgroundRuling` shared with the screen, strokes per segment), `AppSettings`, `DebugLog`, `ProjectTree` (the folder as it is on
   disk: all files and folders, Windows-hidden/system items left out, links shown but not entered), `GitSync` (LibGit2Sharp: status,
   `WithFolders` marks folders by what is below them – modified/deleted > new; sync = commit all, fetch,
   rebase/fast-forward, push; conflicts are aborted), `GitCredentials` (reads Git for Windows' stored credential, see
@@ -289,7 +292,12 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 5. **Device test by the user** of everything: latency, pressure, palm rejection, touch scroll/zoom, the selection
    tool with pen and finger, the selection's command bar, the tasks pane. The pen's buttons work on the device
    (eraser end, barrel lasso – confirmed by the user 2026-11-15).
-6. Not started, only if the user asks: text, inserting pages of another PDF, PDF export, page reordering.
+6. **PDF export – done 2026-11-16** (Datei → Als PDF exportieren, Ctrl+E; `PdfExport` with PDFsharp, checked
+   visually with both examples). **Partial eraser – done 2026-11-16** (see Decided). **Showing every upstream
+   element – in progress 2026-11-16** (user: "zumindest in der Anzeige sollten wir xopp vollständig reproduzieren"):
+   text first (the only gap in the user's documents: 1 text in 31 files), then image/text `matrix`, other
+   backgrounds (pixmap, isograph, ...), stroke fill/line style/caps, links.
+7. Not started, only if the user asks: inserting pages of another PDF, page reordering, a text tool.
 
 ## Decided with the user (2026-11-16 morning)
 
@@ -300,16 +308,20 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 - Barrel button = always the lasso. Recovery copy 5 s after a change and on focus loss.
 - "Meine behalten" after a sync changed the open document: stays unsaved until Ctrl+S.
 - `examples/Schaltungen.xopp` reset; when the reviews are clean: merge `overnight` into main, push, install.
-- Next feature: **PDF export** (approved 2026-11-16). Later candidates: pages of another PDF, page reordering, text.
+- PDF export approved and done 2026-11-16. Later candidates: pages of another PDF, page reordering, a text tool.
 - Still open: report the ink-over-dialog bug / comment on PR #12292 (public, needs approval).
 - **Partial eraser approved (user, 2026-11-16)** as a deliberate exception (Windows ink erases whole strokes only):
   a toggle next to the eraser switches the eraser (tool and the pen's eraser end) between whole strokes (native) and
   partial, without changing the active tool. Partial: the radius is exact and shown as a circle at the pen (hover and
   while erasing) – exactly what is inside the circle disappears, nothing else (cut where the ink's edge, i.e. the
-  centerline plus half the stroke width, meets the circle). **Done 2026-11-16 for the eraser tool** (sandbox: exact gap, circle
-  while hovering, undo). **The pen's eraser end still erases whole strokes:** WinUI 2.6.6-experimental ignores
-  `InkInputConfiguration.IsEraserInputEnabled = false` (reads back false, the presenter still erases natively,
-  StrokesErased fires) – no workaround (doctrine); the setting stays, so an SDK that honors it routes the eraser end
-  to the partial eraser. Radius: context menu of the toggle (1–20 pt, default 4). Tell the user.
+  centerline plus half the stroke width, meets the circle). **Done 2026-11-16.** The eraser tool erases partially through
+  the app (presenters take no input). The pen's eraser end with the pen tool active: WinUI 2.6.6-experimental ignores
+  `InkInputConfiguration.IsEraserInputEnabled = false` (reads back false, the OS presenter still erases; WinUI forwards
+  it correctly – checked in its source), and no hover reaches XAML while a presenter takes pen input. So: Windows ink's
+  erase of the first touch is put back (`StrokesErased` → `PageEdit.RestoreStrokes`) and the presenters stop taking
+  input (`ToolController.EraserEndTakenOver`); from the second touch the eraser end erases partially, and when the tip
+  hovers again (visible to XAML now) the presenters take input again before it touches. Sandbox: first touch arms,
+  second cuts, the tip inks, undo works. User: "wichtig ist dass er robust funktioniert". Radius: context menu of the
+  toggle (1–20 pt, default 4).
 - **PDF export:** PDFsharp pinned to 6.2.4, the last MIT version (6.5.0 is AGPL-3.0 with license acceptance – a
   license change for this project is the user's decision).

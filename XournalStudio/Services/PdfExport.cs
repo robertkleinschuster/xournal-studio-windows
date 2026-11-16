@@ -5,8 +5,8 @@ using XournalStudio.Model;
 
 namespace XournalStudio.Services;
 
-/// <summary>What an export left out (the app does not draw these yet).</summary>
-public sealed record PdfExportResult(int Pages, int SkippedElements);
+/// <summary>What an export left out: elements the app does not draw yet, pages whose background PDF was not found.</summary>
+public sealed record PdfExportResult(int Pages, int SkippedElements, int MissingBackgrounds = 0);
 
 /// <summary>
 /// Writes a document as PDF with PDFsharp: each page's background (the lecture PDF's page as vector content, or color
@@ -18,8 +18,7 @@ public static class PdfExport
 {
     public static PdfExportResult Write(XDocument snapshot, string? backgroundPdf, string target)
     {
-        if (backgroundPdf != null && string.Equals(Path.GetFullPath(backgroundPdf), Path.GetFullPath(target),
-                StringComparison.OrdinalIgnoreCase))
+        if (ProjectFiles.SamePath(backgroundPdf, target))
         {
             throw new IOException("Die Hintergrund-PDF des Dokuments kann nicht überschrieben werden.");
         }
@@ -28,7 +27,7 @@ public static class PdfExport
         try
         {
             using var output = new PdfDocument();
-            int pages = 0, skipped = 0;
+            int pages = 0, skipped = 0, missing = 0;
             foreach (var page in snapshot.Root!.Elements("page"))
             {
                 double width = (double?)page.Attribute("width") ?? XoppDocument.A4Width;
@@ -49,6 +48,10 @@ public static class PdfExport
                         else if (!XoppPage.IsPdfBackground(bg))
                         {
                             DrawSolid(g, bg, width, height);
+                        }
+                        else
+                        {
+                            missing++; // the page stays white under its notes
                         }
                     }
                     foreach (var element in page.Elements("layer").Elements())
@@ -72,7 +75,7 @@ public static class PdfExport
             string temp = target + "~";
             output.Save(temp);
             File.Move(temp, target, overwrite: true);
-            return new PdfExportResult(pages, skipped);
+            return new PdfExportResult(pages, skipped, missing);
         }
         finally
         {

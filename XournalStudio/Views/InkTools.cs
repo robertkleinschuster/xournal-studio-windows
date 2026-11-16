@@ -39,6 +39,9 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
     /// <summary>True while the toolbar's eraser is the active tool.</summary>
     public Func<bool> EraserToolActive { get; set; } = () => false;
 
+    /// <summary>The pen's tip (or the mouse) is back: the presenters take ink input again.</summary>
+    public Action ReleaseEraserEnd { get; set; } = () => { };
+
     public InkTool Tool
     {
         get => tool;
@@ -73,15 +76,19 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
         }
         var point = e.GetCurrentPoint(view.Surface);
         bool isPen = e.Pointer.PointerDeviceType == PointerDeviceType.Pen;
+        if (!IsEraserEnd(point))
+        {
+            ReleaseEraserEnd();
+        }
         // The pen's barrel button may arrive as barrel or as right button (Lenovo pens).
         bool barrel = isPen && (point.Properties.IsBarrelButtonPressed || point.Properties.IsRightButtonPressed);
         bool down = isPen ? point.IsInContact : point.Properties.IsLeftButtonPressed;
         var active = barrel ? InkTool.Select : tool;
-        if (Erases(isPen, point.Properties.IsEraser))
+        if (!barrel && Erases(isPen, IsEraserEnd(point))) // the barrel always lassos
         {
             active = InkTool.PartialEraser;
         }
-        else if (point.Properties.IsEraser)
+        else if (IsEraserEnd(point))
         {
             return; // the eraser end erases natively
         }
@@ -112,10 +119,29 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
     {
         if (gesture == InkTool.None)
         {
-            // Hovering: the partial eraser shows its circle.
             var point = e.GetCurrentPoint(view.Surface);
-            if (e.Pointer.PointerDeviceType != PointerDeviceType.Touch &&
-                Erases(e.Pointer.PointerDeviceType == PointerDeviceType.Pen, point.Properties.IsEraser))
+            bool isPen = e.Pointer.PointerDeviceType == PointerDeviceType.Pen;
+            if (e.Pointer.PointerDeviceType == PointerDeviceType.Touch)
+            {
+                return;
+            }
+            if (!IsEraserEnd(point))
+            {
+                ReleaseEraserEnd(); // the tip hovers: it will ink
+            }
+            if (isPen && point.IsInContact && IsEraserEnd(point) && Eraser != null)
+            {
+                // The eraser end was taken over during its touch (see PagesController): erasing goes on from here.
+                last = point.Position;
+                Eraser.Begin(view, last);
+                gesture = InkTool.PartialEraser;
+                gesturePage = view;
+                view.Surface.CapturePointer(e.Pointer);
+                e.Handled = true;
+                return;
+            }
+            // Hovering: the partial eraser shows its circle.
+            if (Erases(isPen, IsEraserEnd(point)))
             {
                 Eraser!.Hover(view, point.Position);
             }
@@ -201,4 +227,8 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
     // The partial eraser takes the pen's eraser end, and with the eraser tool active also the pen tip and the mouse.
     private bool Erases(bool isPen, bool eraserEnd) =>
         Eraser != null && ((isPen && eraserEnd) || EraserToolActive());
+
+    // The pen turned over: inverted while hovering, inverted and/or eraser while touching. The mouse counts as a tip.
+    private static bool IsEraserEnd(Microsoft.UI.Input.PointerPoint point) =>
+        point.PointerDeviceType == PointerDeviceType.Pen && (point.Properties.IsInverted || point.Properties.IsEraser);
 }

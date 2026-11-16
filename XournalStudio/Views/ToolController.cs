@@ -64,6 +64,26 @@ public sealed class ToolController
         }
     }
 
+    private bool eraserEndTakenOver;
+
+    /// <summary>
+    /// While the pen is turned over to its eraser end (partial erasing, pen tool active), the presenters take no input,
+    /// so the eraser end reaches the partial eraser; set when Windows ink erased with it (see PagesController), cleared
+    /// when the tip hovers again – before it touches, so it inks as usual.
+    /// </summary>
+    public bool EraserEndTakenOver
+    {
+        get => eraserEndTakenOver;
+        set
+        {
+            if (eraserEndTakenOver != value)
+            {
+                eraserEndTakenOver = value;
+                ApplyToAll();
+            }
+        }
+    }
+
     /// <summary>The toolbar's eraser is the active tool.</summary>
     public bool EraserActive => toolbar.ActiveTool is InkToolbarEraserButton;
 
@@ -134,7 +154,7 @@ public sealed class ToolController
     private void ApplyToAll()
     {
         bool erasing = EraserActive;
-        bool custom = CustomTool != null || (erasing && partialErasing); // the app takes the input
+        bool custom = CustomTool != null || (partialErasing && (erasing || eraserEndTakenOver)); // the app takes the input
         var attributes = toolbar.InkDrawingAttributes;
         if (attributes != null)
         {

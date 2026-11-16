@@ -46,6 +46,10 @@ public static class StrokeEraser
             var a = samples[i - 1];
             var b = samples[i];
             double r = radius + Math.Max(halfWidth(a), halfWidth(b));
+            if (current.Count == 0 && Distance(a.Position, center) >= r)
+            {
+                current.Add(a); // outside for this segment (the previous one, wider, ended it inside)
+            }
             if (Inside(a.Position, b.Position, center, r) is not var (t1, t2))
             {
                 current.Add(b);
