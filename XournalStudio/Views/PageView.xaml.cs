@@ -130,7 +130,7 @@ public sealed partial class PageView : UserControl
             // offset = the length already drawn: the dashes run on over the segments of a stroke with pressure.
             Microsoft.UI.Xaml.Shapes.Shape Line(PointCollection pts, double width, double offset = 0) => new Microsoft.UI.Xaml.Shapes.Polyline
             {
-                StrokeDashOffset = width > 0 ? offset / width : 0,
+                StrokeDashOffset = Dash(width) != null ? offset / width : 0,
                 Points = pts,
                 Stroke = new SolidColorBrush(color),
                 StrokeThickness = width,

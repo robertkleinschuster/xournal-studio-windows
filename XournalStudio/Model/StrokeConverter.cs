@@ -45,19 +45,14 @@ public static class StrokeConverter
     /// </summary>
     public static StrokeShape? ReadShape(XElement e)
     {
-        var coords = ParseNumbers(e.Value);
-        int count = coords.Count / 2;
+        var points = ReadPoints(e.Value);
+        int count = points.Count;
         if (count == 0)
         {
             return null;
         }
-        var points = new List<Point>(count);
-        for (int i = 0; i < count; i++)
-        {
-            points.Add(new Point(coords[2 * i], coords[2 * i + 1]));
-        }
         var widths = ParseNumbers((string?)e.Attribute("width") ?? "1");
-        double width = widths.Count > 0 && widths[0] >= 0 ? widths[0] : 1; // 0: no line, as upstream
+        double width = widths.Count > 0 && widths[0] > 0 ? widths[0] : 1; // as the ink (FromXml): screen = export
         var segments = new List<double>(Math.Max(0, count - 1));
         for (int i = 0; i < count - 1; i++)
         {
@@ -88,8 +83,10 @@ public static class StrokeConverter
         _ => [],
     };
 
-    // A dash pattern needs positive lengths (PDFsharp rejects zero and negative ones): otherwise drawn solid.
-    private static double[] Drawable(List<double> dashes) => dashes.Count > 0 && dashes.All(d => d > 0) ? dashes.ToArray() : [];
+    // A dash pattern needs lengths of 0 or more, not all 0 (cairo, XAML and PDF draw no other): otherwise solid.
+    // Zero lengths are kept: upstream draws them as dots with round ends.
+    private static double[] Drawable(List<double> dashes) =>
+        dashes.All(d => d >= 0) && dashes.Any(d => d > 0) ? dashes.ToArray() : [];
 
     /// <summary>
     /// A stroke Windows ink cannot draw as the file means it: filled, dashed, or with other than round ends. Such strokes
@@ -97,15 +94,18 @@ public static class StrokeConverter
     /// </summary>
     public static bool NeedsOwnDrawing(XElement e) =>
         (int.TryParse((string?)e.Attribute("fill"), NumberStyles.Integer, Inv, out int fill) && fill >= 0) ||
-        // any line style (also a custom one too damaged to draw dashed): never rewritten as ink
-        (string?)e.Attribute("style") is "dash" or "dashdot" or "dot" ||
-        ((string?)e.Attribute("style"))?.StartsWith("cust:", StringComparison.Ordinal) == true ||
+        IsLineStyle((string?)e.Attribute("style")) ||
         (string?)e.Attribute("capStyle") is "butt" or "square";
+
+    // A style upstream's parseStyle recognizes – also a custom one too damaged to draw dashed: such a stroke is never
+    // rewritten as ink (that would drop its style).
+    private static bool IsLineStyle(string? style) =>
+        style is "dash" or "dashdot" or "dot" || style?.StartsWith("cust: ", StringComparison.Ordinal) == true;
 
     public static InkStroke? FromXml(XElement e)
     {
-        var coords = ParseNumbers(e.Value);
-        int count = coords.Count / 2;
+        var coords = ReadPoints(e.Value);
+        int count = coords.Count;
         if (count == 0)
         {
             return null;
@@ -140,7 +140,7 @@ public static class StrokeConverter
                 double w = widths[Math.Min(i + 1, widths.Count - 1)];
                 pressure = (float)Math.Clamp(PressureFor(w / width), 0.01, 1.0);
             }
-            points.Add(new InkPoint(new Point(coords[2 * i], coords[2 * i + 1]), pressure));
+            points.Add(new InkPoint(coords[i], pressure));
         }
         if (count == 1)
         {
@@ -220,9 +220,25 @@ public static class StrokeConverter
 
     private static string Format(double v) => v.ToString("0.####", Inv);
 
-    // Numbers of a stroke (coordinates, widths, dashes) by the file's one rule (XoppFormat.ReadNumber), for showing
-    // and reading as ink; the list ends at the first one that is not a number or beyond any page, so the coordinates
-    // stay in pairs. The element itself keeps everything (Transform writes the rest back as read).
+    // Widths and dashes by the file's one rule (XoppFormat.ReadNumber); the list ends at the first damaged one.
+    /// <summary>
+    /// A stroke's points: its coordinate pairs by the file's one rule (XoppFormat.ReadNumber), a pair with a damaged
+    /// number left out – the same pairs <see cref="Transform"/> moves (it writes the damaged ones back as read).
+    /// </summary>
+    private static List<Point> ReadPoints(string s)
+    {
+        var tokens = s.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        var points = new List<Point>(tokens.Length / 2);
+        for (int i = 0; i + 1 < tokens.Length; i += 2)
+        {
+            if (XoppFormat.ReadNumber(tokens[i]) is { } x && XoppFormat.ReadNumber(tokens[i + 1]) is { } y)
+            {
+                points.Add(new Point(x, y));
+            }
+        }
+        return points;
+    }
+
     private static List<double> ParseNumbers(string s)
     {
         var result = new List<double>();

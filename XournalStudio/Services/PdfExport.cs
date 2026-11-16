@@ -149,7 +149,9 @@ public static class PdfExport
             var pen = new XPen(color, width) { LineCap = cap, LineJoin = XLineJoin.Round };
             if (shape.Dashes is { Length: > 0 } dashes && width > 0 && double.IsFinite(dashes.Max() / width))
             {
-                pen.DashPattern = dashes.Select(d => d / width).ToArray();
+                // PDFsharp rejects zero lengths (the PDF format allows them): a zero dash becomes a very short one,
+                // still a dot with round ends.
+                pen.DashPattern = dashes.Select(d => Math.Max(d / width, 1e-3)).ToArray();
                 pen.DashOffset = offset / width;
             }
             return pen;

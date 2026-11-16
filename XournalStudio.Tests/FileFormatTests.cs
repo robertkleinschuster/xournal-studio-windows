@@ -358,9 +358,9 @@ public class FileFormatTests : IDisposable
         Assert.Equal(20, page.ContentBottom()); // the hostile matrix is ignored for placing pasted content
         Assert.Equal(12, XoppText.Read(XElement.Parse("""<text size="900000" x="0" y="0">x</text>""")).Size);
 
-        // Stroke numbers follow the same rule: the coordinates end at the first damaged one (still in pairs).
+        // Stroke numbers follow the same rule: a pair with a damaged number is left out.
         var damaged = StrokeConverter.ReadShape(XElement.Parse("""<stroke tool="pen" color="#000000ff" width="1">0 0 10 10 20 NaN 30 30</stroke>"""))!;
-        Assert.Equal(2, damaged.Points.Count);
+        Assert.Equal(3, damaged.Points.Count);
         Assert.Null(StrokeConverter.ReadShape(XElement.Parse("""<stroke tool="pen" color="#000000ff" width="1">1e400 0</stroke>""")));
 
         // Moving a damaged stroke moves every readable pair (as upstream reads the list) and keeps the damaged one
@@ -369,7 +369,11 @@ public class FileFormatTests : IDisposable
         StrokeConverter.Transform(stroke, System.Numerics.Matrix3x2.CreateTranslation(5, 0));
         Assert.Equal("5 0 15 10 20 NaN 35 30", stroke.Value);
         Assert.True(StrokeConverter.NeedsOwnDrawing(XElement.Parse("""<stroke style="cust: -3 2">0 0 1 1</stroke>"""))); // never rewritten as ink
-        Assert.Empty(StrokeConverter.Dashes("cust: 3 0"));
+        Assert.Equal([0, 3], StrokeConverter.Dashes("cust: 0 3")); // zero-length dashes: dots, as upstream
+        Assert.Empty(StrokeConverter.Dashes("cust: 0 0"));
+        Assert.False(StrokeConverter.NeedsOwnDrawing(XElement.Parse("""<stroke style="cust:3 2">0 0 1 1</stroke>"""))); // no style upstream
+        Assert.Equal(3, StrokeConverter.ReadShape(stroke)!.Points.Count); // the damaged pair is left out, (35,30) stays
+        Assert.Equal(1, StrokeConverter.ReadShape(XElement.Parse("""<stroke tool="pen" color="#000000ff" width="0">0 0 5 5</stroke>"""))!.Width); // as the ink
         Assert.Empty(StrokeConverter.Dashes("cust: 0 0"));
         Assert.Empty(StrokeConverter.Dashes("cust: -3 2"));
     }
