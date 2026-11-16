@@ -205,6 +205,7 @@ public sealed class PagesController
                 // now on (ToolController.EraserEndTakenOver) until the tip hovers again.
                 PageEdit.RestoreStrokes(page, e.Strokes.ToList());
                 tools.EraserEndTakenOver = true;
+                inkTools.EraserEndHandedOver(); // this touch goes on as a partial erase
                 return;
             }
             // A selection must not keep strokes that are gone (it would copy, move or bring them back).

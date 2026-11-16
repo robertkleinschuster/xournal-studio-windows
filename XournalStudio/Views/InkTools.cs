@@ -31,6 +31,7 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
     private InkTool tool;
     private Running? running;
     private PartialEraser? eraser;
+    private bool handedOver; // Windows ink handed the eraser end's touch to the app (once; see EraserEndHandedOver)
     private Point last;
 
     public SelectionTool Selection { get; } = new(undo);
@@ -56,6 +57,12 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
 
     /// <summary>The pen's tip (or the mouse) is back: the presenters take ink input again.</summary>
     public Action ReleaseEraserEnd { get; set; } = () => { };
+
+    /// <summary>
+    /// Windows ink took the eraser end's touch and the app took it over (PagesController): the touch's next move on a page
+    /// begins the partial erase – once. A cancel or a new document withdraws it; the next eraser-end touch hands over anew.
+    /// </summary>
+    public void EraserEndHandedOver() => handedOver = true;
 
     public InkTool Tool
     {
@@ -88,11 +95,19 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
         {
             if (Owns(view, e))
             {
-                CancelGestureOn(_ => true);
+                Cancel(running!);
             }
         };
         view.Surface.PointerEntered += (_, e) => OnMoved(view, e); // the eraser's circle appears where the pen comes in
-        view.Surface.PointerExited += (_, _) => Eraser?.Hide();
+        view.Surface.PointerExited += (_, e) =>
+        {
+            eraser?.Hide();
+            // Its pointer left the page lifted: the release (if the capture did not hold it here) – the gesture ends.
+            if (Owns(view, e) && !e.GetCurrentPoint(view.Surface).IsInContact)
+            {
+                Finish(last);
+            }
+        };
     }
 
     // The running gesture is on this page and of this pointer.
@@ -183,16 +198,15 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
         {
             ReleaseEraserEnd(); // the tip hovers: it will ink
         }
-        if (isPen && point.IsInContact && IsEraserEnd(point) && eraser != null)
+        if (handedOver && isPen && point.IsInContact && IsEraserEnd(point) && eraser != null)
         {
-            // (The eraser end was taken over during its touch, see PagesController – also after a cancel: it touches,
-            // so it erases.)
+            handedOver = false;
             last = point.Position;
             eraser.Begin(view, last);
             Start(InkTool.PartialEraser, view, e);
             return;
         }
-        if (Erases(isPen, IsEraserEnd(point)))
+        if (!point.IsInContact && Erases(isPen, IsEraserEnd(point))) // the circle while hovering
         {
             eraser!.Hover(view, point.Position);
         }
@@ -205,7 +219,11 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
     private void Start(InkTool active, PageView view, PointerRoutedEventArgs e)
     {
         running = new Running(active, view, e.Pointer.PointerId);
-        view.Surface.CapturePointer(e.Pointer);
+        if (!view.Surface.CapturePointer(e.Pointer))
+        {
+            // Without the capture its release elsewhere is not seen here; leaving the page lifted ends it (PointerExited).
+            DebugLog.Write($"{active}: the page did not capture the pointer");
+        }
         e.Handled = true;
     }
 
@@ -244,16 +262,21 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
     /// <summary>
     /// Ends a running drag without its result – the one way to cancel: the tool or eraser changed, its pointer was
     /// canceled, or its page is replaced or removed (<paramref name="affected"/>: whether the drag's page is concerned).
-    /// The pointer is let go. If it is still down, what it does next counts again (the eraser end still touching erases on
-    /// the page under it – undoable, as any erase). A taken-over eraser end stays with the app until the tip hovers again;
-    /// only a newly shown document gives it back at once (PagesController.Show).
+    /// The pointer is let go; a handed-over eraser end touch is withdrawn (it begins nothing on the pages that move up
+    /// under it). A taken-over eraser end stays with the app until the tip hovers again; only a newly shown document gives
+    /// it back at once (PagesController.Show).
     /// </summary>
     public void CancelGestureOn(Func<PageView, bool> affected)
     {
-        if (running is not { } r || !affected(r.Page))
+        handedOver = false;
+        if (running is { } r && affected(r.Page))
         {
-            return;
+            Cancel(r);
         }
+    }
+
+    private void Cancel(Running r)
+    {
         Take();
         switch (r.Tool)
         {
