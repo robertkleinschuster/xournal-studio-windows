@@ -42,7 +42,7 @@ public sealed record XoppText(
         string family = words.Count > 0 ? string.Join(' ', words).TrimEnd(',') : "Sans";
 
         var transform = XoppFormat.ReadMatrix(e) ?? Matrix3x2.CreateTranslation((float)Number(e, "x", 0), (float)Number(e, "y", 0));
-        double? wrap = double.TryParse((string?)e.Attribute("wrap"), NumberStyles.Float, Inv, out double w) && w > 0 ? w : null;
+        double? wrap = double.TryParse((string?)e.Attribute("wrap"), NumberStyles.Float, Inv, out double w) && w > 0 && double.IsFinite(w) ? w : null;
         var alignment = (string?)e.Attribute("align") switch
         {
             "center" => XoppTextAlignment.Center,
@@ -72,5 +72,5 @@ public sealed record XoppText(
     };
 
     private static double Number(XElement e, string name, double fallback) =>
-        double.TryParse((string?)e.Attribute(name), NumberStyles.Float, Inv, out double v) ? v : fallback;
+        double.TryParse((string?)e.Attribute(name), NumberStyles.Float, Inv, out double v) && double.IsFinite(v) ? v : fallback;
 }
