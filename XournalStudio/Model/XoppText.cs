@@ -19,9 +19,6 @@ public sealed record XoppText(
 {
     private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
-    // Beyond these a value cannot be meant (pages are a few hundred points): it falls back like a missing one.
-    private const double MaxSize = 10_000, MaxLength = 1_000_000;
-
     // Pango style words that may end a font description.
     private static readonly HashSet<string> StyleWords = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -44,8 +41,8 @@ public sealed record XoppText(
         }
         string family = words.Count > 0 ? string.Join(' ', words).TrimEnd(',') : "Sans";
 
-        var transform = XoppFormat.ReadMatrix(e) ?? Matrix3x2.CreateTranslation(Coordinate(e, "x"), Coordinate(e, "y"));
-        double? wrap = double.TryParse((string?)e.Attribute("wrap"), NumberStyles.Float, Inv, out double w) && w > 0 && w <= MaxLength ? w : null;
+        var transform = XoppFormat.ReadMatrix(e) ?? Matrix3x2.CreateTranslation((float)XoppFormat.ReadNumber(e, "x", 0), (float)XoppFormat.ReadNumber(e, "y", 0));
+        double? wrap = XoppFormat.ReadNumber((string?)e.Attribute("wrap")) is > 0 and var w ? w : null;
         var alignment = (string?)e.Attribute("align") switch
         {
             "center" => XoppTextAlignment.Center,
@@ -53,8 +50,8 @@ public sealed record XoppText(
             _ => XoppTextAlignment.Left,
         };
         bool justify = (string?)e.Attribute("justify") is "true" or "1";
-        double size = Number(e, "size", 12);
-        return new XoppText(e.Value, family, bold, italic, size is > 0 and <= MaxSize ? size : 12, // positive, drawable
+        double size = XoppFormat.ReadNumber(e, "size", 12);
+        return new XoppText(e.Value, family, bold, italic, size > 0 ? size : 12, // a font size must be positive
             XoppColor.Parse((string?)e.Attribute("color"), Microsoft.UI.Colors.Black), transform, wrap, alignment, justify);
     }
 
@@ -75,9 +72,5 @@ public sealed record XoppText(
         _ => Family,
     };
 
-    // A position as float (the transform's type): values beyond float's range count as missing.
-    private static float Coordinate(XElement e, string name) => (float)Number(e, name, 0) is var f && float.IsFinite(f) ? f : 0;
 
-    private static double Number(XElement e, string name, double fallback) =>
-        double.TryParse((string?)e.Attribute(name), NumberStyles.Float, Inv, out double v) && double.IsFinite(v) ? v : fallback;
 }

@@ -17,6 +17,24 @@ public static class XoppFormat
     /// <summary>The creator attribute; upstream only stores it.</summary>
     public const string Creator = "Xournal Studio for Windows";
 
+    /// <summary>
+    /// Largest magnitude a position, size or matrix entry of a file may have: pages are a few hundred points, so a
+    /// value beyond a million cannot be meant (damaged file). Keeps every computation in float range.
+    /// </summary>
+    public const double NumberLimit = 1_000_000;
+
+    /// <summary>
+    /// A number of the file (invariant culture), or null when it is missing, not a number, or beyond
+    /// <see cref="NumberLimit"/> – the one rule for positions, sizes and matrices of texts and pictures.
+    /// </summary>
+    public static double? ReadNumber(string? text) =>
+        double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double v) && Math.Abs(v) <= NumberLimit
+            ? v : null;
+
+    /// <summary>An attribute's number (see <see cref="ReadNumber(string?)"/>) or <paramref name="fallback"/>.</summary>
+    public static double ReadNumber(XElement e, string name, double fallback) =>
+        ReadNumber((string?)e.Attribute(name)) ?? fallback;
+
     /// <summary>The "matrix" attribute of file version 5 (texts, pictures): xx yx xy yy x0 y0, cairo's order.</summary>
     public static Matrix3x2? ReadMatrix(XElement e)
     {
@@ -28,10 +46,11 @@ public static class XoppFormat
         }
         for (int i = 0; i < 6; i++)
         {
-            if (!float.TryParse(parts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out v[i]) || !float.IsFinite(v[i]))
+            if (ReadNumber(parts[i]) is not { } number)
             {
                 return null;
             }
+            v[i] = (float)number;
         }
         return new Matrix3x2(v[0], v[1], v[2], v[3], v[4], v[5]);
     }

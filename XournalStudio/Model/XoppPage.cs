@@ -325,16 +325,16 @@ public sealed class XoppPage
         double bottom = 0;
         foreach (var s in Strokes)
         {
-            bottom = Lowest(bottom, s.BoundingRect.Bottom);
+            bottom = Math.Max(bottom, s.BoundingRect.Bottom);
         }
         foreach (var image in Images)
         {
-            bottom = Lowest(bottom, XoppImage.GetBounds(image).Bottom);
+            bottom = Math.Max(bottom, XoppImage.GetBounds(image).Bottom);
         }
         foreach (var shape in DrawnStrokes.Select(StrokeConverter.ReadShape).OfType<StrokeShape>())
         {
             double half = shape.SegmentWidths.Count > 0 ? shape.SegmentWidths.Max() / 2 : shape.Width / 2;
-            bottom = Lowest(bottom, shape.Points.Max(p => p.Y) + half);
+            bottom = Math.Max(bottom, shape.Points.Max(p => p.Y) + half);
         }
         foreach (var text in Texts.Select(XoppText.Read))
         {
@@ -352,15 +352,12 @@ public sealed class XoppPage
             float h = (float)(lines * text.Size * 1.2);
             foreach (var corner in new[] { Vector2.Zero, new Vector2(w, 0), new Vector2(0, h), new Vector2(w, h) })
             {
-                bottom = Lowest(bottom, Vector2.Transform(corner, text.Transform).Y);
+                bottom = Math.Max(bottom, Vector2.Transform(corner, text.Transform).Y);
             }
         }
         return bottom;
     }
 
-    // Elements with values beyond any page (a damaged or hostile file) do not move pasted content off the page.
-    private static double Lowest(double bottom, double candidate) =>
-        double.IsFinite(candidate) && Math.Abs(candidate) < 1e6 ? Math.Max(bottom, candidate) : bottom;
 
     /// <summary>
     /// The page as it is now, as a detached copy (reading only: the page keeps every element it has, so an undo can
