@@ -240,6 +240,9 @@ public sealed class XoppPage
         return stroke;
     }
 
+    /// <summary>Texts and links of all layers, bottom to top (shown, not edited).</summary>
+    public IEnumerable<XElement> Texts => element.Elements("layer").Elements().Where(XoppText.IsText);
+
     /// <summary>Pictures (&lt;image&gt;, &lt;teximage&gt;) of all layers, bottom to top.</summary>
     public IEnumerable<XElement> Images => element.Elements("layer").Elements().Where(XoppImage.IsImage);
 

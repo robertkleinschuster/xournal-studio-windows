@@ -237,6 +237,27 @@ public class FileFormatTests : IDisposable
         Assert.Equal(path + ".bg.pdf", XoppDocument.Load(copy).PdfPath);
     }
 
+    [Fact]
+    public void TextIsReadAsUpstreamWritesIt()
+    {
+        var legacy = XoppText.Read(XElement.Parse("""
+            <text font="Sans Bold" size="14" x="10" y="20" color="#ff0000ff" wrap="150" align="center">Zeile 1
+            Zeile 2</text>
+            """));
+        Assert.Equal("Sans", legacy.Family);
+        Assert.Equal("Arial", legacy.WindowsFamily);
+        Assert.True(legacy.Bold);
+        Assert.Equal(14, legacy.Size);
+        Assert.Equal(150, legacy.Wrap);
+        Assert.Equal(XoppTextAlignment.Center, legacy.Alignment);
+        Assert.Equal(new System.Numerics.Vector2(10, 20), legacy.Transform.Translation);
+        Assert.Equal("Zeile 1\nZeile 2", legacy.Content.Replace("\r", ""));
+
+        var placed = XoppText.Read(XElement.Parse("""<text font="Serif" size="12" matrix="0 1 -1 0 50 60" color="#000000ff">x</text>"""));
+        Assert.Equal(new System.Numerics.Matrix3x2(0, 1, -1, 0, 50, 60), placed.Transform); // turned by 90°
+        Assert.Null(placed.Wrap);
+    }
+
     // Whitespace-only text nodes depend on formatting, not content.
     private static XElement Normalize(XElement e)
     {

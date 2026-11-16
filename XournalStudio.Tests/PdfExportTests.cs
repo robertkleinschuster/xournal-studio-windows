@@ -55,7 +55,7 @@ public sealed class PdfExportTests : IDisposable
         var result = PdfExport.Write(document.Snapshot(doc), document.PdfPath, target);
 
         Assert.Equal(2, result.Pages);
-        Assert.Equal(1, result.SkippedElements); // the <text>, not drawn by this app yet
+        Assert.Equal(0, result.SkippedElements); // the <text> is drawn too
         using var exported = PdfReader.Open(target, PdfDocumentOpenMode.Import);
         Assert.Equal(2, exported.PageCount);
         Assert.Equal(595.27559, exported.Pages[0].Width.Point, 3);

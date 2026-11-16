@@ -1,5 +1,6 @@
 using System.Xml.Linq;
 using PdfSharp.Drawing;
+using PdfSharp.Drawing.Layout;
 using PdfSharp.Pdf;
 using XournalStudio.Model;
 
@@ -11,11 +12,17 @@ public sealed record PdfExportResult(int Pages, int SkippedElements, int Missing
 /// <summary>
 /// Writes a document as PDF with PDFsharp: each page's background (the lecture PDF's page as vector content, or color
 /// and ruling), then its layers in file order – strokes as vector lines (per-segment widths of pressure strokes,
-/// highlighters translucent as Xournal stores them) and pictures (PNG/JPEG, or the one-page PDF of a copied area).
+/// highlighters translucent as Xournal stores them), pictures (PNG/JPEG, or the one-page PDF of a copied area) and texts.
 /// Works on a detached snapshot (<see cref="XoppDocument.Snapshot"/>), so it can run off the UI thread.
 /// </summary>
 public static class PdfExport
 {
+    static PdfExport()
+    {
+        // Texts use the fonts Windows has (PDFsharp's own resolver; the app's screen uses the same families).
+        PdfSharp.Fonts.GlobalFontSettings.UseWindowsFontsUnderWindows = true;
+    }
+
     public static PdfExportResult Write(XDocument snapshot, string? backgroundPdf, string target)
     {
         if (ProjectFiles.SamePath(backgroundPdf, target))
@@ -64,9 +71,13 @@ public static class PdfExport
                         {
                             DrawPicture(g, element, keepOpen);
                         }
+                        else if (XoppText.IsText(element))
+                        {
+                            DrawText(g, XoppText.Read(element));
+                        }
                         else
                         {
-                            skipped++; // e.g. <text>
+                            skipped++; // an element upstream may have that this app does not draw
                         }
                     }
                 }
@@ -142,6 +153,49 @@ public static class PdfExport
         XImage image = XoppImage.IsPdf(data) ? XPdfForm.FromStream(stream) : XImage.FromStream(stream);
         keepOpen.Add(image);
         g.DrawImage(image, bounds.X, bounds.Y, bounds.Width, bounds.Height);
+    }
+
+    // As on screen: the font's family, style and size in points, the box placed by the text's transform, wrapped at its
+    // width (if it has one) and aligned.
+    private static void DrawText(XGraphics g, XoppText text)
+    {
+        var style = (text.Bold ? XFontStyleEx.Bold : XFontStyleEx.Regular) | (text.Italic ? XFontStyleEx.Italic : XFontStyleEx.Regular);
+        var font = new XFont(text.WindowsFamily, text.Size, style, new XPdfFontOptions(PdfFontEncoding.Unicode));
+        var brush = new XSolidBrush(ToX(text.Color));
+        var state = g.Save();
+        var m = text.Transform;
+        g.MultiplyTransform(new XMatrix(m.M11, m.M12, m.M21, m.M22, m.M31, m.M32));
+        var lines = text.Content.Replace("\r\n", "\n").Split('\n');
+        if (text.Wrap is { } wrap)
+        {
+            var formatter = new XTextFormatter(g)
+            {
+                Alignment = text.Justify ? XParagraphAlignment.Justify : text.Alignment switch
+                {
+                    XoppTextAlignment.Center => XParagraphAlignment.Center,
+                    XoppTextAlignment.Right => XParagraphAlignment.Right,
+                    _ => XParagraphAlignment.Left,
+                },
+            };
+            formatter.DrawString(text.Content, font, brush, new XRect(0, 0, wrap, 100_000));
+        }
+        else
+        {
+            double width = lines.Max(l => g.MeasureString(l, font).Width);
+            double lineHeight = font.GetHeight();
+            for (int i = 0; i < lines.Length; i++)
+            {
+                double free = width - g.MeasureString(lines[i], font).Width;
+                double x = text.Alignment switch
+                {
+                    XoppTextAlignment.Center => free / 2,
+                    XoppTextAlignment.Right => free,
+                    _ => 0,
+                };
+                g.DrawString(lines[i], font, brush, x, i * lineHeight, XStringFormats.TopLeft);
+            }
+        }
+        g.Restore(state);
     }
 
     private static XColor ToX(Windows.UI.Color c) => XColor.FromArgb(c.A, c.R, c.G, c.B);

@@ -67,6 +67,43 @@ public sealed partial class PageView : UserControl
             }
         };
         page.ImagesMoved += (_, moved) => MovePictures(moved);
+        ShowTexts();
+    }
+
+    /// <summary>The file's texts (and links) as TextBlocks: font, size, color, wrap width, alignment and placement as stored.</summary>
+    private void ShowTexts()
+    {
+        foreach (var element in Page.Texts)
+        {
+            var text = XoppText.Read(element);
+            var block = new TextBlock
+            {
+                Text = text.Content,
+                FontFamily = new FontFamily(text.WindowsFamily),
+                FontSize = text.Size, // points, as the page's units
+                FontWeight = text.Bold ? Microsoft.UI.Text.FontWeights.Bold : Microsoft.UI.Text.FontWeights.Normal,
+                FontStyle = text.Italic ? Windows.UI.Text.FontStyle.Italic : Windows.UI.Text.FontStyle.Normal,
+                Foreground = new SolidColorBrush(text.Color),
+                IsTextScaleFactorEnabled = false, // the page's size, not the system's text size
+                TextAlignment = text.Justify ? TextAlignment.Justify : text.Alignment switch
+                {
+                    XoppTextAlignment.Center => TextAlignment.Center,
+                    XoppTextAlignment.Right => TextAlignment.Right,
+                    _ => TextAlignment.Left,
+                },
+            };
+            if (text.Wrap is { } wrap)
+            {
+                block.Width = wrap;
+                block.TextWrapping = TextWrapping.Wrap;
+            }
+            var m = text.Transform;
+            block.RenderTransform = new MatrixTransform
+            {
+                Matrix = new Matrix { M11 = m.M11, M12 = m.M12, M21 = m.M21, M22 = m.M22, OffsetX = m.M31, OffsetY = m.M32 },
+            };
+            TextsLayer.Children.Add(block);
+        }
     }
 
     // Only the moved pictures change: new place and size; decoded again only when the size changed.
