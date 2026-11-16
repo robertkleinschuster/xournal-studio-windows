@@ -67,6 +67,7 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
         {
             running = r with { Page = page };
             last = p;
+            AutoScroll?.FollowPage(page, p);
         }
     }
 

@@ -17,7 +17,9 @@ public sealed class DragAutoScroll
     private readonly ScrollView scroller;
     private readonly DispatcherQueueTimer timer;
     private PageView? page;
-    private Point inView;                    // the pen in the ScrollView's coordinates
+    private Point inView;                    // the pen in the ScrollView's coordinates (for the speed)
+    private Point anchor;                    // the pen on its page when it last moved (page points)
+    private Point anchorOffset;              // the scroll offsets then
     private Action<Point>? moveTo;
     private DateTime lastTick;
 
@@ -35,6 +37,7 @@ public sealed class DragAutoScroll
         page = dragPage;
         moveTo = move;
         inView = dragPage.InkCanvas.TransformToVisual(scroller).TransformPoint(local);
+        Rebase(local);
         if (Velocity() == default)
         {
             timer.Stop();
@@ -44,6 +47,22 @@ public sealed class DragAutoScroll
             lastTick = DateTime.UtcNow;
             timer.Start();
         }
+    }
+
+    /// <summary>The drag went on to another page: the pen's place is now given in that page's points.</summary>
+    public void FollowPage(PageView dragPage, Point local)
+    {
+        if (page != null)
+        {
+            page = dragPage;
+            Rebase(local);
+        }
+    }
+
+    private void Rebase(Point local)
+    {
+        anchor = local;
+        anchorOffset = new Point(scroller.HorizontalOffset, scroller.VerticalOffset);
     }
 
     public void Stop()
@@ -64,8 +83,12 @@ public sealed class DragAutoScroll
             timer.Stop();
             return;
         }
-        // The content moved under the pen by the last step: the drag follows (the pen stayed where it is in the view).
-        moveTo(scroller.TransformToVisual(page.InkCanvas).TransformPoint(inView));
+        // The pen stayed where it is in the view, the content moved under it by what has been scrolled since the pen
+        // last moved: the drag follows by exactly that (the ScrollView's offsets are what is shown; a XAML transform
+        // lags behind them while the view scrolls, and the dragged content drifted away from the pen).
+        double zoom = scroller.ZoomFactor;
+        moveTo(new Point(anchor.X + (scroller.HorizontalOffset - anchorOffset.X) / zoom,
+            anchor.Y + (scroller.VerticalOffset - anchorOffset.Y) / zoom));
         scroller.ScrollBy(v.X * dt, v.Y * dt, new ScrollingScrollOptions(ScrollingAnimationMode.Disabled));
     }
 
