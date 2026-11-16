@@ -52,9 +52,9 @@ public static class StrokeConverter
             return null;
         }
         var widths = ParseNumbers((string?)e.Attribute("width") ?? "1");
-        // No positive width: a stroke drawn from the file has no line (upstream: only its filling, if any); one shown as
-        // ink is drawn 1 wide (FromXml), and so exported. Missing: 1.
-        double width = widths.Count == 0 ? 1 : widths[0] > 0 ? widths[0] : NeedsOwnDrawing(e) ? 0 : 1;
+        // No positive width: a filled or styled stroke has no line (upstream: only its filling, if any); any other is
+        // drawn 1 wide, as the ink (FromXml) – also a damaged one, as it was shown before. Missing: 1.
+        double width = widths.Count == 0 ? 1 : widths[0] > 0 ? widths[0] : IsStyled(e) ? 0 : 1;
         var segments = new List<double>(Math.Max(0, count - 1));
         for (int i = 0; i < count - 1; i++)
         {
@@ -100,11 +100,13 @@ public static class StrokeConverter
     /// A stroke Windows ink cannot draw as the file means it: filled, dashed, or with other than round ends. Such strokes
     /// are shown (and exported) from the file, not edited as ink; the file keeps them as they are.
     /// </summary>
-    public static bool NeedsOwnDrawing(XElement e) =>
+    public static bool NeedsOwnDrawing(XElement e) => IsStyled(e) || IsDamaged(e);
+
+    // Filled, with a line style or with other than round ends: what Windows ink cannot draw.
+    private static bool IsStyled(XElement e) =>
         (int.TryParse((string?)e.Attribute("fill"), NumberStyles.Integer, Inv, out int fill) && fill >= 0) ||
         IsLineStyle((string?)e.Attribute("style")) ||
-        (string?)e.Attribute("capStyle") is "butt" or "square" ||
-        IsDamaged(e);
+        (string?)e.Attribute("capStyle") is "butt" or "square";
 
     // A number of the stroke this app cannot read (not a number, beyond any page, a stray coordinate): the stroke is
     // shown as far as it can be read and never rewritten as ink or moved, so nothing of it is lost or misplaced.
@@ -315,4 +317,20 @@ public sealed record StrokeShape(Color Color, bool Highlighter, double Width, IR
 {
     /// <summary>True when all segments have the stroke's width (no pressure): drawn as one polyline.</summary>
     public bool EvenWidth => SegmentWidths.All(w => w == Width);
+
+    /// <summary>Whether any part of the stroke is drawn: a line of positive width or a filling.</summary>
+    public bool Visible => Fill >= 0 || Width > 0 || SegmentWidths.Any(w => w > 0);
+
+    /// <summary>
+    /// The dash pattern for a line of <paramref name="width"/> in multiples of it (as XAML and PDF pens take it), or
+    /// null for a solid line – one rule for the screen and the export.
+    /// </summary>
+    public double[]? DashesFor(double width)
+    {
+        if (Dashes is not { Length: > 0 } dashes || width <= 0 || !double.IsFinite(dashes.Max() / width))
+        {
+            return null;
+        }
+        return dashes.Select(d => d / width).ToArray();
+    }
 }

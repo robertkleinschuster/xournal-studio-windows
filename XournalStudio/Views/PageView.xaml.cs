@@ -116,14 +116,14 @@ public sealed partial class PageView : UserControl
             // XAML dash lengths are in multiples of the thickness; the file's are in points.
             DoubleCollection? Dash(double width)
             {
-                if (shape.Dashes is not { Length: > 0 } dashes || width <= 0 || !double.IsFinite(dashes.Max() / width))
+                if (shape.DashesFor(width) is not { } dashes)
                 {
                     return null;
                 }
                 var collection = new DoubleCollection();
                 foreach (var d in dashes)
                 {
-                    collection.Add(d / width);
+                    collection.Add(d);
                 }
                 return collection;
             }

@@ -144,16 +144,14 @@ public static class PdfExport
         };
         // Dashes in multiples of the width (as GDI+); offset = the length already drawn, so the pattern runs on over
         // the segments of a stroke with pressure as upstream draws it. (Which patterns are dashed: StrokeConverter.)
-        double[] dashes = shape.Dashes ?? [];
-        double longest = dashes.Length > 0 ? dashes.Max() : 0;
         XPen Pen(double width, double offset = 0)
         {
             var pen = new XPen(color, width) { LineCap = cap, LineJoin = XLineJoin.Round };
-            if (dashes.Length > 0 && width > 0 && double.IsFinite(longest / width))
+            if (shape.DashesFor(width) is { } dashes)
             {
                 // PDFsharp rejects zero lengths (the PDF format allows them): a zero one becomes very short – a dash of
                 // it is still a dot with round ends.
-                pen.DashPattern = dashes.Select(d => Math.Max(d / width, 1e-3)).ToArray();
+                pen.DashPattern = dashes.Select(d => Math.Max(d, 1e-3)).ToArray();
                 pen.DashOffset = offset / width;
             }
             return pen;
