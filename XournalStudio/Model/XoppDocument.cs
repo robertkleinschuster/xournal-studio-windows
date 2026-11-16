@@ -132,11 +132,62 @@ public sealed class XoppDocument
         return doc;
     }
 
-    /// <summary>Writes "&lt;path&gt;~" first and replaces the file only once it is complete.</summary>
+    /// <summary>
+    /// Writes "&lt;path&gt;~" first and replaces the file only once it is complete. Attachments go along (Save As, as
+    /// upstream): the document refers to its own "&lt;path&gt;.&lt;filename&gt;" from then on.
+    /// </summary>
     public void Save(string path)
     {
+        var copied = CopyAttachments(path);
         Write(Snapshot(path), path);
         FilePath = path;
+        foreach (var (from, to) in copied)
+        {
+            if (PdfPath != null && string.Equals(Path.GetFullPath(PdfPath), from, StringComparison.OrdinalIgnoreCase))
+            {
+                PdfPath = to;
+            }
+            foreach (var page in Pages.Where(p => p.BackgroundImagePath != null &&
+                string.Equals(Path.GetFullPath(p.BackgroundImagePath), from, StringComparison.OrdinalIgnoreCase)))
+            {
+                page.BackgroundImagePath = to;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Copies the attached PDF and picture backgrounds (domain "attach": "&lt;document&gt;.&lt;filename&gt;") next to
+    /// <paramref name="target"/> as "&lt;target&gt;.&lt;filename&gt;", as upstream does when it saves under another name,
+    /// so the saved file keeps "attach" (see <see cref="Snapshot"/>). Returns what was copied (full paths).
+    /// </summary>
+    public List<(string From, string To)> CopyAttachments(string target)
+    {
+        var copies = new List<(string From, string To)>();
+        void Copy(string? source, string filename)
+        {
+            if (source == null || !File.Exists(source))
+            {
+                return; // missing: the reference is written as a path instead (Snapshot)
+            }
+            string from = Path.GetFullPath(source), to = Path.GetFullPath(target + "." + filename);
+            if (!string.Equals(from, to, StringComparison.OrdinalIgnoreCase) && !copies.Any(c => c.To == to))
+            {
+                File.Copy(from, to, overwrite: true);
+                copies.Add((from, to));
+            }
+        }
+        if (loadedPdfReference is ("attach", { } pdfName))
+        {
+            Copy(PdfPath, pdfName);
+        }
+        foreach (var page in Pages.Where(p => p.IsImageBackground && p.BackgroundCloneSource == null))
+        {
+            if ((string?)page.Background.Attribute("domain") == "attach" && (string?)page.Background.Attribute("filename") is { } name)
+            {
+                Copy(page.BackgroundImagePath, name);
+            }
+        }
+        return copies;
     }
 
     /// <summary>
@@ -218,9 +269,9 @@ public sealed class XoppDocument
         }
         if (domain == "attach")
         {
-            // "<name>.xopp.bg.pdf" belongs to a file's name: kept only where it names the PDF (not for Save As or a copy).
-            return string.Equals(Path.GetFullPath(target + "." + filename), Path.GetFullPath(PdfPath),
-                StringComparison.OrdinalIgnoreCase);
+            // "<name>.xopp.bg.pdf" belongs to a file's name: kept where that attachment is (it names the PDF, or was copied
+            // there – CopyAttachments); otherwise the PDF is named by its path.
+            return File.Exists(target + "." + filename);
         }
         string dir = Path.GetDirectoryName(Path.GetFullPath(target))!;
         string named = Path.GetFullPath(Path.Combine(dir, filename.Replace('/', Path.DirectorySeparatorChar)));
@@ -228,8 +279,8 @@ public sealed class XoppDocument
     }
 
     // A picture background's reference is written back as it was while it still names its file from where the document
-    // is saved (a clone: while its page is still an earlier page). Otherwise it names the file as a path, like the PDF
-    // ("attach" belongs to a file's name, so Save As and copies refer to the attached picture where it lies).
+    // is saved (a clone: while its page is still an earlier page; "attach": while "<target>.<filename>" is there – the
+    // picture, or its copy, see CopyAttachments). Otherwise it names the file as a path, like the PDF.
     private void WritePictureReference(XoppPage page, XElement background, string target, int pageIndex)
     {
         string? domain = (string?)background.Attribute("domain");
@@ -249,7 +300,9 @@ public sealed class XoppDocument
             }
             // its page was removed or is no longer before it: the clone names the picture itself
         }
-        else if (filename != null && string.Equals(PictureFile(target, domain, filename), Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase))
+        else if (filename != null && (domain == "attach"
+            ? File.Exists(PictureFile(target, domain, filename))
+            : string.Equals(PictureFile(target, domain, filename), Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase)))
         {
             return;
         }

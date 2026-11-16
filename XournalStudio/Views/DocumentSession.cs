@@ -299,6 +299,7 @@ public sealed class DocumentSession
         }
         try
         {
+            Document.CopyAttachments(path); // as upstream: the copy gets its own attachments
             XoppDocument.Write(Document.Snapshot(path), path);
             return true;
         }

@@ -322,6 +322,9 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 - `examples/Schaltungen.xopp` reset. Reviews (12 rounds) converged on edge cases; `overnight` merged into main 2026-11-16 (f37018e).
 - PDF export approved and done 2026-11-16. Later candidates: pages of another PDF, page reordering, a text tool.
 - Still open: report the ink-over-dialog bug / comment on PR #12292 (public, needs approval).
+- **Save As with attachments – as Xournal++ (user, 2026-11-16 morning):** attached PDF and picture backgrounds
+  (`domain="attach"`, `<doc>.xopp.<filename>`) are copied next to the new file (`XoppDocument.CopyAttachments`, also for
+  "Meine als Kopie speichern"), the file keeps `attach`, and the document refers to its own copy afterwards.
 - **Selection commands in the command row (decided by Claude 2026-11-16 night, user please confirm):** the transient
   CommandBarFlyout at the selection swallowed the barrel release (Facts), so a barrel move never stuck – the agreed
   core (barrel = lasso and move) wins over the flyout. Ausschneiden/Kopieren/Duplizieren/Löschen are contextual
@@ -343,10 +346,6 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   it. Also to watch on the device: a quick flip from the eraser end to the tip that touches down without a hover the
   app sees – that first tip stroke may not ink (the presenters get input back on that press).
 - **Questions for the user (review findings kept deliberately, 2026-11-16):**
-  - Save As of a document with an *attached* PDF or picture background (`domain="attach"`, `<doc>.xopp.bg…`): the new
-    file refers to the old document's attachment by path; upstream copies the attachment next to the new file.
-    Copying would create files on each Save As; referring breaks the new document if the old one's attachment is
-    deleted. Which one? (The user's documents use relative PDF paths, no attachments – checked 2026-11-15.)
   - A picture background that fails while being drawn into the PDF is counted as "ohne Hintergrund" instead of
     failing the export (deliberate: one damaged picture should not stop the export).
   - A "clone" picture background remembers its source page by reference; a future page reordering must keep it.

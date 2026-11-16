@@ -235,6 +235,13 @@ public class FileFormatTests : IDisposable
         XoppDocument.Write(doc.Snapshot(copy), copy);
         Assert.Equal("a.xopp.bg.pdf", PdfFilename(copy));
         Assert.Equal(path + ".bg.pdf", XoppDocument.Load(copy).PdfPath);
+
+        // Save As, as upstream: the attachment goes along and the new file keeps "attach".
+        string other = Path.Combine(dir, "other.xopp");
+        doc.Save(other);
+        Assert.True(File.Exists(other + ".bg.pdf"));
+        Assert.Equal("bg.pdf", PdfFilename(other));
+        Assert.Equal(other + ".bg.pdf", doc.PdfPath);
     }
 
     [Fact]
@@ -305,6 +312,14 @@ public class FileFormatTests : IDisposable
         Assert.Equal(("absolute", "../a.xopp.bg_1.png"), ((string?)moved[1].Attribute("domain"), (string?)moved[1].Attribute("filename")));
         Assert.Equal("../pics/p.png", (string?)moved[2].Attribute("filename"));
         Assert.Equal(("clone", "1"), ((string?)moved[3].Attribute("domain"), (string?)moved[3].Attribute("filename")));
+
+        // Saved there (Save As): the attached picture goes along, the file keeps "attach" (as upstream).
+        Directory.CreateDirectory(Path.Combine(dir, "sub"));
+        string saved = Path.Combine(dir, "sub", "d.xopp");
+        doc.Save(saved);
+        Assert.True(File.Exists(saved + ".bg_1.png"));
+        var savedBackground = ReadXml(saved).Root!.Elements("page").ElementAt(1).Element("background")!;
+        Assert.Equal(("attach", "bg_1.png"), ((string?)savedBackground.Attribute("domain"), (string?)savedBackground.Attribute("filename")));
 
         // A missing picture keeps being named (from the new place too); a clone whose page is gone names the picture.
         File.Delete(Path.Combine(dir, "pics", "p.png"));
