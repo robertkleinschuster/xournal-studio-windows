@@ -35,7 +35,8 @@ public sealed record XoppText(
         while (words.Count > 1 && StyleWords.Contains(words[^1]))
         {
             bold |= words[^1].Contains("Bold", StringComparison.OrdinalIgnoreCase) || words[^1].Equals("Heavy", StringComparison.OrdinalIgnoreCase);
-            italic |= words[^1] is "Italic" or "Oblique" || words[^1].Equals("italic", StringComparison.OrdinalIgnoreCase);
+            italic |= words[^1].Equals("Italic", StringComparison.OrdinalIgnoreCase) ||
+                words[^1].Equals("Oblique", StringComparison.OrdinalIgnoreCase);
             words.RemoveAt(words.Count - 1);
         }
         string family = words.Count > 0 ? string.Join(' ', words).TrimEnd(',') : "Sans";

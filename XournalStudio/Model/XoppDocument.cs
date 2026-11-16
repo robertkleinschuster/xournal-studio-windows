@@ -176,6 +176,10 @@ public sealed class XoppDocument
                 background.SetAttributeValue("pageno", pageNo);
                 firstPdf = false;
             }
+            else if (background != null && page.IsImageBackground)
+            {
+                WritePictureReference(page, background, referenceBase, output.Root!.Elements("page").Count());
+            }
             output.Root!.Add(element);
         }
         return output;
@@ -223,13 +227,49 @@ public sealed class XoppDocument
         return string.Equals(named, Path.GetFullPath(PdfPath), StringComparison.OrdinalIgnoreCase);
     }
 
+    // A picture background's reference is written back as it was while it still names its file from where the document
+    // is saved (a clone: while its page is still an earlier page). Otherwise it names the file as a path, like the PDF
+    // ("attach" belongs to a file's name, so Save As and copies refer to the attached picture where it lies).
+    private void WritePictureReference(XoppPage page, XElement background, string target, int pageIndex)
+    {
+        string? domain = (string?)background.Attribute("domain");
+        string? filename = (string?)background.Attribute("filename");
+        string? path = page.BackgroundImagePath;
+        if (page.BackgroundCloneSource is { } source)
+        {
+            int index = Pages.IndexOf(source);
+            if (index >= 0 && index < pageIndex)
+            {
+                background.SetAttributeValue("filename", index.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                return;
+            }
+        }
+        else if (path == null || filename == null || string.Equals(PictureFile(target, domain, filename), Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase))
+        {
+            return; // not found when loaded: kept as it was
+        }
+        if (path == null)
+        {
+            return;
+        }
+        background.SetAttributeValue("domain", "absolute");
+        background.SetAttributeValue("filename", AssetReference(path, target, Path.IsPathRooted(filename ?? "")));
+    }
+
+    // The file a picture background names from a document at "target" (upstream LoadHandler::setBgPixmap).
+    private static string PictureFile(string target, string? domain, string filename) => domain == "attach"
+        ? Path.GetFullPath(target + "." + filename)
+        : Path.GetFullPath(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(target))!, filename));
+
     // As upstream SaveHandler + Util::normalizeAssetPath: domain "absolute" just means "a path"; it is relative to the
     // .xopp's folder (upstream's default storage mode) unless the loaded file used an absolute one, with '/'
     // separators. Relative keeps git-synced folders portable between machines.
-    private string PdfReference(string pdf, string target)
+    private string PdfReference(string pdf, string target) =>
+        AssetReference(pdf, target, loadedPdfReference.Filename != null && Path.IsPathRooted(loadedPdfReference.Filename));
+
+    private static string AssetReference(string file, string target, bool absolute)
     {
-        string full = Path.GetFullPath(pdf);
-        bool absolute = loadedPdfReference.Filename != null && Path.IsPathRooted(loadedPdfReference.Filename);
+        string full = Path.GetFullPath(file);
         string reference = absolute
             ? full
             : Path.GetRelativePath(Path.GetDirectoryName(Path.GetFullPath(target))!, full);
@@ -246,7 +286,6 @@ public sealed class XoppDocument
     // file (relative to the document's folder if not rooted), "clone" = the background of page number <filename>.
     private static void ResolvePictureBackgrounds(List<XoppPage> pages, string referenceBase)
     {
-        string dir = Path.GetDirectoryName(Path.GetFullPath(referenceBase))!;
         foreach (var page in pages.Where(p => p.IsImageBackground))
         {
             var bg = page.Background;
@@ -261,12 +300,11 @@ public sealed class XoppDocument
                 if (int.TryParse(filename, out int index) && index >= 0 && index < pages.Count)
                 {
                     page.BackgroundImagePath = pages[index].BackgroundImagePath;
+                    page.BackgroundCloneSource = pages[index];
                 }
                 continue;
             }
-            string path = domain == "attach"
-                ? referenceBase + "." + filename
-                : Path.GetFullPath(Path.Combine(dir, filename));
+            string path = PictureFile(referenceBase, domain, filename);
             page.BackgroundImagePath = File.Exists(path) ? path : null; // not found: white, as upstream logs an error
         }
     }

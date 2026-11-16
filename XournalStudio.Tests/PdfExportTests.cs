@@ -84,4 +84,22 @@ public sealed class PdfExportTests : IDisposable
         Assert.True(StrokeConverter.ReadShape(System.Xml.Linq.XElement.Parse(
             """<stroke tool="highlighter" color="#ffff007f" width="8.5">0 0 10 0</stroke>"""))!.EvenWidth);
     }
+    [Fact]
+    public void UnknownFontsUnreadablePictureBackgroundsAndOddStrokesDoNotStopTheExport()
+    {
+        string doc = Xopp("odd.xopp", """
+            <page width="100" height="100"><background type="pixmap" domain="absolute" filename="broken.png"/><layer>
+            <text font="Cantarell Bold" size="10" x="10" y="10" color="#000000ff">Linux</text>
+            <stroke tool="pen" color="#000000ff" width="1 0.5 2 1" style="dash">0 50 1 50 2 50 3 50 90 50</stroke>
+            <stroke tool="pen" color="#000000ff" width="0" style="dot">0 60 90 60</stroke>
+            </layer></page>
+            """);
+        File.WriteAllText(Path.Combine(temp, "broken.png"), "not a picture");
+        var document = XoppDocument.Load(doc);
+        string target = Path.Combine(temp, "odd.pdf");
+        var result = PdfExport.Write(document.Snapshot(doc), null, target, i => document.Pages[i].BackgroundImagePath);
+        Assert.Equal(1, result.Pages);
+        Assert.Equal(1, result.MissingBackgrounds);
+        Assert.Equal(1, PdfReader.Open(target, PdfDocumentOpenMode.Import).PageCount);
+    }
 }

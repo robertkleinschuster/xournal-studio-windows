@@ -236,11 +236,20 @@ public static class BackgroundRuling
     // A hex color: AARRGGBB as upstream's Color(uint32); six digits are taken as opaque RRGGBB.
     private static Color? HexColor(Dictionary<string, string> c, string key)
     {
-        if (!c.TryGetValue(key, out var s) || !uint.TryParse(s.TrimStart('#'), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out uint v))
+        if (!c.TryGetValue(key, out var raw))
         {
             return null;
         }
-        if (s.TrimStart('#').Length <= 6)
+        string s = raw.TrimStart('#');
+        if (s.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+        {
+            s = s[2..]; // std::stoul(..., 16) as upstream accepts the prefix
+        }
+        if (!uint.TryParse(s, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out uint v))
+        {
+            return null;
+        }
+        if (s.Length <= 6)
         {
             v |= 0xff000000;
         }

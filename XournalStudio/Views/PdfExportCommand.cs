@@ -53,7 +53,7 @@ public sealed class PdfExportCommand(WindowId window, DocumentSession session, M
             string text = $"{Path.GetFileName(target)} ({pages}).";
             if (result.MissingBackgrounds > 0)
             {
-                text += $" {result.MissingBackgrounds} Seite(n) ohne ihre PDF (nicht gefunden: {background ?? "keine PDF"}).";
+                text += $" {result.MissingBackgrounds} Seite(n) ohne ihren Hintergrund (PDF oder Bild nicht gefunden oder nicht lesbar).";
             }
             if (result.SkippedElements > 0)
             {

@@ -65,6 +65,9 @@ public sealed class XoppPage
     /// <summary>The file of a picture background, resolved when the document was loaded (null: none or not found).</summary>
     public string? BackgroundImagePath { get; set; }
 
+    /// <summary>The page whose picture background this page's "clone" background shows (null: not a clone).</summary>
+    public XoppPage? BackgroundCloneSource { get; set; }
+
     /// <summary>0-based page index in the background PDF of a &lt;background&gt; element.</summary>
     public static int PdfPageIndexOf(XElement background)
     {
@@ -327,6 +330,19 @@ public sealed class XoppPage
         foreach (var image in Images)
         {
             bottom = Math.Max(bottom, XoppImage.GetBounds(image).Bottom);
+        }
+        foreach (var shape in DrawnStrokes.Select(StrokeConverter.ReadShape).OfType<StrokeShape>())
+        {
+            double half = shape.SegmentWidths.Count > 0 ? shape.SegmentWidths.Max() / 2 : shape.Width / 2;
+            bottom = Math.Max(bottom, shape.Points.Max(p => p.Y) + half);
+        }
+        foreach (var text in Texts.Select(XoppText.Read))
+        {
+            // The laid-out height is the view's; one line per paragraph at 1.2 × the size is close enough to place
+            // pasted content below it (wrapped texts may reach a little lower).
+            int lines = text.Content.Split('\n').Length;
+            var corner = Vector2.Transform(new Vector2(0, (float)(lines * text.Size * 1.2)), text.Transform);
+            bottom = Math.Max(bottom, Math.Max(corner.Y, text.Transform.Translation.Y));
         }
         return bottom;
     }

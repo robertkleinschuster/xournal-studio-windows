@@ -116,7 +116,7 @@ public sealed partial class PageView : UserControl
             // XAML dash lengths are in multiples of the thickness; the file's are in points.
             DoubleCollection? Dash(double width)
             {
-                if (shape.Dashes is not { Length: > 0 } dashes)
+                if (shape.Dashes is not { Length: > 0 } dashes || width <= 0)
                 {
                     return null;
                 }
@@ -127,8 +127,10 @@ public sealed partial class PageView : UserControl
                 }
                 return collection;
             }
-            Microsoft.UI.Xaml.Shapes.Shape Line(PointCollection pts, double width) => new Microsoft.UI.Xaml.Shapes.Polyline
+            // offset = the length already drawn: the dashes run on over the segments of a stroke with pressure.
+            Microsoft.UI.Xaml.Shapes.Shape Line(PointCollection pts, double width, double offset = 0) => new Microsoft.UI.Xaml.Shapes.Polyline
             {
+                StrokeDashOffset = width > 0 ? offset / width : 0,
                 Points = pts,
                 Stroke = new SolidColorBrush(color),
                 StrokeThickness = width,
@@ -144,9 +146,12 @@ public sealed partial class PageView : UserControl
             }
             else
             {
+                double drawn = 0;
                 for (int i = 0; i + 1 < shape.Points.Count; i++)
                 {
-                    DrawnStrokesLayer.Children.Add(Line(Points([shape.Points[i], shape.Points[i + 1]]), shape.SegmentWidths[i]));
+                    var (a, b) = (shape.Points[i], shape.Points[i + 1]);
+                    DrawnStrokesLayer.Children.Add(Line(Points([a, b]), shape.SegmentWidths[i], drawn));
+                    drawn += Math.Sqrt((b.X - a.X) * (b.X - a.X) + (b.Y - a.Y) * (b.Y - a.Y));
                 }
             }
         }

@@ -56,9 +56,9 @@ public static class PdfExport
                         }
                         else if ((string?)bg.Attribute("type") == "pixmap")
                         {
-                            if (pictureBackground?.Invoke(pages) is { } file)
+                            if (pictureBackground?.Invoke(pages) is { } file && OpenPicture(file) is { } picture)
                             {
-                                using var picture = XImage.FromFile(file);
+                                keepOpen.Add(picture);
                                 g.DrawImage(picture, 0, 0, width, height);
                             }
                             else
@@ -146,12 +146,15 @@ public static class PdfExport
             StrokeCap.Square => XLineCap.Square,
             _ => XLineCap.Round,
         };
-        XPen Pen(double width)
+        // Dashes in multiples of the width (as GDI+); offset = the length already drawn, so the pattern runs on over
+        // the segments of a stroke with pressure as upstream draws it.
+        XPen Pen(double width, double offset = 0)
         {
             var pen = new XPen(color, width) { LineCap = cap, LineJoin = XLineJoin.Round };
-            if (shape.Dashes is { Length: > 0 } dashes)
+            if (shape.Dashes is { Length: > 0 } dashes && width > 0)
             {
-                pen.DashPattern = dashes.Select(d => d / width).ToArray(); // in multiples of the width, as GDI+
+                pen.DashPattern = dashes.Select(d => d / width).ToArray();
+                pen.DashOffset = offset / width;
             }
             return pen;
         }
@@ -171,10 +174,27 @@ public static class PdfExport
         }
         else
         {
+            double drawn = 0;
             for (int i = 0; i < points.Length - 1; i++)
             {
-                g.DrawLine(Pen(shape.SegmentWidths[i]), points[i], points[i + 1]);
+                g.DrawLine(Pen(shape.SegmentWidths[i], drawn), points[i], points[i + 1]);
+                drawn += (points[i + 1] - points[i]).Length;
             }
+        }
+    }
+
+    // A picture background PDFsharp cannot read (format, damaged, locked) leaves its page white, as on screen.
+    private static XImage? OpenPicture(string file)
+    {
+        try
+        {
+            return XImage.FromFile(file);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException or
+            ArgumentException or NotSupportedException or FormatException)
+        {
+            DebugLog.Write($"export: picture background {file}: {e.GetType().Name} 0x{e.HResult:X8} {e.Message}");
+            return null;
         }
     }
 
@@ -197,12 +217,27 @@ public static class PdfExport
         g.Restore(state);
     }
 
+    // A family Windows does not have (e.g. a Linux font) falls back to Arial, as the screen's TextBlock falls back.
+    private static XFont Font(string family, double size, XFontStyleEx style)
+    {
+        var options = new XPdfFontOptions(PdfFontEncoding.Unicode);
+        try
+        {
+            return new XFont(family, size, style, options);
+        }
+        catch (InvalidOperationException e)
+        {
+            DebugLog.Write($"export: font {family}: {e.GetType().Name} 0x{e.HResult:X8} {e.Message}; Arial instead");
+            return new XFont("Arial", size, style, options);
+        }
+    }
+
     // As on screen: the font's family, style and size in points, the box placed by the text's transform, wrapped at its
     // width (if it has one) and aligned.
     private static void DrawText(XGraphics g, XoppText text)
     {
         var style = (text.Bold ? XFontStyleEx.Bold : XFontStyleEx.Regular) | (text.Italic ? XFontStyleEx.Italic : XFontStyleEx.Regular);
-        var font = new XFont(text.WindowsFamily, text.Size, style, new XPdfFontOptions(PdfFontEncoding.Unicode));
+        var font = Font(text.WindowsFamily, text.Size, style);
         var brush = new XSolidBrush(ToX(text.Color));
         var state = g.Save();
         var m = text.Transform;

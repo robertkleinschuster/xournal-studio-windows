@@ -278,6 +278,51 @@ public class FileFormatTests : IDisposable
         Assert.Equal(3, page.Snapshot().Elements("layer").Single().Elements("stroke").Count(e => e.Attribute("fill") != null || e.Attribute("style") != null || (string?)e.Attribute("capStyle") == "butt"));
     }
 
+    [Fact]
+    public void PictureBackgroundsStillNameTheirFilesAfterSaveAsAndInsertedPages()
+    {
+        string path = Write("a.xopp", """
+            <xournal fileversion="4"><title>t</title>
+            <page width="100" height="100"><background type="pixmap" domain="attach" filename="bg_1.png"/><layer/></page>
+            <page width="100" height="100"><background type="pixmap" domain="absolute" filename="pics/p.png"/><layer/></page>
+            <page width="100" height="100"><background type="pixmap" domain="clone" filename="0"/><layer/></page>
+            </xournal>
+            """);
+        File.WriteAllBytes(path + ".bg_1.png", [1]);
+        Directory.CreateDirectory(Path.Combine(dir, "pics"));
+        File.WriteAllBytes(Path.Combine(dir, "pics", "p.png"), [1]);
+        var doc = XoppDocument.Load(path);
+        Assert.Equal(path + ".bg_1.png", doc.Pages[2].BackgroundImagePath);
+
+        // Saved where it was: written back as it was.
+        var same = doc.Snapshot(path).Root!.Elements("page").Select(p => p.Element("background")!).ToList();
+        Assert.Equal(("attach", "bg_1.png"), ((string?)same[0].Attribute("domain"), (string?)same[0].Attribute("filename")));
+        Assert.Equal("pics/p.png", (string?)same[1].Attribute("filename"));
+
+        // Save As in a subfolder with a page inserted first: paths from there, the clone's index follows its page.
+        doc.Pages.Insert(0, XoppPage.CreateGraph(100, 100));
+        var moved = doc.Snapshot(Path.Combine(dir, "sub", "b.xopp")).Root!.Elements("page").Select(p => p.Element("background")!).ToList();
+        Assert.Equal(("absolute", "../a.xopp.bg_1.png"), ((string?)moved[1].Attribute("domain"), (string?)moved[1].Attribute("filename")));
+        Assert.Equal("../pics/p.png", (string?)moved[2].Attribute("filename"));
+        Assert.Equal(("clone", "1"), ((string?)moved[3].Attribute("domain"), (string?)moved[3].Attribute("filename")));
+    }
+
+    [Fact]
+    public void PastedContentGoesBelowTextsAndDrawnStrokes()
+    {
+        var page = XoppPage.FromXml(XElement.Parse("""
+            <page width="200" height="300"><background type="solid" color="#ffffffff" style="plain"/><layer>
+            <stroke tool="pen" color="#000000ff" width="2" style="dash">0 50 90 50</stroke>
+            <text font="Sans" size="10" x="10" y="100" color="#000000ff">a
+            b</text>
+            </layer></page>
+            """));
+        Assert.Equal(124, page.ContentBottom(), 3); // two lines of 1.2 × 10 below y = 100
+        Assert.True(XoppText.Read(XElement.Parse("""<text font="Sans oblique" size="10" x="0" y="0">x</text>""")).Italic);
+        var ruling = BackgroundRuling.For(BackgroundStyle.Ruled, "f1=0xff0000", Windows.UI.Color.FromArgb(255, 255, 255, 255), 100, 300);
+        Assert.Equal(Windows.UI.Color.FromArgb(255, 255, 0, 0), ruling[0].Color);
+    }
+
     // Whitespace-only text nodes depend on formatting, not content.
     private static XElement Normalize(XElement e)
     {
