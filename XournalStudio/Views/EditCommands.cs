@@ -101,9 +101,9 @@ public sealed class EditCommands(
     public async Task PasteAsync()
     {
         var view = pages.CurrentView;
-        if (view == null || selection.Current?.IsPreviewing == true)
+        if (view == null)
         {
-            return; // mid-drag the selection is between two places: it would be replaced before it is put down
+            return; // (a drag of the selection running meanwhile: selecting the pasted content reverts it, see Clear)
         }
         try
         {
@@ -141,10 +141,17 @@ public sealed class EditCommands(
             return;
         }
         var offset = Matrix3x2.CreateTranslation((float)Grid, (float)Grid);
-        var elements = current.Images.Select(i => XoppClip.Transformed(i, offset))
-            .Concat(current.Strokes.Select(s => XoppClip.Transformed(current.Page.ElementOf(s), offset)))
-            .ToList();
-        Add(current.View, elements, "duplicate");
+        try
+        {
+            var elements = current.Images.Select(i => XoppClip.Transformed(i, offset))
+                .Concat(current.Strokes.Select(s => XoppClip.Transformed(current.Page.ElementOf(s), offset)))
+                .ToList();
+            Add(current.View, elements, "duplicate");
+        }
+        catch (Exception e)
+        {
+            messages.Error("duplicate", "Duplizieren nicht möglich", e);
+        }
     }
 
     /// <summary>Selects everything on the page in view.</summary>
@@ -165,6 +172,7 @@ public sealed class EditCommands(
     {
         var page = view.Page;
         var edit = new PageEdit(page);
+        var pictures = new List<XElement>();
         int skipped = 0;
         try
         {
@@ -183,35 +191,36 @@ public sealed class EditCommands(
                 }
                 else if (XoppImage.IsImage(e))
                 {
-                    edit.AddedImages.Add(e);
+                    pictures.Add(e);
                 }
                 else
                 {
                     skipped++; // an element this app does not place
                 }
             }
-            page.AddImages(edit.AddedImages);
+            page.AddImages(pictures); // last: the only step that can fail after it is none
+            edit.AddedImages.AddRange(pictures);
         }
         catch
         {
-            edit.Undo(); // nothing half added; the caller reports the error
+            TakeBack(page, edit.AddedStrokes); // nothing half added; the caller reports the original error
             throw;
         }
         bool nothing = edit.AddedStrokes.Count == 0 && edit.AddedImages.Count == 0;
         if (skipped > 0 || nothing)
         {
             // Said, not silently dropped: strokes that cannot be ink (drawn from a file only) and elements this app
-            // does not place (from a clip of elsewhere; for a duplicate an error of this app). Nothing added: the
-            // selection and tool stay as they were, and the message says so.
+            // does not place (from a clip of elsewhere; for a duplicate an error of this app).
             DebugLog.Write($"{operation}: {skipped} of {elements.Count} element(s) not added");
-            messages.Show(InfoBarSeverity.Warning, nothing ? "Nichts übernommen" : "Nicht alles übernommen",
-                skipped > 0
+            if (nothing)
+            {
+                ReportNothingAdded(skipped > 0
                     ? $"{skipped} Element(e) lassen sich hier nicht als Tinte oder Bild übernehmen."
-                    : "Die Zwischenablage enthält nichts, was sich hier einfügen lässt.");
-        }
-        if (nothing)
-        {
-            return; // no undo step
+                    : "Es gibt nichts, was sich hier übernehmen lässt.");
+                return;
+            }
+            messages.Show(InfoBarSeverity.Warning, "Nicht alles übernommen",
+                $"{skipped} Element(e) lassen sich hier nicht als Tinte oder Bild übernehmen.");
         }
         undo.Push(edit);
         activateSelectTool();
@@ -224,26 +233,51 @@ public sealed class EditCommands(
         var before = ink.GetStrokes().Select(s => s.Id).ToHashSet();
         ink.PasteFromClipboard(new Point(Grid, PasteTop(view.Page, 0)));
         var added = ink.GetStrokes().Where(s => !before.Contains(s.Id)).ToList();
-        // Its height is only known now: below the page's end it goes to the top instead (as pictures do).
-        var bounds = Rect.Empty;
-        added.ForEach(s => bounds.Union(s.BoundingRect));
-        if (!bounds.IsEmpty && bounds.Bottom > view.Page.Height)
-        {
-            var up = Matrix3x2.CreateTranslation(0, (float)(Grid - bounds.Top));
-            added.ForEach(s => s.PointTransform *= up);
-        }
-        added.ForEach(s => s.Selected = false);
         if (added.Count == 0)
         {
             DebugLog.Write("paste ink: the clipboard's ink added no strokes");
-            messages.Show(InfoBarSeverity.Warning, "Nichts übernommen", "Die Tinte in der Zwischenablage enthält keine Striche.");
-            return; // no undo step, selection and tool as they were
+            ReportNothingAdded("Die Tinte in der Zwischenablage enthält keine Striche.");
+            return;
+        }
+        try
+        {
+            // Its height is only known now: below the page's end it goes to the top instead (as pictures do).
+            var bounds = Rect.Empty;
+            added.ForEach(s => bounds.Union(s.BoundingRect));
+            if (bounds.Bottom > view.Page.Height)
+            {
+                var up = Matrix3x2.CreateTranslation(0, (float)(Grid - bounds.Top));
+                added.ForEach(s => s.PointTransform *= up);
+            }
+            added.ForEach(s => s.Selected = false);
+        }
+        catch
+        {
+            TakeBack(view.Page, added); // nothing half pasted; the caller reports the original error
+            throw;
         }
         var edit = new PageEdit(view.Page);
         edit.AddedStrokes.AddRange(added);
         undo.Push(edit);
         activateSelectTool();
         selection.Select(view, added, []);
+    }
+
+    // Nothing was added: no undo step, the selection and tool stay as they were – and the user is told.
+    private void ReportNothingAdded(string why) => messages.Show(InfoBarSeverity.Warning, "Nichts übernommen", why);
+
+    // Takes back strokes added by a paste or duplicate that failed; an error doing so is logged, the original one is
+    // what the caller reports.
+    private static void TakeBack(XoppPage page, List<InkStroke> strokes)
+    {
+        try
+        {
+            PageEdit.RemoveStrokes(page, strokes);
+        }
+        catch (Exception e)
+        {
+            DebugLog.Write("taking back a failed add", e);
+        }
     }
 
     private static double PasteTop(XoppPage page, double height)
