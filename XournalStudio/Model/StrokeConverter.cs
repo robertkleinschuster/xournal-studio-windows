@@ -388,7 +388,7 @@ public sealed record StrokeShape(Color Color, bool Highlighter, double Width, IR
             {
                 return double.NegativeInfinity;
             }
-            double lowest = Dashes is { Length: > 0 } ? l.Points.Max(p => p.Y) : Math.Max(l.Points[0].Y, l.Points[^1].Y);
+            double lowest = DashesFor(l.Width) != null ? l.Points.Max(p => p.Y) : Math.Max(l.Points[0].Y, l.Points[^1].Y);
             return lowest + Math.Sqrt(2) * l.Width / 2;
         }
         var bottoms = Parts().Select(part => part switch

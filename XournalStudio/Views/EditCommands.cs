@@ -165,25 +165,36 @@ public sealed class EditCommands(
         var page = view.Page;
         var edit = new PageEdit(page);
         var strokes = new List<InkStroke>();
+        int skipped = 0;
         foreach (var e in elements)
         {
             if (e.Name == "stroke")
             {
-                if (StrokeConverter.NeedsOwnDrawing(e))
-                {
-                    // Not from an ink selection of this app (styled or damaged): it cannot be added as ink.
-                    DebugLog.Write("paste: skipped a stroke that is drawn from the file, not ink");
-                    continue;
-                }
                 if (page.AddStrokeElement(e) is { } stroke)
                 {
                     strokes.Add(stroke);
+                }
+                else
+                {
+                    skipped++;
                 }
             }
             else if (XoppImage.IsImage(e))
             {
                 edit.AddedImages.Add(e);
             }
+        }
+        if (skipped > 0)
+        {
+            // Strokes that cannot be ink (no points; styled or damaged ones this app only draws from a file) – said,
+            // not silently dropped.
+            DebugLog.Write($"paste: {skipped} stroke(s) not added (no points, or drawn from a file only)");
+            messages.Show(InfoBarSeverity.Warning, "Nicht alles eingefügt",
+                $"{skipped} Strich(e) lassen sich hier nicht als Tinte einfügen.");
+        }
+        if (strokes.Count == 0 && edit.AddedImages.Count == 0)
+        {
+            return; // nothing added: no undo step, no empty selection
         }
         page.AddImages(edit.AddedImages);
         edit.AddedStrokes.AddRange(strokes);
