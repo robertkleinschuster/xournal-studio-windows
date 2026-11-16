@@ -167,7 +167,7 @@
                 </InkToolbarCustomToggleButton>
                 <!-- Windows' own ruler and protractor: draw along the edge for straight lines; move/turn with fingers. -->
                 <InkToolbarStencilButton x:Name="StencilButton" ToolTipService.ToolTip="Lineal / Geodreieck" AutomationProperties.Name="Lineal" />
-                <!-- Custom tools (Microsoft's InkToolbar extension point); the ink takes no input while one is active. -->
+                <!-- Custom tools use InkToolbar's extension point; their input is passed through by InkPresenter. -->
                 <!-- Selecting: lasso or rectangle (strokes and pictures; a rectangle on a PDF page also copies the area). -->
                 <InkToolbarCustomToolButton x:Name="SelectButton" ToolTipService.ToolTip="Auswählen: Lasso oder Rechteck (nochmal tippen zum Wählen); ziehen verschiebt, Ecken skalieren; ein Rechteck auf einer PDF-Seite kopiert diesen Bereich" AutomationProperties.Name="Auswählen">
                     <InkToolbarCustomToolButton.ConfigurationContent>

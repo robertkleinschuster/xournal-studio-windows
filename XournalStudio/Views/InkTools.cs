@@ -1,5 +1,4 @@
-using Microsoft.UI.Input;
-using Microsoft.UI.Xaml.Input;
+using CorePointerEventArgs = Windows.UI.Core.PointerEventArgs;
 using Windows.Foundation;
 using XournalStudio.Model;
 using XournalStudio.Services;
@@ -57,6 +56,9 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
     /// <summary>The pen's tip (or the mouse) is back: the presenters take ink input again.</summary>
     public Action ReleaseEraserEnd { get; set; } = () => { };
 
+    /// <summary>The pen's eraser end hovers while erasing is partial: the presenters leave its input to the app.</summary>
+    public Action TakeEraserEnd { get; set; } = () => { };
+
     public InkTool Tool
     {
         get => tool;
@@ -71,68 +73,75 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
         }
     }
 
-    /// <summary>Takes pointer input of a page (once per page view).</summary>
+    /// <summary>Handles the presenter's native unprocessed input stream (once per page view).</summary>
     public void Attach(PageView view)
     {
-        view.Surface.PointerPressed += (_, e) => OnPressed(view, e);
-        view.Surface.PointerMoved += (_, e) => OnMoved(view, e);
-        view.Surface.PointerReleased += (_, e) => OnReleased(view, e);
-        view.Surface.PointerCaptureLost += (_, e) =>
+        var input = view.Ink.UnprocessedInput;
+        input.PointerPressed += (_, e) => Logged("Pressed", () => OnPressed(view, e));
+        input.PointerMoved += (_, e) => Logged("Moved", () => OnMoved(view, e));
+        input.PointerReleased += (_, e) => Logged("Released", () => OnReleased(view, e));
+        input.PointerEntered += (_, e) => Logged("Entered", () => OnMoved(view, e));
+        input.PointerHovered += (_, e) => Logged("Hovered", () => OnHover(view, e));
+        input.PointerExited += (_, e) => Logged("Exited", () =>
+        {
+            eraser?.Hide();
+            EndIfLifted(e.CurrentPoint, e);
+        });
+        input.PointerLost += (_, e) => Logged("Lost", () =>
         {
             if (Owns(view, e))
             {
                 Finish(last);
             }
-        };
-        view.Surface.PointerCanceled += (_, e) =>
+        });
+    }
+
+    // WinUI raises these events from its ink thread's forwarding: an exception would not reach App.UnhandledException,
+    // so it is logged here before it propagates (never swallowed).
+    private static void Logged(string name, Action handler)
+    {
+        try
         {
-            if (Owns(view, e))
-            {
-                Cancel(running!);
-            }
-        };
-        view.Surface.PointerEntered += (_, e) => OnMoved(view, e); // the eraser's circle appears where the pen comes in
-        view.Surface.PointerExited += (_, e) =>
+            handler();
+        }
+        catch (Exception ex)
         {
-            eraser?.Hide();
-            EndIfLifted(e.GetCurrentPoint(view.Surface), e);
-        };
+            DebugLog.Write($"unprocessed {name}", ex);
+            throw;
+        }
     }
 
     // The running gesture is on this page and of this pointer.
-    private bool Owns(PageView view, PointerRoutedEventArgs e) =>
-        running is { } r && r.Page == view && r.Pointer == e.Pointer.PointerId;
+    private bool Owns(PageView view, CorePointerEventArgs e) =>
+        running is { } r && r.Page == view && r.Pointer == e.CurrentPoint.PointerId;
 
-    // The running gesture's pointer is seen lifted anywhere (a hover or exit without contact, a release on another page
-    // – when the capture did not keep it on the gesture's page): the gesture ends where it was last. Lifted is the pen
-    // off the surface, the mouse's left button up (as a gesture begins with it).
-    private bool EndIfLifted(Microsoft.UI.Input.PointerPoint point, PointerRoutedEventArgs e)
+    // A hover, exit, or release may be the first event to report a lifted pointer; finish at its last local point.
+    private bool EndIfLifted(Windows.UI.Input.PointerPoint point, CorePointerEventArgs e)
     {
-        if (running is not { } r || r.Pointer != e.Pointer.PointerId || IsDown(point, e))
+        if (running is not { } r || r.Pointer != point.PointerId || IsDown(point))
         {
             return false;
         }
         Finish(last);
-        r.Page.Surface.ReleasePointerCaptures();
         return true;
     }
 
-    private void OnPressed(PageView view, PointerRoutedEventArgs e)
+    private void OnPressed(PageView view, CorePointerEventArgs e)
     {
-        if (running != null || e.Pointer.PointerDeviceType == PointerDeviceType.Touch)
+        var point = e.CurrentPoint;
+        if (running != null || IsTouch(point))
         {
             return;
         }
-        var point = e.GetCurrentPoint(view.Surface);
-        bool isPen = IsPen(e);
-        bool eraserEnd = IsEraserEnd(point, e);
+        bool isPen = IsPen(point);
+        bool eraserEnd = IsEraserEnd(point);
         if (!eraserEnd)
         {
             ReleaseEraserEnd(); // the tip or the mouse presses: it inks
         }
         // The pen's barrel button may arrive as barrel or as right button (Lenovo pens).
         bool barrel = isPen && (point.Properties.IsBarrelButtonPressed || point.Properties.IsRightButtonPressed);
-        bool down = IsDown(point, e);
+        bool down = IsDown(point);
         var active = barrel ? InkTool.Select : tool;
         if (!barrel && Erases(isPen, eraserEnd)) // the barrel always lassos
         {
@@ -146,7 +155,7 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
         {
             return;
         }
-        last = point.Position;
+        last = LocalPosition(view, point);
         if (active == InkTool.PartialEraser)
         {
             eraser!.Begin(view, last);
@@ -159,23 +168,43 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
         {
             Shapes.Begin(view, last);
         }
-        Start(active, view, e);
+        Start(active, view, point.PointerId, e);
     }
 
-    private void OnMoved(PageView view, PointerRoutedEventArgs e)
+    private void OnMoved(PageView view, CorePointerEventArgs e)
     {
         if (running == null)
         {
             OnHover(view, e);
             return;
         }
-        var point = e.GetCurrentPoint(view.Surface);
+        var point = e.CurrentPoint;
         if (EndIfLifted(point, e) || !Owns(view, e))
         {
             return; // (a hovering pen never moves, lassos or erases)
         }
-        last = point.Position;
-        switch (running.Tool)
+        var samples = e.GetIntermediatePoints();
+        if (samples.Count == 0)
+        {
+            MoveTo(view, point);
+        }
+        else
+        {
+            foreach (var sample in samples)
+            {
+                if (sample.PointerId == point.PointerId)
+                {
+                    MoveTo(view, sample);
+                }
+            }
+        }
+        e.Handled = true;
+    }
+
+    private void MoveTo(PageView view, Windows.UI.Input.PointerPoint point)
+    {
+        last = LocalPosition(view, point);
+        switch (running?.Tool)
         {
             case InkTool.PartialEraser:
                 eraser!.Move(last);
@@ -183,32 +212,42 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
             case InkTool.Select:
                 Selection.Move(last);
                 break;
-            default:
+            case InkTool.Shape:
                 Shapes.Move(last);
                 break;
         }
-        e.Handled = true;
     }
 
     // No gesture: hovering shows the eraser's circle (and the tip hovering gives the pen back to the ink). Nothing begins
     // here – every gesture begins with a press on the page (the eraser end too: its first touch, taken by Windows ink,
     // hands it over; the next touch cuts – see PagesController).
-    private void OnHover(PageView view, PointerRoutedEventArgs e)
+    private void OnHover(PageView view, CorePointerEventArgs e)
     {
-        if (e.Pointer.PointerDeviceType == PointerDeviceType.Touch)
+        var point = e.CurrentPoint;
+        if (IsTouch(point))
         {
             return;
         }
-        var point = e.GetCurrentPoint(view.Surface);
-        bool isPen = IsPen(e);
-        bool eraserEnd = IsEraserEnd(point, e);
-        if (isPen && !eraserEnd)
+        bool isPen = IsPen(point);
+        bool eraserEnd = IsEraserEnd(point);
+        var position = LocalPosition(view, point);
+        // The pen reports which end it hovers with before it touches (unprocessed input carries IsInverted): the eraser
+        // end is taken before its first touch, the tip given back before it inks. Only in range – a pen leaving range
+        // is no hover of either end.
+        if (isPen && point.Properties.IsInRange)
         {
-            ReleaseEraserEnd(); // the pen's tip hovers: it will ink (a mouse moving gives nothing back)
+            if (!eraserEnd)
+            {
+                ReleaseEraserEnd(); // the pen's tip hovers: it will ink (a mouse moving gives nothing back)
+            }
+            else if (eraser != null)
+            {
+                TakeEraserEnd(); // erasing is partial: the eraser end's touches go to the partial eraser
+            }
         }
-        if (!IsDown(point, e) && Erases(isPen, eraserEnd)) // the circle while hovering
+        if (!IsDown(point) && Erases(isPen, eraserEnd)) // the circle while hovering
         {
-            eraser!.Hover(view, point.Position);
+            eraser!.Hover(view, position);
         }
         else
         {
@@ -216,26 +255,21 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
         }
     }
 
-    private void Start(InkTool active, PageView view, PointerRoutedEventArgs e)
+    private void Start(InkTool active, PageView view, uint pointerId, CorePointerEventArgs e)
     {
-        running = new Running(active, view, e.Pointer.PointerId);
-        if (!view.Surface.CapturePointer(e.Pointer))
-        {
-            // Without the capture its release elsewhere is not seen here; leaving the page lifted ends it (PointerExited).
-            DebugLog.Write($"{active}: the page did not capture the pointer");
-        }
+        running = new Running(active, view, pointerId);
         e.Handled = true;
     }
 
-    private void OnReleased(PageView view, PointerRoutedEventArgs e)
+    private void OnReleased(PageView view, CorePointerEventArgs e)
     {
+        var point = e.CurrentPoint;
         if (!Owns(view, e))
         {
-            EndIfLifted(e.GetCurrentPoint(view.Surface), e); // released over another page
+            EndIfLifted(point, e); // released over another page
             return;
         }
-        Finish(e.GetCurrentPoint(view.Surface).Position);
-        view.Surface.ReleasePointerCapture(e.Pointer);
+        Finish(LocalPosition(view, point));
         e.Handled = true;
     }
 
@@ -290,10 +324,9 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
                 eraser?.End(); // what was erased stays erased (and can be undone)
                 break;
         }
-        r.Page.Surface.ReleasePointerCaptures();
     }
 
-    // The running gesture, now ended – first of all: releasing a capture raises CaptureLost, which then finds none.
+    // The running gesture, now ended.
     private Running? Take()
     {
         var taken = running;
@@ -303,17 +336,25 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
 
     // The one test of "down" for a press and a lift: the pen on the surface, the mouse's left button pressed – by the
     // pointer's device (e.Pointer), the same for both.
-    private static bool IsDown(Microsoft.UI.Input.PointerPoint point, PointerRoutedEventArgs e) =>
-        IsPen(e) ? point.IsInContact : point.Properties.IsLeftButtonPressed;
+    private static bool IsDown(Windows.UI.Input.PointerPoint point) =>
+        IsPen(point) ? point.IsInContact : point.Properties.IsLeftButtonPressed;
 
     // The device, always from the pointer (e.Pointer) – one source for every test.
-    private static bool IsPen(PointerRoutedEventArgs e) => e.Pointer.PointerDeviceType == PointerDeviceType.Pen;
+    private static bool IsPen(Windows.UI.Input.PointerPoint point) =>
+        point.PointerDevice.PointerDeviceType == Windows.Devices.Input.PointerDeviceType.Pen;
+
+    private static bool IsTouch(Windows.UI.Input.PointerPoint point) =>
+        point.PointerDevice.PointerDeviceType == Windows.Devices.Input.PointerDeviceType.Touch;
+
+    // The presenter reports positions in its own (the InkCanvas') coordinates – the coordinates of its strokes and of
+    // the page's overlay, which share the InkCanvas' place in the sheet. No transform (sandbox log 2026-11-16).
+    private static Point LocalPosition(PageView view, Windows.UI.Input.PointerPoint point) => point.Position;
 
     // The partial eraser takes the pen's eraser end, and with the eraser tool active also the pen tip and the mouse.
     private bool Erases(bool isPen, bool eraserEnd) =>
         eraser != null && ((isPen && eraserEnd) || EraserToolActive());
 
     // The pen turned over: inverted while hovering, inverted and/or eraser while touching. The mouse counts as a tip.
-    private static bool IsEraserEnd(Microsoft.UI.Input.PointerPoint point, PointerRoutedEventArgs e) =>
-        IsPen(e) && (point.Properties.IsInverted || point.Properties.IsEraser);
+    private static bool IsEraserEnd(Windows.UI.Input.PointerPoint point) =>
+        IsPen(point) && (point.Properties.IsInverted || point.Properties.IsEraser);
 }

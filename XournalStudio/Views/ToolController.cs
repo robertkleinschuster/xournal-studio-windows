@@ -4,20 +4,13 @@ using Windows.UI;
 using Windows.UI.Core;
 using InkDrawingAttributes = Windows.UI.Input.Inking.InkDrawingAttributes;
 using InkInputProcessingMode = Microsoft.UI.Xaml.Controls.InkInputProcessingMode;
+using InkInputRightDragAction = Microsoft.UI.Xaml.Controls.InkInputRightDragAction;
 
 namespace XournalStudio.Views;
 
 /// <summary>
-/// An InkToolbar drives a single InkCanvas, but every page has its own. The toolbar targets one of them and this
-/// copies the toolbar's tool (pen, highlighter, eraser) to all other pages' InkPresenters. The target follows the
-/// page in view (for the stencils, which belong to one presenter).
-/// While a custom tool (lasso, shapes, PDF area) is active the presenters take no input, as Microsoft's own samples
-/// do for modes without ink (<c>IsInputEnabled = false</c>): pen and mouse then arrive as XAML pointer events for
-/// <see cref="InkTools"/>. (The documented route, <c>UnprocessedInput</c>, has unreadable pointer data in the
-/// Windows App SDK so far – microsoft-ui-xaml PR #12292.)
-/// The presenters ignore input with the pen's barrel button held (documented
-/// <c>InkInputConfiguration.IsPrimaryBarrelButtonInputEnabled = false</c>, Microsoft's "barrel button" sample): it then
-/// arrives as XAML pointer events with readable data and <see cref="InkTools"/> lassos with it, whatever tool is active.
+/// One InkToolbar drives a target page's InkCanvas and shares its selected drawing settings with every page.
+/// Custom tools and barrel-button selection use the presenter's native UnprocessedInput stream.
 /// </summary>
 public sealed class ToolController
 {
@@ -81,8 +74,7 @@ public sealed class ToolController
         {
             if (eraserEndTakenOver != value)
             {
-                eraserEndTakenOver = value;
-                ApplyToAll();
+                eraserEndTakenOver = value;                ApplyToAll();
             }
         }
     }
@@ -133,7 +125,7 @@ public sealed class ToolController
     /// <summary>Barrel-button input bypasses the presenter (lasso, see the class summary).</summary>
     public static void Attach(PageView view)
     {
-        view.Ink.InputConfiguration.IsPrimaryBarrelButtonInputEnabled = false;
+        view.Ink.InputProcessingConfiguration.RightDragAction = InkInputRightDragAction.LeaveUnprocessed;
     }
 
     public void SetPages(IEnumerable<PageView> pages)
@@ -178,7 +170,11 @@ public sealed class ToolController
         {
             view.Ink.InputProcessingConfiguration.Mode =
                 custom ? InkInputProcessingMode.None : erasing ? InkInputProcessingMode.Erasing : InkInputProcessingMode.Inking;
-            view.Ink.IsInputEnabled = !custom;
+            view.Ink.IsInputEnabled = true;
+            // Mouse can select or use app tools, but it must never create ink or native eraser strokes.
+            view.Ink.InputDeviceTypes = custom
+                ? CoreInputDeviceTypes.Pen | CoreInputDeviceTypes.Mouse
+                : CoreInputDeviceTypes.Pen;
             view.Ink.InputConfiguration.IsEraserInputEnabled = !partialErasing;
             if (attributes != null)
             {

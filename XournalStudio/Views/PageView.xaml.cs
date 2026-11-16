@@ -29,9 +29,6 @@ public sealed partial class PageView : UserControl
 
     public InkCanvas InkCanvas => Canvas;
 
-    /// <summary>The page area; pointer input of the custom tools arrives here.</summary>
-    public UIElement Surface => Sheet;
-
     /// <summary>Layer above the ink for tool feedback (lasso, selection, previews), in page points.</summary>
     public Microsoft.UI.Xaml.Controls.Canvas Overlay => ToolLayer;
 

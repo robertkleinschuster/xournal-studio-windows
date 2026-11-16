@@ -10,7 +10,7 @@ public sealed class Dialogs(Func<XamlRoot> root, Func<IEnumerable<PageView>> pag
     private readonly SemaphoreSlim oneAtATime = new(1, 1);
 
     /// <summary>
-    /// Shows a dialog with the pages' ink hidden. The experimental InkCanvas (2.6.6-experimental) renders and takes
+    /// Shows a dialog with the pages' ink hidden. The WinUI InkCanvas renders and takes
     /// pointer input above XAML popups, so mouse and pen clicks on dialog buttons went to the ink
     /// (microsoft-ui-xaml #10461/#11928). Remove the hiding when the Windows App SDK fixes it.
     /// </summary>

@@ -2,6 +2,37 @@
 
 Guidance for Claude Code in this repository. Keep it current: add what is learned, remove what turns out wrong.
 
+## Current WinUI ink state (2026-11-16 evening)
+
+- **Build:** the app compiles against the official `Microsoft.WindowsAppSDK.WinUI` + `.DWrite` **2.6.6-experimental**
+  (XAML compiler, projection, metadata) and `XournalStudio.csproj` copies the **Release (fre) runtime** of the WinUI fork
+  (robertkleinschuster/microsoft-ui-xaml, branch `fix/ink-unprocessedinput-pointer-snapshots` = upstream main +
+  microsoft-ui-xaml PR #12292) from `.local-build/winui-fre` over the package's runtime after Build/Publish, for every
+  configuration; the build fails if it is missing. Source of the payload: fork GitHub Actions run 43875126479 (see
+  `.local-build/winui-fre/README.txt`). When an official package ships PR #12292: reference it and drop the overlay.
+- **Never use the chk (Debug) WinUI payload:** it stops at internal asserts (`0xC0000420` STATUS_ASSERTION_FAILURE) –
+  that was the whole "startup crash" before 2026-11-16 evening.
+- **Never use the fork's own package (3.0.0-dev) for compiling:** the XAML compiler of upstream main emits WinUI's
+  `ScrollPresenter` into the app's XamlTypeInfo as a full activatable type with only `Content` instead of a return-type
+  stub (`SetIsReturnTypeStub()`); non-stub entries are not passed on to WinUI's `XamlControlsXamlMetaDataProvider`, so
+  WinUI's own ScrollView template fails ("Failed to assign to property ...ScrollPresenter.CanContentRenderOutsideBounds",
+  XamlParseException at start; minimal probe: a ScrollView declared in XAML crashes, one created in code works). The
+  winmd metadata is identical to 2.6.6-experimental; not reported upstream yet (public, needs approval). Main also
+  dropped static initializers for types without `.cctor` (157d7c9d) – harmless here.
+- **Release snapshots (`winui3/release/*`) cannot be built outside Microsoft:** they need internal package versions
+  (e.g. InteractiveExperiences 2.1.0-experimental-27200…); the restore opens Microsoft sign-in pages through the build's
+  `VSS.NuGet.AuthHelper`. Never run a WinUI restore that can prompt interactively.
+- **Custom tools on `InkPresenter.UnprocessedInput` (sandbox 2026-11-16, all steps pass):** custom tool → presenters
+  `InputProcessingMode.None`; barrel → `RightDragAction.LeaveUnprocessed`. With PR #12292 the args are readable on the
+  UI thread. **Positions are in the presenter's (InkCanvas') coordinates** = stroke and overlay coordinates – no
+  transform (an extra XamlRoot→page transform put every lasso beside the page). Unprocessed input also carries
+  **Entered/Hovered/Exited while the presenters ink**, with `IsInverted`: the eraser end is taken before its first
+  touch (`InkTools.TakeEraserEnd`, only in range and while erasing is partial), a tip hover in range gives it back –
+  partial erasing with the eraser end now works from the first touch. Handlers log exceptions themselves
+  (`InkTools.Logged`): WinUI's forwarding would not hand them to `App.UnhandledException`.
+- The notes further below about XAML pointer events for custom tools, `IsPrimaryBarrelButtonInputEnabled = false` and
+  unreadable unprocessed args describe the old 2.6.6-experimental runtime and are historical.
+
 ## What this is
 
 **Xournal Studio for Windows** (short name in the app: **Xournal Studio**) – a small WinUI 3 / C# note app for
@@ -341,8 +372,9 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   say "Erst loslassen". Saving, recovery copies and export never wait: a previewed move is registered with the page
   (`XoppPage.BeginPreview`/`EndPreview`), which writes such strokes with their committed transform – a snapshot is
   consistent at any moment. The row's buttons take no keyboard focus (`AllowFocusOnInteraction="False"`).
-- **Question for the user – the eraser end's first touch (2026-11-16, reviews 47–54 went back and forth; only the
-  real pen can decide):** with partial erasing on and the pen tool active, Windows ink takes the eraser end's touch
+- **Resolved 2026-11-16 evening (unprocessed input with PR #12292, see top): the eraser end is taken on its inverted
+  hover and erases partially from its first touch; the history below is kept for context.** Earlier question for the
+  user – the eraser end's first touch (2026-11-16, reviews 47–54 went back and forth; only the real pen can decide): with partial erasing on and the pen tool active, Windows ink takes the eraser end's touch
   (WinUI ignores `IsEraserInputEnabled = false`). Now: its first erase is put back, the eraser end is taken over, the
   **rest of that first touch erases nothing**, and from the **next press** it erases partially; a gesture never begins
   without a press (so nothing restarts after a cancel, from the gap between pages or after a tool change). The

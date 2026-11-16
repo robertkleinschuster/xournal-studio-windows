@@ -81,6 +81,7 @@ public sealed partial class MainWindow : Window
         }) { Radius = settings.EraserRadius };
         inkTools.EraserToolActive = () => tools.EraserActive;
         inkTools.ReleaseEraserEnd = () => tools.EraserEndTakenOver = false;
+        inkTools.TakeEraserEnd = () => tools.EraserEndTakenOver = true;
         EraserRadius.Value = settings.EraserRadius;
         PartialEraserButton.IsChecked = settings.PartialErasing;
         void ApplyEraserMode()
