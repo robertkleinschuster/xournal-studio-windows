@@ -309,7 +309,7 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 - Default name `%F-Notiz-%H-%M`, a PDF's document suggests the PDF's name in its folder.
 - Barrel button = always the lasso. Recovery copy 5 s after a change and on focus loss.
 - "Meine behalten" after a sync changed the open document: stays unsaved until Ctrl+S.
-- `examples/Schaltungen.xopp` reset; when the reviews are clean: merge `overnight` into main, push, install.
+- `examples/Schaltungen.xopp` reset. Reviews (12 rounds) converged on edge cases; `overnight` merged into main 2026-11-16 (f37018e).
 - PDF export approved and done 2026-11-16. Later candidates: pages of another PDF, page reordering, a text tool.
 - Still open: report the ink-over-dialog bug / comment on PR #12292 (public, needs approval).
 - **Partial eraser approved (user, 2026-11-16)** as a deliberate exception (Windows ink erases whole strokes only):
