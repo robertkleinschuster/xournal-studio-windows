@@ -6,12 +6,21 @@ Guidance for Claude Code in this repository. Keep it current: add what is learne
 
 - **Build:** the app compiles against the official `Microsoft.WindowsAppSDK.WinUI` + `.DWrite` **2.6.6-experimental**
   (XAML compiler, projection, metadata) and `XournalStudio.csproj` copies the **Release (fre) runtime** of the WinUI fork
-  (robertkleinschuster/microsoft-ui-xaml, branch `fix/ink-unprocessedinput-pointer-snapshots` = upstream main +
-  microsoft-ui-xaml PR #12292) from `.local-build/winui-fre` over the package's runtime after Build/Publish, for every
-  configuration; the build fails if it is missing. `tools/Get-WinUIRuntime.ps1` fetches it (pinned URL + SHA-256) from
-  the fork's release `winui-ink-fix-70a93db5` (zip of the fre payload of fork Actions run 43875126479); `install.ps1`
+  (robertkleinschuster/microsoft-ui-xaml, branch `fix/ink-runtime-inktoolbar` = upstream main of 2026-11-16 +
+  microsoft-ui-xaml PR #12292 + the fork's InkToolbar custom tool states fix, see Facts) from `.local-build/winui-fre`
+  over the package's runtime after Build/Publish, for every configuration; the build fails if it is missing.
+  `tools/Get-WinUIRuntime.ps1` fetches it (pinned URL + SHA-256) from the fork's release `winui-ink-fix-1cc68a49` (zip
+  of the fre payload of fork Actions run 44183617903, started by `gh workflow run winui-source-product.yml --ref
+  <branch>`; the release zip holds `runtimes/win10-x64/native/**`); `install.ps1`
   and `.github/workflows/release.yml` call it. A tag `v*` builds a pre-release with the self-contained zip; a manual
   run only builds. When an official package ships PR #12292: reference it and drop the overlay and the script.
+- **The overlay must replace the payload before the app's .pri is generated** (2026-11-18): WinUI's control templates
+  live in `Microsoft.UI.Xaml.Controls.pri`, and the app's own .pri (which merges the referenced .pri files at build
+  time) is what the app reads – copying the fork's files over the output only after Build/Publish left the package's
+  templates in the app (the InkToolbar fix did not show). `build/WinUIForkRuntime.targets` swaps the Windows App SDK
+  payload items (`None`/`ReferenceCopyLocalPaths` with a `Link`) for the fork's files right after
+  `AddMicrosoftWindowsAppSDKPayloadFilesFromComponents`; check with a search for a new template string in
+  `<App>.pri`. Before this, only the fork's C++ changes (PR #12292) reached the app, not its XAML.
 - **Never use the chk (Debug) WinUI payload:** it stops at internal asserts (`0xC0000420` STATUS_ASSERTION_FAILURE) –
   that was the whole "startup crash" before 2026-11-16 evening.
 - **Never use the fork's own package (3.0.0-dev) for compiling:** the XAML compiler of upstream main emits WinUI's
@@ -278,10 +287,13 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   ignored); custom buttons and other controls use their `x:Name` (PenToolbar sets `AutomationId`s: `PenButton1..n`,
   `HighlighterButton1..n`, `PartialEraseButton` (the eraser's mode toggle), `SelectButton`, `ShapeButton`, `StencilButton`, `UndoButton`, ...;
   `RecognizeButton` is a CheckBox in the shape tool's options).
-- **`InkToolbarCustomToolButton`'s template has no Checked visual states** (WinUI InkToolbar.xaml; built-in tools and
-  custom pens have them): an active custom tool (select, shapes) looked inactive. `PenToolbar.ShowActiveTool` gives the
-  active one the built-ins' Checked background (`SubtleFillColorSecondaryBrush`, as a theme resource). The accent
-  chevron of the built-ins' Checked state is not reachable. InkToolbar draws its glyphs at 16 (`InkToolbarButtonFontSize`),
+- **`InkToolbarCustomToolButton`'s template had no Checked visual states and no template defined
+  `ShowExtensionGlyph`/`HideExtensionGlyph`** (WinUI InkToolbar.xaml; UWP's generic.xaml in the Windows SDK has a
+  `GlyphVisualStates` group): an active custom tool (select, shapes) looked inactive and never showed the options
+  chevron. Fixed in the fork's runtime (commit "InkToolbar: show the checked state and the options chevron of custom
+  tools", branch `fix/ink-runtime-inktoolbar`; upstream PR branch `fix/inktoolbar-customtool-checked-state`, PR not
+  opened – needs the user's approval): custom tools show their state natively, the chevron follows
+  `IsExtensionGlyphShown` (checked and has `ConfigurationContent`); the app has no workaround any more. InkToolbar draws its glyphs at 16 (`InkToolbarButtonFontSize`),
   FontIcon defaults to 20: custom buttons' icons are 16 (`PenToolbar.Glyph`/`Sized`).
 - InkToolbar keeps only **one** built-in ballpoint/highlighter/eraser button (further ones are ignored) and orders its
   buttons itself: built-in pens, custom pens, eraser, custom tools, stencil, toggles. Several pens = custom pen buttons

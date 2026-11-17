@@ -10,6 +10,26 @@
   <Target Name="RequireWinUISourceBuildRuntime" BeforeTargets="Build" Condition="!Exists('$(WinUISourceBuildRuntimeDirectory)Microsoft.UI.Xaml.dll')">
     <Error Text="WinUI fork runtime missing: $(WinUISourceBuildRuntimeDirectory) – run tools\Get-WinUIRuntime.ps1 (see CLAUDE.md, 'Current WinUI ink state')." />
   </Target>
+  <!-- The fork's runtime also carries WinUI's resources: Microsoft.UI.Xaml.Controls.pri holds the controls' default
+       templates (e.g. the InkToolbar's). The app's own .pri merges the referenced .pri files at build time and is what
+       the app reads at run time, so the fork's .pri must be the one referenced - copying it over the output afterwards
+       is not enough (measured 2026-11-18: the app kept the package's InkToolbar templates). The self-contained Windows
+       App SDK targets (AddMicrosoftWindowsAppSDKPayloadFilesFromComponents) list the components' runtime files as None
+       (dll, xbf, ...) and ReferenceCopyLocalPaths (pri) items with a Link = their path in the output: every such file
+       the fork's runtime has is taken from the fork. -->
+  <Target Name="UseWinUISourceBuildRuntimePayload" AfterTargets="AddMicrosoftWindowsAppSDKPayloadFilesFromComponents" Condition="Exists('$(WinUISourceBuildRuntimeDirectory)')">
+    <ItemGroup>
+      <_WinUIForkReplacedReference Include="@(ReferenceCopyLocalPaths)"
+                                   Condition="'%(ReferenceCopyLocalPaths.Link)' != '' and Exists('$(WinUISourceBuildRuntimeDirectory)%(ReferenceCopyLocalPaths.Link)')" />
+      <ReferenceCopyLocalPaths Remove="@(_WinUIForkReplacedReference)" />
+      <ReferenceCopyLocalPaths Include="@(_WinUIForkReplacedReference->'$(WinUISourceBuildRuntimeDirectory)%(Link)')" />
+      <_WinUIForkReplacedNone Include="@(None)"
+                              Condition="'%(None.Link)' != '' and Exists('$(WinUISourceBuildRuntimeDirectory)%(None.Link)')" />
+      <None Remove="@(_WinUIForkReplacedNone)" />
+      <None Include="@(_WinUIForkReplacedNone->'$(WinUISourceBuildRuntimeDirectory)%(Link)')" />
+    </ItemGroup>
+    <Message Importance="normal" Text="WinUI fork runtime: @(_WinUIForkReplacedReference->Count()) referenced and @(_WinUIForkReplacedNone->Count()) payload files taken from $(WinUISourceBuildRuntimeDirectory)" />
+  </Target>
   <Target Name="CopyWinUISourceBuildRuntime" AfterTargets="Build" Condition="Exists('$(WinUISourceBuildRuntimeDirectory)')">
     <ItemGroup>
       <WinUISourceRuntimeFile Include="$(WinUISourceBuildRuntimeDirectory)**\*.*" />
