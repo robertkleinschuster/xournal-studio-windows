@@ -161,8 +161,9 @@ public sealed class ToolController
     private bool selectionTakenOver;
 
     /// <summary>
-    /// The pen's tip hovers over the selection: the presenters leave its input to the app, so a drag there moves or
-    /// scales the selection instead of inking (set and cleared by <see cref="InkTools"/> from the hover).
+    /// The pen hovers over the selection: the presenters take no pen input, so the pen's press and drag there arrive as
+    /// XAML pointer input (<see cref="SelectionDrag"/>: moving or scaling is an app interaction, not ink). Set from the
+    /// hover by <see cref="InkTools"/> (presenter side) and <see cref="SelectionDrag"/> (XAML side).
     /// </summary>
     public bool SelectionTakenOver
     {
@@ -172,14 +173,14 @@ public sealed class ToolController
             if (selectionTakenOver != value)
             {
                 selectionTakenOver = value;
-                ApplyMode();
+                ApplyDevices();
             }
         }
     }
 
-    // The app takes the pen's input: a custom tool, partial erasing, or a hover-time takeover (eraser end, selection).
+    // The app takes the pen's input: a custom tool, partial erasing, or the eraser end's hover-time takeover.
     private InkInputProcessingMode Mode =>
-        CustomTool != null || selectionTakenOver || (partialErasing && (EraserActive || eraserEndTakenOver))
+        CustomTool != null || (partialErasing && (EraserActive || eraserEndTakenOver))
             ? InkInputProcessingMode.None
             : EraserActive ? InkInputProcessingMode.Erasing : InkInputProcessingMode.Inking;
 
@@ -200,13 +201,27 @@ public sealed class ToolController
         }
     }
 
+    // Mouse can select or use app tools, but it must never create ink or native eraser strokes. Over the selection the
+    // presenters take no input at all (it goes to XAML).
+    private CoreInputDeviceTypes Devices =>
+        selectionTakenOver ? CoreInputDeviceTypes.None
+        : CustomTool != null || (partialErasing && EraserActive) ? CoreInputDeviceTypes.Pen | CoreInputDeviceTypes.Mouse
+        : CoreInputDeviceTypes.Pen;
+
+    private void ApplyDevices()
+    {
+        var devices = Devices;
+        foreach (var view in views)
+        {
+            if (view.Ink.InputDeviceTypes != devices)
+            {
+                view.Ink.InputDeviceTypes = devices;
+            }
+        }
+    }
+
     private void ApplyToAll()
     {
-        bool erasing = EraserActive;
-        // Mouse can select or use app tools, but it must never create ink or native eraser strokes.
-        var devices = CustomTool != null || (partialErasing && erasing)
-            ? CoreInputDeviceTypes.Pen | CoreInputDeviceTypes.Mouse
-            : CoreInputDeviceTypes.Pen;
         var attributes = toolbar.InkDrawingAttributes;
         if (attributes != null)
         {
@@ -215,15 +230,12 @@ public sealed class ToolController
         }
         foreach (var view in views)
         {
-            if (view.Ink.InputDeviceTypes != devices)
-            {
-                view.Ink.InputDeviceTypes = devices;
-            }
             if (attributes != null)
             {
                 view.Ink.UpdateDefaultDrawingAttributes(attributes);
             }
         }
+        ApplyDevices();
         ApplyMode();
     }
 }

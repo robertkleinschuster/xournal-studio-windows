@@ -61,7 +61,10 @@ public sealed partial class MainWindow : Window
         });
         edit = new EditCommands(inkTools.Selection, pages, undo, messages, () => Toolbar.ActiveTool = SelectButton);
         // A selection dragged across pages: scrolling at the view's edge, dropped on another page it moves there.
-        inkTools.AutoScroll = new DragAutoScroll(Scroller);
+        var autoScroll = new DragAutoScroll(Scroller);
+        inkTools.AutoScroll = autoScroll;
+        // Moving/scaling the selection: XAML pointer input while the pen hovers over it (before any page is attached).
+        inkTools.Drag = new SelectionDrag(inkTools.Selection, over => tools.SelectionTakenOver = over) { AutoScroll = autoScroll };
         inkTools.Selection.OtherPageAt = pages.OtherPageAt;
         inkTools.Selection.TransferToPage = edit.TransferToPage;
         inkTools.Selection.DragChangedPage += inkTools.FollowDrag;

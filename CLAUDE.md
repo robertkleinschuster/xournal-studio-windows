@@ -57,6 +57,18 @@ arrows), math exercises long formulas in several colors.
 
 ## Constraints (agreed with the user)
 
+- **Moving/scaling the selection is XAML pointer input (`SelectionDrag`, 2026-11-17):** an app interaction, not ink –
+  Microsoft's docs build only the lasso from UnprocessedInput, and their samples take the pen from the ink for a non-ink
+  mode (SimpleInk Scenario9: `IsInputEnabled = false`). While the pen (tip or barrel) hovers over the selection, the
+  presenters get `InputDeviceTypes = None` (`ToolController.SelectionTakenOver`, set from the presenter hover by
+  `InkTools` and from the XAML hover by `SelectionDrag`); press, capture and moves then arrive on the page's `Surface`
+  (Sheet) and `GetCurrentPoint(page.InkCanvas)` is right on any page, also while the view scrolls. Reason (measured in
+  the sandbox with `UiTests/ScrollDragTest.ps1`): the presenter that got the press keeps the pen, and its coordinates
+  drift once its page scrolls out of view (lifted composition, not WinUI code) – the dragged content slid away from
+  the pen. Away from the selection (XAML hover) the presenters get the pen back before it touches; it inks normally.
+  The takeover needs the pen's hover before the touch (a real pen always hovers; a test must hover ~100 ms).
+  Auto-scroll runs per frame (`CompositionTarget.Rendering`): scroll by speed × frame time and hand the drag the pen's
+  place via XAML's transform (current for the frame). Lasso, eraser and shapes stay on UnprocessedInput.
 - **Doctrine: Microsoft's APIs do the work, the app only wires them up correctly.** Every feature is built the
   way Microsoft builds it (docs, samples, the controls' own extension points): selecting, moving, deleting,
   copying ink is `InkStrokeContainer`'s job, straight lines are the Windows ruler's, PDF rendering is

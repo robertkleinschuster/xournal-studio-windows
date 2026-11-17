@@ -63,13 +63,20 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
     /// <summary>The dragged selection went on to another page (SelectionTool.DragChangedPage): the drag follows it.</summary>
     public void FollowDrag(PageView page, Point p)
     {
+        Drag?.FollowPage(page); // a drag by XAML pointer input (it acts only while it runs)
         if (running is { Tool: InkTool.Select } r)
         {
             running = r with { Page = page };
             last = p;
-            AutoScroll?.FollowPage(page, p);
+            AutoScroll?.FollowPage(page);
         }
     }
+
+    // The page of a XAML selection drag (the selection's page).
+    private PageView? inkSelectionPage() => Selection.Current?.View;
+
+    /// <summary>Moving and scaling the selection as XAML pointer input (set by the window; see SelectionDrag).</summary>
+    public SelectionDrag? Drag { get; set; }
 
     /// <summary>Scrolls the pages while a selection drag holds the pen near the view's edge (set by the window).</summary>
     public DragAutoScroll? AutoScroll { get; set; }
@@ -94,6 +101,7 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
     /// <summary>Handles the presenter's native unprocessed input stream (once per page view).</summary>
     public void Attach(PageView view)
     {
+        Drag?.Attach(view);
         var input = view.Ink.UnprocessedInput;
         input.PointerPressed += (_, e) => Logged("Pressed", () => OnPressed(view, e));
         input.PointerMoved += (_, e) => Logged("Moved", () => OnMoved(view, e));
@@ -347,6 +355,10 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
     /// </summary>
     public void CancelGestureOn(Func<PageView, bool> affected)
     {
+        if (Drag is { IsRunning: true } && inkSelectionPage() is { } dragPage && affected(dragPage))
+        {
+            Drag.Cancel();
+        }
         if (running is { } r && affected(r.Page))
         {
             Cancel(r);

@@ -89,6 +89,8 @@ try {
     [Inj]::PenStroke((L (X 0.7) 250 (X 0.85) 250), $false, 512)
     [Inj]::PenStrokeFlags((L (X 0.68) 232 (X 0.87) 232 (X 0.87) 268 (X 0.68) 268 (X 0.68) 232), 1, 512)
     Shot '03b-barrel-lasso'
+    # A real pen hovers before it touches; over the selection the app takes it there (moving is XAML pointer input).
+    for ($t = 0; $t -lt 100; $t += 16) { [Inj]::PenFrame((X 0.77), 249, 0x22002, 1, 0); Start-Sleep -Milliseconds 16 }
     [Inj]::PenStrokeFlags((L (X 0.77) 250 (X 0.77) 300), 1, 512)
     Shot '03c-barrel-move'
     [Inj]::PenStroke((L (X 0.7) 350 (X 0.85) 350), $false, 512)

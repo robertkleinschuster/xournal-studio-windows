@@ -1,35 +1,25 @@
-using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 using Windows.Foundation;
 
 namespace XournalStudio.Views;
 
 /// <summary>
 /// Scrolls the pages while a drag (selection moved, scaled, lasso, rectangle) holds the pen near the edge of the view:
-/// the closer to the edge (or beyond it), the faster. It goes on while the pen holds still, so a timer drives it; each
-/// step hands the drag the pen's new place on its page.
+/// the closer to the edge (or beyond it), the faster. It goes on while the pen holds still, so it runs once per frame
+/// (<see cref="CompositionTarget.Rendering"/>, XAML's hook for per-frame work): each frame scrolls by speed × frame time
+/// and hands the drag the pen's place on its page, so content and view move together and smoothly.
 /// </summary>
-public sealed class DragAutoScroll
+public sealed class DragAutoScroll(ScrollView scroller)
 {
     private const double Band = 48;          // DIPs inside the view's edge where scrolling begins
     private const double MaxSpeed = 1500;    // DIPs per second at the edge and beyond
 
-    private readonly ScrollView scroller;
-    private readonly DispatcherQueueTimer timer;
     private PageView? page;
-    private Point inView;                    // the pen in the ScrollView's coordinates (for the speed)
-    private Point anchor;                    // the pen on its page when it last moved (page points)
-    private Point anchorOffset;              // the scroll offsets then
+    private Point inView;                    // the pen in the ScrollView's coordinates
     private Action<Point>? moveTo;
-    private DateTime lastTick;
-
-    public DragAutoScroll(ScrollView scroller)
-    {
-        this.scroller = scroller;
-        timer = scroller.DispatcherQueue.CreateTimer();
-        timer.Interval = TimeSpan.FromMilliseconds(16);
-        timer.Tick += (_, _) => Step();
-    }
+    private TimeSpan? lastFrame;
+    private bool hooked;
 
     /// <summary>The drag's pen is at <paramref name="local"/> on <paramref name="dragPage"/> (its page points).</summary>
     public void Track(PageView dragPage, Point local, Action<Point> move)
@@ -37,59 +27,61 @@ public sealed class DragAutoScroll
         page = dragPage;
         moveTo = move;
         inView = dragPage.InkCanvas.TransformToVisual(scroller).TransformPoint(local);
-        Rebase(local);
         if (Velocity() == default)
         {
-            timer.Stop();
+            Unhook();
         }
-        else if (!timer.IsRunning)
+        else if (!hooked)
         {
-            lastTick = DateTime.UtcNow;
-            timer.Start();
+            lastFrame = null;
+            CompositionTarget.Rendering += OnRendering;
+            hooked = true;
         }
     }
 
-    /// <summary>The drag went on to another page: the pen's place is now given in that page's points.</summary>
-    public void FollowPage(PageView dragPage, Point local)
+    /// <summary>The drag went on to another page: the pen's place is handed over in that page's points.</summary>
+    public void FollowPage(PageView dragPage)
     {
         if (page != null)
         {
             page = dragPage;
-            Rebase(local);
         }
-    }
-
-    private void Rebase(Point local)
-    {
-        anchor = local;
-        anchorOffset = new Point(scroller.HorizontalOffset, scroller.VerticalOffset);
     }
 
     public void Stop()
     {
-        timer.Stop();
+        Unhook();
         page = null;
         moveTo = null;
     }
 
-    private void Step()
+    private void Unhook()
     {
-        var now = DateTime.UtcNow;
-        double dt = Math.Min(0.05, (now - lastTick).TotalSeconds);
-        lastTick = now;
+        if (hooked)
+        {
+            CompositionTarget.Rendering -= OnRendering;
+            hooked = false;
+        }
+    }
+
+    private void OnRendering(object? sender, object e)
+    {
+        var time = ((RenderingEventArgs)e).RenderingTime;
+        double dt = lastFrame is { } last ? Math.Clamp((time - last).TotalSeconds, 0, 0.05) : 0;
+        lastFrame = time;
         var v = Velocity();
         if (page == null || moveTo == null || v == default)
         {
-            timer.Stop();
+            Unhook();
             return;
         }
-        // The pen stayed where it is in the view, the content moved under it by what has been scrolled since the pen
-        // last moved: the drag follows by exactly that (the ScrollView's offsets are what is shown; a XAML transform
-        // lags behind them while the view scrolls, and the dragged content drifted away from the pen).
-        double zoom = scroller.ZoomFactor;
-        moveTo(new Point(anchor.X + (scroller.HorizontalOffset - anchorOffset.X) / zoom,
-            anchor.Y + (scroller.VerticalOffset - anchorOffset.Y) / zoom));
-        scroller.ScrollBy(v.X * dt, v.Y * dt, new ScrollingScrollOptions(ScrollingAnimationMode.Disabled));
+        // The pen holds still in the view and the content moved under it: the drag follows (XAML's transform is current
+        // for the frame being rendered – measured in the sandbox, 2026-11-17).
+        moveTo(scroller.TransformToVisual(page.InkCanvas).TransformPoint(inView));
+        if (dt > 0)
+        {
+            scroller.ScrollBy(v.X * dt, v.Y * dt, new ScrollingScrollOptions(ScrollingAnimationMode.Disabled));
+        }
     }
 
     private Point Velocity() => new(Speed(inView.X, scroller.ActualWidth), Speed(inView.Y, scroller.ActualHeight));

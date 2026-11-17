@@ -189,7 +189,8 @@ public sealed class SelectionTool(UndoStack undo)
     private void HandOverIfOverOtherPage(Point p)
     {
         lastOnPage = null;
-        if (handOverFailed || Current is not { } from || OtherPageAt(view!, p) is not { } target)
+        // Over its own page nothing changes; only beyond it the other pages are looked up (each pen event comes here).
+        if (handOverFailed || Current is not { } from || OnPage(view!, p) || OtherPageAt(view!, p) is not { } target)
         {
             return;
         }
@@ -210,6 +211,9 @@ public sealed class SelectionTool(UndoStack undo)
         SelectionChanged?.Invoke(this, EventArgs.Empty);
         DragChangedPage?.Invoke(view, q);
     }
+
+    private static bool OnPage(PageView page, Point p) =>
+        p.X >= 0 && p.Y >= 0 && p.X <= page.Page.Width && p.Y <= page.Page.Height;
 
     // Records the drag as one undo step: its hand-overs and its final move (if any).
     private void RecordDrag(IPageEdit? last)

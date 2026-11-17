@@ -27,6 +27,9 @@ public sealed partial class PageView : UserControl
 
     public InkPresenter Ink => Canvas.InkPresenter;
 
+    /// <summary>Receives the pen as XAML pointer input while the presenters leave it (moving the selection).</summary>
+    public UIElement Surface => Sheet;
+
     public InkCanvas InkCanvas => Canvas;
 
     /// <summary>Layer above the ink for tool feedback (lasso, selection, previews), in page points.</summary>
