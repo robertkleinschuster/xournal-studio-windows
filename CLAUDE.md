@@ -6,10 +6,12 @@ Guidance for Claude Code in this repository. Keep it current: add what is learne
 
 - **Build:** the app compiles against the official `Microsoft.WindowsAppSDK.WinUI` + `.DWrite` **2.6.6-experimental**
   (XAML compiler, projection, metadata) and `XournalStudio.csproj` copies the **Release (fre) runtime** of the WinUI fork
-  (robertkleinschuster/microsoft-ui-xaml, branch `fix/ink-unprocessedinput-pointer-snapshots` = upstream main +
-  microsoft-ui-xaml PR #12292) from `.local-build/winui-fre` over the package's runtime after Build/Publish, for every
-  configuration; the build fails if it is missing. `tools/Get-WinUIRuntime.ps1` fetches it (pinned URL + SHA-256) from
-  the fork's release `winui-ink-fix-70a93db5` (zip of the fre payload of fork Actions run 43875126479); `install.ps1`
+  (robertkleinschuster/microsoft-ui-xaml, branch `fix/ink-runtime-inktoolbar` = upstream main of 2026-11-16 +
+  microsoft-ui-xaml PR #12292 + the fork's InkToolbar custom tool states fix, see Facts) from `.local-build/winui-fre`
+  over the package's runtime after Build/Publish, for every configuration; the build fails if it is missing.
+  `tools/Get-WinUIRuntime.ps1` fetches it (pinned URL + SHA-256) from the fork's release `winui-ink-fix-1cc68a49` (zip
+  of the fre payload of fork Actions run 44183617903, started by `gh workflow run winui-source-product.yml --ref
+  <branch>`; the release zip holds `runtimes/win10-x64/native/**`); `install.ps1`
   and `.github/workflows/release.yml` call it. A tag `v*` builds a pre-release with the self-contained zip; a manual
   run only builds. When an official package ships PR #12292: reference it and drop the overlay and the script.
 - **Never use the chk (Debug) WinUI payload:** it stops at internal asserts (`0xC0000420` STATUS_ASSERTION_FAILURE) –
