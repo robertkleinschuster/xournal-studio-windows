@@ -1,4 +1,5 @@
 using CorePointerEventArgs = Windows.UI.Core.PointerEventArgs;
+using InkUnprocessedInput = Microsoft.UI.Xaml.Controls.InkUnprocessedInput;
 using Windows.Foundation;
 using InkDrawingAttributes = Windows.UI.Input.Inking.InkDrawingAttributes;
 
@@ -73,6 +74,9 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
     // The page of a XAML selection drag (the selection's page).
     private InkPage? DragPage => Selection.Current?.Page;
 
+    /// <summary>A gesture (lasso, shape, erase, selection drag) runs on <paramref name="page"/>.</summary>
+    public bool Uses(InkPage page) => running?.Page == page || (Drag is { IsRunning: true } && DragPage == page);
+
     /// <summary>Moving and scaling the selection as XAML pointer input (set by InkWorkspace; see SelectionDrag).</summary>
     public SelectionDrag? Drag { get; set; }
 
@@ -96,32 +100,54 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
         }
     }
 
-    /// <summary>Handles the presenter's native unprocessed input stream (once per page view).</summary>
-    public void Attach(InkPage view)
+    /// <summary>
+    /// Handles the presenter's native unprocessed input stream (once per page view). Returns what takes the handlers off
+    /// again (the page's view is released): the presenter would otherwise keep them, and through them the view.
+    /// </summary>
+    public Action Attach(InkPage view)
     {
-        Drag?.Attach(view);
+        var detachDrag = Drag?.Attach(view);
         var input = view.Ink.UnprocessedInput;
-        input.PointerPressed += (_, e) => Logged("Pressed", () => OnPressed(view, e));
-        input.PointerMoved += (_, e) => Logged("Moved", () => OnMoved(view, e));
-        input.PointerReleased += (_, e) => Logged("Released", () => OnReleased(view, e));
-        input.PointerEntered += (_, e) => Logged("Entered", () => OnMoved(view, e));
-        input.PointerHovered += (_, e) => Logged("Hovered", () => OnHover(view, e));
-        input.PointerExited += (_, e) => Logged("Exited", () =>
-        {
-            eraser?.Hide();
-            if (running == null)
+        TypedEventHandler<InkUnprocessedInput, CorePointerEventArgs>
+            pressed = (_, e) => Logged("Pressed", () => OnPressed(view, e)),
+            moved = (_, e) => Logged("Moved", () => OnMoved(view, e)),
+            released = (_, e) => Logged("Released", () => OnReleased(view, e)),
+            entered = (_, e) => Logged("Entered", () => OnMoved(view, e)),
+            hovered = (_, e) => Logged("Hovered", () => OnHover(view, e)),
+            exited = (_, e) => Logged("Exited", () =>
             {
-                Hand(false); // off the page: the pen inks wherever it comes back
-            }
-            EndIfLifted(e.CurrentPoint, e);
-        });
-        input.PointerLost += (_, e) => Logged("Lost", () =>
-        {
-            if (Owns(view, e))
+                eraser?.Hide();
+                if (running == null)
+                {
+                    Hand(false); // off the page: the pen inks wherever it comes back
+                }
+                EndIfLifted(e.CurrentPoint, e);
+            }),
+            lost = (_, e) => Logged("Lost", () =>
             {
-                Finish(last);
-            }
-        });
+                if (Owns(view, e))
+                {
+                    Finish(last);
+                }
+            });
+        input.PointerPressed += pressed;
+        input.PointerMoved += moved;
+        input.PointerReleased += released;
+        input.PointerEntered += entered;
+        input.PointerHovered += hovered;
+        input.PointerExited += exited;
+        input.PointerLost += lost;
+        return () =>
+        {
+            detachDrag?.Invoke();
+            input.PointerPressed -= pressed;
+            input.PointerMoved -= moved;
+            input.PointerReleased -= released;
+            input.PointerEntered -= entered;
+            input.PointerHovered -= hovered;
+            input.PointerExited -= exited;
+            input.PointerLost -= lost;
+        };
     }
 
     /// <summary>The pen is taken over for the selection now (the presenters take no pen input; see ToolController).</summary>

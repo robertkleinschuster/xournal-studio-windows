@@ -23,13 +23,14 @@ public sealed class SelectionDrag(SelectionTool selection, Action<bool> takeOver
 
     public bool IsRunning => captured != null;
 
-    public void Attach(InkPage view)
+    /// <summary>Handles the page surface's pointer input; returns what takes the handlers off again (view released).</summary>
+    public Action Attach(InkPage view)
     {
         var surface = view.Surface;
-        surface.PointerMoved += (_, e) => Logged("moved", () => OnMoved(view, e));
-        surface.PointerPressed += (_, e) => Logged("pressed", () => OnPressed(view, e));
-        surface.PointerReleased += (_, e) => Logged("released", () => OnReleased(e));
-        surface.PointerCaptureLost += (_, e) => Logged("capture lost", () =>
+        PointerEventHandler moved = (_, e) => Logged("moved", () => OnMoved(view, e));
+        PointerEventHandler pressed = (_, e) => Logged("pressed", () => OnPressed(view, e));
+        PointerEventHandler released = (_, e) => Logged("released", () => OnReleased(e));
+        PointerEventHandler captureLost = (_, e) => Logged("capture lost", () =>
         {
             if (Owns(e))
             {
@@ -45,7 +46,7 @@ public sealed class SelectionDrag(SelectionTool selection, Action<bool> takeOver
                 Finish(e.GetCurrentPoint(page!.InkCanvas).Position);
             }
         });
-        surface.PointerCanceled += (_, e) => Logged("canceled", () =>
+        PointerEventHandler canceled = (_, e) => Logged("canceled", () =>
         {
             if (Owns(e))
             {
@@ -53,13 +54,28 @@ public sealed class SelectionDrag(SelectionTool selection, Action<bool> takeOver
                 Cancel();
             }
         });
-        surface.PointerExited += (_, e) => Logged("exited", () =>
+        PointerEventHandler exited = (_, e) => Logged("exited", () =>
         {
             if (!IsRunning && IsPen(e))
             {
                 takeOver(false); // off the page (to another one, or away): the ink takes the pen again
             }
         });
+        surface.PointerMoved += moved;
+        surface.PointerPressed += pressed;
+        surface.PointerReleased += released;
+        surface.PointerCaptureLost += captureLost;
+        surface.PointerCanceled += canceled;
+        surface.PointerExited += exited;
+        return () =>
+        {
+            surface.PointerMoved -= moved;
+            surface.PointerPressed -= pressed;
+            surface.PointerReleased -= released;
+            surface.PointerCaptureLost -= captureLost;
+            surface.PointerCanceled -= canceled;
+            surface.PointerExited -= exited;
+        };
     }
 
     /// <summary>The drag went on to another page (SelectionTool.DragChangedPage): positions are taken there.</summary>

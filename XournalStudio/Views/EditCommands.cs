@@ -118,17 +118,18 @@ public sealed class EditCommands(
     /// <summary>Pastes the app's own group, else ink (Windows' format), else a bitmap (as a picture).</summary>
     public async Task PasteAsync()
     {
-        var view = pages.CurrentView;
-        if (view == null || RefusedWhileDragging("Einfügen"))
+        var target = pages.CurrentPageView()?.Page;
+        if (target == null || RefusedWhileDragging("Einfügen"))
         {
             return; // mid-drag: the place below the content and the dragged content itself are not settled
         }
         try
         {
             var clip = await ClipboardService.GetClipAsync();
-            if (RefusedWhileDragging("Einfügen"))
+            // The page's view now (taken again after waiting: a view far from the viewport may have been released).
+            if (RefusedWhileDragging("Einfügen") || pages.ViewOf(target) is not { } view)
             {
-                return; // a drag began while the clipboard was read
+                return; // a drag began while the clipboard was read (or the page was deleted)
             }
             if (clip == null && view.Page.Ink!.CanPasteFromClipboard())
             {
@@ -136,10 +137,11 @@ public sealed class EditCommands(
                 return;
             }
             clip ??= await ClipboardService.GetBitmapAsClipAsync();
-            if (RefusedWhileDragging("Einfügen"))
+            if (RefusedWhileDragging("Einfügen") || pages.ViewOf(target) is not { } viewNow)
             {
                 return;
             }
+            view = viewNow;
             if (clip == null)
             {
                 messages.Show(InfoBarSeverity.Informational, "Nichts zum Einfügen in der Zwischenablage",
@@ -184,7 +186,7 @@ public sealed class EditCommands(
     /// <summary>Selects everything on the page in view.</summary>
     public void SelectAll()
     {
-        var view = pages.CurrentView;
+        var view = pages.CurrentPageView();
         if (view == null || RefusedWhileDragging("Alles auswählen"))
         {
             return;

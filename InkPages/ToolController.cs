@@ -119,14 +119,16 @@ public sealed class ToolController
 
     public void SetPages(IEnumerable<InkPage> pages)
     {
+        var added = pages.Except(views).ToList();
         views.Clear();
         views.AddRange(pages);
-        // Their devices and mode are set by ApplyToAll – only where they differ (a rewrite during a hover drops the pen).
         if (toolbar.TargetInkCanvas == null || !views.Any(v => v.InkCanvas == toolbar.TargetInkCanvas))
         {
             toolbar.TargetInkCanvas = views.FirstOrDefault()?.InkCanvas;
         }
-        ApplyToAll();
+        // Only the new pages get the drawing settings: rewriting them on a page the pen hovers over drops the pen (pages
+        // come and go while the user scrolls). Devices and mode are set only where they differ.
+        ApplyTo(added);
     }
 
     /// <summary>
@@ -205,7 +207,10 @@ public sealed class ToolController
         }
     }
 
-    private void ApplyToAll()
+    private void ApplyToAll() => ApplyTo(views);
+
+    // The drawing settings to these pages; devices and mode to all pages where they differ.
+    private void ApplyTo(IReadOnlyList<InkPage> pages)
     {
         var attributes = toolbar.InkDrawingAttributes;
         if (attributes != null)
@@ -213,7 +218,7 @@ public sealed class ToolController
             // Polylines (the custom pens draw so too): few-point shapes stay angular, as a file stores them.
             attributes.FitToCurve = false;
         }
-        foreach (var view in views)
+        foreach (var view in pages)
         {
             if (attributes != null)
             {

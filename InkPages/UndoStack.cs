@@ -194,6 +194,9 @@ public sealed class UndoStack
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>Whether an edit to undo or redo changes <paramref name="page"/> (it needs the page's ink).</summary>
+    public bool Touches(InkPage page) => undo.Any(e => e.Touches(page)) || redo.Any(e => e.Touches(page));
+
     /// <summary>Forgets the history of a deleted page.</summary>
     public void Forget(InkPage page)
     {

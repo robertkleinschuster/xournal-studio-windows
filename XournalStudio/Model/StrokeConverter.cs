@@ -24,7 +24,7 @@ public static class StrokeConverter
 
     private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
-    // InkStrokeBuilder is not agile (MarshalingType.None): one per thread – documents are loaded on the thread pool.
+    // InkStrokeBuilder is not agile (MarshalingType.None): one per thread – pages' strokes are read on the thread pool.
     [ThreadStatic]
     private static InkStrokeBuilder? builder;
 

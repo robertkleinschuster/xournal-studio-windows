@@ -37,6 +37,19 @@ public abstract partial class InkPage : UserControl
         Content = sheet;
     }
 
+    /// <summary>
+    /// A blank sheet of a page's size and look, without ink or content: stands in for a page whose view is not created
+    /// (an app that shows only the pages near the viewport), so the layout and the scroll extent stay the same.
+    /// </summary>
+    public static FrameworkElement CreatePlaceholder(double width, double height, Brush? background)
+    {
+        var sheet = Themed.Load<Border>("Border", "BorderBrush='{ThemeResource CardStrokeColorDefaultBrush}' BorderThickness='0.5'");
+        sheet.Width = width;
+        sheet.Height = height;
+        sheet.Background = background; // hit-test visible like a page: touch on it pans the view
+        return sheet;
+    }
+
     public InkCanvas InkCanvas { get; }
 
     public Microsoft.UI.Xaml.Controls.InkPresenter Ink => InkCanvas.InkPresenter;

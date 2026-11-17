@@ -100,7 +100,7 @@ public sealed class DocumentSession
 
     private void RememberPosition()
     {
-        if (PositionKey(Document) is not { } key || pages.Views.Any() == false)
+        if (PositionKey(Document) is not { } key || !pages.HasPages)
         {
             return;
         }
@@ -130,8 +130,8 @@ public sealed class DocumentSession
             }
             else
             {
-                // Reading the file and making its strokes ink (agile objects) take seconds for a long document: not on
-                // the UI thread.
+                // Reading and parsing the file takes a while for a long document: not on the UI thread (the pages' strokes
+                // become ink only for the pages near the viewport, also off the UI thread: PageSlots).
                 doc = await Task.Run(() => XoppDocument.Load(path));
                 pdf = await LoadPdfAsync(doc);
             }
