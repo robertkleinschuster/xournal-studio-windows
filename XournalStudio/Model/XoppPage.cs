@@ -19,8 +19,9 @@ public sealed record Placement(
     List<(System.Xml.Linq.XElement Image, Windows.Foundation.Rect Bounds)> Images);
 
 /// <summary>
-/// One page. Its strokes live in an <see cref="InkStrokeContainer"/> (shown by the page's InkCanvas);
-/// pictures and all other content stay in the page's XML element and are written back as loaded.
+/// One page. While it has a view its strokes live in the view's <see cref="InkStrokeContainer"/> (shown by its
+/// InkCanvas); without a view the page is only its XML element (strokes read for a view, written back when it goes).
+/// Pictures and all other content stay in the page's XML element and are written back as loaded.
 /// </summary>
 public sealed class XoppPage
 {
@@ -44,14 +45,11 @@ public sealed class XoppPage
 
     public XElement Background => element.Element("background")!;
 
-    // Strokes read from the file until the page's InkCanvas takes them over.
-    private List<(InkStroke Stroke, XElement Element)>? pendingStrokes = new();
-
-    /// <summary>The stroke container of the page's InkCanvas (the canvas owns it), once attached.</summary>
+    /// <summary>The stroke container of the page's InkCanvas (the canvas owns it), while the page has a view.</summary>
     public InkStrokeContainer? Ink { get; private set; }
 
-    public IReadOnlyList<InkStroke> Strokes =>
-        Ink?.GetStrokes() ?? (IReadOnlyList<InkStroke>?)pendingStrokes?.Select(p => p.Stroke).ToList() ?? [];
+    /// <summary>The page's ink strokes: those of its view, or (no view) read from its element.</summary>
+    public IReadOnlyList<InkStroke> Strokes => Ink?.GetStrokes() ?? ReadStrokes().Select(s => s.Stroke).ToList();
 
     public bool IsPdf => IsPdfBackground(Background);
 
@@ -123,34 +121,102 @@ public sealed class XoppPage
             new XElement("background", new XAttribute("type", "pdf"), new XAttribute("pageno", pdfPageIndex + 1)),
             new XElement("layer")));
 
-    public static XoppPage FromXml(XElement element)
+    public static XoppPage FromXml(XElement element) => new(element);
+
+    /// <summary>
+    /// The page's ink strokes made from its stroke elements, in drawing order, each with its element (strokes drawn from
+    /// the file, <see cref="StrokeConverter.NeedsOwnDrawing"/>, and strokes without points are not ink). Runs on any
+    /// thread while the page has no view: then nothing changes the page's element (it is not in the document's tree, and
+    /// only a view edits a page), so a view is prepared off the UI thread.
+    /// </summary>
+    public List<(InkStroke Stroke, XElement Element)> ReadStrokes()
     {
-        var page = new XoppPage(element);
+        var strokes = new List<(InkStroke, XElement)>();
         foreach (var strokeElement in element.Elements("layer").Elements("stroke"))
         {
-            var stroke = StrokeConverter.InkOf(strokeElement); // null: drawn from the file (DrawnStrokes) or no points
-            if (stroke != null)
+            if (StrokeConverter.InkOf(strokeElement) is { } stroke)
             {
-                page.pendingStrokes!.Add((stroke, strokeElement));
+                strokes.Add((stroke, strokeElement));
             }
         }
-        return page;
+        return strokes;
     }
 
-    /// <summary>Hands the page's strokes to its InkCanvas. Only once per page.</summary>
-    public void AttachInk(InkStrokeContainer container)
+    /// <summary>
+    /// Hands the page's strokes (<see cref="ReadStrokes"/>, read since the page had its last view) to the InkCanvas of a
+    /// new view; from now on the ink is the page's strokes.
+    /// </summary>
+    public void AttachInk(InkStrokeContainer container, IEnumerable<(InkStroke Stroke, XElement Element)> strokes)
     {
         if (Ink != null)
         {
             throw new InvalidOperationException("The page is already shown.");
         }
-        Ink = container;
-        foreach (var (stroke, e) in pendingStrokes!)
+        var list = strokes.ToList();
+        foreach (var (stroke, _) in list)
         {
             container.AddStroke(stroke);
+        }
+        Adopt(list);
+        Ink = container;
+    }
+
+    // The strokes' elements, by ink stroke id (the ink of a new view).
+    internal void Adopt(IEnumerable<(InkStroke Stroke, XElement Element)> strokes)
+    {
+        foreach (var (stroke, e) in strokes)
+        {
             strokeElements[stroke.Id] = e;
         }
-        pendingStrokes = null;
+    }
+
+    /// <summary>
+    /// The page's view is released (far from the viewport): the ink is written into the page's element as a snapshot
+    /// would write it (<see cref="WriteBack"/>), and the page keeps no ink objects – the next view reads its strokes anew.
+    /// Only for a page no edit in the history refers to (the edits hold the view's strokes).
+    /// </summary>
+    public void DetachInk()
+    {
+        if (Ink == null)
+        {
+            throw new InvalidOperationException("The page is not shown.");
+        }
+        WriteBack(Ink.GetStrokes());
+        Ink = null;
+    }
+
+    /// <summary>
+    /// Writes these strokes (the ink, in drawing order) into the page's element, exactly as <see cref="SnapshotOf"/>
+    /// writes them: elements of strokes no longer on the ink are taken out, strokes added in this session (drawn:
+    /// converted; pasted/duplicated: their element) follow in the top layer; everything else stays as it is. The page then
+    /// knows no stroke by id any more.
+    /// </summary>
+    internal void WriteBack(IReadOnlyList<InkStroke> strokes)
+    {
+        var live = strokes.Select(s => s.Id).ToHashSet();
+        foreach (var (id, e) in strokeElements)
+        {
+            if (!live.Contains(id) && e.Parent != null)
+            {
+                e.Remove();
+            }
+        }
+        var topLayer = element.Elements("layer").Last();
+        foreach (var stroke in strokes)
+        {
+            if (!strokeElements.TryGetValue(stroke.Id, out var e))
+            {
+                topLayer.Add(converted.ElementOf(stroke, CommittedTransform(stroke) ?? stroke.PointTransform));
+            }
+            else if (e.Parent == null)
+            {
+                topLayer.Add(e);
+            }
+        }
+        strokeElements.Clear();
+        replacedIds.Clear(); // only edits look strokes up by an older identity, and none refers to this page
+        previewed.Clear();
+        converted.KeepOnly(new HashSet<uint>());
     }
 
     /// <summary>Called when undo/redo puts a copy of a stroke back in place of the removed original.</summary>
@@ -163,10 +229,17 @@ public sealed class XoppPage
             oldId = next;
         }
         replacedIds[oldId] = newId;
+        Rename(oldId, newId);
+    }
+
+    // The stroke's file element and its converted element go to its copy.
+    private void Rename(uint oldId, uint newId)
+    {
         if (strokeElements.Remove(oldId, out var e))
         {
             strokeElements[newId] = e;
         }
+        converted.Transfer(oldId, newId);
     }
 
     /// <summary>
@@ -402,7 +475,8 @@ public sealed class XoppPage
     /// </summary>
     public XElement Snapshot()
     {
-        return Ink == null ? new XElement(element) /* never shown: unchanged */ : SnapshotOf(Ink.GetStrokes());
+        // Without view the element is the page as it is (a released view wrote its ink into it).
+        return Ink != null ? SnapshotOf(Ink.GetStrokes()) : new XElement(element);
     }
 
     /// <summary>The page as <see cref="Snapshot"/> writes it with these strokes on its ink (in drawing order).</summary>

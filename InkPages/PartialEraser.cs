@@ -73,6 +73,15 @@ public sealed class PartialEraser(UndoStack undo, Action<IReadOnlyCollection<Ink
         sampled.Clear();
     }
 
+    /// <summary>The page is no longer shown (its view was released): its circle goes.</summary>
+    public void Forget(InkPage view)
+    {
+        if (cursorPage == view)
+        {
+            Hide();
+        }
+    }
+
     public void Begin(InkPage view, Point p)
     {
         page = view;

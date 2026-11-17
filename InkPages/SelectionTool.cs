@@ -253,6 +253,19 @@ public sealed class SelectionTool(UndoStack undo)
         lastOnPage = null;
     }
 
+    /// <summary>The running drag has steps on <paramref name="page"/> (content handed over from it), recorded when it ends.</summary>
+    public bool Uses(InkPage page) => dragEdits.Any(e => e.Touches(page));
+
+    /// <summary>The page is no longer shown (its view was released): a finished gesture keeps no reference to it.</summary>
+    public void Forget(InkPage page)
+    {
+        if (view == page && gesture == Gesture.None)
+        {
+            view = null;
+            lastOnPage = null;
+        }
+    }
+
     /// <summary>Selects these strokes and pictures (pasted, duplicated, all of a page).</summary>
     public void Select(InkPage page, List<InkStroke> strokes, List<object> pictures)
     {

@@ -46,7 +46,7 @@ public sealed partial class MainWindow : Window
         ink = new InkWorkspace(bar, Scroller, settings.PartialErasing);
         KeepToolSettings();
         pages = new PagesController(Scroller, PagesPanel, ink);
-        dialogs = new Dialogs(() => Content.XamlRoot, () => pages.Views);
+        dialogs = new Dialogs(() => Content.XamlRoot, pages);
         session = new DocumentSession(AppWindow.Id, pages, dialogs, messages, settings, () => ProjectFolder);
         sync = new SyncController(session, dialogs, messages);
         var explorerCommands = new ExplorerCommands(Explorer, session, sync, dialogs, messages, FocusDocument, RefreshExplorer, index =>

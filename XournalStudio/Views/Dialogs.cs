@@ -4,7 +4,7 @@ using Microsoft.UI.Xaml.Controls;
 namespace XournalStudio.Views;
 
 /// <summary>The app's ContentDialogs: confirmations and name input, all shown through <see cref="ShowAsync"/>.</summary>
-public sealed class Dialogs(Func<XamlRoot> root, Func<IEnumerable<PageView>> pages)
+public sealed class Dialogs(Func<XamlRoot> root, PagesController pages)
 {
     // WinUI shows one ContentDialog at a time (a second ShowAsync throws): later ones wait for the open one.
     private readonly SemaphoreSlim oneAtATime = new(1, 1);
@@ -30,21 +30,14 @@ public sealed class Dialogs(Func<XamlRoot> root, Func<IEnumerable<PageView>> pag
     private async Task<ContentDialogResult> ShowNowAsync(ContentDialog dialog)
     {
         dialog.XamlRoot = root();
-        var views = pages().ToList();
-        foreach (var view in views)
-        {
-            view.InkCanvas.Visibility = Visibility.Collapsed;
-        }
+        pages.InkHidden = true; // also on page views created while the dialog is open
         try
         {
             return await dialog.ShowAsync();
         }
         finally
         {
-            foreach (var view in views)
-            {
-                view.InkCanvas.Visibility = Visibility.Visible;
-            }
+            pages.InkHidden = false;
         }
     }
 

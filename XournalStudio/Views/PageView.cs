@@ -42,7 +42,9 @@ public sealed partial class PageView : InkPage
     public Image? FindPicture(XElement picture) =>
         imagesLayer.Children.OfType<Image>().FirstOrDefault(i => i.Tag == picture);
 
-    public PageView(XoppPage page, PdfBackground? pdf) : base(page.Width, page.Height)
+    /// <param name="strokes">The page's strokes, read for this view (<see cref="XoppPage.ReadStrokes"/>).</param>
+    public PageView(XoppPage page, PdfBackground? pdf, IEnumerable<(InkStroke Stroke, XElement Element)> strokes)
+        : base(page.Width, page.Height)
     {
         Page = page;
         this.pdf = page.IsPdf ? pdf : null;
@@ -51,7 +53,7 @@ public sealed partial class PageView : InkPage
             UnderInk.Children.Add(layer);
         }
 
-        SheetBackground = new SolidColorBrush(page.IsPdf || page.IsImageBackground ? Colors.White : page.BackgroundColor);
+        SheetBackground = new SolidColorBrush(SheetColor(page));
         if (!page.IsPdf && !page.IsImageBackground)
         {
             foreach (var ruling in BackgroundRuling.For(page.Style, page.BackgroundConfig, page.BackgroundColor, page.Width, page.Height))
@@ -60,12 +62,36 @@ public sealed partial class PageView : InkPage
             }
         }
 
-        page.AttachInk(InkCanvas.InkPresenter.StrokeContainer);
-        page.ImagesChanged += (_, changed) => PicturesChanged(changed);
-        page.ImagesMoved += (_, moved) => MovePictures(moved);
+        page.AttachInk(InkCanvas.InkPresenter.StrokeContainer, strokes);
+        page.ImagesChanged += OnImagesChanged;
+        page.ImagesMoved += OnImagesMoved;
         ShowTexts();
         ShowDrawnStrokes();
     }
+
+    /// <summary>The sheet's color below a page's background: its solid color, white below a PDF page or a picture.</summary>
+    public static Color SheetColor(XoppPage page) =>
+        page.IsPdf || page.IsImageBackground ? Colors.White : page.BackgroundColor;
+
+    /// <summary>
+    /// The view is no longer shown: its bitmaps are freed, its waiting render requests dropped, and the page no longer
+    /// reaches it. With <paramref name="keepInk"/> (the page stays in the document) the page writes its strokes back
+    /// (<see cref="XoppPage.DetachInk"/>).
+    /// </summary>
+    public void Close(bool keepInk)
+    {
+        UpdateBackground(false, 0);
+        Page.ImagesChanged -= OnImagesChanged;
+        Page.ImagesMoved -= OnImagesMoved;
+        if (keepInk)
+        {
+            Page.DetachInk();
+        }
+    }
+
+    private void OnImagesChanged(object? sender, IReadOnlyCollection<XElement> changed) => PicturesChanged(changed);
+
+    private void OnImagesMoved(object? sender, IReadOnlyCollection<XElement> moved) => MovePictures(moved);
 
     // ---------------------------------------------------------------- the page's content for the tools (InkPage)
 

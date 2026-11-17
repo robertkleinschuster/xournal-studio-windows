@@ -150,18 +150,60 @@ public sealed class InkWorkspace
     /// <summary>Wires a new page: the tools' input, undo of its ink, shape recognition. Once per page.</summary>
     public void Attach(InkPage page)
     {
-        Input.Attach(page);
+        var detachInput = Input.Attach(page);
         ToolController.Attach(page);
-        page.Ink.StrokesCollected += (_, e) => OnStrokesCollected(page, e.Strokes);
-        page.Ink.StrokesErased += (_, e) => OnStrokesErased(page, e.Strokes);
+        var ink = page.Ink;
+        Windows.Foundation.TypedEventHandler<InkPresenter, InkStrokesCollectedEventArgs> collected =
+            (_, e) => OnStrokesCollected(page, e.Strokes);
+        Windows.Foundation.TypedEventHandler<InkPresenter, InkStrokesErasedEventArgs> erased =
+            (_, e) => OnStrokesErased(page, e.Strokes);
+        ink.StrokesCollected += collected;
+        ink.StrokesErased += erased;
+        attached[page] = () =>
+        {
+            detachInput();
+            ink.StrokesCollected -= collected;
+            ink.StrokesErased -= erased;
+        };
     }
 
-    /// <summary>The pages now shown, in one panel (after attaching, inserting or removing).</summary>
+    // What takes each attached page's handlers off again (its view leaves: SetPages).
+    private readonly Dictionary<InkPage, Action> attached = new();
+
+    /// <summary>
+    /// The pages now shown, in one panel (after attaching, inserting or removing; an app that shows only the pages near
+    /// the viewport also after creating or releasing views – see <see cref="Holds"/>). Pages left out are forgotten by
+    /// the tools; the toolbar's settings are applied to the pages new here.
+    /// </summary>
     public void SetPages(IEnumerable<InkPage> shown)
     {
-        pages = shown.ToList();
+        var now = shown.ToList();
+        foreach (var gone in pages.Except(now))
+        {
+            Eraser.Forget(gone);
+            Selection.Forget(gone);
+            // Its handlers come off: the presenter's events would keep the released view alive.
+            if (attached.Remove(gone, out var detach))
+            {
+                detach();
+            }
+        }
+        pages = now;
         Tools.SetPages(pages);
     }
+
+    /// <summary>
+    /// Whether the workspace still needs this page's view and its ink: the history has edits of it (they hold its strokes
+    /// and its ink container – <c>InkStrokeContainer</c> has no public constructor and a stroke belongs to one container,
+    /// so an edit cannot outlive the canvas it was made on), it has the selection, a gesture runs on it (also a drag that handed
+    /// content over from it) or a stroke drawn on it is being recognized. An app that releases the views of pages far from the viewport keeps these.
+    /// </summary>
+    public bool Holds(InkPage page) =>
+        Undo.Touches(page) || Selection.Current?.Page == page || Selection.Uses(page) || Input.Uses(page) ||
+        recognizing.ContainsKey(page);
+
+    // Pages with strokes in shape recognition (async): how many collections each.
+    private readonly Dictionary<InkPage, int> recognizing = new();
 
     /// <summary>The page in view: the toolbar drives it (the ruler appears where the user writes).</summary>
     public void SetCurrentPage(InkPage? page) => Tools.SetCurrentPage(page);
@@ -272,6 +314,7 @@ public sealed class InkWorkspace
     {
         int shown = generation;
         var edit = new PageEdit(page);
+        recognizing[page] = recognizing.GetValueOrDefault(page) + 1; // the page's view stays until it is recorded
         try
         {
             foreach (var stroke in strokes.ToList())
@@ -310,6 +353,13 @@ public sealed class InkWorkspace
         {
             InkLog.Write("strokes collected", e);
             throw;
+        }
+        finally
+        {
+            if (--recognizing[page] == 0)
+            {
+                recognizing.Remove(page);
+            }
         }
     }
 }

@@ -157,12 +157,15 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 ## Architecture
 
 - `InkPages/` (library, namespace `InkPages`, no app dependencies; the writing area): `InkWorkspace` (the facade:
-  wires toolbar, tools, input, auto-scroll and undo; `Attach(page)`, `SetPages`, `Reset`, `Removing/Removed`,
-  `UndoStep`; the toolbar's controls hold the tools' choices), `InkPage` (abstract page: `UnderInk` layers of the app,
-  InkCanvas, `Overlay`, `Surface`; the app implements its content – stroke identity/preview/transform, placements,
-  pictures as the app's objects, removal tokens), `PenToolbar` (+ `PenToolbarTexts`, `BallpointPen`/`HighlighterPen`,
+  wires toolbar, tools, input, auto-scroll and undo; `Attach(page)`, `SetPages` (the pages that have a view now),
+  `Holds(page)` (the page's view must stay: history, selection, running gesture or drag hand-over, shape recognition),
+  `Reset`, `Removing/Removed`, `UndoStep`; the toolbar's controls hold the tools' choices), `InkPage` (abstract page:
+  `UnderInk` layers of the app, InkCanvas, `Overlay`, `Surface`; the app implements its content – stroke
+  identity/preview/transform, placements, pictures as the app's objects, removal tokens; `CreatePlaceholder` = a blank
+  sheet for a page without view), `PenToolbar` (+ `PenToolbarTexts`, `BallpointPen`/`HighlighterPen`,
   `Extensions` for app buttons, `PenToolbar.Command`), `ToolController` (copies the InkToolbar's tool to all pages'
-  presenters; processing mode None for a custom tool and for hover takeovers – only the mode is switched then),
+  presenters – drawing attributes only to pages new in `SetPages`, devices/mode only where they differ; processing mode
+  None for a custom tool and for hover takeovers – only the mode is switched then),
   `InkTools` (routes the presenters' unprocessed pen/mouse input to `SelectionTool`, `ShapeTool`, `PartialEraser`;
   barrel → selection; hover takeovers of the eraser end and of the tip over the selection), `Selection` (selected
   strokes/pictures, frame + corner handles, live preview, commit as `TransformEdit`), `SelectionDrag` (XAML pointer
@@ -173,7 +176,9 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   compiled into the unit tests: `StrokeEraser`, `ShapeGeometry`/`ShapeKind`, `InkStrokes` (drawn width, strokes from
   samples), `SelectMode`). See open work 9.
 - `Model/` – `XoppDocument` (gzip XML; the XML tree is kept as loaded, pages are taken out and put back on save;
-  save writes `<file>~` then replaces), `XoppPage` (page element; strokes live in the page's InkStrokeContainer,
+  save writes `<file>~` then replaces), `XoppPage` (page element; strokes live in the page's InkStrokeContainer while
+  it has a view – `ReadStrokes` (any thread) + `AttachInk`; `DetachInk`/`WriteBack` write the ink into the element as a
+  snapshot would when the view is released; without view a page is only XML –
   unchanged strokes are written back as their original elements, mapped by ink stroke id; pictures stay XML),
   `StrokeConverter` (Xournal per-segment widths ↔ ink pressure), `XoppImage` (`<image>`/`<teximage>`),
   `XoppFormat` (creator, file version).
@@ -189,11 +194,13 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 - `MainWindow` only wires menus, toolbar and panes to the feature classes below (no feature logic).
 - `Views/` – `AppToolbar` (German texts, Xournal's palette, pen presets), `PageView` (the library's `InkPage` for a
   `XoppPage`: background color + ruling or PDF page rendered at the current zoom near the viewport, pictures, texts,
-  drawn strokes; implements the page content over `XoppPage`), `PagesController` (page views in the
-  ScrollView, zoom, page in view, insert/remove pages, PDF rendering near the viewport), `DocumentSession` (open,
+  drawn strokes; implements the page content over `XoppPage`; `Close` when released), `PageSlots` (lazy page views:
+  one child of the StackPanel per page – its `PageView` near the viewport, else a placeholder of its size; see Facts),
+  `PagesController` (the ScrollView: zoom, page in view (`CurrentPageView()` creates its view), insert/remove pages,
+  which pages have views and PDF rendering near the viewport, every 120 ms while the view moves), `DocumentSession` (open,
   save, save-as with the suggested name/folder, the leave question, recovery offer and `Autosave`),
   `RecoveryPrompt`, `SyncController`, `ExplorerCommands` (what the explorer asks for), `Dialogs` (all
-  ContentDialogs; hides the ink while one is open), `Messages` (InfoBar),
+  ContentDialogs; hides the ink while one is open – `PagesController.InkHidden`, also on views created meanwhile), `Messages` (InfoBar),
   `EditCommands` (cut/copy/paste/duplicate/delete/select all; pasted content placed at the left margin below the
   page's content and selected; moves a dragged selection's elements to another page), `TasksView` + `TaskItem`
   (todo.txt pane), `PdfExportCommand` (picker, never over the background PDF),
@@ -217,6 +224,24 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   `FolderWatcher` (`FileSystemWatcher` on the project folder, hidden folders such as .git ignored).
 
 ## Facts learned (keep)
+
+- **Lazy page views (2026-11-17, `PageSlots`):** only pages within one viewport height of the view have a `PageView`
+  (pages in view at once, the next near one per 120 ms tick); views beyond two heights are released unless
+  `InkWorkspace.Holds` them (undo/redo history, selection, running gesture or a drag's hand-overs, shape recognition) –
+  so an edit never refers to a released view: `InkStrokeContainer` has no public constructor and a stroke belongs to one
+  container, so edits cannot outlive their canvas. Memory is in the `InkStroke` objects, not the canvases (sandbox,
+  40-page document with 26.5k strokes: all strokes converted at load cost ~230 MB, all views only ~85 MB more), so a page
+  without view holds no ink objects: its strokes are read on the thread pool when it comes near (`XoppPage.ReadStrokes`;
+  nothing writes a page's element while it has no view) and written back into its element on release
+  (`XoppPage.WriteBack`, exactly what a snapshot writes). Released views' event handlers come off
+  (`InkWorkspace.SetPages`: the presenter's events would keep the view alive). Placeholders (`InkPage.CreatePlaceholder`)
+  keep the StackPanel's layout, so `OtherPageAt`/`ActualOffset`, scrolling to a page and auto-scroll are unchanged; a
+  hand-over waits until the page under the pen has its view (it is in view, so within a tick). ItemsRepeater was not
+  used: it recycles/clears elements by itself, cannot keep a page with history alive, and estimates sizes.
+  Measured (sandbox, same document, main → lazy): open 502 → 195 MB, UI blocked 1.8 s → 0.45 s (longest block 1.45 s →
+  0.25–0.35 s); a scroll through all 40 pages: longest block 48 ms, memory stays ~250 MB; a view takes ~20 ms (max ~75).
+- `ScrollView.ZoomTo` is asynchronous: restoring a document's offset right after it (an enqueued `ScrollTo`) was lost
+  once opening became fast; `PagesController.RestorePosition` scrolls on `ZoomCompleted` of its request (correlation id).
 
 - The `ScrollView` keeps `IgnoredInputKinds="Pen"`: the pen never pans (it would capture the pen otherwise).
   `InkToolbarCustomToolButton.ConfigurationContent` gives the tool a native flyout (opens on the second tap, stays

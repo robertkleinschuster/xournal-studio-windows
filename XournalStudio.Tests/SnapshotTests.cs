@@ -89,6 +89,39 @@ public class SnapshotTests
         AssertSame([StrokeConverter.ToXml(a), StrokeConverter.ToXml(b)], Strokes(page.SnapshotOf([a, b])));
     }
 
+    [Fact]
+    public void AReleasedViewsInkIsWrittenIntoThePageAsASnapshotWritesIt()
+    {
+        var page = XoppPage.FromXml(XElement.Parse("""
+            <page width="200" height="200"><background type="solid" color="#ffffffff" style="plain"/><layer>
+            <stroke tool="pen" color="#000000ff" width="1">0 0 10 0</stroke>
+            <stroke tool="pen" color="#000000ff" width="1" other="kept">0 5 10 5</stroke>
+            <stroke tool="pen" color="#000000ff" width="1" style="dash">0 9 10 9</stroke>
+            </layer></page>
+            """));
+        var read = page.ReadStrokes(); // the dashed one is drawn from the file, not ink
+        Assert.Equal(2, read.Count);
+        page.Adopt(read); // as a view's ink
+        var drawn = Stroke("""<stroke tool="pen" color="#ff0000ff" width="2 1 3">0 0 10 5 20 0</stroke>""");
+        drawn.PointTransform = Matrix3x2.CreateTranslation(5, 0);
+        var pasted = Stroke("""<stroke tool="pen" color="#00ff00ff" width="1" pasted="yes">1 1 2 2</stroke>""");
+        var pastedElement = XElement.Parse("""<stroke tool="pen" color="#00ff00ff" width="1" pasted="yes">1 1 2 2</stroke>""");
+        page.Adopt([(pasted, pastedElement)]); // pasted: its element, not in the page yet
+        List<Windows.UI.Input.Inking.InkStroke> ink = [read[1].Stroke, drawn, pasted]; // the first one erased
+
+        var expected = page.SnapshotOf(ink);
+        page.WriteBack(ink);
+        Assert.True(XNode.DeepEquals(expected, page.Snapshot()), page.Snapshot().ToString());
+
+        // The next view reads exactly these strokes again: the kept one, the drawn one as written, the pasted one.
+        var again = page.ReadStrokes();
+        Assert.Equal(3, again.Count);
+        Assert.Equal("kept", (string?)again[0].Element.Attribute("other"));
+        Assert.StartsWith("5 0 ", again[1].Element.Value);
+        Assert.Equal("yes", (string?)again[2].Element.Attribute("pasted"));
+        Assert.Single(page.DrawnStrokes); // the dashed one stays as it is
+    }
+
     [Theory]
     [InlineData("""<stroke tool="pen" color="#000000ff" width="1">0 0 10 0</stroke>""")]
     [InlineData("""<stroke tool="pen" color="#000000ff" width="2 1 3 4">0 0 10 0 10 10 0 10</stroke>""")]

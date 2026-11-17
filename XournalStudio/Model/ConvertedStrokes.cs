@@ -30,6 +30,15 @@ internal sealed class ConvertedStrokes
         return new XElement(cached.Element);
     }
 
+    /// <summary>A copy of a stroke took its place (same points and attributes): its element is the copy's.</summary>
+    public void Transfer(uint oldId, uint newId)
+    {
+        if (elements.Remove(oldId, out var cached))
+        {
+            elements[newId] = cached;
+        }
+    }
+
     /// <summary>Forgets the strokes no longer on the page (erased, deleted, replaced by an undo's copy).</summary>
     public void KeepOnly(IReadOnlySet<uint> live)
     {
