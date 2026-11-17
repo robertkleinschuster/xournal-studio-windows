@@ -335,10 +335,17 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   open a barrel gesture's release is lost and a XAML drag can lose its capture. Accelerators on a root element need
   `KeyboardAcceleratorPlacementMode = Hidden` (the demo); the app's accelerators are on menu items. Tests move the
   mouse off the toolbar after each click (`TestKit.Button`).
-- **Open (2026-11-17):** in the demo's ToolsTest the last selection drag (after erasers, selection, point eraser,
-  shapes) loses its pointer capture once, ~75 ms after the press: no popup open, presenters' devices None, pen still in
-  contact, ScrollView state unchanged, focus on a toolbar button. Capturing again (`CapturePointer` while in contact)
-  kept the drag to its end (experiment, removed) – a decision for the user; the thief is unknown.
+- **Selection drag loses its capture once (root cause, sandbox 2026-11-18):** ~60 ms into a XAML selection drag the
+  island's `Microsoft.UI.Input.InputPointerSource` raises `PointerRoutedAway` for the pen and ~3 ms later
+  `PointerRoutedTo` (subscribed via `InputPointerSource.GetForIsland(XamlRoot.ContentIsland)`). WinUI XAML maps
+  WM_POINTERROUTEDAWAY to XCP_POINTERSUSPENDED (`PlatWinBrowserHost.cpp:50`) and releases the capture
+  (`PointerInputProcessor.cpp:423-440`: PointerCaptureLost without PointerCanceled); WM_POINTERROUTEDTO has no mapping,
+  so the route-back is ignored. The pen's input keeps arriving. Trigger: a barrel drag after an earlier XAML drag
+  with the pen TIP (only barrel drags, or a touch pan in between: no loss) - possible with a real pen. Who routes the
+  pointer away and back is closed source (Microsoft.UI.Input routing / the lifted InkCanvas' output link); not a
+  popup, not the ScrollView, not mouse, not the presenters' settings. Cause-level fix belongs in WinUI XAML (keep the
+  capture across RoutedAway when RoutedTo follows); repro scripts and diagnostics: scratchpad capture-diag.patch,
+  V12.ps1 (fails), V13.ps1 (passes). Upstream reports are public: the user's decision.
 - **Ruler/protractor (WinUI source + sandbox probe, 2026-11-17):** the stencil belongs to the InkToolbar's
   `TargetInkCanvas`: `InkToolbar::SetStencilVisibility` → `InkPresenter::SetRulerEnabled` creates an OS
   `InkPresenterRuler` on that presenter (default place: rotated 45° at the page's top left, in page coordinates). When the
