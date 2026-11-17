@@ -68,11 +68,11 @@ public class FileFormatTests : IDisposable
     }
 
     [Fact]
-    public void UnchangedDocumentIsWrittenBackWithEverythingItContains()
+    public async Task UnchangedDocumentIsWrittenBackWithEverythingItContains()
     {
         string path = Write("b.xopp", Sample);
         var before = ReadXml(path);
-        XoppDocument.Load(path).Save(path);
+        await XoppDocument.Load(path).SaveAsync(path);
         var after = ReadXml(path);
 
         Assert.Equal("5", (string?)after.Root!.Attribute("fileversion"));
@@ -90,7 +90,7 @@ public class FileFormatTests : IDisposable
     }
 
     [Fact]
-    public void SavingKeepsAttributesOfOtherPrograms()
+    public async Task SavingKeepsAttributesOfOtherPrograms()
     {
         string path = Write("d.xopp", """
             <xournal creator="x" fileversion="4" fork-export="e.pdf"><title>t</title>
@@ -98,7 +98,7 @@ public class FileFormatTests : IDisposable
             <layer name="L"><teximage text="" left="1" top="2" right="3" bottom="4" portal="abc" portal-area="1 2 3 4">JVBERi0=</teximage>
             <stroke tool="pen" color="#000000ff" width="1" capStyle="round" ts="0" fn="" extra="x">1 2 3 4</stroke></layer></page></xournal>
             """);
-        XoppDocument.Load(path).Save(path);
+        await XoppDocument.Load(path).SaveAsync(path);
         var root = ReadXml(path).Root!;
         Assert.Equal("e.pdf", (string?)root.Attribute("fork-export"));
         Assert.Equal("1", (string?)root.Element("page")!.Attribute("fork-page"));
@@ -153,26 +153,26 @@ public class FileFormatTests : IDisposable
     }
 
     [Fact]
-    public void UnsavedDocumentFollowsItsRenamedPdf()
+    public async Task UnsavedDocumentFollowsItsRenamedPdf()
     {
         Directory.CreateDirectory(dir);
         var doc = XoppDocument.FromPdf(Path.Combine(dir, "alt.pdf"), [(595, 842)]);
         doc.MovePdf(Path.Combine(dir, "neu.pdf"));
         string path = Path.Combine(dir, "neu.xopp");
-        doc.Save(path);
+        await doc.SaveAsync(path);
 
         Assert.Equal(Path.Combine(dir, "neu.pdf"), XoppDocument.Load(path).PdfPath);
     }
 
     [Fact]
-    public void LoadedDocumentFollowsItsRenamedPdf()
+    public async Task LoadedDocumentFollowsItsRenamedPdf()
     {
         File.WriteAllText(Path.Combine(dir, "lecture.pdf"), "");
         string path = Write("a.xopp", Sample);
         var doc = XoppDocument.Load(path);
         File.Move(Path.Combine(dir, "lecture.pdf"), Path.Combine(dir, "Skript.pdf"));
         doc.MovePdf(Path.Combine(dir, "Skript.pdf"));
-        doc.Save(path);
+        await doc.SaveAsync(path);
 
         Assert.Equal("Skript.pdf", PdfFilename(path));
     }
@@ -181,54 +181,54 @@ public class FileFormatTests : IDisposable
         (string?)ReadXml(path).Descendants("background").First().Attribute("filename");
 
     [Fact]
-    public void NewDocumentRefersToItsPdfRelatively()
+    public async Task NewDocumentRefersToItsPdfRelatively()
     {
         Directory.CreateDirectory(Path.Combine(dir, "VO"));
         var doc = XoppDocument.FromPdf(Path.Combine(dir, "VO", "Skript 1.pdf"), [(595, 842)]);
         string path = Path.Combine(dir, "a.xopp");
-        doc.Save(path);
+        await doc.SaveAsync(path);
 
         Assert.Equal("VO/Skript 1.pdf", PdfFilename(path));
         Assert.Equal(Path.Combine(dir, "VO", "Skript 1.pdf"), XoppDocument.Load(path).PdfPath);
     }
 
     [Fact]
-    public void LoadedRelativeReferenceIsKeptAndFollowsASavedCopy()
+    public async Task LoadedRelativeReferenceIsKeptAndFollowsASavedCopy()
     {
         File.WriteAllText(Path.Combine(dir, "lecture.pdf"), "");
         string path = Write("a.xopp", Sample);
         var doc = XoppDocument.Load(path);
-        doc.Save(path);
+        await doc.SaveAsync(path);
         Assert.Equal("lecture.pdf", PdfFilename(path));
 
         Directory.CreateDirectory(Path.Combine(dir, "Kopie"));
         string copy = Path.Combine(dir, "Kopie", "a.xopp");
-        doc.Save(copy);
+        await doc.SaveAsync(copy);
         Assert.Equal("../lecture.pdf", PdfFilename(copy));
         Assert.Equal(Path.Combine(dir, "lecture.pdf"), XoppDocument.Load(copy).PdfPath);
     }
 
     [Fact]
-    public void LoadedAbsoluteReferenceIsRepairedAsAbsolute()
+    public async Task LoadedAbsoluteReferenceIsRepairedAsAbsolute()
     {
         // Written on another machine; the PDF is found next to the .xopp.
         string pdf = Path.Combine(dir, "lecture.pdf");
         File.WriteAllText(pdf, "");
         string path = Write("a.xopp", Sample.Replace("filename=\"lecture.pdf\"", "filename=\"Z:/elsewhere/lecture.pdf\""));
         var doc = XoppDocument.Load(path);
-        doc.Save(path);
+        await doc.SaveAsync(path);
 
         Assert.Equal(pdf.Replace('\\', '/'), PdfFilename(path));
     }
 
     [Fact]
-    public void AttachedPdfIsReferencedByPathFromAnotherFile()
+    public async Task AttachedPdfIsReferencedByPathFromAnotherFile()
     {
         // "attach" names "<document>.xopp.bg.pdf": a copy under another name must name the real file instead.
         string path = Write("a.xopp", Sample.Replace("domain=\"absolute\" filename=\"lecture.pdf\"", "domain=\"attach\" filename=\"bg.pdf\""));
         File.WriteAllText(path + ".bg.pdf", "");
         var doc = XoppDocument.Load(path);
-        doc.Save(path);
+        await doc.SaveAsync(path);
         Assert.Equal("bg.pdf", PdfFilename(path));
 
         string copy = Path.Combine(dir, "copy.xopp");
@@ -238,7 +238,7 @@ public class FileFormatTests : IDisposable
 
         // Save As, as upstream: the attachment goes along and the new file keeps "attach".
         string other = Path.Combine(dir, "other.xopp");
-        doc.SaveAs(other);
+        await doc.SaveAsAsync(other);
         Assert.True(File.Exists(other + ".bg.pdf"));
         Assert.Equal("bg.pdf", PdfFilename(other));
         Assert.Equal(other + ".bg.pdf", doc.PdfPath);
@@ -246,15 +246,15 @@ public class FileFormatTests : IDisposable
         // Another file of that name is never overwritten, nor taken for the attachment: the PDF is named by its path.
         string third = Path.Combine(dir, "third.xopp");
         File.WriteAllText(third + ".bg.pdf", "someone else's");
-        doc.SaveAs(third);
+        await doc.SaveAsAsync(third);
         Assert.Equal("someone else's", File.ReadAllText(third + ".bg.pdf"));
         Assert.Equal("other.xopp.bg.pdf", PdfFilename(third));
         string fourth = Path.Combine(dir, "fourth.xopp");
-        doc.SaveAs(fourth); // the document now names its PDF by path (as the file says): nothing attached appears
+        await doc.SaveAsAsync(fourth); // the document now names its PDF by path (as the file says): nothing attached appears
         Assert.False(File.Exists(fourth + ".bg.pdf"));
         // Ctrl+S at a renamed place copies nothing along.
         string renamed = Path.Combine(dir, "renamed.xopp");
-        doc.Save(renamed);
+        await doc.SaveAsync(renamed);
         Assert.False(File.Exists(renamed + ".bg.pdf"));
     }
 
@@ -300,7 +300,7 @@ public class FileFormatTests : IDisposable
     }
 
     [Fact]
-    public void PictureBackgroundsStillNameTheirFilesAfterSaveAsAndInsertedPages()
+    public async Task PictureBackgroundsStillNameTheirFilesAfterSaveAsAndInsertedPages()
     {
         string path = Write("a.xopp", """
             <xournal fileversion="4"><title>t</title>
@@ -330,7 +330,7 @@ public class FileFormatTests : IDisposable
         // Saved there (Save As): the attached picture goes along, the file keeps "attach" (as upstream).
         Directory.CreateDirectory(Path.Combine(dir, "sub"));
         string saved = Path.Combine(dir, "sub", "d.xopp");
-        doc.SaveAs(saved);
+        await doc.SaveAsAsync(saved);
         Assert.True(File.Exists(saved + ".bg_1.png"));
         var savedBackground = ReadXml(saved).Root!.Elements("page").ElementAt(1).Element("background")!;
         Assert.Equal(("attach", "bg_1.png"), ((string?)savedBackground.Attribute("domain"), (string?)savedBackground.Attribute("filename")));

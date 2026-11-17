@@ -246,6 +246,13 @@ public sealed class SelectionTool(UndoStack undo)
         gesture = Gesture.None;
     }
 
+    /// <summary>Other pages are shown (after <see cref="Cancel"/> and <see cref="Clear"/>): no old page is kept.</summary>
+    public void ForgetPages()
+    {
+        view = null;
+        lastOnPage = null;
+    }
+
     /// <summary>Selects these strokes and pictures (pasted, duplicated, all of a page).</summary>
     public void Select(InkPage page, List<InkStroke> strokes, List<object> pictures)
     {

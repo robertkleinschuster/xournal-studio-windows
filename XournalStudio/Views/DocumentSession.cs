@@ -58,6 +58,15 @@ public sealed class DocumentSession
     /// <summary>Another document is shown, or the document was saved (files on disk changed).</summary>
     public event EventHandler? FilesChanged;
 
+    // Counts changes (SetDirty(true)): a save or an open that ran a while knows whether the document changed meanwhile.
+    private int changes;
+
+    // The save running, if any (it never faults: errors are reported by the save itself). Saves run one after another.
+    private Task saving = Task.CompletedTask;
+
+    // Counts opens: an open that finishes after a later one began is dropped.
+    private int opens;
+
     public string Title => (IsDirty ? "• " : "") +
         (Document.FilePath != null ? Path.GetFileName(Document.FilePath) : $"{Document.SuggestedName} (nicht gespeichert)");
 
@@ -69,6 +78,7 @@ public sealed class DocumentSession
     /// </summary>
     public void Show(XoppDocument doc, PdfBackground? pdf)
     {
+        opens++; // an open still loading is not shown over this one
         RememberPosition();
         autosave.StartNewDocument();
         Document = doc;
@@ -107,18 +117,29 @@ public sealed class DocumentSession
     /// <summary>Opens a .xopp, or a PDF as a new unsaved document on it (the first save asks where).</summary>
     public async Task OpenAsync(string path)
     {
+        int open = ++opens;
+        int before = changes;
         try
         {
+            XoppDocument doc;
+            PdfBackground? pdf;
             if (Path.GetExtension(path).Equals(".pdf", StringComparison.OrdinalIgnoreCase))
             {
-                var background = await PdfBackground.LoadAsync(path);
-                Show(XoppDocument.FromPdf(path, background.GetPageSizes()), background);
+                pdf = await PdfBackground.LoadAsync(path);
+                doc = XoppDocument.FromPdf(path, pdf.GetPageSizes());
             }
             else
             {
-                var doc = XoppDocument.Load(path);
-                Show(doc, await LoadPdfAsync(doc));
+                // Reading the file and making its strokes ink (agile objects) take seconds for a long document: not on
+                // the UI thread.
+                doc = await Task.Run(() => XoppDocument.Load(path));
+                pdf = await LoadPdfAsync(doc);
             }
+            if (!await StillWantedAsync(open, before))
+            {
+                return;
+            }
+            Show(doc, pdf);
             settings.LastFile = path;
             settings.Save();
         }
@@ -126,6 +147,23 @@ public sealed class DocumentSession
         {
             messages.Error("open", "Datei konnte nicht geöffnet werden", e, path);
         }
+    }
+
+    /// <summary>
+    /// A loaded document is shown only if no later open began meanwhile, and – when the open one was changed while
+    /// loading (the user went on writing) – after the same question as before leaving it.
+    /// </summary>
+    private async Task<bool> StillWantedAsync(int open, int changesBefore)
+    {
+        if (open != opens)
+        {
+            return false;
+        }
+        if (changes != changesBefore && !await ConfirmLeaveAsync())
+        {
+            return false;
+        }
+        return open == opens; // (the question may have taken a while)
     }
 
     /// <summary>Offers recovery copies of crashed sessions; true if one was restored (it is open, unsaved).</summary>
@@ -140,9 +178,16 @@ public sealed class DocumentSession
         {
             var info = entry.Info;
             string? path = info.DocumentPath != null && File.Exists(info.DocumentPath) ? info.DocumentPath : null;
-            var doc = XoppDocument.LoadCopy(entry.CopyPath, path, info.ReferenceBase);
+            int open = ++opens;
+            int before = changes;
+            var doc = await Task.Run(() => XoppDocument.LoadCopy(entry.CopyPath, path, info.ReferenceBase));
             doc.CreatedAt = info.CreatedAt;
-            Show(doc, await LoadPdfAsync(doc));
+            var pdf = await LoadPdfAsync(doc);
+            if (!await StillWantedAsync(open, before))
+            {
+                return false; // the copy stays and is offered again at the next start
+            }
+            Show(doc, pdf);
             SetDirty(true);
             autosave.WriteNowReplacing(entry.Id); // the restored state is this session's copy now
             return true;
@@ -184,23 +229,35 @@ public sealed class DocumentSession
         SetDirty(true);
     }
 
-    /// <summary>The window closes (the user saved or discarded the changes): the recovery copy goes.</summary>
-    public Task EndAsync()
+    /// <summary>The window closes (the user saved or discarded the changes): a running save ends, the recovery copy goes.</summary>
+    public async Task EndAsync()
     {
+        await WhenSaved();
         RememberPosition();
         autosave.Discard();
-        return autosave.Idle;
+        await autosave.Idle;
+    }
+
+    /// <summary>Completes when no save runs (also one started meanwhile); never faults.</summary>
+    public async Task WhenSaved()
+    {
+        while (!saving.IsCompleted)
+        {
+            await saving;
+        }
     }
 
     /// <summary>The window lost focus (maybe for good: shut down, log off): the recovery copy is brought up to date.</summary>
     public void Deactivated() => autosave.WriteNow();
 
     /// <summary>Saves to the document's file (Ctrl+S); false if it has none, saving waits for a sync, or it failed.</summary>
-    public bool Save() => Document.FilePath is { } path && Save(path, saveAs: false);
+    public Task<bool> SaveAsync() => Document.FilePath is { } path ? SaveAsync(path, saveAs: false) : Task.FromResult(false);
 
-    // Ctrl+S writes the document where it is; Save As (saveAs) takes its attachments along (XoppDocument.SaveAs).
-    private bool Save(string path, bool saveAs)
+    // Ctrl+S writes the document where it is; Save As (saveAs) takes its attachments along (XoppDocument.SaveAsAsync).
+    // The document is snapshot at once; the file is written on the thread pool, one save after another.
+    private async Task<bool> SaveAsync(string path, bool saveAs)
     {
+        await WhenSaved(); // never two writes at once (of "<file>~" or of attachments)
         if (SaveBlocked && saveAs)
         {
             // Not deferred like Ctrl+S: the picked place would have to wait somewhere unseen; the user saves again.
@@ -215,17 +272,21 @@ public sealed class DocumentSession
                 "Gespeichert wird, sobald die Synchronisierung fertig ist.");
             return false;
         }
+        var doc = Document;
+        int before = changes;
+        var save = saveAs ? doc.SaveAsAsync(path) : doc.SaveAsync(path);
+        saving = save.ContinueWith(_ => { }, TaskScheduler.Default);
         try
         {
-            if (saveAs)
+            await save;
+            if (doc == Document && changes == before)
             {
-                Document.SaveAs(path);
+                SetDirty(false);
             }
             else
             {
-                Document.Save(path);
+                StateChanged?.Invoke(this, EventArgs.Empty); // written (the title may name the new file); later changes stay unsaved
             }
-            SetDirty(false);
             settings.LastFile = path;
             settings.Save();
             FilesChanged?.Invoke(this, EventArgs.Empty);
@@ -249,7 +310,7 @@ public sealed class DocumentSession
             return false;
         }
         string? picked = await PickSavePathAsync();
-        return picked != null && Save(picked, saveAs: true); // (refused there if a sync began while the picker was open)
+        return picked != null && await SaveAsync(picked, saveAs: true); // (refused there if a sync began while the picker was open)
     }
 
     private async Task<string?> PickSavePathAsync()
@@ -265,7 +326,7 @@ public sealed class DocumentSession
     }
 
     /// <summary>Speichern (Ctrl+S): to the document's file, or where the user picks for a new one.</summary>
-    public async Task<bool> SaveOrSaveAsAsync() => Document.FilePath != null ? Save() : await SaveAsAsync();
+    public async Task<bool> SaveOrSaveAsAsync() => Document.FilePath != null ? await SaveAsync() : await SaveAsAsync();
 
     /// <summary>Asks whether to save the changes. Nothing is saved without the user choosing it.</summary>
     public async Task<SaveChoice> AskSaveAsync(string reason)
@@ -294,6 +355,7 @@ public sealed class DocumentSession
     /// </summary>
     public async Task<bool> ConfirmLeaveAsync()
     {
+        await WhenSaved(); // a save running decides whether anything is left unsaved
         if (!IsDirty)
         {
             return true;
@@ -317,9 +379,12 @@ public sealed class DocumentSession
         {
             return false;
         }
+        await WhenSaved();
+        var save = Document.SaveCopyAsync(path); // as upstream: the copy gets its own attachments
+        saving = save.ContinueWith(_ => { }, TaskScheduler.Default);
         try
         {
-            Document.SaveCopy(path); // as upstream: the copy gets its own attachments
+            await save;
             return true;
         }
         catch (Exception e)
@@ -334,6 +399,7 @@ public sealed class DocumentSession
         IsDirty = value;
         if (value)
         {
+            changes++;
             autosave.Changed();
         }
         else
