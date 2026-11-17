@@ -30,6 +30,13 @@ Guidance for Claude Code in this repository. Keep it current: add what is learne
   and releases it on close (`MainWindow.OnClosing`); `RenderToStreamAsync` is not used any more (loading a PDF alone does
   not touch the GPU driver – probe). PdfPage/PdfDocument are agile: rendering runs on the thread pool. Debug a hang again
   with `cdb -pv -p <pid> -c ".reload; ~*kn 60; .dump /ma hang.dmp; q"` (WinDbg from winget, symbols from msdl).
+  Pixels come back with `SoftwareBitmap.CreateCopyFromSurfaceAsync` (surface wrapped by
+  `CreateDirect3D11SurfaceFromDXGISurface`): it reads back on the app's device and creates no device of its own (cdb
+  breakpoint on D3D11CreateDevice, 2026-11-17); the earlier staging-map → `byte[]` → `AsBuffer` copy left 11–55 MB of
+  pinned garbage per page (headless bench: working set 7.8 GB after 80 renders at 3200 px, now ~0.6 GB). Per-page time is
+  dominated by `RenderPageToSurface` itself (~30–40 ms at 1440 px, ~100–120 ms at 3200 px for a text+vector A4 page on
+  Iris Xe). Waiting render requests are cancellable (`PageView` drops them when the page leaves the viewport, another
+  width is wanted or the document changes) and pages in view are requested first.
 - **Release snapshots (`winui3/release/*`) cannot be built outside Microsoft:** they need internal package versions
   (e.g. InteractiveExperiences 2.1.0-experimental-27200…); the restore opens Microsoft sign-in pages through the build's
   `VSS.NuGet.AuthHelper`. Never run a WinUI restore that can prompt interactively.

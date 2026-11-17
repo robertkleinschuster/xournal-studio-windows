@@ -108,6 +108,10 @@ public sealed class PagesController
         document = doc;
         pdf = background;
         ink.Reset();
+        foreach (var old in Views)
+        {
+            old.UpdateBackground(false, 0); // frees its bitmaps and drops its waiting render requests
+        }
         panel.Children.Clear();
         foreach (var page in doc.Pages)
         {
@@ -148,6 +152,7 @@ public sealed class PagesController
         ink.Removing(view, gestureView => panel.Children.IndexOf(gestureView) >= index);
         doc.Pages.RemoveAt(index);
         panel.Children.RemoveAt(index);
+        view.UpdateBackground(false, 0);
         ink.Removed(view);
         OnViewsChanged();
         PagesChanged?.Invoke(this, EventArgs.Empty);
@@ -219,11 +224,25 @@ public sealed class PagesController
         var viewport = new Rect(0, 0, scroller.ViewportWidth, scroller.ViewportHeight);
         var near = new Rect(0, -viewport.Height, viewport.Width, viewport.Height * 3);
         double scale = scroller.ZoomFactor * (scroller.XamlRoot?.RasterizationScale ?? 1.0);
+        var shown = new List<(PageView View, bool InView)>();
         foreach (var view in Views)
         {
+            var bounds = BoundsInViewport(view);
             // The page of a dragged selection stays shown: its pictures are being moved (and may be far off by now).
             bool dragged = ink.Selection.IsDragging && ink.Selection.Current?.Page == view;
-            view.UpdateBackground(dragged || Intersects(BoundsInViewport(view), near), scale);
+            if (dragged || Intersects(bounds, near))
+            {
+                shown.Add((view, Intersects(bounds, viewport)));
+            }
+            else
+            {
+                view.UpdateBackground(false, scale); // first: its waiting render request is dropped
+            }
+        }
+        // The pages in view first: the renderer takes the requests one at a time in order.
+        foreach (var (view, _) in shown.OrderByDescending(s => s.InView))
+        {
+            view.UpdateBackground(true, scale);
         }
         ink.SetCurrentPage(CurrentView);
     }

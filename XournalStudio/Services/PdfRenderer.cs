@@ -1,10 +1,10 @@
 using System.Runtime.InteropServices;
-using System.Runtime.InteropServices.WindowsRuntime;
 using Vortice.Direct3D;
 using Vortice.Direct3D11;
 using Vortice.DXGI;
 using Windows.Data.Pdf;
 using Windows.Foundation;
+using Windows.Graphics.DirectX.Direct3D11;
 using Windows.Graphics.Imaging;
 
 namespace XournalStudio.Services;
@@ -14,8 +14,9 @@ namespace XournalStudio.Services;
 /// <c>IPdfRendererNative::RenderPageToSurface</c>, windows.data.pdf.interop.h) on a Direct3D device the app owns.
 /// <c>PdfPage.RenderToStreamAsync</c> creates a device of its own in a static that is only released when the process
 /// exits (DLL detach, other threads already gone); the Intel graphics driver hung the exiting process in that release
-/// (device 2026-11-16, see CLAUDE.md). This device is released while the app still runs (<see cref="Shutdown"/>).
-/// One instance, calls serialized; PdfDocument/PdfPage are agile, so rendering runs on the thread pool.
+/// (device 2026-11-16, see CLAUDE.md). This device is released while the app still runs (<see cref="ShutdownAsync"/>).
+/// One instance, calls serialized (the interop docs: one page at a time); PdfDocument/PdfPage are agile, so rendering
+/// runs on the thread pool. A request that is cancelled while it waits for its turn is not rendered.
 /// </summary>
 public sealed class PdfRenderer
 {
@@ -23,7 +24,6 @@ public sealed class PdfRenderer
 
     private readonly SemaphoreSlim gate = new(1, 1);
     private ID3D11Device? device;
-    private ID3D11DeviceContext? context;
     private IntPtr renderer; // IPdfRendererNative*
     private bool shutDown;
 
@@ -34,14 +34,18 @@ public sealed class PdfRenderer
     /// <summary>
     /// Renders <paramref name="sourceDips"/> of the page (its whole area when null; DIPs like <see cref="PdfPage.Size"/>)
     /// into a bitmap of <paramref name="width"/> × <paramref name="height"/> pixels on white (BGRA8, premultiplied).
+    /// Throws <see cref="OperationCanceledException"/> when <paramref name="cancellation"/> is cancelled before the
+    /// rendering began (a render that runs is finished).
     /// </summary>
-    public async Task<SoftwareBitmap> RenderAsync(PdfPage page, Rect? sourceDips, uint width, uint height)
+    public async Task<SoftwareBitmap> RenderAsync(PdfPage page, Rect? sourceDips, uint width, uint height,
+        CancellationToken cancellation = default)
     {
-        await gate.WaitAsync();
+        await gate.WaitAsync(cancellation);
         try
         {
             ObjectDisposedException.ThrowIf(shutDown, this);
-            return await Task.Run(() => RenderWithRetry(page, sourceDips, width, height));
+            cancellation.ThrowIfCancellationRequested();
+            return await Task.Run(() => RenderWithRetryAsync(page, sourceDips, width, height));
         }
         finally
         {
@@ -64,24 +68,24 @@ public sealed class PdfRenderer
         }
     }
 
-    private SoftwareBitmap RenderWithRetry(PdfPage page, Rect? sourceDips, uint width, uint height)
+    private async Task<SoftwareBitmap> RenderWithRetryAsync(PdfPage page, Rect? sourceDips, uint width, uint height)
     {
         try
         {
-            return Render(page, sourceDips, width, height);
+            return await RenderOnceAsync(page, sourceDips, width, height);
         }
         catch (Exception e) when (e.HResult is DxgiDeviceRemoved or DxgiDeviceReset) // COMException or Vortice's SharpGenException
         {
             // The GPU was reset or removed (driver update, sleep): a new device, once.
             DebugLog.Write("pdf render: device lost, recreating", e);
             ReleaseDevice();
-            return Render(page, sourceDips, width, height);
+            return await RenderOnceAsync(page, sourceDips, width, height);
         }
     }
 
     private const int DxgiDeviceRemoved = unchecked((int)0x887A0005), DxgiDeviceReset = unchecked((int)0x887A0007);
 
-    private SoftwareBitmap Render(PdfPage page, Rect? sourceDips, uint width, uint height)
+    private async Task<SoftwareBitmap> RenderOnceAsync(PdfPage page, Rect? sourceDips, uint width, uint height)
     {
         EnsureDevice();
         var target = new Texture2DDescription
@@ -122,25 +126,24 @@ public sealed class PdfRenderer
             Marshal.Release(pageUnknown);
         }
 
-        // Read the pixels back through a CPU-readable copy.
-        var readable = target with { Usage = ResourceUsage.Staging, BindFlags = BindFlags.None, CPUAccessFlags = CpuAccessFlags.Read };
-        using var staging = device.CreateTexture2D(readable);
-        context!.CopyResource(staging, texture);
-        var mapped = context.Map(staging, 0, MapMode.Read);
-        var pixels = new byte[width * height * 4];
+        // The pixels into a SoftwareBitmap by Windows itself (on this device; no managed pixel buffer: copying through a
+        // byte[] left 11–55 MB of pinned garbage per page, measured 2026-11-17).
+        using var d3dSurface = WrapSurface(surface);
+        return await SoftwareBitmap.CreateCopyFromSurfaceAsync(d3dSurface, BitmapAlphaMode.Premultiplied);
+    }
+
+    // CreateDirect3D11SurfaceFromDXGISurface (windows.graphics.directx.direct3d11.interop.h).
+    private static IDirect3DSurface WrapSurface(IDXGISurface surface)
+    {
+        Marshal.ThrowExceptionForHR(CreateDirect3D11SurfaceFromDXGISurface(surface.NativePointer, out IntPtr inspectable));
         try
         {
-            for (int y = 0; y < height; y++)
-            {
-                Marshal.Copy(mapped.DataPointer + (nint)(y * mapped.RowPitch), pixels, (int)(y * width * 4), (int)(width * 4));
-            }
+            return WinRT.MarshalInterface<IDirect3DSurface>.FromAbi(inspectable);
         }
         finally
         {
-            context.Unmap(staging, 0);
+            Marshal.Release(inspectable);
         }
-        return SoftwareBitmap.CreateCopyFromBuffer(pixels.AsBuffer(), BitmapPixelFormat.Bgra8, (int)width, (int)height,
-            BitmapAlphaMode.Premultiplied);
     }
 
     private void EnsureDevice()
@@ -151,7 +154,8 @@ public sealed class PdfRenderer
         }
         D3D11.D3D11CreateDevice(null, DriverType.Hardware, DeviceCreationFlags.BgraSupport,
             [FeatureLevel.Level_11_1, FeatureLevel.Level_11_0, FeatureLevel.Level_10_1, FeatureLevel.Level_10_0],
-            out device, out context).CheckError();
+            out device, out ID3D11DeviceContext? context).CheckError();
+        context?.Dispose(); // not used by the app (the copy into a SoftwareBitmap is Windows')
         using var dxgi = device!.QueryInterface<IDXGIDevice>();
         Marshal.ThrowExceptionForHR(PdfCreateRenderer(dxgi.NativePointer, out renderer));
     }
@@ -163,11 +167,12 @@ public sealed class PdfRenderer
             Marshal.Release(renderer);
             renderer = IntPtr.Zero;
         }
-        context?.Dispose();
-        context = null;
         device?.Dispose();
         device = null;
     }
+
+    [DllImport("d3d11.dll", ExactSpelling = true)]
+    private static extern int CreateDirect3D11SurfaceFromDXGISurface(IntPtr dxgiSurface, out IntPtr graphicsSurface);
 
     // windows.data.pdf.interop.h
     [DllImport("Windows.Data.Pdf.dll", ExactSpelling = true)]

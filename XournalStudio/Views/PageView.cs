@@ -276,6 +276,7 @@ public sealed partial class PageView : InkPage
         if (!nearViewport)
         {
             pdfImage.Source = null;
+            CancelPendingRender();
             renderedPixelWidth = requestedPixelWidth = 0;
             backgroundFailed = false; // looked for again when the page comes back (a sync may have brought it)
             backgroundRequested = backgroundShown = 0;
@@ -337,6 +338,16 @@ public sealed partial class PageView : InkPage
         }
     }
 
+    // The request of the PDF page's rendering that has not been shown yet; cancelled when the page leaves the viewport or
+    // another width is wanted, so a request that waits for the renderer is dropped instead of rendered for nothing.
+    private CancellationTokenSource? pendingRender;
+
+    private void CancelPendingRender()
+    {
+        pendingRender?.Cancel();
+        pendingRender = null;
+    }
+
     private async void RenderPdf(double pixelsPerPoint)
     {
         if (pdf == null)
@@ -345,20 +356,36 @@ public sealed partial class PageView : InkPage
         }
         uint wanted = (uint)Math.Min(MaxPdfPixelWidth, Math.Ceiling(Page.Width * pixelsPerPoint));
         bool sharpEnough = renderedPixelWidth >= wanted * 0.9 && renderedPixelWidth <= wanted * 1.6;
-        if (sharpEnough || requestedPixelWidth == wanted)
+        if (sharpEnough)
+        {
+            CancelPendingRender(); // e.g. zoomed back before a request for another width ran
+            requestedPixelWidth = renderedPixelWidth;
+            return;
+        }
+        if (requestedPixelWidth == wanted)
         {
             return;
         }
 
+        CancelPendingRender();
+        var request = pendingRender = new CancellationTokenSource();
         requestedPixelWidth = wanted;
         try
         {
-            var bitmap = await pdf.RenderAsync(Page.PdfPageIndex, wanted);
+            var bitmap = await pdf.RenderAsync(Page.PdfPageIndex, wanted, request.Token);
             if (requestedPixelWidth == wanted && bitmap != null)
             {
                 pdfImage.Source = bitmap;
                 renderedPixelWidth = wanted;
             }
+            else
+            {
+                DebugLog.Write($"pdf page {Page.PdfPageIndex} {wanted}px: not shown (no longer wanted)");
+            }
+        }
+        catch (OperationCanceledException) when (request.IsCancellationRequested) // dropped by CancelPendingRender
+        {
+            DebugLog.Write($"pdf page {Page.PdfPageIndex} {wanted}px: dropped before rendering");
         }
         catch (Exception e) // async void: nothing may escape; logged, the next viewport update tries again
         {
@@ -367,6 +394,14 @@ public sealed partial class PageView : InkPage
             {
                 requestedPixelWidth = 0;
             }
+        }
+        finally
+        {
+            if (pendingRender == request)
+            {
+                pendingRender = null;
+            }
+            request.Dispose();
         }
     }
 
