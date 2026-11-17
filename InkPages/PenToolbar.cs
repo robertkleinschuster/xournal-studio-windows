@@ -132,38 +132,13 @@ public sealed class PenToolbar : UserControl
         row.Children.Add(DeleteSelection);
         row.Children.Add(new AppBarSeparator());
         row.Children.Add(extensions);
-        row.Children.Add(selectedLook);
         Content = row;
-        Ink.ActiveToolChanged += (_, _) => ShowActiveTool();
-        ShowActiveTool();
     }
 
     /// <summary>The duplicate icon (two sheets, a plus on the front one), 20×20; also for an app's menu.</summary>
     public const string DuplicateIcon =
         "F0 M1,1 H13 V4.5 H11.5 V2.5 H2.5 V11.5 H4.5 V13 H1 Z M6,6 H19 V19 H6 Z M7.5,7.5 V17.5 H17.5 V7.5 Z " +
         "M11.75,9.5 H13.25 V11.75 H15.5 V13.25 H13.25 V15.5 H11.75 V13.25 H9.5 V11.75 H11.75 Z";
-
-    // WinUI's InkToolbarCustomToolButton template has no Checked visual states (microsoft-ui-xaml InkToolbar.xaml): an
-    // active custom tool looked like an inactive one, while the built-in tools show their Checked background. The active
-    // custom tool gets that same background (InkToolbarButtonSelectedBackground = SubtleFillColorSecondaryBrush), as a
-    // theme resource of an element in the toolbar, so it follows the theme.
-    private readonly Border selectedLook =
-        Themed.Load<Border>("Border", "Background='{ThemeResource SubtleFillColorSecondaryBrush}' Visibility='Collapsed'");
-
-    private void ShowActiveTool()
-    {
-        foreach (var tool in Ink.Children.OfType<InkToolbarCustomToolButton>())
-        {
-            if (Ink.ActiveTool == tool)
-            {
-                tool.SetBinding(BackgroundProperty, new Microsoft.UI.Xaml.Data.Binding { Source = selectedLook, Path = new PropertyPath(nameof(Border.Background)) });
-            }
-            else
-            {
-                tool.ClearValue(BackgroundProperty);
-            }
-        }
-    }
 
     // A preset as a custom pen button: its color and width, Windows' pen flyout, Windows' icon in its color, named
     // after its color ("Pen – Blue").

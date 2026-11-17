@@ -271,10 +271,13 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   ignored); custom buttons and other controls use their `x:Name` (PenToolbar sets `AutomationId`s: `PenButton1..n`,
   `HighlighterButton1..n`, `PartialEraseButton` (the eraser's mode toggle), `SelectButton`, `ShapeButton`, `StencilButton`, `UndoButton`, ...;
   `RecognizeButton` is a CheckBox in the shape tool's options).
-- **`InkToolbarCustomToolButton`'s template has no Checked visual states** (WinUI InkToolbar.xaml; built-in tools and
-  custom pens have them): an active custom tool (select, shapes) looked inactive. `PenToolbar.ShowActiveTool` gives the
-  active one the built-ins' Checked background (`SubtleFillColorSecondaryBrush`, as a theme resource). The accent
-  chevron of the built-ins' Checked state is not reachable. InkToolbar draws its glyphs at 16 (`InkToolbarButtonFontSize`),
+- **`InkToolbarCustomToolButton`'s template had no Checked visual states and no template defined
+  `ShowExtensionGlyph`/`HideExtensionGlyph`** (WinUI InkToolbar.xaml; UWP's generic.xaml in the Windows SDK has a
+  `GlyphVisualStates` group): an active custom tool (select, shapes) looked inactive and never showed the options
+  chevron. Fixed in the fork's runtime (commit "InkToolbar: show the checked state and the options chevron of custom
+  tools", branch `fix/ink-runtime-inktoolbar`; upstream PR branch `fix/inktoolbar-customtool-checked-state`, PR not
+  opened – needs the user's approval): custom tools show their state natively, the chevron follows
+  `IsExtensionGlyphShown` (checked and has `ConfigurationContent`); the app has no workaround any more. InkToolbar draws its glyphs at 16 (`InkToolbarButtonFontSize`),
   FontIcon defaults to 20: custom buttons' icons are 16 (`PenToolbar.Glyph`/`Sized`).
 - InkToolbar keeps only **one** built-in ballpoint/highlighter/eraser button (further ones are ignored) and orders its
   buttons itself: built-in pens, custom pens, eraser, custom tools, stencil, toggles. Several pens = custom pen buttons
