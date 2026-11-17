@@ -37,6 +37,7 @@
                     </MenuFlyoutItem.KeyboardAccelerators>
                 </MenuFlyoutItem>
                 <MenuFlyoutItem Text="Speichern unter…" Click="OnSaveAs">
+                    <MenuFlyoutItem.Icon><SymbolIcon Symbol="SaveLocal" /></MenuFlyoutItem.Icon>
                     <MenuFlyoutItem.KeyboardAccelerators>
                         <KeyboardAccelerator Modifiers="Control,Shift" Key="S" />
                     </MenuFlyoutItem.KeyboardAccelerators>
@@ -87,8 +88,8 @@
                         <KeyboardAccelerator Modifiers="Control" Key="V" />
                     </MenuFlyoutItem.KeyboardAccelerators>
                 </MenuFlyoutItem>
-                <MenuFlyoutItem Text="Duplizieren" Click="OnDuplicate">
-                    <MenuFlyoutItem.Icon><SymbolIcon Symbol="Add" /></MenuFlyoutItem.Icon>
+                <!-- Duplizieren, Seite einfügen/löschen: icons set in code, the same as the command row's. -->
+                <MenuFlyoutItem x:Name="DuplicateMenuItem" Text="Duplizieren" Click="OnDuplicate">
                     <MenuFlyoutItem.KeyboardAccelerators>
                         <KeyboardAccelerator Modifiers="Control" Key="D" />
                     </MenuFlyoutItem.KeyboardAccelerators>
@@ -108,21 +109,19 @@
                 </MenuFlyoutItem>
             </MenuBarItem>
             <MenuBarItem Title="Seite">
-                <MenuFlyoutItem Text="Seite einfügen" Click="OnInsertPage">
-                    <MenuFlyoutItem.Icon><SymbolIcon Symbol="Add" /></MenuFlyoutItem.Icon>
-                </MenuFlyoutItem>
-                <MenuFlyoutItem Text="Seite löschen" Click="OnDeletePage">
-                    <MenuFlyoutItem.Icon><SymbolIcon Symbol="Delete" /></MenuFlyoutItem.Icon>
-                </MenuFlyoutItem>
+                <MenuFlyoutItem x:Name="InsertPageMenuItem" Text="Seite einfügen" Click="OnInsertPage" />
+                <MenuFlyoutItem x:Name="DeletePageMenuItem" Text="Seite löschen" Click="OnDeletePage" />
             </MenuBarItem>
             <MenuBarItem Title="Ansicht">
-                <ToggleMenuFlyoutItem x:Name="ExplorerMenuItem" Text="Explorer" Click="OnToggleExplorer">
+                <!-- "Explorer" alone would read as Windows' File Explorer ("Im Explorer anzeigen" opens that). -->
+                <ToggleMenuFlyoutItem x:Name="ExplorerMenuItem" Text="Dateien und Aufgaben" Click="OnToggleExplorer">
                     <ToggleMenuFlyoutItem.KeyboardAccelerators>
                         <KeyboardAccelerator Modifiers="Control" Key="B" />
                     </ToggleMenuFlyoutItem.KeyboardAccelerators>
                 </ToggleMenuFlyoutItem>
                 <MenuFlyoutSeparator />
                 <MenuFlyoutItem Text="Seitenbreite" Click="OnFitWidth">
+                    <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE9A6;" /></MenuFlyoutItem.Icon>
                     <MenuFlyoutItem.KeyboardAccelerators>
                         <KeyboardAccelerator Modifiers="Control" Key="Number0" />
                     </MenuFlyoutItem.KeyboardAccelerators>
@@ -143,10 +142,13 @@
         </MenuBar>
 
         <!-- Single toolbar, everything left-aligned (nothing at the right edge). -->
-        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="4" Padding="8,0,8,4">
-            <AppBarToggleButton x:Name="ExplorerButton" LabelPosition="Collapsed" Label="Explorer"
-                                ToolTipService.ToolTip="Explorer ein-/ausblenden (Strg+B)" Click="OnToggleExplorer">
-                <AppBarToggleButton.Icon><FontIcon Glyph="&#xE8A0;" /></AppBarToggleButton.Icon>
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="2" Padding="8,0,8,4">
+            <!-- The pane toggle: Windows' DockLeft glyph (a pane on the left, no arrow - the checked state says whether it
+                 is open); as wide as the row's other commands. -->
+            <AppBarToggleButton x:Name="ExplorerButton" LabelPosition="Collapsed" Label="Dateien und Aufgaben" Width="44"
+                                AllowFocusOnInteraction="False"
+                                ToolTipService.ToolTip="Dateien und Aufgaben ein-/ausblenden (Strg+B)" Click="OnToggleExplorer">
+                <AppBarToggleButton.Icon><FontIcon Glyph="&#xE90C;" /></AppBarToggleButton.Icon>
             </AppBarToggleButton>
             <AppBarSeparator />
             <!-- The writing surface's toolbar (InkPages.PenToolbar, set up in code by Views/AppToolbar) with the app's
@@ -184,8 +186,10 @@
                 </Grid.RowDefinitions>
                 <!-- Above the pages, not over them: the experimental InkCanvas draws its ink over XAML laid on top of
                      it and takes the pen there (microsoft-ui-xaml #10461, #11928). -->
-                <!-- No top/bottom margin: a closed InfoBar is collapsed, a margin would still take room. -->
-                <InfoBar x:Name="Info" Margin="16,0" IsOpen="False" />
+                <!-- Left-aligned and not wider than a page column: its close button stays away from the right screen edge
+                     (right-handed). Its top margin is set while open (Messages): a closed InfoBar is collapsed, a margin
+                     would still take room. -->
+                <InfoBar x:Name="Info" Margin="16,0" MaxWidth="760" HorizontalAlignment="Left" IsOpen="False" />
                 <ScrollView x:Name="Scroller" Grid.Row="1" IsTabStop="True" IgnoredInputKinds="Pen" ZoomMode="Enabled" ContentOrientation="Vertical"
                             MinZoomFactor="0.2" MaxZoomFactor="6"
                             HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Hidden">

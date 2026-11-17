@@ -53,6 +53,16 @@ function Button {
     "click $args"
 }
 
+# Right-clicks a control found by automation id or name (its context flyout opens).
+function RightClick($name) {
+    $e = Find $name
+    if ($e -eq $null) { throw "'$name' not found" }
+    $r = $e.Current.BoundingRectangle
+    [Inj]::RightClickPixel([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2))
+    Start-Sleep -Milliseconds 600
+    "right-click $name"
+}
+
 # Flyout content lives in its own popup window: searched from the desktop.
 function ClickAnywhere($name) {
     $cond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, $name)

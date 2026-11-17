@@ -13,15 +13,16 @@ public static class AppToolbar
     {
         Pen = "Stift",
         Highlighter = "Textmarker",
-        Eraser = "Strich-Radierer",
-        EraserTip = "Strich-Radierer: löscht ganze Striche (auch mit dem Radierer-Ende des Stifts, solange er zuletzt gewählt wurde)",
-        PointEraser = "Punkt-Radierer",
-        PointEraserTip = "Punkt-Radierer: löscht genau den Kreis am Stift (auch mit dem Radierer-Ende, solange er zuletzt gewählt wurde); " +
-            "nochmal tippen für die Größe",
+        PresetTip = "nochmal tippen für Farbe und Stärke",
+        Eraser = "Radierer",
+        EraserTip = "Radierer – die Radierer-Taste des Stifts radiert auch, mit jedem Werkzeug",
+        PartialErase = "Punktgenau radieren",
+        PartialEraseTip = "Punktgenau radieren: Radierer und Radierer-Taste des Stifts löschen nur, was im Kreis liegt, " +
+            "statt ganzer Striche. Rechtsklick (mit dem Stift: Stifttaste halten und tippen): Größe",
         EraserRadius = "Größe",
         Select = "Auswählen",
         SelectTip = "Auswählen: Lasso oder Rechteck (nochmal tippen zum Wählen); ziehen verschiebt, Ecken skalieren; " +
-            "ein Rechteck auf einer PDF-Seite kopiert diesen Bereich",
+            "ein Rechteck auf einer PDF-Seite kopiert diesen Bereich. Mit dem Stift geht das Lasso mit jedem Werkzeug: mit gehaltener Stifttaste ziehen",
         SelectWith = "Auswählen mit",
         Lasso = "Lasso",
         Rectangle = "Rechteck",

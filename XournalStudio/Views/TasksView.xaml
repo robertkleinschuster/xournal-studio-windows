@@ -24,8 +24,11 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <TextBlock x:Name="FileName" Style="{StaticResource BodyStrongTextBlockStyle}" TextTrimming="CharacterEllipsis"
-                   Text="Aufgaben" />
+        <!-- As tall as the Dateien tab's header row (its sync button): switching tabs keeps the header in place. -->
+        <Grid MinHeight="48">
+            <TextBlock x:Name="FileName" Style="{StaticResource BodyStrongTextBlockStyle}" TextTrimming="CharacterEllipsis"
+                       VerticalAlignment="Center" Text="Aufgaben" />
+        </Grid>
 
         <!-- New task: Enter adds it (created today); optional due date and link to the page in view. -->
         <StackPanel x:Name="AddPanel" Grid.Row="1" Spacing="4">

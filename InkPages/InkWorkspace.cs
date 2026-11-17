@@ -15,7 +15,7 @@ public sealed class InkWorkspace
     private readonly PenToolbar bar;
     private int generation; // counts Reset: recognition still running for older pages is dropped
 
-    /// <param name="partialErasing">The eraser chosen last was the point eraser (the pen's eraser end erases partially).</param>
+    /// <param name="partialErasing">The eraser erases partially (the toolbar's mode toggle checked).</param>
     public InkWorkspace(PenToolbar bar, ScrollView scroller, bool partialErasing = false)
     {
         this.bar = bar;
@@ -62,19 +62,15 @@ public sealed class InkWorkspace
 
         Eraser = new PartialEraser(Undo, ClearSelectionOf) { Radius = bar.EraserRadius.Value };
         bar.EraserRadius.ValueChanged += (_, e) => Eraser.Radius = e.NewValue;
-        Input.EraserToolActive = () => Tools.CustomTool == bar.PointEraser;
+        Input.EraserToolActive = () => Tools.EraserActive;
         Input.ReleaseEraserEnd = () => Tools.EraserEndTakenOver = false;
         Input.TakeEraserEnd = () => Tools.EraserEndTakenOver = true;
         Input.TakeForSelection = over => Tools.SelectionTakenOver = over;
         ApplyEraserMode();
-        // The pen's eraser end erases the way of the eraser chosen last.
-        bar.Ink.ActiveToolChanged += (_, _) =>
-        {
-            if (bar.Ink.ActiveTool == bar.Eraser || bar.Ink.ActiveTool == bar.PointEraser)
-            {
-                PartialErasing = bar.Ink.ActiveTool == bar.PointEraser;
-            }
-        };
+        // The eraser's mode is the toolbar's toggle (not a tool): the eraser tool and the pen's eraser follow it.
+        bar.PartialErase.IsChecked = partialErasing;
+        bar.PartialErase.Checked += (_, _) => PartialErasing = true;
+        bar.PartialErase.Unchecked += (_, _) => PartialErasing = false;
 
         Undo.Changed += (_, _) =>
         {
@@ -95,7 +91,7 @@ public sealed class InkWorkspace
 
     private bool partialErasing;
 
-    /// <summary>The eraser chosen last is the point eraser: the pen's eraser end erases partially too.</summary>
+    /// <summary>The eraser erases exactly the circle at the pen (the toolbar's mode toggle): the tool and the pen's eraser.</summary>
     public bool PartialErasing
     {
         get => partialErasing;
@@ -225,7 +221,7 @@ public sealed class InkWorkspace
         return true;
     }
 
-    // The partial eraser (point eraser tool and the pen's eraser end) or Windows ink's whole-stroke eraser.
+    // The partial eraser (eraser tool and the pen's eraser end/button) or Windows ink's whole-stroke eraser.
     private void ApplyEraserMode()
     {
         bool partial = partialErasing;

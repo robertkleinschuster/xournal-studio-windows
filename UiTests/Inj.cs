@@ -173,6 +173,16 @@ public static class Inj
         Mouse(0x4, p);
     }
 
+    /// <summary>Mouse right click at screen pixels (opens a control's context flyout).</summary>
+    public static void RightClickPixel(int x, int y)
+    {
+        var p = new POINT();
+        p.X = x; p.Y = y;
+        Mouse(0, p);
+        Mouse(0x8, p);
+        Mouse(0x10, p);
+    }
+
     static TOUCH_TYPE_INFO Contact(uint id, POINT p, uint flags)
     {
         var t = new TOUCH_TYPE_INFO();

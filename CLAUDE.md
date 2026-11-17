@@ -269,8 +269,13 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 - UI Automation: the InkToolbar's own buttons have the ids `InkToolbarBallpointPenButton`,
   `InkToolbarHighlighterButton`, `InkToolbarEraserButton` (their `x:Name`/`AutomationProperties.Name` is
   ignored); custom buttons and other controls use their `x:Name` (PenToolbar sets `AutomationId`s: `PenButton1..n`,
-  `HighlighterButton1..n`, `PointEraserButton`, `SelectButton`, `ShapeButton`, `StencilButton`, `UndoButton`, ...;
+  `HighlighterButton1..n`, `PartialEraseButton` (the eraser's mode toggle), `SelectButton`, `ShapeButton`, `StencilButton`, `UndoButton`, ...;
   `RecognizeButton` is a CheckBox in the shape tool's options).
+- **`InkToolbarCustomToolButton`'s template has no Checked visual states** (WinUI InkToolbar.xaml; built-in tools and
+  custom pens have them): an active custom tool (select, shapes) looked inactive. `PenToolbar.ShowActiveTool` gives the
+  active one the built-ins' Checked background (`SubtleFillColorSecondaryBrush`, as a theme resource). The accent
+  chevron of the built-ins' Checked state is not reachable. InkToolbar draws its glyphs at 16 (`InkToolbarButtonFontSize`),
+  FontIcon defaults to 20: custom buttons' icons are 16 (`PenToolbar.Glyph`/`Sized`).
 - InkToolbar keeps only **one** built-in ballpoint/highlighter/eraser button (further ones are ignored) and orders its
   buttons itself: built-in pens, custom pens, eraser, custom tools, stencil, toggles. Several pens = custom pen buttons
   (Microsoft's "custom pen" pattern); the highlighter is a custom pen too, so it stands after the pen presets.
@@ -346,7 +351,7 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   controls, `ClickInOptions` for a tool's flyout, screenshots, `Invoke-Test` writes done.txt). **The library's tools are
   tested in the demo app** (`dotnet publish InkPages.Demo -c Release -o .local-build\demo`, then `-App
   .local-build\demo -Test InkPages.Demo\UiTests\ToolsTest.ps1`, no `-Document`): stroke eraser, eraser end, barrel
-  lasso/move, selection (duplicate, scale, undo), point eraser, the eraser end following the eraser chosen last,
+  lasso/move, selection (duplicate, scale, undo), erasing exactly (mode toggle), the eraser end following the mode,
   shapes and recognition, a barrel drag across pages with auto-scroll. `ToolbarStates.ps1` screenshots every toolbar
   state light and dark (design reviews: crop/contact-sheet them; Codex CLI `codex exec -i <png>` gave useful
   reviews). The demo logs to `INKPAGES_DEMO_LOG` (TestKit sets `out\demo.log`): gesture begin/end and undo steps.
@@ -401,12 +406,12 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
    **Stage 1 done 2026-11-17:** `InkPages/PenToolbar` (built in code, no XAML – nothing to merge into the app's .pri):
    one-tap pen presets (black, blue, red; `InkToolbarCustomPenButton` + `BallpointPen`, each with the native
    `InkToolbarPenConfigurationControl` flyout, saved as `AppSettings.Pens`), highlighter presets (yellow, green;
-   `HighlighterPen`, `AppSettings.Highlighters`), stroke eraser and point eraser, select, shapes (shape recognition in
+   `HighlighterPen`, `AppSettings.Highlighters`), eraser + its mode toggle, select, shapes (shape recognition in
    its options), ruler; undo/redo first, the selection's commands after the InkToolbar; the app adds paste, insert page and
    delete page in `Extensions` (user 2026-11-17: delete page in the row, always with a confirmation – it cannot be
    undone; `Views/AppToolbar` = German texts, named palette, presets). Toolbar design decided with the user 2026-11-17: grouped row (undo | pens | highlighters | erasers |
-   tools | selection | paste | page), two eraser tools (the pen's eraser end erases the way of the eraser chosen last,
-   `InkWorkspace.PartialErasing`), two highlighter presets. Tool options are laid out like Windows' pen flyout
+   tools | selection | paste | page), two highlighter presets; the eraser's mode is a toggle (user 2026-11-17, see
+   Decided: the pen's eraser button must not need a tool change; `InkWorkspace.PartialErasing`). Tool options are laid out like Windows' pen flyout
    (`PenToolbar.Options`: padded, strong headers); command buttons are 44 wide (dense, pen-operated: deliberate).
    Preset buttons are named after their color ("Stift – Blau"). **Stage 2 done 2026-11-17:** the engine is in InkPages (`InkWorkspace`,
    `InkPage`); .xopp/PDF/explorer/tasks/sync stay in the app (sandbox: full test and cross-page drag pass).
@@ -449,13 +454,19 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
     failing the export (deliberate: one damaged picture should not stop the export).
   - A "clone" picture background remembers its source page by reference; a future page reordering must keep it.
 - **Partial eraser approved (user, 2026-11-16)** as a deliberate exception (Windows ink erases whole strokes only):
-  (2026-11-17: two eraser tools – stroke eraser (native) and point eraser; the pen's eraser end erases the way of
-  the one chosen last; before, a toggle next to the eraser switched the mode.) Partial: the radius is exact and shown as a circle at the pen (hover and
+  **Mode toggle again (user, 2026-11-17 evening):** "Man soll den Radiermodus umschalten können, ohne das
+  Zeichenwerkzeug auf Radierer zu ändern, weil man ja eh den Radierer-Stift hat" – one eraser tool (native) and the
+  toggle "Punktgenau radieren" (`PenToolbar.PartialErase`, an `InkToolbarCustomToggleButton`: it never changes the
+  active tool); the eraser tool and the pen's eraser button/end follow it. The two-tools variant of the same day
+  (mode = the eraser chosen last) is gone. InkToolbar puts toggles after the ruler, so the toggle cannot stand right
+  beside the eraser. The user's pen (Lenovo Integrated Pen of the X13 Yoga Gen 4, garaged, 4X81M52316) has two side
+  buttons (retailer specs; Lenovo's guide for its Integrated Smart Pen: upper = right-click, lower = erase; not checked
+  on the device): the barrel (right-click) button = lasso, the eraser button = erasing with any tool. Partial: the radius is exact and shown as a circle at the pen (hover and
   while erasing) – exactly what is inside the circle disappears, nothing else (cut where the ink's edge, i.e. the
   centerline plus half the stroke width, meets the circle). **Done 2026-11-16.** The eraser tool erases partially
   through the app (presenters in mode None); the eraser end/button with the pen tool active is taken on its inverted
-  hover (see above). User: "wichtig ist dass er robust funktioniert". Radius: the point eraser's options (1–20 pt,
-  default 4, previewed as a circle).
+  hover (see above). User: "wichtig ist dass er robust funktioniert". Radius: the toggle's context flyout (right-click, with
+  the pen a tap with the barrel button held; 1–20 pt, default 4, previewed as a circle).
 - **Pages stay (user, 2026-11-16 evening):** one InkCanvas per page as the file has them; a continuous canvas with
   pages only on export was considered and dropped (upstream .xopp keeps every element on one page, page sizes and
   backgrounds differ, a document-tall InkCanvas runs into surface size limits, every stroke across a boundary would

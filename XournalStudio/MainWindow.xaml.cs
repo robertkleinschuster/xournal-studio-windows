@@ -35,6 +35,7 @@ public sealed partial class MainWindow : Window
         {
             presenter.Maximize();
         }
+        AppWindow.TitleBar.PreferredTheme = TitleBarTheme.UseDefaultAppMode; // a dark title bar in dark mode (default: Legacy = light)
 
         messages = new Messages(Info);
         InkLog.Writer = DebugLog.Write;
@@ -241,24 +242,28 @@ public sealed partial class MainWindow : Window
         bar.Copy.Click += OnRowCopy;
         bar.Duplicate.Click += OnRowDuplicate;
         bar.DeleteSelection.Click += OnRowDelete;
-        var paste = PenToolbar.Command(new SymbolIcon(Symbol.Paste),
-            "Einfügen (Strg+V): Kopiertes oder einen Ausschnitt aus einer anderen App (Ausschneidetool: Win+Umschalt+S)", "PasteButton");
+        // Short tips: the snipping-tool hint is in the message when the clipboard has nothing to paste.
+        var paste = PenToolbar.Command(new SymbolIcon(Symbol.Paste), "Einfügen (Strg+V)", "PasteButton");
         paste.Click += OnPaste;
         // A page with a plus and a page with a minus (user, 2026-11-17: both in the row; deleting always asks first).
-        var insertPage = PenToolbar.Command(PenToolbar.Path(
-            "F0 M1,1 H11 V19 H1 Z M2.5,2.5 V17.5 H9.5 V2.5 Z " +
-            "M15.25,9.5 H16.75 V13.25 H19.5 V14.75 H16.75 V18.5 H15.25 V14.75 H12.5 V13.25 H15.25 Z"),
-            "Seite einfügen (nach der Seite im Blick)", "InsertPageButton");
+        var insertPage = PenToolbar.Command(PenToolbar.Path(InsertPageIcon), "Seite einfügen (nach der Seite im Blick)", "InsertPageButton");
         insertPage.Click += OnInsertPage;
-        var deletePage = PenToolbar.Command(PenToolbar.Path(
-            "F0 M1,1 H11 V19 H1 Z M2.5,2.5 V17.5 H9.5 V2.5 Z M12.5,13.25 H19.5 V14.75 H12.5 Z"),
+        var deletePage = PenToolbar.Command(PenToolbar.Path(DeletePageIcon),
             "Seite löschen (die Seite im Blick, mit Rückfrage)", "DeletePageButton");
         deletePage.Click += OnDeletePage;
         bar.Extensions.Add(paste);
         bar.Extensions.Add(new AppBarSeparator());
         bar.Extensions.Add(insertPage);
         bar.Extensions.Add(deletePage);
+        // The menu shows the same icons as the row.
+        DuplicateMenuItem.Icon = PenToolbar.Path(PenToolbar.DuplicateIcon);
+        InsertPageMenuItem.Icon = PenToolbar.Path(InsertPageIcon);
+        DeletePageMenuItem.Icon = PenToolbar.Path(DeletePageIcon);
     }
+
+    private const string InsertPageIcon = "F0 M1,1 H11 V19 H1 Z M2.5,2.5 V17.5 H9.5 V2.5 Z " +
+        "M15.25,9.5 H16.75 V13.25 H19.5 V14.75 H16.75 V18.5 H15.25 V14.75 H12.5 V13.25 H15.25 Z";
+    private const string DeletePageIcon = "F0 M1,1 H11 V19 H1 Z M2.5,2.5 V17.5 H9.5 V2.5 Z M12.5,13.25 H19.5 V14.75 H12.5 Z";
 
     // The toolbar's controls hold the tools' choices (the workspace reads them); the settings keep them. Set before the
     // workspace is created, saved on each change.

@@ -5,17 +5,21 @@ public sealed record PenToolbarTexts
 {
     public string Pen { get; init; } = "Pen";
     public string Highlighter { get; init; } = "Highlighter";
-    public string Eraser { get; init; } = "Stroke eraser";
-    public string EraserTip { get; init; } =
-        "Stroke eraser: erases whole strokes (the pen's eraser end too, while this eraser was chosen last)";
-    public string PointEraser { get; init; } = "Point eraser";
-    public string PointEraserTip { get; init; } =
-        "Point eraser: erases exactly the circle at the pen (the pen's eraser end too, while this eraser was chosen last); tap again for its size";
-    /// <summary>The point eraser's size (its options).</summary>
+    /// <summary>A pen or highlighter preset's tooltip after its name.</summary>
+    public string PresetTip { get; init; } = "tap again for color and size";
+    public string Eraser { get; init; } = "Eraser";
+    public string EraserTip { get; init; } = "Eraser – the pen's eraser button erases too, with any tool";
+    /// <summary>The eraser's mode toggle (exactly the circle at the pen instead of whole strokes).</summary>
+    public string PartialErase { get; init; } = "Erase exactly";
+    public string PartialEraseTip { get; init; } =
+        "Erase exactly: the eraser and the pen's eraser button erase only what is in the circle, not whole strokes. " +
+        "Right-click (pen: tap with the barrel button held): size";
+    /// <summary>The partial eraser's size (the mode toggle's context flyout).</summary>
     public string EraserRadius { get; init; } = "Size";
     public string Select { get; init; } = "Select";
     public string SelectTip { get; init; } =
-        "Select with lasso or rectangle (tap again to choose); drag to move, corners to scale";
+        "Select: lasso or rectangle (tap again to choose); drag to move, corners to scale. " +
+        "With the pen, a lasso works with any tool: drag with the barrel button held";
     public string SelectWith { get; init; } = "Select with";
     public string Lasso { get; init; } = "Lasso";
     public string Rectangle { get; init; } = "Rectangle";

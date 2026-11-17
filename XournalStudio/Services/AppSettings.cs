@@ -36,7 +36,7 @@ public sealed class AppSettings
 
     public InkPages.SelectMode SelectMode { get; set; }
 
-    /// <summary>The eraser chosen last is the point eraser (a circle of <see cref="EraserRadius"/> points): the pen's eraser end erases partially.</summary>
+    /// <summary>The eraser erases exactly a circle of <see cref="EraserRadius"/> points (the toolbar's mode toggle): the tool and the pen's eraser.</summary>
     public bool PartialErasing { get; set; }
 
     public double EraserRadius { get; set; } = 4;
