@@ -332,6 +332,12 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   shapes) loses its pointer capture once, ~75 ms after the press: no popup open, presenters' devices None, pen still in
   contact, ScrollView state unchanged, focus on a toolbar button. Capturing again (`CapturePointer` while in contact)
   kept the drag to its end (experiment, removed) – a decision for the user; the thief is unknown.
+- **Ruler/protractor (WinUI source + sandbox probe, 2026-11-17):** the stencil belongs to the InkToolbar's
+  `TargetInkCanvas`: `InkToolbar::SetStencilVisibility` → `InkPresenter::SetRulerEnabled` creates an OS
+  `InkPresenterRuler` on that presenter (default place: rotated 45° at the page's top left, in page coordinates). When the
+  target changes, WinUI hides the stencil and unchecks the button (InkToolbar.cpp ~1567) – so re-targeting to the page in
+  view (`ToolController.SetCurrentPage`) makes the ruler vanish when another page becomes the middle one. Touch on the
+  ruler moves it. Set the target only after the first layout (before it every page lies at y 0).
 - Accelerators of the menu (Ctrl+A/C/V/X/D, Del) do not fire while a TextBox has focus (sandbox: Ctrl+A, Del in the
   task box edited the text, the page selection stayed).
 - `RegisterApplicationRestart` (kernel32) is registered at start: Windows restarts the app after a crash (after
@@ -417,8 +423,8 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
    `InkPage`); .xopp/PDF/explorer/tasks/sync stay in the app (sandbox: full test and cross-page drag pass).
    **Demo app `InkPages.Demo` (2026-11-17):** graph pages with in-memory content (`DemoPage` implements `InkPage`),
    the whole toolbar, its own small commands; the development and test app of the library (see Testing). Toolbar
-   design reviewed in every state with screenshots (and Codex). **Open:** the ruler (stencil button) turns on but no
-   ruler appears on the page (seen in the demo, 2026-11-17) – not investigated yet. Stage 3: README/API docs.
+   design reviewed in every state with screenshots (and Codex). The ruler "not shown" in the demo (2026-11-17) was the
+   demo targeting page 3 before the first layout (fixed); the app was never affected. Stage 3: README/API docs.
 
 ## Decided with the user (2026-11-16 morning)
 

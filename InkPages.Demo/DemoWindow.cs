@@ -74,7 +74,11 @@ public sealed class DemoWindow : Window
             AddPage();
         }
         ((DemoPage)panel.Children[0]).AddPictures([new DemoPicture(new Rect(60, 420, 160, 100), Colors.SteelBlue)]);
+        // The page in view is known only once the pages are laid out: before, every page lies at 0 and CurrentPage would
+        // be the last one - the toolbar (and the ruler, which belongs to its target page) would go to a page out of view.
+        // ViewChanged is not raised for the first layout; SizeChanged of the viewport is.
         scroller.ViewChanged += (_, _) => ink.SetCurrentPage(CurrentPage);
+        scroller.SizeChanged += (_, _) => ink.SetCurrentPage(CurrentPage);
 
         // The accelerators' tooltip would open wherever the pen hovers over the window - a windowed popup, and while one
         // is open a selection drag loses the pen (sandbox 2026-11-17). Hidden: no tooltip over the pages.
@@ -96,8 +100,8 @@ public sealed class DemoWindow : Window
 
     private IEnumerable<DemoPage> Pages => panel.Children.OfType<DemoPage>();
 
-    // The page in the middle of the view.
-    private DemoPage? CurrentPage => Pages.LastOrDefault(p =>
+    // The page in the middle of the view (none before the first layout).
+    private DemoPage? CurrentPage => scroller.ViewportHeight <= 0 ? null : Pages.LastOrDefault(p =>
         p.TransformToVisual(scroller).TransformPoint(default).Y <= scroller.ViewportHeight / 2) ?? Pages.FirstOrDefault();
 
     private void AddCommands()
@@ -142,7 +146,6 @@ public sealed class DemoWindow : Window
         ink.Attach(page);
         panel.Children.Add(page);
         ink.SetPages(Pages);
-        ink.SetCurrentPage(CurrentPage);
     }
 
     // ---------------------------------------------------------------- the demo's commands
