@@ -49,18 +49,25 @@ public sealed class PdfBackground
         return (await PictureRenderer.ToPngAsync(bitmap), bitmap.PixelWidth, bitmap.PixelHeight);
     }
 
-    /// <summary>Renders a page into an image that is <paramref name="pixelWidth"/> pixels wide. UI thread only.</summary>
-    public async Task<ImageSource?> RenderAsync(int pageIndex, uint pixelWidth)
+    /// <summary>
+    /// Renders a page into an image that is <paramref name="pixelWidth"/> pixels wide. UI thread only. Throws
+    /// <see cref="OperationCanceledException"/> when <paramref name="cancellation"/> is cancelled before the rendering began.
+    /// </summary>
+    public async Task<ImageSource?> RenderAsync(int pageIndex, uint pixelWidth, CancellationToken cancellation = default)
     {
         if (pageIndex < 0 || pageIndex >= PageCount)
         {
             return null;
         }
+        var time = System.Diagnostics.Stopwatch.StartNew();
         using var page = pdf.GetPage((uint)pageIndex);
         uint pixelHeight = (uint)Math.Max(1, Math.Round(pixelWidth * page.Size.Height / page.Size.Width));
-        using var bitmap = await PdfRenderer.Shared.RenderAsync(page, null, pixelWidth, pixelHeight);
+        using var bitmap = await PdfRenderer.Shared.RenderAsync(page, null, pixelWidth, pixelHeight, cancellation);
+        var rendered = time.Elapsed;
         var source = new SoftwareBitmapSource();
         await source.SetBitmapAsync(bitmap);
+        DebugLog.Write($"pdf page {pageIndex} {pixelWidth}px: rendered {rendered.TotalMilliseconds:F0} ms (incl. waiting), " +
+            $"bitmap source {(time.Elapsed - rendered).TotalMilliseconds:F0} ms");
         return source;
     }
 }
