@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 
 namespace XournalStudio.Services;
 
@@ -23,6 +23,9 @@ public sealed class AppSettings
     public bool RecognizeShapes { get; set; }
 
     public double PenStrokeWidth { get; set; } = 1.41;
+
+    /// <summary>The toolbar's pen presets (color index in the palette, width); empty: the defaults.</summary>
+    public List<PenSetting> Pens { get; set; } = [];
 
     public double HighlighterStrokeWidth { get; set; } = 8.5;
 
@@ -74,6 +77,12 @@ public sealed class AppSettings
             DebugLog.Write("save settings", e);
         }
     }
+}
+
+public sealed class PenSetting
+{
+    public int ColorIndex { get; set; }
+    public double Width { get; set; }
 }
 
 public sealed class DocumentPosition

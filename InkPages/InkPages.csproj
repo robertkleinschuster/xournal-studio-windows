@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- InkPages: a pen-first writing surface for WinUI 3 apps (pages with Windows Ink, selection, shapes, partial eraser,
+       auto-scroll) and its toolbar. No file format inside: the app plugs its document in. Built from code only (no XAML
+       resources), so an unpackaged, self-contained app needs no resource merging to use it. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.26100.0</TargetPlatformMinVersion>
+    <RootNamespace>InkPages</RootNamespace>
+    <AssemblyName>InkPages</AssemblyName>
+    <Platforms>x64</Platforms>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <UseWinUI>true</UseWinUI>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- The ink controls are marked experimental. -->
+    <NoWarn>$(NoWarn);CS8305;WMC1501</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- InkCanvas/InkToolbar for WinUI 3 are only in the experimental channel so far. -->
+    <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="2.6.6-experimental" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.DWrite" Version="2.6.6-experimental" />
+  </ItemGroup>
+</Project>

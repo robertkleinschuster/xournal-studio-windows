@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
@@ -33,6 +33,10 @@
   </PropertyGroup>
   <ItemGroup>
     <Content Include="Assets\app.ico" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The writing surface and its toolbar (a library, reusable by other apps). -->
+    <ProjectReference Include="..\InkPages\InkPages.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!-- InkCanvas/InkToolbar for WinUI 3 are only in the experimental channel so far. The official package provides the

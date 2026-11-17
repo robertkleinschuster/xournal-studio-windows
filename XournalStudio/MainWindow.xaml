@@ -149,79 +149,9 @@
                 <AppBarToggleButton.Icon><FontIcon Glyph="&#xE8A0;" /></AppBarToggleButton.Icon>
             </AppBarToggleButton>
             <AppBarSeparator />
-            <InkToolbar x:Name="Toolbar" InitialControls="None" VerticalAlignment="Center">
-                <InkToolbarBallpointPenButton x:Name="PenButton" AutomationProperties.Name="Stift" />
-                <InkToolbarHighlighterButton x:Name="HighlighterButton" AutomationProperties.Name="Textmarker" />
-                <InkToolbarEraserButton x:Name="EraserButton" IsClearAllVisible="False" ToolTipService.ToolTip="Radierer" AutomationProperties.Name="Radierer" />
-                <!-- How the eraser (tool and the pen's eraser end) erases: whole strokes (Windows) or exactly the circle
-                     shown at the pen. A toggle, so the active tool stays. -->
-                <InkToolbarCustomToggleButton x:Name="PartialEraserButton" AutomationProperties.Name="Teilweise radieren"
-                                              ToolTipService.ToolTip="Teilweise radieren: der Radierer löscht genau den Kreis am Stift (Größe: rechte Maustaste oder gedrückt halten). Auch das Radierer-Ende des Stifts: nach dem Umdrehen radiert es ab der zweiten Berührung teilweise (die erste stellt um).">
-                    <InkToolbarCustomToggleButton.ContextFlyout>
-                        <Flyout>
-                            <Slider x:Name="EraserRadius" Header="Radius (Punkt)" Minimum="1" Maximum="20" StepFrequency="0.5"
-                                    Width="220" ValueChanged="OnEraserRadiusChanged" />
-                        </Flyout>
-                    </InkToolbarCustomToggleButton.ContextFlyout>
-                    <FontIcon Glyph="&#xE75C;" />
-                </InkToolbarCustomToggleButton>
-                <!-- Windows' own ruler and protractor: draw along the edge for straight lines; move/turn with fingers. -->
-                <InkToolbarStencilButton x:Name="StencilButton" ToolTipService.ToolTip="Lineal / Geodreieck" AutomationProperties.Name="Lineal" />
-                <!-- Custom tools use InkToolbar's extension point; their input is passed through by InkPresenter. -->
-                <!-- Selecting: lasso or rectangle (strokes and pictures; a rectangle on a PDF page also copies the area). -->
-                <InkToolbarCustomToolButton x:Name="SelectButton" ToolTipService.ToolTip="Auswählen: Lasso oder Rechteck (nochmal tippen zum Wählen); ziehen verschiebt, Ecken skalieren; ein Rechteck auf einer PDF-Seite kopiert diesen Bereich" AutomationProperties.Name="Auswählen">
-                    <InkToolbarCustomToolButton.ConfigurationContent>
-                        <RadioButtons x:Name="SelectModeChoice" Header="Auswählen mit" SelectionChanged="OnSelectModeChanged">
-                            <x:String>Lasso</x:String>
-                            <x:String>Rechteck</x:String>
-                        </RadioButtons>
-                    </InkToolbarCustomToolButton.ConfigurationContent>
-                    <FontIcon Glyph="&#xF1BE;" />
-                </InkToolbarCustomToolButton>
-                <InkToolbarCustomToolButton x:Name="ShapeButton" ToolTipService.ToolTip="Formen: Linie, Pfeil, Rechteck, Ellipse (nochmal tippen zum Wählen)" AutomationProperties.Name="Formen">
-                    <InkToolbarCustomToolButton.ConfigurationContent>
-                        <RadioButtons x:Name="ShapeChoice" Header="Form" SelectionChanged="OnShapeChoiceChanged">
-                            <x:String>Linie</x:String>
-                            <x:String>Pfeil</x:String>
-                            <x:String>Rechteck</x:String>
-                            <x:String>Ellipse</x:String>
-                        </RadioButtons>
-                    </InkToolbarCustomToolButton.ConfigurationContent>
-                    <!-- Line, rectangle, circle as outlines (PathIcon fills, so even-odd rings). -->
-                    <PathIcon Data="F0 M1,17.9 L7.9,11 L9,12.1 L2.1,19 Z M10,1 H19 V10 H10 Z M11.5,2.5 V8.5 H17.5 V2.5 Z M10,15 A4.5,4.5 0 1 0 19,15 A4.5,4.5 0 1 0 10,15 Z M11.5,15 A3,3 0 1 1 17.5,15 A3,3 0 1 1 11.5,15 Z" />
-                </InkToolbarCustomToolButton>
-                <InkToolbarCustomToggleButton x:Name="RecognizeButton" AutomationProperties.Name="Formerkennung" ToolTipService.ToolTip="Formerkennung">
-                    <FontIcon Glyph="&#xF4A5;" />
-                </InkToolbarCustomToggleButton>
-            </InkToolbar>
-            <AppBarButton x:Name="PasteButton" LabelPosition="Collapsed" Label="Einfügen" ToolTipService.ToolTip="Einfügen (Strg+V): Kopiertes oder einen Ausschnitt aus einer anderen App (Ausschneidetool: Win+Umschalt+S)" Click="OnPaste">
-                <AppBarButton.Icon><FontIcon Glyph="&#xE77F;" /></AppBarButton.Icon>
-            </AppBarButton>
-            <!-- The selection's commands, enabled while something is selected (SelectionCommands); compact, so the row keeps clear of the right edge. -->
-            <StackPanel Orientation="Horizontal" Spacing="0">
-                <AppBarButton x:Name="CutSelectionButton" Width="48" AllowFocusOnInteraction="False" IsTabStop="False" IsEnabled="False" Icon="Cut" LabelPosition="Collapsed" Label="Ausschneiden"
-                              ToolTipService.ToolTip="Auswahl ausschneiden (Strg+X)" Click="OnRowCut" />
-                <AppBarButton x:Name="CopySelectionButton" Width="48" AllowFocusOnInteraction="False" IsTabStop="False" IsEnabled="False" Icon="Copy" LabelPosition="Collapsed" Label="Kopieren"
-                              ToolTipService.ToolTip="Auswahl kopieren (Strg+C)" Click="OnRowCopy" />
-                <AppBarButton x:Name="DuplicateSelectionButton" Width="48" AllowFocusOnInteraction="False" IsTabStop="False" IsEnabled="False" LabelPosition="Collapsed" Label="Duplizieren"
-                              ToolTipService.ToolTip="Auswahl duplizieren (Strg+D)" Click="OnRowDuplicate">
-                    <AppBarButton.Icon><FontIcon Glyph="&#xF413;" /></AppBarButton.Icon>
-                </AppBarButton>
-                <AppBarButton x:Name="DeleteSelectionButton" Width="48" AllowFocusOnInteraction="False" IsTabStop="False" IsEnabled="False" LabelPosition="Collapsed" Label="Auswahl löschen"
-                              ToolTipService.ToolTip="Auswahl löschen (Entf)" Click="OnRowDelete">
-                    <AppBarButton.Icon><FontIcon Glyph="&#xE894;" /></AppBarButton.Icon>
-                </AppBarButton>
-            </StackPanel>
-            <AppBarSeparator />
-            <AppBarButton x:Name="InsertPageButton" Icon="Add" LabelPosition="Collapsed" Label="Seite einfügen"
-                          ToolTipService.ToolTip="Seite einfügen" Click="OnInsertPage" />
-            <AppBarButton Icon="Delete" LabelPosition="Collapsed" Label="Seite löschen"
-                          ToolTipService.ToolTip="Seite löschen" Click="OnDeletePage" />
-            <AppBarSeparator />
-            <AppBarButton x:Name="UndoButton" Icon="Undo" LabelPosition="Collapsed" Label="Rückgängig"
-                          ToolTipService.ToolTip="Rückgängig" Click="OnUndo" IsEnabled="False" />
-            <AppBarButton x:Name="RedoButton" Icon="Redo" LabelPosition="Collapsed" Label="Wiederholen"
-                          ToolTipService.ToolTip="Wiederholen" Click="OnRedo" IsEnabled="False" />
+            <!-- The writing surface's toolbar (InkPages.PenToolbar, set up in code by Views/AppToolbar) with the app's
+                 own buttons at its end. -->
+            <ContentControl x:Name="ToolbarHost" VerticalAlignment="Center" IsTabStop="False" />
         </StackPanel>
 
         <!-- The explorer is on the left (right-handed: the right edge stays free). -->

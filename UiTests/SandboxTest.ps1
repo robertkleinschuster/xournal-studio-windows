@@ -79,7 +79,7 @@ try {
     Button 'InkToolbarEraserButton' 'Radierer'
     [Inj]::PenStroke((L (X 0.45) 235 (X 0.45) 265), $false, 512)
     Shot '02-eraser-tool'
-    Button 'InkToolbarBallpointPenButton'
+    Button 'PenButton1'
     [Inj]::PenStroke((L (X 0.3) 290 (X 0.6) 290), $false, 512)
     [Inj]::PenStroke((L (X 0.4) 275 (X 0.4) 305), $true, 512)
     Shot '03-eraser-end'
@@ -112,7 +112,7 @@ try {
     # Partial eraser (toggle) with the eraser tool: a line is cut exactly where the circle is; the circle shows while
     # hovering (shot at once: an injected pen leaves range ~0.6 s after its last frame). The eraser end still erases
     # whole strokes (WinUI ignores IsEraserInputEnabled = false, see ToolController).
-    Button 'InkToolbarBallpointPenButton'
+    Button 'PenButton1'
     Button 'PartialEraserButton' 'Teilweise radieren'
     [Inj]::PenStroke((L (X 0.3) 480 (X 0.6) 480), $false, 512)
     Button 'InkToolbarEraserButton' 'Radierer'
@@ -123,7 +123,7 @@ try {
     Focus; [Inj]::Ctrl(0x5A); Shot '03j-partial-undone'
     # The eraser end with the pen active: its inverted hover hands it to the partial eraser, so both touches cut;
     # hovering with the tip gives the pen back (the stroke at 460 inks).
-    Button 'InkToolbarBallpointPenButton'
+    Button 'PenButton1'
     [Inj]::PenStroke((L (X 0.3) 500 (X 0.7) 500), $false, 512)
     [Inj]::PenStroke((L (X 0.4) 485 (X 0.4) 515), $true, 512)
     [Inj]::PenStroke((L (X 0.55) 485 (X 0.55) 515), $true, 512)
@@ -135,7 +135,7 @@ try {
     Button 'SelectButton' 'Auswählen'
 
     # Shape recognition (Windows ink analysis): a hand-drawn rectangle and circle become clean shapes.
-    Button 'InkToolbarBallpointPenButton'
+    Button 'PenButton1'
     Button 'RecognizeButton' 'Formerkennung'
     [Inj]::PenStroke((L (X 0.32) 330 (X 0.5) 332 (X 0.499) 400 (X 0.321) 398 (X 0.32) 331), $false, 512)
     $c = @(); for ($k = 0; $k -le 36; $k++) { $t = 2 * [Math]::PI * $k / 36; $c += (X 0.65) + 45 * [Math]::Cos($t) + 2 * [Math]::Sin(5 * $t); $c += 365 + 40 * [Math]::Sin($t) }

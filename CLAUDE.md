@@ -149,6 +149,9 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 
 ## Architecture
 
+- `InkPages/` (library, namespace `InkPages`, no app dependencies): `PenToolbar` (the InkToolbar with pen presets,
+  tools and commands; `Extensions` for app buttons; `PenToolbar.Command` makes a dense command button),
+  `PenToolbarTexts` (texts, English defaults), `BallpointPen`/`HighlighterPen` (custom pens). See open work 9.
 - `Model/` – `XoppDocument` (gzip XML; the XML tree is kept as loaded, pages are taken out and put back on save;
   save writes `<file>~` then replaces), `XoppPage` (page element; strokes live in the page's InkStrokeContainer,
   unchanged strokes are written back as their original elements, mapped by ink stroke id; pictures stay XML),
@@ -259,7 +262,11 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   `InkStrokeBuilder` are hit along the line). `Inj` now injects a sample every ~4 DIPs, like a real pen.
 - UI Automation: the InkToolbar's own buttons have the ids `InkToolbarBallpointPenButton`,
   `InkToolbarHighlighterButton`, `InkToolbarEraserButton` (their `x:Name`/`AutomationProperties.Name` is
-  ignored); custom buttons and other controls use their `x:Name`.
+  ignored); custom buttons and other controls use their `x:Name` (PenToolbar sets `AutomationId`s: `PenButton1..3`,
+  `HighlighterButton`, `PartialEraserButton`, `SelectButton`, `ShapeButton`, `StencilButton`, `RecognizeButton`, ...).
+- InkToolbar keeps only **one** built-in ballpoint/highlighter/eraser button (further ones are ignored) and orders its
+  buttons itself: built-in pens, custom pens, eraser, custom tools, stencil, toggles. Several pens = custom pen buttons
+  (Microsoft's "custom pen" pattern); the highlighter is a custom pen too, so it stands after the pen presets.
 - `ScrollView` needs `ContentOrientation="Vertical"` (with `None`, zoomed content was clipped at its unzoomed width).
 - `PdfPage.Size` is in DIPs (points × 96/72); `PdfPageRenderOptions.SourceRect` too.
 - .xopp: highlighter alpha 0x7f; only the first PDF background carries `domain`/`filename`; `pageno` may look
@@ -357,11 +364,17 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
    along. Merged into main 2026-11-16 morning (user: "du kannst gerne mergen"). Reviews were still finding edge cases
    (mostly the eraser end, now a question for the user) – not a clean round.
 8. Not started, only if the user asks: inserting pages of another PDF, page reordering, a text tool.
-9. **Goal (user, 2026-11-17), not started – plan with the user first:** the writing area becomes a reusable module –
-   a library (possibly its own public GitHub repo) other apps can embed: pages with InkCanvas, the custom tools
-   (selection, shapes, partial eraser), input routing and auto-scroll. The toolbar becomes a professional part of that
-   library (icons, dropdowns/flyouts, which functions and buttons exist, design), with the base functions in the
-   library and app-specific extensions on top (e.g. .xopp/PDF features stay in this app).
+9. **Library `InkPages` (user, 2026-11-17; in this repo, a public repo later only with the user's approval):** the
+   writing area becomes a reusable module other apps can embed, the toolbar a part of it (base functions in the
+   library, app-specific buttons on top; Windows defaults, dense for the pen, few taps for frequent functions).
+   **Stage 1 done 2026-11-17:** `InkPages/PenToolbar` (built in code, no XAML – nothing to merge into the app's .pri):
+   one-tap pen presets (black, blue, red; `InkToolbarCustomPenButton` + `BallpointPen`, each with the native
+   `InkToolbarPenConfigurationControl` flyout, saved as `AppSettings.Pens`), highlighter (`HighlighterPen`), eraser,
+   partial-eraser toggle, select, shapes, ruler, shape recognition, undo/redo, the selection's commands; the app adds
+   paste/insert page/delete page in `Extensions` (`Views/AppToolbar` = German texts + presets). Toolbar layout chosen
+   by the user: pens directly in the row. **Stage 2 open:** move the engine (InkTools, SelectionTool/Selection/
+   SelectionDrag, ShapeTool, PartialEraser/StrokeEraser, DragAutoScroll, undo primitives) into InkPages behind an
+   interface for the app's page content; .xopp/PDF/explorer/tasks/sync stay in the app. Stage 3: README/API docs.
 
 ## Decided with the user (2026-11-16 morning)
 

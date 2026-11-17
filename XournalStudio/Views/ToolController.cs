@@ -1,4 +1,4 @@
-using Microsoft.UI.Xaml.Controls;
+﻿using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Windows.UI;
 using Windows.UI.Core;
@@ -15,7 +15,7 @@ namespace XournalStudio.Views;
 public sealed class ToolController
 {
     // Xournal++'s default palette.
-    private static readonly Color[] PenColors =
+    public static readonly Color[] PenColors =
     [
         Color.FromArgb(255, 0x00, 0x00, 0x00), // black
         Color.FromArgb(255, 0x33, 0x33, 0xcc), // blue
@@ -30,8 +30,9 @@ public sealed class ToolController
     ];
 
     private readonly InkToolbar toolbar;
-    private readonly InkToolbarBallpointPenButton pen;
-    private readonly InkToolbarHighlighterButton highlighter;
+    private readonly IReadOnlyList<InkToolbarPenButton> pens;
+    private InkToolbarPenButton pen; // the last active pen preset (shapes take its color and width)
+    private readonly InkToolbarPenButton highlighter;
     private readonly List<PageView> views = new();
 
     /// <summary>The active custom tool button, or null while a pen, the highlighter or the eraser is active.</summary>
@@ -90,25 +91,22 @@ public sealed class ToolController
         Size = new Windows.Foundation.Size(pen.SelectedStrokeWidth, pen.SelectedStrokeWidth),
     };
 
-    public ToolController(InkToolbar toolbar, InkToolbarBallpointPenButton pen, InkToolbarHighlighterButton highlighter,
-        double penStrokeWidth = 1.41, double highlighterStrokeWidth = 8.5)
+    /// <param name="pens">The toolbar's pen presets (colors and widths set by the toolbar).</param>
+    public ToolController(InkToolbar toolbar, IReadOnlyList<InkToolbarPenButton> pens,
+        InkToolbarPenButton highlighter, double highlighterStrokeWidth = 8.5)
     {
         this.toolbar = toolbar;
-        this.pen = pen;
+        this.pens = pens;
+        pen = pens[0];
         this.highlighter = highlighter;
-
-        pen.Palette = PenColors.Select(c => (Brush)new SolidColorBrush(c)).ToList();
-        pen.SelectedBrushIndex = 1;
-        // Xournal's pen widths: fine 0.85, medium 1.41, thick 2.26.
-        pen.MinStrokeWidth = 0.5;
-        pen.MaxStrokeWidth = 6;
-        pen.SelectedStrokeWidth = Math.Clamp(penStrokeWidth, pen.MinStrokeWidth, pen.MaxStrokeWidth);
-        highlighter.MinStrokeWidth = 2;
-        highlighter.MaxStrokeWidth = 30;
         highlighter.SelectedStrokeWidth = Math.Clamp(highlighterStrokeWidth, highlighter.MinStrokeWidth, highlighter.MaxStrokeWidth);
 
         toolbar.ActiveToolChanged += (_, _) =>
         {
+            if (toolbar.ActiveTool is InkToolbarCustomPenButton active && pens.Contains(active))
+            {
+                pen = active;
+            }
             ApplyToAll();
             CustomToolChanged?.Invoke(this, EventArgs.Empty);
         };
@@ -119,7 +117,9 @@ public sealed class ToolController
         };
     }
 
-    public double PenStrokeWidth => pen.SelectedStrokeWidth;
+    /// <summary>The pen presets' colors (palette index) and widths, in their order.</summary>
+    public IEnumerable<(int ColorIndex, double Width)> PenSettings =>
+        pens.Select(p => (p.SelectedBrushIndex, p.SelectedStrokeWidth));
 
     public double HighlighterStrokeWidth => highlighter.SelectedStrokeWidth;
 
