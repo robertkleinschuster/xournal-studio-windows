@@ -244,15 +244,20 @@ public sealed partial class MainWindow : Window
         var paste = PenToolbar.Command(new SymbolIcon(Symbol.Paste),
             "Einfügen (Strg+V): Kopiertes oder einen Ausschnitt aus einer anderen App (Ausschneidetool: Win+Umschalt+S)", "PasteButton");
         paste.Click += OnPaste;
-        // A page with a plus (deleting a page is rarer: in the Seite menu, not beside the selection's Löschen).
+        // A page with a plus and a page with a minus (user, 2026-11-17: both in the row; deleting always asks first).
         var insertPage = PenToolbar.Command(PenToolbar.Path(
             "F0 M1,1 H11 V19 H1 Z M2.5,2.5 V17.5 H9.5 V2.5 Z " +
             "M15.25,9.5 H16.75 V13.25 H19.5 V14.75 H16.75 V18.5 H15.25 V14.75 H12.5 V13.25 H15.25 Z"),
             "Seite einfügen (nach der Seite im Blick)", "InsertPageButton");
         insertPage.Click += OnInsertPage;
+        var deletePage = PenToolbar.Command(PenToolbar.Path(
+            "F0 M1,1 H11 V19 H1 Z M2.5,2.5 V17.5 H9.5 V2.5 Z M12.5,13.25 H19.5 V14.75 H12.5 Z"),
+            "Seite löschen (die Seite im Blick, mit Rückfrage)", "DeletePageButton");
+        deletePage.Click += OnDeletePage;
         bar.Extensions.Add(paste);
         bar.Extensions.Add(new AppBarSeparator());
         bar.Extensions.Add(insertPage);
+        bar.Extensions.Add(deletePage);
     }
 
     // The toolbar's controls hold the tools' choices (the workspace reads them); the settings keep them. Set before the
@@ -297,12 +302,15 @@ public sealed partial class MainWindow : Window
         var doc = session.Document;
         if (doc.Pages.Count <= 1)
         {
+            messages.Show(InfoBarSeverity.Informational, "Seite nicht gelöscht", "Ein Dokument behält mindestens eine Seite.");
             return;
         }
         int index = pages.CurrentIndex;
         var page = doc.Pages[index];
-        if ((page.Strokes.Count > 0 || page.Images.Any()) &&
-            !await dialogs.ConfirmAsync($"Seite {index + 1} löschen?", "Die Seite enthält Notizen.", "Löschen"))
+        // Always asked (user, 2026-11-17): deleting a page cannot be undone (its history goes with it).
+        string content = page.Strokes.Count > 0 || page.Images.Any() ? "Die Seite enthält Notizen. " : "";
+        if (!await dialogs.ConfirmAsync($"Seite {index + 1} löschen?",
+            content + "Das Löschen einer Seite lässt sich nicht rückgängig machen.", "Löschen"))
         {
             return;
         }

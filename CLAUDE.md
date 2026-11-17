@@ -402,9 +402,9 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
    one-tap pen presets (black, blue, red; `InkToolbarCustomPenButton` + `BallpointPen`, each with the native
    `InkToolbarPenConfigurationControl` flyout, saved as `AppSettings.Pens`), highlighter presets (yellow, green;
    `HighlighterPen`, `AppSettings.Highlighters`), stroke eraser and point eraser, select, shapes (shape recognition in
-   its options), ruler; undo/redo first, the selection's commands after the InkToolbar; the app adds paste and insert
-   page in `Extensions` (delete page only in the Seite menu; `Views/AppToolbar` = German texts, named palette,
-   presets). Toolbar design decided with the user 2026-11-17: grouped row (undo | pens | highlighters | erasers |
+   its options), ruler; undo/redo first, the selection's commands after the InkToolbar; the app adds paste, insert page and
+   delete page in `Extensions` (user 2026-11-17: delete page in the row, always with a confirmation – it cannot be
+   undone; `Views/AppToolbar` = German texts, named palette, presets). Toolbar design decided with the user 2026-11-17: grouped row (undo | pens | highlighters | erasers |
    tools | selection | paste | page), two eraser tools (the pen's eraser end erases the way of the eraser chosen last,
    `InkWorkspace.PartialErasing`), two highlighter presets. Tool options are laid out like Windows' pen flyout
    (`PenToolbar.Options`: padded, strong headers); command buttons are 44 wide (dense, pen-operated: deliberate).

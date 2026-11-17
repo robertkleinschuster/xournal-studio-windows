@@ -100,6 +100,9 @@ try {
     Shot '09-tap-selected'
     Focus; [Inj]::Key(0x2E); Shot '10-deleted'
     Focus; [Inj]::Ctrl(0x5A); Shot '11-delete-undone'
+    # Deleting a page (toolbar) always asks; Abbrechen keeps it.
+    Button 'DeletePageButton'; Start-Sleep 1; Shot '11b-delete-page-asks'
+    Button 'Abbrechen'; Shot '11c-page-kept'
 
     # A bitmap on the clipboard (as from the Snipping Tool) pastes below what is on the page, selected.
     $bmp = New-Object System.Drawing.Bitmap 600, 120
