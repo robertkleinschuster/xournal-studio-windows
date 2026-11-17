@@ -27,13 +27,16 @@ public sealed class AppSettings
     /// <summary>The toolbar's pen presets (color index in the palette, width); empty: the defaults.</summary>
     public List<PenSetting> Pens { get; set; } = [];
 
+    /// <summary>The toolbar's highlighter presets; empty: the defaults (yellow, green at <see cref="HighlighterStrokeWidth"/>).</summary>
+    public List<PenSetting> Highlighters { get; set; } = [];
+
     public double HighlighterStrokeWidth { get; set; } = 8.5;
 
     public InkPages.ShapeKind Shape { get; set; }
 
     public InkPages.SelectMode SelectMode { get; set; }
 
-    /// <summary>The eraser erases partially (a circle of <see cref="EraserRadius"/> points) instead of whole strokes.</summary>
+    /// <summary>The eraser chosen last is the point eraser (a circle of <see cref="EraserRadius"/> points): the pen's eraser end erases partially.</summary>
     public bool PartialErasing { get; set; }
 
     public double EraserRadius { get; set; } = 4;

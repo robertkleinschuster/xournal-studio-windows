@@ -7,7 +7,6 @@ using Windows.Foundation;
 using Windows.UI;
 using XournalStudio.Model;
 using XournalStudio.Services;
-using InkPages;
 using System.Numerics;
 using InkStroke = Windows.UI.Input.Inking.InkStroke;
 using Matrix = Microsoft.UI.Xaml.Media.Matrix;

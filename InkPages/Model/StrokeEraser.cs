@@ -6,7 +6,7 @@ namespace InkPages;
 public readonly record struct InkSample(Point Position, float Pressure);
 
 /// <summary>
-/// The partial eraser's geometry (Windows ink only erases whole strokes; agreed exception, see CLAUDE.md): what is left
+/// The partial eraser's geometry (Windows ink only erases whole strokes; a deliberate addition): what is left
 /// of a polyline stroke when a circle is erased from it. The cut is exact: each segment is intersected with the circle
 /// grown by half the drawn width there, so the ink's edge – not its centerline – ends at the circle and nothing outside
 /// it disappears. New end points get the pressure interpolated at the cut.

@@ -14,13 +14,11 @@ public enum ShapeKind
 
 /// <summary>
 /// Outlines of the shape tools and of recognized shapes, and the ink strokes made from them. A shape is one
-/// polyline stroke of even width, as Xournal++ stores its shapes.
+/// polyline stroke of even width (as note apps such as Xournal++ store their shapes).
 /// </summary>
 public static class ShapeGeometry
 {
     private const int EllipseSteps = 72;
-
-    private static readonly InkStrokeBuilder Builder = new();
 
     /// <summary>The outline of a shape dragged from <paramref name="start"/> to <paramref name="end"/>.</summary>
     public static IReadOnlyList<Point> Outline(ShapeKind kind, Point start, Point end, double penWidth) => kind switch
@@ -56,10 +54,7 @@ public static class ShapeGeometry
             FitToCurve = false,
             IgnorePressure = true,
         };
-        Builder.SetDefaultDrawingAttributes(attributes);
-        var stroke = Builder.CreateStrokeFromInkPoints(points.Select(p => new InkPoint(p, 0.5f)), Matrix3x2.Identity);
-        stroke.DrawingAttributes = attributes;
-        return stroke;
+        return InkStrokes.FromSamples(points.Select(p => new InkSample(p, 0.5f)), attributes);
     }
 
     // Shaft, then both sides of the head, drawn in one go: start → end → side → end → other side.

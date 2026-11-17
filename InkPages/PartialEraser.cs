@@ -19,6 +19,8 @@ public sealed class PartialEraser(UndoStack undo, Action<IReadOnlyCollection<Ink
     private PageEdit? edit;
     private Point last;
 
+    private static readonly Windows.UI.Color CursorColor = Microsoft.UI.Colors.DimGray;
+
     /// <summary>Radius in page points.</summary>
     public double Radius { get; set; } = 4;
 
@@ -28,12 +30,13 @@ public sealed class PartialEraser(UndoStack undo, Action<IReadOnlyCollection<Ink
         if (cursorPage != view)
         {
             Hide();
-            cursor = new Ellipse { Stroke = new SolidColorBrush(Microsoft.UI.Colors.DimGray), StrokeThickness = 0.5, IsHitTestVisible = false };
+            // On the sheet, not the window: a gray that shows on white paper in either theme.
+            cursor = new Ellipse { Stroke = new SolidColorBrush(CursorColor), StrokeThickness = 0.5, IsHitTestVisible = false };
             view.Overlay.Children.Add(cursor);
             cursorPage = view;
         }
         // The stroke lies inside the ellipse's bounds: its outer edge is the radius.
-        Selection.Place(cursor!, new Rect(p.X - Radius, p.Y - Radius, 2 * Radius, 2 * Radius));
+        Overlay.Place(cursor!, new Rect(p.X - Radius, p.Y - Radius, 2 * Radius, 2 * Radius));
     }
 
     public void Hide()

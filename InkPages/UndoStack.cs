@@ -31,6 +31,10 @@ public sealed class PageEdit(InkPage page) : IPageEdit
     /// <summary>Removes pictures from the page as part of this edit (undo puts them back at their place).</summary>
     public void RemovePictures(IReadOnlyCollection<object> pictures)
     {
+        if (pictures.Count == 0)
+        {
+            return;
+        }
         removals.Add(Page.RemovePictures(pictures));
         RemovedPictures.AddRange(pictures);
     }
@@ -64,6 +68,21 @@ public sealed class PageEdit(InkPage page) : IPageEdit
         }
     }
 
+    /// <summary>
+    /// Removes a selection's content from its page as one edit (not recorded yet): what of it is still there – the
+    /// eraser may have taken a selected stroke, the app a picture.
+    /// </summary>
+    public static PageEdit RemoveSelected(Selection selection)
+    {
+        var page = selection.Page;
+        var edit = new PageEdit(page);
+        edit.RemovedStrokes.AddRange(SelectOnly(page, selection.Strokes));
+        page.Ink.StrokeContainer.DeleteSelected();
+        var onPage = page.Pictures.ToHashSet(ReferenceEqualityComparer.Instance);
+        edit.RemovePictures(selection.Pictures.Where(onPage.Contains).ToList());
+        return edit;
+    }
+
     /// <summary>Removes strokes (or the copies undo/redo put in their place) from the page's ink.</summary>
     public static void RemoveStrokes(InkPage page, IReadOnlyCollection<InkStroke> strokes)
     {
@@ -87,7 +106,7 @@ public sealed class PageEdit(InkPage page) : IPageEdit
         return current;
     }
 
-    /// <summary>Puts removed strokes back: a removed stroke cannot be added again, its copy takes its place (also in the file).</summary>
+    /// <summary>Puts removed strokes back: a removed stroke cannot be added again, its copy takes its place (also in the app's data: <see cref="InkPage.StrokeReplaced"/>).</summary>
     public static List<InkStroke> RestoreStrokes(InkPage page, List<InkStroke> strokes)
     {
         var copies = new List<InkStroke>(strokes.Count);
@@ -104,13 +123,13 @@ public sealed class PageEdit(InkPage page) : IPageEdit
 
 /// <summary>
 /// Strokes and pictures moved/scaled (a selection dragged or resized): undo and redo put back the exact placement
-/// before and after (no inverse transform, so the file gets back exactly its numbers).
+/// before and after (no inverse transform: the app's data gets back exactly its numbers, <see cref="InkPage.RestorePlacement"/>).
 /// </summary>
 public sealed class TransformEdit(InkPage page, object before, object after) : IPageEdit
 {
     public InkPage Page { get; } = page;
 
-    
+
     public bool IsEmpty => false; // made only for a transform other than identity
 
     public bool Touches(InkPage page) => page == Page;
@@ -164,6 +183,7 @@ public sealed class UndoStack
         }
         undo.Push(edit);
         redo.Clear();
+        InkLog.Write($"undo: recorded {edit.GetType().Name} ({undo.Count} steps)");
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
@@ -186,6 +206,7 @@ public sealed class UndoStack
     {
         if (undo.TryPop(out var edit))
         {
+            InkLog.Write($"undo: {edit.GetType().Name}");
             edit.Undo();
             redo.Push(edit);
             Changed?.Invoke(this, EventArgs.Empty);
@@ -196,6 +217,7 @@ public sealed class UndoStack
     {
         if (redo.TryPop(out var edit))
         {
+            InkLog.Write($"redo: {edit.GetType().Name}");
             edit.Redo();
             undo.Push(edit);
             Changed?.Invoke(this, EventArgs.Empty);

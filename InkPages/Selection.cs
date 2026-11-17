@@ -12,7 +12,8 @@ namespace InkPages;
 /// Selected strokes and pictures of one page – after selecting, pasting or duplicating – with a dashed frame and
 /// corner handles on the page's overlay. Moving and scaling preview live (strokes by their <c>PointTransform</c>,
 /// which Windows ink redraws; pictures by a render transform) and are written to the page when the drag ends.
-/// A rectangle on a PDF page also keeps that <see cref="Area"/>, so copying takes what is seen there.
+/// A rectangle on a page that keeps selected areas (<see cref="InkPage.KeepsSelectedAreas"/>) also keeps that
+/// <see cref="Area"/>, e.g. so the app can copy what is seen there.
 /// </summary>
 public sealed class Selection
 {
@@ -39,10 +40,17 @@ public sealed class Selection
         Pictures = pictures.Distinct().ToList();
         Area = area;
         Bounds = area ?? ContentBounds();
-        frame = new Rectangle { Stroke = AccentBrush, StrokeThickness = 1, StrokeDashArray = [4, 2], RenderTransform = slide };
+        frame = Themed.AccentOutline<Rectangle>("Rectangle");
+        frame.RenderTransform = slide;
         page.Overlay.Children.Add(frame);
         handles = HasContent
-            ? Enumerable.Range(0, 4).Select(_ => new Rectangle { Width = HandleSize, Height = HandleSize, Fill = AccentBrush, RenderTransform = slide }).ToArray()
+            ? Enumerable.Range(0, 4).Select(_ =>
+            {
+                var handle = Themed.Load<Rectangle>("Rectangle", "Fill='{ThemeResource AccentFillColorDefaultBrush}'");
+                handle.Width = handle.Height = HandleSize;
+                handle.RenderTransform = slide;
+                return handle;
+            }).ToArray()
             : [];
         foreach (var handle in handles)
         {
@@ -58,15 +66,13 @@ public sealed class Selection
     /// <summary>The app's pictures (see <see cref="InkPage.Pictures"/>).</summary>
     public List<object> Pictures { get; }
 
-    /// <summary>The rectangle drawn on a PDF page (copying renders it); null once the content was moved.</summary>
+    /// <summary>The rectangle drawn on a page that keeps selected areas; null once the content was moved.</summary>
     public Rect? Area { get; private set; }
 
     /// <summary>The area, otherwise what the strokes and pictures cover (page points).</summary>
     public Rect Bounds { get; private set; }
 
     public bool HasContent => Strokes.Count + Pictures.Count > 0;
-
-    public static Brush AccentBrush => (Brush)Application.Current.Resources["AccentFillColorDefaultBrush"];
 
     /// <summary>The corner handle at <paramref name="p"/> (0 top-left, clockwise), or -1.</summary>
     public int HandleAt(Point p)
@@ -214,11 +220,11 @@ public sealed class Selection
     private void PlaceFeedback(Rect content)
     {
         var r = Inflate(content, Margin);
-        Place(frame, r);
+        Overlay.Place(frame, r);
         for (int i = 0; i < handles.Length; i++)
         {
             var c = Corner(r, i);
-            Place(handles[i], new Rect(c.X - HandleSize / 2, c.Y - HandleSize / 2, HandleSize, HandleSize));
+            Overlay.Place(handles[i], new Rect(c.X - HandleSize / 2, c.Y - HandleSize / 2, HandleSize, HandleSize));
         }
     }
 
@@ -229,14 +235,6 @@ public sealed class Selection
         2 => new Point(r.Right, r.Bottom),
         _ => new Point(r.Left, r.Bottom),
     };
-
-    public static void Place(FrameworkElement element, Rect r)
-    {
-        XamlCanvas.SetLeft(element, r.X);
-        XamlCanvas.SetTop(element, r.Y);
-        element.Width = r.Width;
-        element.Height = r.Height;
-    }
 
     /// <summary>A rectangle moved/scaled by <paramref name="m"/> (the selection's transforms: no rotation), in double.</summary>
     public static Rect TransformBounds(Rect r, Matrix3x2 m)

@@ -26,11 +26,6 @@
   <PropertyGroup Condition="'$(Configuration)'=='Release'">
     <PublishReadyToRun>true</PublishReadyToRun>
   </PropertyGroup>
-  <PropertyGroup>
-    <!-- Release (fre) runtime of the WinUI fork (upstream main + microsoft-ui-xaml PR #12292), for every app
-         configuration: a Debug (chk) WinUI stops at its internal asserts (0xC0000420). Fetched by tools\Get-WinUIRuntime.ps1. -->
-    <WinUISourceBuildRuntimeDirectory Condition="'$(WinUISourceBuildRuntimeDirectory)' == ''">$(MSBuildThisFileDirectory)..\.local-build\winui-fre\runtimes\win10-x64\native\</WinUISourceBuildRuntimeDirectory>
-  </PropertyGroup>
   <ItemGroup>
     <Content Include="Assets\app.ico" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
@@ -44,7 +39,7 @@
   <ItemGroup>
     <!-- InkCanvas/InkToolbar for WinUI 3 are only in the experimental channel so far. The official package provides the
          XAML compiler, projection and metadata (the compiler of upstream main breaks ScrollView's template, see
-         CLAUDE.md); only the runtime is replaced by the fork's build below. -->
+         CLAUDE.md); only the runtime is replaced by the fork's build (build\WinUIForkRuntime.targets). -->
     <PackageReference Include="LibGit2Sharp" Version="0.32.0" />
     <PackageReference Include="Meziantou.Framework.Win32.CredentialManager" Version="3.0.11" />
     <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="2.6.6-experimental" />
@@ -53,25 +48,6 @@
     <!-- Direct3D for Windows.Data.Pdf's DirectX interop (Services/PdfRenderer). -->
     <PackageReference Include="Vortice.Direct3D11" Version="3.8.3" />
   </ItemGroup>
-  <!-- Without the fork's runtime the custom tools get no readable pointer data: fail instead of building a broken app. -->
-  <Target Name="RequireWinUISourceBuildRuntime" BeforeTargets="Build" Condition="!Exists('$(WinUISourceBuildRuntimeDirectory)Microsoft.UI.Xaml.dll')">
-    <Error Text="WinUI fork runtime missing: $(WinUISourceBuildRuntimeDirectory) – run tools\Get-WinUIRuntime.ps1 (see CLAUDE.md, 'Current WinUI ink state')." />
-  </Target>
-  <!-- Official WinUI source-build integration: replace package runtime files with the matching product payload. -->
-  <Target Name="CopyWinUISourceBuildRuntime" AfterTargets="Build" Condition="Exists('$(WinUISourceBuildRuntimeDirectory)')">
-    <ItemGroup>
-      <WinUISourceRuntimeFile Include="$(WinUISourceBuildRuntimeDirectory)**\*.*" />
-    </ItemGroup>
-    <Copy SourceFiles="@(WinUISourceRuntimeFile)"
-          DestinationFiles="@(WinUISourceRuntimeFile->'$(TargetDir)%(RecursiveDir)%(Filename)%(Extension)')"
-          SkipUnchangedFiles="true" />
-  </Target>
-  <Target Name="CopyWinUISourceBuildRuntimeToPublish" AfterTargets="Publish" Condition="Exists('$(WinUISourceBuildRuntimeDirectory)')">
-    <ItemGroup>
-      <WinUISourceRuntimeFile Include="$(WinUISourceBuildRuntimeDirectory)**\*.*" />
-    </ItemGroup>
-    <Copy SourceFiles="@(WinUISourceRuntimeFile)"
-          DestinationFiles="@(WinUISourceRuntimeFile->'$(PublishDir)%(RecursiveDir)%(Filename)%(Extension)')"
-          SkipUnchangedFiles="true" />
-  </Target>
+  <!-- The WinUI fork's runtime over the package's (see the file). -->
+  <Import Project="..\build\WinUIForkRuntime.targets" />
 </Project>

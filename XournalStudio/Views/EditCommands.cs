@@ -43,16 +43,7 @@ public sealed class EditCommands(
         {
             return false;
         }
-        var page = current.Page;
-        var edit = new PageEdit(page);
-        // Only what is still on the page (the eraser may have taken a selected stroke meanwhile).
-        edit.RemovedStrokes.AddRange(PageEdit.SelectOnly(page, current.Strokes));
-        page.Ink.StrokeContainer.DeleteSelected();
-        var images = PicturesOf(current);
-        if (images.Count > 0)
-        {
-            edit.RemovePictures(images);
-        }
+        var edit = PageEdit.RemoveSelected(current); // what of it is still on the page
         selection.Clear();
         undo.Push(edit); // (an empty edit – everything selected was erased meanwhile – is not recorded)
         return !edit.IsEmpty;
@@ -225,13 +216,7 @@ public sealed class EditCommands(
                 strokes.ForEach(s => s.Selected = false);
                 return null; // nothing could be added (said): the content stays where it was
             }
-            var removal = new PageEdit(source);
-            removal.RemovedStrokes.AddRange(strokes);
-            source.Ink.StrokeContainer.DeleteSelected(); // the strokes marked above
-            if (images.Count > 0)
-            {
-                removal.RemovePictures(images);
-            }
+            var removal = PageEdit.RemoveSelected(current);
             return (adding.AddedStrokes.ToList(), adding.AddedPictures.ToList(), new CombinedEdit([removal, adding]));
         }
         catch (Exception e)

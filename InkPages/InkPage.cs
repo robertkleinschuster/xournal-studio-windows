@@ -30,12 +30,10 @@ public abstract partial class InkPage : UserControl
         InkCanvas = new InkCanvas();
         Overlay = new XamlCanvas { IsHitTestVisible = false };
         UnderInk = new Grid { IsHitTestVisible = false };
-        sheet = new Grid { Children = { UnderInk, InkCanvas, Overlay } };
-        if (Application.Current.Resources.TryGetValue("CardStrokeColorDefaultBrush", out var border) && border is Brush brush)
-        {
-            sheet.BorderBrush = brush;
-            sheet.BorderThickness = new Thickness(0.5);
-        }
+        sheet = Themed.Load<Grid>("Grid", "BorderBrush='{ThemeResource CardStrokeColorDefaultBrush}' BorderThickness='0.5'");
+        sheet.Children.Add(UnderInk);
+        sheet.Children.Add(InkCanvas);
+        sheet.Children.Add(Overlay);
         Content = sheet;
     }
 

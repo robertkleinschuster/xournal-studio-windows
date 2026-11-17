@@ -229,6 +229,12 @@ public static class Inj
         Thread.Sleep(30);
     }
 
+    /// <summary>Moves the mouse to client DIPs without clicking (e.g. off the toolbar, so no tooltip is open).</summary>
+    public static void MoveMouse(double x, double y)
+    {
+        Mouse(0, P(x, y));
+    }
+
     public static void Click(double x, double y)
     {
         var p = P(x, y);

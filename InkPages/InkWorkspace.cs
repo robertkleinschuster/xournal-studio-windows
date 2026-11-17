@@ -15,11 +15,14 @@ public sealed class InkWorkspace
     private readonly PenToolbar bar;
     private int generation; // counts Reset: recognition still running for older pages is dropped
 
-    public InkWorkspace(PenToolbar bar, ScrollView scroller, double highlighterStrokeWidth)
+    /// <param name="partialErasing">The eraser chosen last was the point eraser (the pen's eraser end erases partially).</param>
+    public InkWorkspace(PenToolbar bar, ScrollView scroller, bool partialErasing = false)
     {
         this.bar = bar;
-        Tools = new ToolController(bar.Ink, bar.Pens, bar.Highlighter, highlighterStrokeWidth);
-        Input = new InkTools(Undo, () => Tools.PenAttributes);
+        Tools = new ToolController(bar.Ink, bar.Pens, bar.Highlighters);
+        this.partialErasing = partialErasing;
+        Input = new InkTools(Undo, () => Tools.PenAttributes) { SelectionTakenOver = () => Tools.SelectionTakenOver };
+        Selection.OtherPageAt = OtherPageAt;
 
         // A selection dragged across pages: scrolling at the view's edge, dropped on another page it moves there.
         var autoScroll = new DragAutoScroll(scroller);
@@ -59,13 +62,19 @@ public sealed class InkWorkspace
 
         Eraser = new PartialEraser(Undo, ClearSelectionOf) { Radius = bar.EraserRadius.Value };
         bar.EraserRadius.ValueChanged += (_, e) => Eraser.Radius = e.NewValue;
-        Input.EraserToolActive = () => Tools.EraserActive;
+        Input.EraserToolActive = () => Tools.CustomTool == bar.PointEraser;
         Input.ReleaseEraserEnd = () => Tools.EraserEndTakenOver = false;
         Input.TakeEraserEnd = () => Tools.EraserEndTakenOver = true;
         Input.TakeForSelection = over => Tools.SelectionTakenOver = over;
         ApplyEraserMode();
-        bar.PartialEraser.Checked += (_, _) => ApplyEraserMode();
-        bar.PartialEraser.Unchecked += (_, _) => ApplyEraserMode();
+        // The pen's eraser end erases the way of the eraser chosen last.
+        bar.Ink.ActiveToolChanged += (_, _) =>
+        {
+            if (bar.Ink.ActiveTool == bar.Eraser || bar.Ink.ActiveTool == bar.PointEraser)
+            {
+                PartialErasing = bar.Ink.ActiveTool == bar.PointEraser;
+            }
+        };
 
         Undo.Changed += (_, _) =>
         {
@@ -84,14 +93,55 @@ public sealed class InkWorkspace
 
     public PartialEraser Eraser { get; }
 
-    /// <summary>
-    /// Another page under a point of a page (its units), with the offset from that page's coordinates to its own; null
-    /// over the page itself or between pages. Set by the owner of the pages' layout.
-    /// </summary>
-    public Func<InkPage, Windows.Foundation.Point, (InkPage Page, System.Numerics.Vector2 Offset)?> OtherPageAt
+    private bool partialErasing;
+
+    /// <summary>The eraser chosen last is the point eraser: the pen's eraser end erases partially too.</summary>
+    public bool PartialErasing
     {
-        get => Selection.OtherPageAt;
-        set => Selection.OtherPageAt = value;
+        get => partialErasing;
+        private set
+        {
+            if (partialErasing != value)
+            {
+                partialErasing = value;
+                ApplyEraserMode();
+                PartialErasingChanged?.Invoke(this, EventArgs.Empty);
+            }
+        }
+    }
+
+    public event EventHandler? PartialErasingChanged;
+
+    private List<InkPage> pages = [];
+
+    /// <summary>
+    /// Another page under a point of <paramref name="from"/> (its units), with the offset from its coordinates to the
+    /// other page's; null over the page itself or between pages. The pages lie in one panel (as <see cref="SetPages"/>
+    /// gives them): one transform into the panel, then each page's layout offset in it – this runs on every pen event
+    /// of a drag beside the page.
+    /// </summary>
+    private (InkPage Page, System.Numerics.Vector2 Offset)? OtherPageAt(InkPage from, Windows.Foundation.Point p)
+    {
+        if (Microsoft.UI.Xaml.Media.VisualTreeHelper.GetParent(from) is not Microsoft.UI.Xaml.UIElement panel)
+        {
+            return null;
+        }
+        var inPanel = from.InkCanvas.TransformToVisual(panel).TransformPoint(p);
+        var inner = from.InkCanvas.TransformToVisual(from).TransformPoint(default); // the same in every page
+        foreach (var page in pages)
+        {
+            if (page == from || Microsoft.UI.Xaml.Media.VisualTreeHelper.GetParent(page) != panel)
+            {
+                continue;
+            }
+            var origin = page.ActualOffset;
+            double x = inPanel.X - origin.X - inner.X, y = inPanel.Y - origin.Y - inner.Y;
+            if (x >= 0 && y >= 0 && x <= page.Width && y <= page.Height)
+            {
+                return (page, new System.Numerics.Vector2((float)(x - p.X), (float)(y - p.Y)));
+            }
+        }
+        return null;
     }
 
     /// <summary>Moves a dragged selection's content to another page (see <see cref="SelectionTool.TransferToPage"/>).</summary>
@@ -110,8 +160,12 @@ public sealed class InkWorkspace
         page.Ink.StrokesErased += (_, e) => OnStrokesErased(page, e.Strokes);
     }
 
-    /// <summary>The pages now shown (after attaching, inserting or removing).</summary>
-    public void SetPages(IEnumerable<InkPage> pages) => Tools.SetPages(pages);
+    /// <summary>The pages now shown, in one panel (after attaching, inserting or removing).</summary>
+    public void SetPages(IEnumerable<InkPage> shown)
+    {
+        pages = shown.ToList();
+        Tools.SetPages(pages);
+    }
 
     /// <summary>The page in view: the toolbar drives it (the ruler appears where the user writes).</summary>
     public void SetCurrentPage(InkPage? page) => Tools.SetCurrentPage(page);
@@ -144,23 +198,37 @@ public sealed class InkWorkspace
     /// <summary>A page was removed: its history goes with it.</summary>
     public void Removed(InkPage page) => Undo.Forget(page);
 
-    /// <summary>Undoes the last step (the selection ends: undo may replace its strokes).</summary>
-    public void UndoStep()
+    /// <summary>
+    /// Undoes the last step (the selection ends: undo may replace its strokes). False while the selection is being moved
+    /// or scaled: nothing is undone (the app may say "let go first").
+    /// </summary>
+    public bool UndoStep()
     {
+        if (Selection.IsDragging)
+        {
+            return false;
+        }
         Selection.Clear();
         Undo.Undo();
+        return true;
     }
 
-    public void RedoStep()
+    /// <summary>Redoes the last undone step; false (nothing done) while the selection is being moved or scaled.</summary>
+    public bool RedoStep()
     {
+        if (Selection.IsDragging)
+        {
+            return false;
+        }
         Selection.Clear();
         Undo.Redo();
+        return true;
     }
 
-    // The partial eraser (tool and the pen's eraser end) or Windows ink's whole-stroke eraser.
+    // The partial eraser (point eraser tool and the pen's eraser end) or Windows ink's whole-stroke eraser.
     private void ApplyEraserMode()
     {
-        bool partial = bar.PartialEraser.IsChecked == true;
+        bool partial = partialErasing;
         Input.Eraser = partial ? Eraser : null; // first: a running erase ends while the app still has the pen
         Tools.EraserEndTakenOver = false;
         Tools.PartialErasing = partial;
@@ -219,9 +287,9 @@ public sealed class InkWorkspace
                     {
                         InkLog.Write("shape recognition (stroke kept as drawn)", e);
                     }
-                    if (generation != shown)
+                    if (generation != shown || page.Parent == null)
                     {
-                        return; // other pages are shown meanwhile: this history is gone
+                        return; // other pages are shown meanwhile, or the page was removed: this history is gone
                     }
                 }
                 var ink = page.Ink.StrokeContainer;

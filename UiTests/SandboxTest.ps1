@@ -1,4 +1,4 @@
-﻿# Runs inside Windows Sandbox (see Run-SandboxTest.ps1): drives the app with synthetic pen/touch input,
+# Runs inside Windows Sandbox (see Run-SandboxTest.ps1): drives the app with synthetic pen/touch input,
 # finds toolbar buttons by UI Automation, takes a screenshot per step and copies the saved files.
 $ErrorActionPreference = 'Stop'
 $root = 'C:\sbx'; $out = "$root\out"
@@ -74,74 +74,11 @@ try {
 
     Shot '01-start'
 
-    # Native eraser (toolbar) and the pen's eraser end: each removes the stroke it touches.
+    # The tools themselves (erasers, eraser end, barrel lasso and move, selection, point eraser, shapes, recognition,
+    # dragging across pages) are the library's: InkPages.Demo\UiTests\ToolsTest.ps1 tests them in the demo app. Here: what
+    # the app adds - .xopp/PDF content, clipboard, tasks, saving and recovery - plus one pen stroke on the PDF page.
     [Inj]::PenStroke((L (X 0.3) 250 (X 0.6) 250), $false, 512)
-    Button 'InkToolbarEraserButton' 'Radierer'
-    [Inj]::PenStroke((L (X 0.45) 235 (X 0.45) 265), $false, 512)
-    Shot '02-eraser-tool'
-    Button 'PenButton1'
-    [Inj]::PenStroke((L (X 0.3) 290 (X 0.6) 290), $false, 512)
-    [Inj]::PenStroke((L (X 0.4) 275 (X 0.4) 305), $true, 512)
-    Shot '03-eraser-end'
-
-    # Pen's barrel button while the pen is active (no tool switch): a barrel drag lassos, a barrel drag inside the
-    # selection moves it, the pen still inks, Del deletes the selection.
-    [Inj]::PenStroke((L (X 0.7) 250 (X 0.85) 250), $false, 512)
-    [Inj]::PenStrokeFlags((L (X 0.68) 232 (X 0.87) 232 (X 0.87) 268 (X 0.68) 268 (X 0.68) 232), 1, 512)
-    Shot '03b-barrel-lasso'
-    # A real pen hovers before it touches; over the selection the app takes it there (moving is XAML pointer input).
-    for ($t = 0; $t -lt 100; $t += 16) { [Inj]::PenFrame((X 0.77), 249, 0x22002, 1, 0); Start-Sleep -Milliseconds 16 }
-    [Inj]::PenStrokeFlags((L (X 0.77) 250 (X 0.77) 300), 1, 512)
-    Shot '03c-barrel-move'
-    [Inj]::PenStroke((L (X 0.7) 350 (X 0.85) 350), $false, 512)
-    Shot '03d-pen-still-inks'
-    Focus; [Inj]::Key(0x2E); Shot '03e-selection-deleted'
-
-    # Selection tool (lasso): a stroke selected shows its commands; the corner handle scales it, Ctrl+Z undoes that.
-    [Inj]::PenStroke((L (X 0.6) 430 (X 0.8) 430), $false, 512)
-    Button 'SelectButton' 'Auswählen'
-    [Inj]::PenStroke((L (X 0.58) 415 (X 0.82) 415 (X 0.82) 445 (X 0.58) 445 (X 0.58) 415), $false, 512)
-    Shot '03f-selected-with-commands'
-    [Inj]::PenStroke((L ((X 0.8) + 8) 438 ((X 0.8) + 110) 445), $false, 512)
-    Shot '03g-scaled'
-    # Strokes alone go through Windows ink's clipboard: the scaled size must come along (PointTransform).
-    Focus; [Inj]::Ctrl(0x43); [Inj]::Ctrl(0x56); Start-Sleep 1; Shot '03g2-scaled-copy-pasted'
-    Focus; [Inj]::Ctrl(0x5A); Start-Sleep 1
-    Focus; [Inj]::Ctrl(0x5A); Shot '03h-scale-undone'
-
-    # Partial eraser (toggle) with the eraser tool: a line is cut exactly where the circle is; the circle shows while
-    # hovering (shot at once: an injected pen leaves range ~0.6 s after its last frame). The eraser end still erases
-    # whole strokes (WinUI ignores IsEraserInputEnabled = false, see ToolController).
-    Button 'PenButton1'
-    Button 'PartialEraserButton' 'Teilweise radieren'
-    [Inj]::PenStroke((L (X 0.3) 480 (X 0.6) 480), $false, 512)
-    Button 'InkToolbarEraserButton' 'Radierer'
-    [Inj]::PenStroke((L (X 0.45) 465 (X 0.45) 495), $false, 512)
-    for ($k = 0; $k -lt 6; $k++) { [Inj]::PenFrame((X 0.5) + 3 * $k, 480, 0x22002, 0, 0) }
-    [Inj]::Shot("$out\03i-partial-erased-circle.png"); "shot 03i-partial-erased-circle"
-    [Inj]::PenFrame((X 0.52), 480, 0x22000, 0, 0)
-    Focus; [Inj]::Ctrl(0x5A); Shot '03j-partial-undone'
-    # The eraser end with the pen active: its inverted hover hands it to the partial eraser, so both touches cut;
-    # hovering with the tip gives the pen back (the stroke at 460 inks).
-    Button 'PenButton1'
-    [Inj]::PenStroke((L (X 0.3) 500 (X 0.7) 500), $false, 512)
-    [Inj]::PenStroke((L (X 0.4) 485 (X 0.4) 515), $true, 512)
-    [Inj]::PenStroke((L (X 0.55) 485 (X 0.55) 515), $true, 512)
-    for ($k = 0; $k -lt 4; $k++) { [Inj]::PenFrame((X 0.3) + 3 * $k, 460, 0x22002, 0, 0) }
-    [Inj]::PenStroke((L (X 0.3) 460 (X 0.7) 460), $false, 512)
-    Shot '03k-eraser-end-partial-then-ink'
-    Focus; [Inj]::Ctrl(0x5A); [Inj]::Ctrl(0x5A); [Inj]::Ctrl(0x5A)
-    Button 'PartialEraserButton' 'Teilweise radieren'
-    Button 'SelectButton' 'Auswählen'
-
-    # Shape recognition (Windows ink analysis): a hand-drawn rectangle and circle become clean shapes.
-    Button 'PenButton1'
-    Button 'RecognizeButton' 'Formerkennung'
-    [Inj]::PenStroke((L (X 0.32) 330 (X 0.5) 332 (X 0.499) 400 (X 0.321) 398 (X 0.32) 331), $false, 512)
-    $c = @(); for ($k = 0; $k -le 36; $k++) { $t = 2 * [Math]::PI * $k / 36; $c += (X 0.65) + 45 * [Math]::Cos($t) + 2 * [Math]::Sin(5 * $t); $c += 365 + 40 * [Math]::Sin($t) }
-    [Inj]::PenStroke([double[]]$c, $false, 512); Start-Sleep 2
-    Shot '04-recognized-shapes'
-    Button 'RecognizeButton' 'Formerkennung'
+    Shot '02-pen-inks'
 
     # Rectangle on the PDF page copies that area (Ctrl+C); pasted on a new graph page it is selected: scale it at its
     # corner, duplicate it, tap the original to select it, delete it, undo.
@@ -220,5 +157,5 @@ try {
     "exited: $($p.HasExited)"
     "recovery files after: " + ((Get-ChildItem "$work\cfg\Recovery" -ErrorAction SilentlyContinue | ForEach-Object Name) -join ', ')
 }
-catch { "ERROR: $_"; $_.ScriptStackTrace; try { [Inj]::Shot("$out\error.png") } catch {} }
+catch { "ERROR: $_"; $_.ScriptStackTrace; try { [Inj]::Shot("$out\error.png") } catch { "error screenshot failed: $_" } }
 finally { Stop-Transcript | Out-Null; Set-Content "$out\done.txt" 'done' }

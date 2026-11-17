@@ -9,7 +9,7 @@ namespace InkPages;
 /// <summary>
 /// The selection tool (also the pen's barrel button): a lasso or a rectangle selects strokes (Windows ink's
 /// <c>SelectWithPolyLine</c>) and pictures inside it, a tap selects the picture under the pen; dragging inside the
-/// selection moves it, dragging a corner handle scales it. A rectangle on a PDF page also marks that area for copying.
+/// selection moves it, dragging a corner handle scales it. A rectangle on a page that keeps selected areas also keeps that area (<see cref="InkPage.KeepsSelectedAreas"/>).
 /// </summary>
 public sealed class SelectionTool(UndoStack undo)
 {
@@ -98,14 +98,14 @@ public sealed class SelectionTool(UndoStack undo)
             Clear();
             if (mode == SelectMode.Lasso)
             {
-                lasso = new Polyline { Stroke = Selection.AccentBrush, StrokeThickness = 1, StrokeDashArray = [4, 2] };
+                lasso = Themed.AccentOutline<Polyline>("Polyline");
                 lasso.Points.Add(p);
                 page.Overlay.Children.Add(lasso);
                 gesture = Gesture.Lasso;
             }
             else
             {
-                rectangle = new Rectangle { Stroke = Selection.AccentBrush, StrokeThickness = 1, StrokeDashArray = [4, 2] };
+                rectangle = Themed.AccentOutline<Rectangle>("Rectangle");
                 page.Overlay.Children.Add(rectangle);
                 gesture = Gesture.Rectangle;
             }
@@ -121,7 +121,7 @@ public sealed class SelectionTool(UndoStack undo)
                 lasso!.Points.Add(p);
                 break;
             case Gesture.Rectangle:
-                Selection.Place(rectangle!, new Rect(start, p));
+                Overlay.Place(rectangle!, new Rect(start, p));
                 break;
             case Gesture.Move:
                 Current?.Preview(Matrix3x2.CreateTranslation((float)(p.X - start.X), (float)(p.Y - start.Y)));
@@ -179,8 +179,8 @@ public sealed class SelectionTool(UndoStack undo)
     private Point? lastOnPage;
 
     /// <summary>
-    /// The pen of a moved selection is over another page: the content goes there now (as Xournal++ keeps every element
-    /// on one page; each page's ink is drawn only within the page, so content dragged beyond it would be cut off), and
+    /// The pen of a moved selection is over another page: the content goes there now (an app's file keeps every
+    /// element on one page; each page's ink is drawn only within the page, so content dragged beyond it would be cut off), and
     /// the drag goes on from there.
     /// </summary>
     private void HandOverIfOverOtherPage(Point p)

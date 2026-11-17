@@ -1,11 +1,10 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Numerics;
 using System.Text;
 using System.Xml.Linq;
 using Windows.Foundation;
 using Windows.UI;
 using Windows.UI.Input.Inking;
-using InkPages;
 
 namespace XournalStudio.Model;
 

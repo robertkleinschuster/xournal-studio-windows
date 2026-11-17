@@ -119,33 +119,6 @@ public sealed class PagesController
         FitWidth();
     }
 
-    /// <summary>
-    /// The page under a point given in <paramref name="from"/>'s coordinates (page points), if it is another page, with
-    /// the offset from <paramref name="from"/>'s coordinates to its own (pages differ by a translation: same zoom).
-    /// </summary>
-    public (InkPage Page, System.Numerics.Vector2 Offset)? OtherPageAt(InkPage from, Point p)
-    {
-        // One transform into the panel; the pages are compared by their layout offsets in it (every page has its
-        // InkCanvas at the same place in its view), not by a transform per page – this runs on every pen event of a drag
-        // beside the page.
-        var inPanel = from.InkCanvas.TransformToVisual(panel).TransformPoint(p);
-        var inner = from.InkCanvas.TransformToVisual(from).TransformPoint(default);
-        foreach (var view in Views)
-        {
-            if (view == from)
-            {
-                continue;
-            }
-            var origin = view.ActualOffset;
-            double x = inPanel.X - origin.X - inner.X, y = inPanel.Y - origin.Y - inner.Y;
-            if (x >= 0 && y >= 0 && x <= view.Width && y <= view.Height)
-            {
-                return (view, new System.Numerics.Vector2((float)(x - p.X), (float)(y - p.Y)));
-            }
-        }
-        return null;
-    }
-
     /// <summary>A graph page (size of the current one) after the page in view, scrolled into view.</summary>
     public void InsertAfterCurrent()
     {

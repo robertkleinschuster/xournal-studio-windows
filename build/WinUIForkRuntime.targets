@@ -1,0 +1,29 @@
+<Project>
+  <!-- Release (fre) runtime of the WinUI fork (upstream main + microsoft-ui-xaml PR #12292), for every app configuration:
+       a Debug (chk) WinUI stops at its internal asserts (0xC0000420). Fetched by tools\Get-WinUIRuntime.ps1. The official
+       Microsoft.WindowsAppSDK.WinUI package provides the XAML compiler, projection and metadata; only its runtime files are
+       replaced. Imported by every app of this repository (the app and the library's demo). -->
+  <PropertyGroup>
+    <WinUISourceBuildRuntimeDirectory Condition="'$(WinUISourceBuildRuntimeDirectory)' == ''">$(MSBuildThisFileDirectory)..\.local-build\winui-fre\runtimes\win10-x64\native\</WinUISourceBuildRuntimeDirectory>
+  </PropertyGroup>
+  <!-- Without the fork's runtime the custom tools get no readable pointer data: fail instead of building a broken app. -->
+  <Target Name="RequireWinUISourceBuildRuntime" BeforeTargets="Build" Condition="!Exists('$(WinUISourceBuildRuntimeDirectory)Microsoft.UI.Xaml.dll')">
+    <Error Text="WinUI fork runtime missing: $(WinUISourceBuildRuntimeDirectory) – run tools\Get-WinUIRuntime.ps1 (see CLAUDE.md, 'Current WinUI ink state')." />
+  </Target>
+  <Target Name="CopyWinUISourceBuildRuntime" AfterTargets="Build" Condition="Exists('$(WinUISourceBuildRuntimeDirectory)')">
+    <ItemGroup>
+      <WinUISourceRuntimeFile Include="$(WinUISourceBuildRuntimeDirectory)**\*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(WinUISourceRuntimeFile)"
+          DestinationFiles="@(WinUISourceRuntimeFile->'$(TargetDir)%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+  <Target Name="CopyWinUISourceBuildRuntimeToPublish" AfterTargets="Publish" Condition="Exists('$(WinUISourceBuildRuntimeDirectory)')">
+    <ItemGroup>
+      <WinUISourceRuntimeFile Include="$(WinUISourceBuildRuntimeDirectory)**\*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(WinUISourceRuntimeFile)"
+          DestinationFiles="@(WinUISourceRuntimeFile->'$(PublishDir)%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+</Project>

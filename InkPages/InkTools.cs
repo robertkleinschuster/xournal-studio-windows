@@ -71,12 +71,12 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
     }
 
     // The page of a XAML selection drag (the selection's page).
-    private InkPage? inkSelectionPage() => Selection.Current?.Page;
+    private InkPage? DragPage => Selection.Current?.Page;
 
-    /// <summary>Moving and scaling the selection as XAML pointer input (set by the window; see SelectionDrag).</summary>
+    /// <summary>Moving and scaling the selection as XAML pointer input (set by InkWorkspace; see SelectionDrag).</summary>
     public SelectionDrag? Drag { get; set; }
 
-    /// <summary>Scrolls the pages while a selection drag holds the pen near the view's edge (set by the window).</summary>
+    /// <summary>Scrolls the pages while a selection drag holds the pen near the view's edge (set by InkWorkspace).</summary>
     public DragAutoScroll? AutoScroll { get; set; }
 
     /// <summary>The pen's tip hovers over the selection (true) or away from it (false): see ToolController.SelectionTakenOver.</summary>
@@ -111,7 +111,7 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
             eraser?.Hide();
             if (running == null)
             {
-                TakeForSelection(false); // off the page: the pen inks wherever it comes back
+                Hand(false); // off the page: the pen inks wherever it comes back
             }
             EndIfLifted(e.CurrentPoint, e);
         });
@@ -122,6 +122,27 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
                 Finish(last);
             }
         });
+    }
+
+    /// <summary>The pen is taken over for the selection now (the presenters take no pen input; see ToolController).</summary>
+    public Func<bool> SelectionTakenOver { get; set; } = () => false;
+
+    // The presenters' hover hands the pen to the selection; giving it back is XAML's job (SelectionDrag: its hover off
+    // the selection, its exit, the drag's end). While the selection has the pen the presenters take no pen input, so
+    // their events are stale: they come from WinUI's ink thread, forwarded later, and a late Exited or Hovered gave the
+    // pen back to the presenters, which took it from the drag (sandbox 2026-11-17: PointerCaptureLost 60 ms after the
+    // press). Rewriting the presenters' devices during a hover also makes them report Exited (see ToolController).
+    private void Hand(bool toSelection)
+    {
+        if (Drag is { IsRunning: true } || (!toSelection && SelectionTakenOver()))
+        {
+            if (toSelection != SelectionTakenOver())
+            {
+                InkLog.Write($"ink input: hover would hand the pen {(toSelection ? "to the selection" : "to the ink")} - kept (stale)");
+            }
+            return;
+        }
+        TakeForSelection(toSelection);
     }
 
     // WinUI raises these events from its ink thread's forwarding: an exception would not reach App.UnhandledException,
@@ -281,8 +302,8 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
     private Action<Point>? followScroll;
 
     // No gesture: hovering shows the eraser's circle (and the tip hovering gives the pen back to the ink). Nothing begins
-    // here – every gesture begins with a press on the page (the eraser end too: its first touch, taken by Windows ink,
-    // hands it over; the next touch cuts – see PagesController).
+    // here – every gesture begins with a press on the page (the eraser end is taken on its inverted hover; if Windows ink
+    // erased with it first, InkWorkspace puts the strokes back and takes it for its next press).
     private void OnHover(InkPage view, CorePointerEventArgs e)
     {
         var point = e.CurrentPoint;
@@ -302,11 +323,11 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
             {
                 ReleaseEraserEnd(); // the pen's tip hovers: it will ink (a mouse moving gives nothing back)
                 // Over the selection the tip moves or scales it; elsewhere it inks.
-                TakeForSelection(Selection.Grabs(view, position));
+                Hand(Selection.Grabs(view, position));
             }
             else
             {
-                TakeForSelection(false); // the eraser end erases, also over the selection (natively or partially)
+                Hand(false); // the eraser end erases, also over the selection (natively or partially)
                 if (eraser != null)
                 {
                     TakeEraserEnd(); // erasing is partial: the eraser end's touches go to the partial eraser
@@ -325,6 +346,7 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
 
     private void Start(InkTool active, InkPage view, uint pointerId, CorePointerEventArgs e)
     {
+        InkLog.Write($"ink input: {active} begins (pointer {pointerId})");
         running = new Running(active, view, pointerId);
         e.Handled = true;
     }
@@ -347,6 +369,7 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
         {
             return;
         }
+        InkLog.Write($"ink input: {finished.Tool} ends");
         switch (finished.Tool)
         {
             case InkTool.PartialEraser:
@@ -366,11 +389,11 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
     /// canceled, or its page is replaced or removed (<paramref name="affected"/>: whether the drag's page is concerned).
     /// The pointer is let go; still down, it begins nothing until its next press (gestures begin only with a press). A
     /// taken-over eraser end stays with the app until the tip hovers again; only a newly shown document gives it back at
-    /// once (PagesController.Show).
+    /// once (InkWorkspace.Reset).
     /// </summary>
     public void CancelGestureOn(Func<InkPage, bool> affected)
     {
-        if (Drag is { IsRunning: true } && inkSelectionPage() is { } dragPage && affected(dragPage))
+        if (Drag is { IsRunning: true } && DragPage is { } dragPage && affected(dragPage))
         {
             Drag.Cancel();
         }
@@ -382,6 +405,7 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
 
     private void Cancel(Running r)
     {
+        InkLog.Write($"ink input: {r.Tool} canceled");
         Take();
         switch (r.Tool)
         {

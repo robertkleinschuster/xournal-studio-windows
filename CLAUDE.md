@@ -63,7 +63,7 @@ arrows), math exercises long formulas in several colors.
   presenters get `InputDeviceTypes = None` (`ToolController.SelectionTakenOver`, set from the presenter hover by
   `InkTools` and from the XAML hover by `SelectionDrag`); press, capture and moves then arrive on the page's `Surface`
   (Sheet) and `GetCurrentPoint(page.InkCanvas)` is right on any page, also while the view scrolls. Reason (measured in
-  the sandbox with `UiTests/ScrollDragTest.ps1`): the presenter that got the press keeps the pen, and its coordinates
+  the sandbox with a barrel drag held at the view's edge, now in `InkPages.Demo/UiTests/ToolsTest.ps1`): the presenter that got the press keeps the pen, and its coordinates
   drift once its page scrolls out of view (lifted composition, not WinUI code) – the dragged content slid away from
   the pen. Away from the selection (XAML hover) the presenters get the pen back before it touches; it inks normally.
   The takeover needs the pen's hover before the touch (a real pen always hovers; a test must hover ~100 ms).
@@ -268,8 +268,9 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   `InkStrokeBuilder` are hit along the line). `Inj` now injects a sample every ~4 DIPs, like a real pen.
 - UI Automation: the InkToolbar's own buttons have the ids `InkToolbarBallpointPenButton`,
   `InkToolbarHighlighterButton`, `InkToolbarEraserButton` (their `x:Name`/`AutomationProperties.Name` is
-  ignored); custom buttons and other controls use their `x:Name` (PenToolbar sets `AutomationId`s: `PenButton1..3`,
-  `HighlighterButton`, `PartialEraserButton`, `SelectButton`, `ShapeButton`, `StencilButton`, `RecognizeButton`, ...).
+  ignored); custom buttons and other controls use their `x:Name` (PenToolbar sets `AutomationId`s: `PenButton1..n`,
+  `HighlighterButton1..n`, `PointEraserButton`, `SelectButton`, `ShapeButton`, `StencilButton`, `UndoButton`, ...;
+  `RecognizeButton` is a CheckBox in the shape tool's options).
 - InkToolbar keeps only **one** built-in ballpoint/highlighter/eraser button (further ones are ignored) and orders its
   buttons itself: built-in pens, custom pens, eraser, custom tools, stencil, toggles. Several pens = custom pen buttons
   (Microsoft's "custom pen" pattern); the highlighter is a custom pen too, so it stands after the pen presets.
@@ -312,6 +313,20 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   without the flyout the barrel release arrives. Hiding it at the press or at the first move does not help (the
   windowed popup has the pointer from the press). So a barrel move was only previewed, never committed. Not used any
   more for the selection (see Decided); never lay a windowed popup over the page where the barrel drags.
+- **Hover takeover and stale presenter events (sandbox 2026-11-17, demo log):** switching the presenters' devices to
+  None when the pen hovers over the selection makes them report Exited about 50 ms later; before, that stale event gave
+  the pen back to the ink, so the press went to the presenters and the drag silently ran on the ink path (with its
+  scroll drift). Now only XAML gives the pen back (`InkTools.Hand`: presenter events never release a takeover, none
+  change it while a XAML drag runs).
+- **Windowed popups and pen drags:** a toolbar button's tooltip (the mouse resting on it) and the keyboard-accelerator
+  tooltip of an element with `KeyboardAccelerators` (shown wherever the pen hovers) are windowed popups; while one is
+  open a barrel gesture's release is lost and a XAML drag can lose its capture. Accelerators on a root element need
+  `KeyboardAcceleratorPlacementMode = Hidden` (the demo); the app's accelerators are on menu items. Tests move the
+  mouse off the toolbar after each click (`TestKit.Button`).
+- **Open (2026-11-17):** in the demo's ToolsTest the last selection drag (after erasers, selection, point eraser,
+  shapes) loses its pointer capture once, ~75 ms after the press: no popup open, presenters' devices None, pen still in
+  contact, ScrollView state unchanged, focus on a toolbar button. Capturing again (`CapturePointer` while in contact)
+  kept the drag to its end (experiment, removed) – a decision for the user; the thief is unknown.
 - Accelerators of the menu (Ctrl+A/C/V/X/D, Del) do not fire while a TextBox has focus (sandbox: Ctrl+A, Del in the
   task box edited the text, the page selection stayed).
 - `RegisterApplicationRestart` (kernel32) is registered at start: Windows restarts the app after a crash (after
@@ -326,7 +341,17 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 
 - Unit tests: `XournalStudio.Tests` compiles `Model/` and the non-UI services (`ProjectTree`, `GitSync`,
   `ProjectFiles`, `FolderWatcher`, `DebugLog`, `Recovery`, `AppSettings`, `TaskFile`) directly (no app, no XAML).
-- UI test: `UiTests/Run-SandboxTest.ps1 -Document examples\Schaltungen.xopp` runs the installed app in
+- UI tests run in Windows Sandbox via `UiTests/Run-SandboxTest.ps1` (the sandbox window opens on the desktop – tell the
+  user first); in-sandbox scripts may dot-source `C:\sbx\TestKit.ps1` (`UiTests/TestKit.ps1`: start the app, find
+  controls, `ClickInOptions` for a tool's flyout, screenshots, `Invoke-Test` writes done.txt). **The library's tools are
+  tested in the demo app** (`dotnet publish InkPages.Demo -c Release -o .local-build\demo`, then `-App
+  .local-build\demo -Test InkPages.Demo\UiTests\ToolsTest.ps1`, no `-Document`): stroke eraser, eraser end, barrel
+  lasso/move, selection (duplicate, scale, undo), point eraser, the eraser end following the eraser chosen last,
+  shapes and recognition, a barrel drag across pages with auto-scroll. `ToolbarStates.ps1` screenshots every toolbar
+  state light and dark (design reviews: crop/contact-sheet them; Codex CLI `codex exec -i <png>` gave useful
+  reviews). The demo logs to `INKPAGES_DEMO_LOG` (TestKit sets `out\demo.log`): gesture begin/end and undo steps.
+  Synthetic pen input must hover ~100 ms before a press on the selection (`HoverAt`), as a real pen does.
+- App UI test: `UiTests/Run-SandboxTest.ps1 -Document examples\Schaltungen.xopp` runs the installed app in
   Windows Sandbox (the sandbox window opens on the desktop – tell the user first) with synthetic pen/touch input,
   screenshots per step, and checks the saved file with the GTK Xournal Studio CLI (`--create-img`).
   Inside the sandbox: PowerShell 5.1 (Add-Type = C# 5), 1514x900 at 150 %. `-App <publish folder>` tests another
@@ -335,7 +360,7 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   beside the page) and a todo.txt in C:\work. Covered: eraser, barrel select/move, selection tool (lasso, scale,
   undo), shapes, rectangle on the PDF page → copy → new page → paste (selected) → scale → duplicate → tap-select →
   delete → undo, bitmap paste, tasks (add, keys in the text box, check), the save question on close, crash →
-  recovery offered → restored → "Nicht speichern" removes the copy. Coordinates are client DIPs: pixel = 34 + 1.5 *
+  recovery offered → restored → "Nicht speichern" removes the copy (the tools themselves: the demo's tests above). Coordinates are client DIPs: pixel = 34 + 1.5 *
   DIP (y), 1.5 * DIP (x); an InfoBar above the pages shifts them. Clicking the already active pen button opens its
   flyout (the next stroke only closes it). In a test script never name a function `Erase` (PowerShell alias of
   Remove-Item); write scripts with the Write tool (shell heredocs turned `\t` in paths into tabs).
@@ -375,13 +400,20 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
    library, app-specific buttons on top; Windows defaults, dense for the pen, few taps for frequent functions).
    **Stage 1 done 2026-11-17:** `InkPages/PenToolbar` (built in code, no XAML – nothing to merge into the app's .pri):
    one-tap pen presets (black, blue, red; `InkToolbarCustomPenButton` + `BallpointPen`, each with the native
-   `InkToolbarPenConfigurationControl` flyout, saved as `AppSettings.Pens`), highlighter (`HighlighterPen`), eraser,
-   partial-eraser toggle, select, shapes, ruler, shape recognition, undo/redo, the selection's commands; the app adds
-   paste/insert page/delete page in `Extensions` (`Views/AppToolbar` = German texts + presets). Toolbar layout chosen
-   by the user: pens directly in the row. **Stage 2 done 2026-11-17:** the engine is in InkPages (`InkWorkspace`,
+   `InkToolbarPenConfigurationControl` flyout, saved as `AppSettings.Pens`), highlighter presets (yellow, green;
+   `HighlighterPen`, `AppSettings.Highlighters`), stroke eraser and point eraser, select, shapes (shape recognition in
+   its options), ruler; undo/redo first, the selection's commands after the InkToolbar; the app adds paste and insert
+   page in `Extensions` (delete page only in the Seite menu; `Views/AppToolbar` = German texts, named palette,
+   presets). Toolbar design decided with the user 2026-11-17: grouped row (undo | pens | highlighters | erasers |
+   tools | selection | paste | page), two eraser tools (the pen's eraser end erases the way of the eraser chosen last,
+   `InkWorkspace.PartialErasing`), two highlighter presets. Tool options are laid out like Windows' pen flyout
+   (`PenToolbar.Options`: padded, strong headers); command buttons are 44 wide (dense, pen-operated: deliberate).
+   Preset buttons are named after their color ("Stift – Blau"). **Stage 2 done 2026-11-17:** the engine is in InkPages (`InkWorkspace`,
    `InkPage`); .xopp/PDF/explorer/tasks/sync stay in the app (sandbox: full test and cross-page drag pass).
-   **Next:** toolbar design pass (user 2026-11-17: highlighter colors need a quick choice too; the toolbar "wirkt noch
-   nicht professionell / nicht durchdacht" – propose a concept first). Stage 3: README/API docs.
+   **Demo app `InkPages.Demo` (2026-11-17):** graph pages with in-memory content (`DemoPage` implements `InkPage`),
+   the whole toolbar, its own small commands; the development and test app of the library (see Testing). Toolbar
+   design reviewed in every state with screenshots (and Codex). **Open:** the ruler (stencil button) turns on but no
+   ruler appears on the page (seen in the demo, 2026-11-17) – not investigated yet. Stage 3: README/API docs.
 
 ## Decided with the user (2026-11-16 morning)
 
@@ -410,20 +442,20 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   consistent at any moment. The row's buttons take no keyboard focus (`AllowFocusOnInteraction="False"`).
 - **Eraser end with partial erasing (resolved 2026-11-16 evening):** taken on its inverted hover, so it erases
   partially from its first touch; the earlier "first touch only arms it" compromise is gone (a native erase before the
-  hover was seen is still put back as a fallback, PagesController). WPF had a point eraser natively; WinRT/WinUI ink
+  hover was seen is still put back as a fallback, `InkWorkspace.OnStrokesErased`). WPF had a point eraser natively; WinRT/WinUI ink
   never had one (issue #1530).
 - **Questions for the user (review findings kept deliberately, 2026-11-16):**
   - A picture background that fails while being drawn into the PDF is counted as "ohne Hintergrund" instead of
     failing the export (deliberate: one damaged picture should not stop the export).
   - A "clone" picture background remembers its source page by reference; a future page reordering must keep it.
 - **Partial eraser approved (user, 2026-11-16)** as a deliberate exception (Windows ink erases whole strokes only):
-  a toggle next to the eraser switches the eraser (tool and the pen's eraser end) between whole strokes (native) and
-  partial, without changing the active tool. Partial: the radius is exact and shown as a circle at the pen (hover and
+  (2026-11-17: two eraser tools – stroke eraser (native) and point eraser; the pen's eraser end erases the way of
+  the one chosen last; before, a toggle next to the eraser switched the mode.) Partial: the radius is exact and shown as a circle at the pen (hover and
   while erasing) – exactly what is inside the circle disappears, nothing else (cut where the ink's edge, i.e. the
   centerline plus half the stroke width, meets the circle). **Done 2026-11-16.** The eraser tool erases partially
   through the app (presenters in mode None); the eraser end/button with the pen tool active is taken on its inverted
-  hover (see above). User: "wichtig ist dass er robust funktioniert". Radius: context menu of the toggle (1–20 pt,
-  default 4).
+  hover (see above). User: "wichtig ist dass er robust funktioniert". Radius: the point eraser's options (1–20 pt,
+  default 4, previewed as a circle).
 - **Pages stay (user, 2026-11-16 evening):** one InkCanvas per page as the file has them; a continuous canvas with
   pages only on export was considered and dropped (upstream .xopp keeps every element on one page, page sizes and
   backgrounds differ, a document-tall InkCanvas runs into surface size limits, every stroke across a boundary would
@@ -433,8 +465,8 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   the content goes there (`SelectionTool.HandOverIfOverOtherPage` → `EditCommands.TransferToPage`: the file's own
   elements added to the target, all or nothing, then taken from their page) and the drag goes on from there
   (`DragChangedPage` → `InkTools.FollowDrag`). The running pen's events from another page's presenter are converted to
-  the drag's page (`InkTools.LocalPosition`); near the view's edge the pages scroll (`DragAutoScroll`, timer: it goes on
-  while the pen holds still). The whole drag – hand-overs and the final move – is one undo step (`CombinedEdit`;
+  the drag's page (`InkTools.LocalPosition`); near the view's edge the pages scroll (`DragAutoScroll`, per frame on
+  `CompositionTarget.Rendering`: it goes on while the pen holds still). The whole drag – hand-overs and the final move – is one undo step (`CombinedEdit`;
   `IPageEdit.Touches` lets a deleted page drop it from the history). Undo is one history in time order for the document.
 - **PDF export:** PDFsharp pinned to 6.2.4, the last MIT version (6.5.0 is AGPL-3.0 with license acceptance – a
   license change for this project is the user's decision).

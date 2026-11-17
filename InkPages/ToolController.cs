@@ -17,7 +17,7 @@ public sealed class ToolController
     private readonly InkToolbar toolbar;
     private readonly IReadOnlyList<InkToolbarPenButton> pens;
     private InkToolbarPenButton pen; // the last active pen preset (shapes take its color and width)
-    private readonly InkToolbarPenButton highlighter;
+    private readonly IReadOnlyList<InkToolbarPenButton> highlighters;
     private readonly List<InkPage> views = new();
 
     /// <summary>The active custom tool button, or null while a pen, the highlighter or the eraser is active.</summary>
@@ -25,7 +25,8 @@ public sealed class ToolController
 
     public event EventHandler? CustomToolChanged;
 
-    public event EventHandler? StrokeWidthsChanged;
+    /// <summary>A preset's color or width changed (the app keeps them).</summary>
+    public event EventHandler? PresetsChanged;
 
     private bool partialErasing;
 
@@ -51,7 +52,7 @@ public sealed class ToolController
     /// <summary>
     /// While the pen is turned over to its eraser end (partial erasing, pen tool active), the presenters take no input,
     /// so the eraser end's press reaches the partial eraser; set on its inverted hover (InkTools) – or, as a fallback,
-    /// when Windows ink erased with it before (see PagesController) – and cleared when the tip hovers again.
+    /// when Windows ink erased with it before (see InkWorkspace) – and cleared when the tip hovers again.
     /// </summary>
     public bool EraserEndTakenOver
     {
@@ -77,14 +78,14 @@ public sealed class ToolController
     };
 
     /// <param name="pens">The toolbar's pen presets (colors and widths set by the toolbar).</param>
+    /// <param name="highlighters">The toolbar's highlighter presets.</param>
     public ToolController(InkToolbar toolbar, IReadOnlyList<InkToolbarPenButton> pens,
-        InkToolbarPenButton highlighter, double highlighterStrokeWidth = 8.5)
+        IReadOnlyList<InkToolbarPenButton> highlighters)
     {
         this.toolbar = toolbar;
         this.pens = pens;
         pen = pens[0];
-        this.highlighter = highlighter;
-        highlighter.SelectedStrokeWidth = Math.Clamp(highlighterStrokeWidth, highlighter.MinStrokeWidth, highlighter.MaxStrokeWidth);
+        this.highlighters = highlighters;
 
         toolbar.ActiveToolChanged += (_, _) =>
         {
@@ -98,7 +99,7 @@ public sealed class ToolController
         toolbar.InkDrawingAttributesChanged += (_, _) =>
         {
             ApplyToAll();
-            StrokeWidthsChanged?.Invoke(this, EventArgs.Empty);
+            PresetsChanged?.Invoke(this, EventArgs.Empty);
         };
     }
 
@@ -106,7 +107,9 @@ public sealed class ToolController
     public IEnumerable<(int ColorIndex, double Width)> PenSettings =>
         pens.Select(p => (p.SelectedBrushIndex, p.SelectedStrokeWidth));
 
-    public double HighlighterStrokeWidth => highlighter.SelectedStrokeWidth;
+    /// <summary>The highlighter presets' colors (palette index) and widths, in their order.</summary>
+    public IEnumerable<(int ColorIndex, double Width)> HighlighterSettings =>
+        highlighters.Select(p => (p.SelectedBrushIndex, p.SelectedStrokeWidth));
 
     /// <summary>Barrel-button input bypasses the presenter (lasso, see the class summary).</summary>
     public static void Attach(InkPage view)
@@ -118,11 +121,7 @@ public sealed class ToolController
     {
         views.Clear();
         views.AddRange(pages);
-        foreach (var view in views)
-        {
-            // Only the pen draws; touch is left to the ScrollView for panning and zooming.
-            view.Ink.InputDeviceTypes = CoreInputDeviceTypes.Pen;
-        }
+        // Their devices and mode are set by ApplyToAll – only where they differ (a rewrite during a hover drops the pen).
         if (toolbar.TargetInkCanvas == null || !views.Any(v => v.InkCanvas == toolbar.TargetInkCanvas))
         {
             toolbar.TargetInkCanvas = views.FirstOrDefault()?.InkCanvas;
@@ -158,6 +157,7 @@ public sealed class ToolController
             if (selectionTakenOver != value)
             {
                 selectionTakenOver = value;
+                InkLog.Write($"tools: pen {(value ? "taken for the selection" : "back to the ink")}");
                 ApplyDevices();
             }
         }
@@ -210,7 +210,7 @@ public sealed class ToolController
         var attributes = toolbar.InkDrawingAttributes;
         if (attributes != null)
         {
-            // Polyline like Xournal++ and like loaded strokes: what is drawn looks the same after reloading.
+            // Polylines (the custom pens draw so too): few-point shapes stay angular, as a file stores them.
             attributes.FitToCurve = false;
         }
         foreach (var view in views)

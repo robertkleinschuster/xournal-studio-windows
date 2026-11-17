@@ -33,6 +33,15 @@ public sealed class SelectionDrag(SelectionTool selection, Action<bool> takeOver
         {
             if (Owns(e))
             {
+                var popups = view.XamlRoot is { } root
+                    ? string.Join(", ", Microsoft.UI.Xaml.Media.VisualTreeHelper.GetOpenPopupsForXamlRoot(root)
+                        .Select(p => p.Child?.GetType().Name ?? "(empty)"))
+                    : "";
+                var at = e.GetCurrentPoint(page!.InkCanvas).Position;
+                InkLog.Write($"selection drag: pointer capture lost at {at.X:0},{at.Y:0} (open popups: {(popups.Length > 0 ? popups : "none")}, " +
+                    $"source {e.OriginalSource?.GetType().Name}, in contact {e.Pointer.IsInContact}, presenter devices " +
+                    $"{page.Ink.InputDeviceTypes} mode {page.Ink.InputProcessingConfiguration.Mode}, " +
+                    $"focus {(view.XamlRoot is { } r ? Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement(r)?.GetType().Name : null)})");
                 Finish(e.GetCurrentPoint(page!.InkCanvas).Position);
             }
         });
@@ -40,6 +49,7 @@ public sealed class SelectionDrag(SelectionTool selection, Action<bool> takeOver
         {
             if (Owns(e))
             {
+                InkLog.Write("selection drag: pointer canceled");
                 Cancel();
             }
         });
@@ -70,6 +80,7 @@ public sealed class SelectionDrag(SelectionTool selection, Action<bool> takeOver
             return;
         }
         captured = null;
+        InkLog.Write("selection drag: canceled");
         AutoScroll?.Stop();
         c.ReleasePointerCaptures();
         selection.Cancel();
@@ -98,8 +109,11 @@ public sealed class SelectionDrag(SelectionTool selection, Action<bool> takeOver
         }
         else if (!IsRunning && IsPen(e) && !e.Pointer.IsInContact)
         {
-            // Hovering: away from the selection the ink takes the pen again (before it touches).
-            takeOver(selection.Grabs(view, e.GetCurrentPoint(view.InkCanvas).Position));
+            // Hovering: away from the selection the ink takes the pen again (before it touches); so does the eraser end,
+            // which erases also over the selection.
+            var point = e.GetCurrentPoint(view.InkCanvas);
+            bool eraserEnd = point.Properties.IsInverted || point.Properties.IsEraser;
+            takeOver(!eraserEnd && selection.Grabs(view, point.Position));
         }
     }
 
@@ -117,6 +131,7 @@ public sealed class SelectionDrag(SelectionTool selection, Action<bool> takeOver
         }
         captured = view.Surface;
         pointer = e.Pointer.PointerId;
+        InkLog.Write($"selection drag: begins (pointer {pointer})");
         page = view;
         selection.Begin(view, p, SelectMode.Lasso); // on the selection: it moves (inside) or scales (corner)
         e.Handled = true;
@@ -131,9 +146,9 @@ public sealed class SelectionDrag(SelectionTool selection, Action<bool> takeOver
         }
     }
 
-
     private void Finish(Point p)
     {
+        InkLog.Write("selection drag: ends");
         var c = captured!;
         var view = page!;
         captured = null;
