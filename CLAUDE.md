@@ -14,6 +14,13 @@ Guidance for Claude Code in this repository. Keep it current: add what is learne
   <branch>`; the release zip holds `runtimes/win10-x64/native/**`); `install.ps1`
   and `.github/workflows/release.yml` call it. A tag `v*` builds a pre-release with the self-contained zip; a manual
   run only builds. When an official package ships PR #12292: reference it and drop the overlay and the script.
+- **The overlay must replace the payload before the app's .pri is generated** (2026-11-18): WinUI's control templates
+  live in `Microsoft.UI.Xaml.Controls.pri`, and the app's own .pri (which merges the referenced .pri files at build
+  time) is what the app reads – copying the fork's files over the output only after Build/Publish left the package's
+  templates in the app (the InkToolbar fix did not show). `build/WinUIForkRuntime.targets` swaps the Windows App SDK
+  payload items (`None`/`ReferenceCopyLocalPaths` with a `Link`) for the fork's files right after
+  `AddMicrosoftWindowsAppSDKPayloadFilesFromComponents`; check with a search for a new template string in
+  `<App>.pri`. Before this, only the fork's C++ changes (PR #12292) reached the app, not its XAML.
 - **Never use the chk (Debug) WinUI payload:** it stops at internal asserts (`0xC0000420` STATUS_ASSERTION_FAILURE) –
   that was the whole "startup crash" before 2026-11-16 evening.
 - **Never use the fork's own package (3.0.0-dev) for compiling:** the XAML compiler of upstream main emits WinUI's
