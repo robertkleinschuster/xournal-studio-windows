@@ -336,7 +336,7 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   `TargetInkCanvas`: `InkToolbar::SetStencilVisibility` → `InkPresenter::SetRulerEnabled` creates an OS
   `InkPresenterRuler` on that presenter (default place: rotated 45° at the page's top left, in page coordinates). When the
   target changes, WinUI hides the stencil and unchecks the button (InkToolbar.cpp ~1567) – so re-targeting to the page in
-  view (`ToolController.SetCurrentPage`) makes the ruler vanish when another page becomes the middle one. Touch on the
+  view (`ToolController.SetCurrentPage`) makes the ruler vanish when another page becomes the middle one. Kept so (user, 2026-11-17: the target stays the page in view, not the page under the pen). Touch on the
   ruler moves it. Set the target only after the first layout (before it every page lies at y 0).
 - Accelerators of the menu (Ctrl+A/C/V/X/D, Del) do not fire while a TextBox has focus (sandbox: Ctrl+A, Del in the
   task box edited the text, the page selection stayed).
