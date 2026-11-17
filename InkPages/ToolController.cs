@@ -1,4 +1,4 @@
-﻿using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Windows.UI;
 using Windows.UI.Core;
@@ -6,7 +6,7 @@ using InkDrawingAttributes = Windows.UI.Input.Inking.InkDrawingAttributes;
 using InkInputProcessingMode = Microsoft.UI.Xaml.Controls.InkInputProcessingMode;
 using InkInputRightDragAction = Microsoft.UI.Xaml.Controls.InkInputRightDragAction;
 
-namespace XournalStudio.Views;
+namespace InkPages;
 
 /// <summary>
 /// One InkToolbar drives a target page's InkCanvas and shares its selected drawing settings with every page.
@@ -14,26 +14,11 @@ namespace XournalStudio.Views;
 /// </summary>
 public sealed class ToolController
 {
-    // Xournal++'s default palette.
-    public static readonly Color[] PenColors =
-    [
-        Color.FromArgb(255, 0x00, 0x00, 0x00), // black
-        Color.FromArgb(255, 0x33, 0x33, 0xcc), // blue
-        Color.FromArgb(255, 0xff, 0x00, 0x00), // red
-        Color.FromArgb(255, 0x00, 0x80, 0x00), // green
-        Color.FromArgb(255, 0x80, 0x80, 0x80), // gray
-        Color.FromArgb(255, 0x00, 0xc0, 0xff), // light blue
-        Color.FromArgb(255, 0x00, 0xff, 0x00), // light green
-        Color.FromArgb(255, 0xff, 0x00, 0xff), // magenta
-        Color.FromArgb(255, 0xff, 0x80, 0x00), // orange
-        Color.FromArgb(255, 0xff, 0xff, 0x00), // yellow
-    ];
-
     private readonly InkToolbar toolbar;
     private readonly IReadOnlyList<InkToolbarPenButton> pens;
     private InkToolbarPenButton pen; // the last active pen preset (shapes take its color and width)
     private readonly InkToolbarPenButton highlighter;
-    private readonly List<PageView> views = new();
+    private readonly List<InkPage> views = new();
 
     /// <summary>The active custom tool button, or null while a pen, the highlighter or the eraser is active.</summary>
     public InkToolbarCustomToolButton? CustomTool => toolbar.ActiveTool as InkToolbarCustomToolButton;
@@ -87,7 +72,7 @@ public sealed class ToolController
     /// <summary>Color and width of the pen button, for shapes.</summary>
     public InkDrawingAttributes PenAttributes => new()
     {
-        Color = (pen.SelectedBrush as SolidColorBrush)?.Color ?? PenColors[1],
+        Color = (pen.SelectedBrush as SolidColorBrush)?.Color ?? Microsoft.UI.Colors.Black,
         Size = new Windows.Foundation.Size(pen.SelectedStrokeWidth, pen.SelectedStrokeWidth),
     };
 
@@ -124,12 +109,12 @@ public sealed class ToolController
     public double HighlighterStrokeWidth => highlighter.SelectedStrokeWidth;
 
     /// <summary>Barrel-button input bypasses the presenter (lasso, see the class summary).</summary>
-    public static void Attach(PageView view)
+    public static void Attach(InkPage view)
     {
         view.Ink.InputProcessingConfiguration.RightDragAction = InkInputRightDragAction.LeaveUnprocessed;
     }
 
-    public void SetPages(IEnumerable<PageView> pages)
+    public void SetPages(IEnumerable<InkPage> pages)
     {
         views.Clear();
         views.AddRange(pages);
@@ -149,7 +134,7 @@ public sealed class ToolController
     /// Makes the toolbar drive the page in view, so the Windows ruler/protractor (stencil button) appears where the
     /// user writes.
     /// </summary>
-    public void SetCurrentPage(PageView? page)
+    public void SetCurrentPage(InkPage? page)
     {
         if (page != null && toolbar.TargetInkCanvas != page.InkCanvas)
         {

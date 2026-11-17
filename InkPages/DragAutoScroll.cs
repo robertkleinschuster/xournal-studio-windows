@@ -2,7 +2,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Windows.Foundation;
 
-namespace XournalStudio.Views;
+namespace InkPages;
 
 /// <summary>
 /// Scrolls the pages while a drag (selection moved, scaled, lasso, rectangle) holds the pen near the edge of the view:
@@ -15,14 +15,14 @@ public sealed class DragAutoScroll(ScrollView scroller)
     private const double Band = 48;          // DIPs inside the view's edge where scrolling begins
     private const double MaxSpeed = 1500;    // DIPs per second at the edge and beyond
 
-    private PageView? page;
+    private InkPage? page;
     private Point inView;                    // the pen in the ScrollView's coordinates
     private Action<Point>? moveTo;
     private TimeSpan? lastFrame;
     private bool hooked;
 
     /// <summary>The drag's pen is at <paramref name="local"/> on <paramref name="dragPage"/> (its page points).</summary>
-    public void Track(PageView dragPage, Point local, Action<Point> move)
+    public void Track(InkPage dragPage, Point local, Action<Point> move)
     {
         page = dragPage;
         moveTo = move;
@@ -40,7 +40,7 @@ public sealed class DragAutoScroll(ScrollView scroller)
     }
 
     /// <summary>The drag went on to another page: the pen's place is handed over in that page's points.</summary>
-    public void FollowPage(PageView dragPage)
+    public void FollowPage(InkPage dragPage)
     {
         if (page != null)
         {

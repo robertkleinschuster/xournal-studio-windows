@@ -7,17 +7,28 @@ using Windows.Foundation;
 using Windows.UI;
 using XournalStudio.Model;
 using XournalStudio.Services;
+using InkPages;
+using System.Numerics;
+using InkStroke = Windows.UI.Input.Inking.InkStroke;
+using Matrix = Microsoft.UI.Xaml.Media.Matrix;
 
 namespace XournalStudio.Views;
 
 /// <summary>
-/// A page: background (color, ruling or PDF page), pictures and the InkCanvas.
+/// A page of the document as the library's <see cref="InkPage"/>: background (color, ruling, PDF page or picture),
+/// pictures, texts and the strokes drawn from the file below the ink; the page's strokes in the InkCanvas, their file
+/// elements and its pictures in <see cref="XoppPage"/>.
 /// </summary>
-public sealed partial class PageView : UserControl
+public sealed partial class PageView : InkPage
 {
     private const uint MaxPdfPixelWidth = 3200;
 
     private readonly PdfBackground? pdf;
+    private readonly Image pdfImage = new() { Stretch = Stretch.Fill };
+    private readonly Microsoft.UI.Xaml.Controls.Canvas rulingLayer = new();
+    private readonly Microsoft.UI.Xaml.Controls.Canvas imagesLayer = new(); // below the ink, as Xournal layers them
+    private readonly Microsoft.UI.Xaml.Controls.Canvas textsLayer = new();
+    private readonly Microsoft.UI.Xaml.Controls.Canvas drawnStrokesLayer = new(); // styled strokes Windows ink cannot draw
     private uint renderedPixelWidth;
     private uint requestedPixelWidth;
     private bool picturesShown;
@@ -25,41 +36,32 @@ public sealed partial class PageView : UserControl
 
     public XoppPage Page { get; }
 
-    public InkPresenter Ink => Canvas.InkPresenter;
-
-    /// <summary>Receives the pen as XAML pointer input while the presenters leave it (moving the selection).</summary>
-    public UIElement Surface => Sheet;
-
-    public InkCanvas InkCanvas => Canvas;
-
-    /// <summary>Layer above the ink for tool feedback (lasso, selection, previews), in page points.</summary>
-    public Microsoft.UI.Xaml.Controls.Canvas Overlay => ToolLayer;
-
     /// <summary>The background PDF of a PDF page, otherwise null.</summary>
     public PdfBackground? Pdf => pdf;
 
     /// <summary>The element showing a picture, while pictures are shown (near the viewport).</summary>
     public Image? FindPicture(XElement picture) =>
-        ImagesLayer.Children.OfType<Image>().FirstOrDefault(i => i.Tag == picture);
+        imagesLayer.Children.OfType<Image>().FirstOrDefault(i => i.Tag == picture);
 
-    public PageView(XoppPage page, PdfBackground? pdf)
+    public PageView(XoppPage page, PdfBackground? pdf) : base(page.Width, page.Height)
     {
-        InitializeComponent();
         Page = page;
         this.pdf = page.IsPdf ? pdf : null;
+        foreach (var layer in new UIElement[] { pdfImage, rulingLayer, imagesLayer, textsLayer, drawnStrokesLayer })
+        {
+            UnderInk.Children.Add(layer);
+        }
 
-        Width = page.Width;
-        Height = page.Height;
-        Sheet.Background = new SolidColorBrush(page.IsPdf || page.IsImageBackground ? Colors.White : page.BackgroundColor);
+        SheetBackground = new SolidColorBrush(page.IsPdf || page.IsImageBackground ? Colors.White : page.BackgroundColor);
         if (!page.IsPdf && !page.IsImageBackground)
         {
             foreach (var ruling in BackgroundRuling.For(page.Style, page.BackgroundConfig, page.BackgroundColor, page.Width, page.Height))
             {
-                RulingLayer.Children.Add(BackgroundPattern.Create(ruling));
+                rulingLayer.Children.Add(BackgroundPattern.Create(ruling));
             }
         }
 
-        page.AttachInk(Canvas.InkPresenter.StrokeContainer);
+        page.AttachInk(InkCanvas.InkPresenter.StrokeContainer);
         page.ImagesChanged += (_, _) =>
         {
             if (picturesShown)
@@ -71,6 +73,53 @@ public sealed partial class PageView : UserControl
         ShowTexts();
         ShowDrawnStrokes();
     }
+
+    // ---------------------------------------------------------------- the page's content for the tools (InkPage)
+
+    /// <summary>A rectangle on a PDF page also marks that area: copying takes what is seen there.</summary>
+    public override bool KeepsSelectedAreas => pdf != null;
+
+    public override void StrokeReplaced(uint oldId, uint newId) => Page.TransferStrokeIdentity(oldId, newId);
+
+    public override List<InkStroke?> CurrentStrokes(IEnumerable<InkStroke> strokes) => Page.CurrentAll(strokes);
+
+    public override void BeginStrokePreview(InkStroke stroke, Matrix3x2 committed) => Page.BeginPreview(stroke, committed);
+
+    public override void EndStrokePreview(IEnumerable<InkStroke> strokes) => Page.EndPreview(strokes);
+
+    public override void StrokeTransformed(InkStroke stroke, Matrix3x2 m) => Page.RecordTransform(stroke, m);
+
+    public override object CapturePlacement(IEnumerable<InkStroke> strokes, IEnumerable<object> pictures,
+        Func<InkStroke, Matrix3x2>? transformOf = null) => Page.CapturePlacement(strokes, pictures.Cast<XElement>(), transformOf);
+
+    public override void RestorePlacement(object placement) => Page.RestorePlacement((Placement)placement);
+
+    public override IEnumerable<object> Pictures => Page.Images;
+
+    public override Rect PictureBounds(object picture) => XoppImage.GetBounds((XElement)picture);
+
+    public override Action<Matrix3x2> PreviewPictures(IReadOnlyCollection<object> pictures)
+    {
+        // Found once per drag (only the pictures shown near the viewport).
+        var shown = pictures.Cast<XElement>().Select(e => (Shown: FindPicture(e), Element: e))
+            .Where(x => x.Shown != null).Select(x => (Shown: x.Shown!, x.Element)).ToList();
+        return m =>
+        {
+            foreach (var (image, element) in shown)
+            {
+                Place(image, element, m);
+            }
+        };
+    }
+
+    public override void TransformPictures(IReadOnlyCollection<object> pictures, Matrix3x2 m) =>
+        Page.TransformImages(pictures.Cast<XElement>().ToList(), m);
+
+    public override void AddPictures(IReadOnlyCollection<object> pictures) => Page.AddImages(pictures.Cast<XElement>().ToList());
+
+    public override object RemovePictures(IReadOnlyCollection<object> pictures) => Page.RemoveImages(pictures.Cast<XElement>().ToList());
+
+    public override void RestorePictures(object removed) => Page.RestoreImages((List<ImagePlace>)removed);
 
     /// <summary>
     /// The strokes shown from the file (filled, styled or damaged ones, <see cref="StrokeConverter.NeedsOwnDrawing"/>):
@@ -98,7 +147,7 @@ public sealed partial class PageView : UserControl
             };
             foreach (var part in shape.Parts())
             {
-                DrawnStrokesLayer.Children.Add(part switch
+                drawnStrokesLayer.Children.Add(part switch
                 {
                     StrokeFill fill => new Microsoft.UI.Xaml.Shapes.Polygon
                     {
@@ -195,7 +244,7 @@ public sealed partial class PageView : UserControl
             {
                 Matrix = new Matrix { M11 = m.M11, M12 = m.M12, M21 = m.M21, M22 = m.M22, OffsetX = m.M31, OffsetY = m.M32 },
             };
-            TextsLayer.Children.Add(block);
+            textsLayer.Children.Add(block);
         }
     }
 
@@ -227,12 +276,12 @@ public sealed partial class PageView : UserControl
     {
         if (!nearViewport)
         {
-            PdfImage.Source = null;
+            pdfImage.Source = null;
             renderedPixelWidth = requestedPixelWidth = 0;
             backgroundFailed = false; // looked for again when the page comes back (a sync may have brought it)
             backgroundRequested = backgroundShown = 0;
             backgroundRelease++; // a load still running is not shown
-            ImagesLayer.Children.Clear();
+            imagesLayer.Children.Clear();
             picturesShown = false;
             return;
         }
@@ -273,7 +322,7 @@ public sealed partial class PageView : UserControl
             var bitmap = await PictureRenderer.LoadAsync(data, wanted, $"picture background {path}");
             if (release == backgroundRelease && wanted > backgroundShown)
             {
-                PdfImage.Source = bitmap;
+                pdfImage.Source = bitmap;
                 backgroundShown = wanted;
                 backgroundRequested = Math.Max(backgroundRequested, wanted); // requested ≥ shown (a failure lowers it)
             }
@@ -308,7 +357,7 @@ public sealed partial class PageView : UserControl
             var bitmap = await pdf.RenderAsync(Page.PdfPageIndex, wanted);
             if (requestedPixelWidth == wanted && bitmap != null)
             {
-                PdfImage.Source = bitmap;
+                pdfImage.Source = bitmap;
                 renderedPixelWidth = wanted;
             }
         }
@@ -326,14 +375,14 @@ public sealed partial class PageView : UserControl
     {
         picturesShown = true;
         picturePixelsPerPoint = pixelsPerPoint;
-        ImagesLayer.Children.Clear();
+        imagesLayer.Children.Clear();
         foreach (var element in Page.Images)
         {
             var bounds = XoppImage.GetBounds(element);
             var image = new Image { Stretch = Stretch.Fill, Tag = element };
             Place(image, element);
             image.SetValue(PlacedWidthProperty, bounds.Width);
-            ImagesLayer.Children.Add(image);
+            imagesLayer.Children.Add(image);
             LoadPicture(image, element, (uint)Math.Clamp(bounds.Width * pixelsPerPoint, 1, MaxPdfPixelWidth));
         }
     }
@@ -343,12 +392,12 @@ public sealed partial class PageView : UserControl
         DependencyProperty.RegisterAttached("PlacedWidth", typeof(double), typeof(PageView), new PropertyMetadata(0.0));
 
     /// <summary>Places a picture as the file says (see <see cref="XoppImage.GetPlacement"/>), moved by <paramref name="preview"/>.</summary>
-    public static void Place(Image image, XElement element, System.Numerics.Matrix3x2? preview = null)
+    public static void Place(Image image, XElement element, Matrix3x2? preview = null)
     {
         var placement = XoppImage.GetPlacement(element);
         image.Width = placement.Size.Width;
         image.Height = placement.Size.Height;
-        var m = placement.Transform * (preview ?? System.Numerics.Matrix3x2.Identity);
+        var m = placement.Transform * (preview ?? Matrix3x2.Identity);
         image.RenderTransform = new MatrixTransform
         {
             Matrix = new Matrix { M11 = m.M11, M12 = m.M12, M21 = m.M21, M22 = m.M22, OffsetX = m.M31, OffsetY = m.M32 },

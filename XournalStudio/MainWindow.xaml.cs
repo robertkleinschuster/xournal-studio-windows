@@ -11,15 +11,13 @@ namespace XournalStudio;
 
 /// <summary>
 /// The window: wires menus, toolbar and explorer to the feature classes (<see cref="DocumentSession"/>,
-/// <see cref="PagesController"/>, <see cref="SyncController"/>, <see cref="ExplorerCommands"/>, <see cref="InkTools"/>)
+/// <see cref="PagesController"/>, <see cref="SyncController"/>, <see cref="ExplorerCommands"/>, the library's <see cref="InkWorkspace"/>)
 /// and holds no feature logic of its own.
 /// </summary>
 public sealed partial class MainWindow : Window
 {
     private readonly AppSettings settings = AppSettings.Load();
-    private readonly UndoStack undo = new();
-    private readonly ToolController tools;
-    private readonly InkTools inkTools;
+    private readonly InkWorkspace ink;
     private readonly Messages messages;
     private readonly Dialogs dialogs;
     private readonly PagesController pages;
@@ -27,7 +25,6 @@ public sealed partial class MainWindow : Window
     private readonly SyncController sync;
     private readonly EditCommands edit;
     private readonly PdfExportCommand export;
-    private readonly PartialEraser partialEraser;
     private readonly PenToolbar bar;
     private bool closeConfirmed;
 
@@ -41,20 +38,14 @@ public sealed partial class MainWindow : Window
         }
 
         messages = new Messages(Info);
+        InkLog.Writer = DebugLog.Write;
         bar = AppToolbar.Create(settings);
         ToolbarHost.Content = bar;
         AddAppButtons();
-        tools = new ToolController(bar.Ink, bar.Pens, bar.Highlighter, settings.HighlighterStrokeWidth);
-        tools.StrokeWidthsChanged += (_, _) =>
-        {
-            settings.Pens = tools.PenSettings.Select(p => new PenSetting { ColorIndex = p.ColorIndex, Width = p.Width }).ToList();
-            settings.HighlighterStrokeWidth = tools.HighlighterStrokeWidth;
-            settings.Save();
-        };
-        inkTools = new InkTools(undo, () => tools.PenAttributes);
-        inkTools.Shapes.Shape = settings.Shape;
-        inkTools.Selection.Mode = settings.SelectMode;
-        pages = new PagesController(Scroller, PagesPanel, tools, inkTools, undo, () => bar.RecognizeShapes.IsChecked == true);
+        SetToolChoices();
+        ink = new InkWorkspace(bar, Scroller, settings.HighlighterStrokeWidth);
+        KeepToolSettings();
+        pages = new PagesController(Scroller, PagesPanel, ink);
         dialogs = new Dialogs(() => Content.XamlRoot, () => pages.Views);
         session = new DocumentSession(AppWindow.Id, pages, dialogs, messages, settings, () => ProjectFolder);
         sync = new SyncController(session, dialogs, messages);
@@ -63,79 +54,14 @@ public sealed partial class MainWindow : Window
             Root.UpdateLayout(); // a document just opened: its pages are laid out before scrolling
             pages.ScrollToPage(index);
         });
-        edit = new EditCommands(inkTools.Selection, pages, undo, messages, () => bar.Ink.ActiveTool = bar.Select);
-        // A selection dragged across pages: scrolling at the view's edge, dropped on another page it moves there.
-        var autoScroll = new DragAutoScroll(Scroller);
-        inkTools.AutoScroll = autoScroll;
-        // Moving/scaling the selection: XAML pointer input while the pen hovers over it (before any page is attached).
-        inkTools.Drag = new SelectionDrag(inkTools.Selection, over => tools.SelectionTakenOver = over) { AutoScroll = autoScroll };
-        inkTools.Selection.OtherPageAt = pages.OtherPageAt;
-        inkTools.Selection.TransferToPage = edit.TransferToPage;
-        inkTools.Selection.DragChangedPage += inkTools.FollowDrag;
-        var selectionCommands = new SelectionCommands(bar.Copy, [bar.Cut, bar.Duplicate, bar.DeleteSelection]);
+        edit = new EditCommands(ink.Selection, pages, ink.Undo, messages, () => bar.Ink.ActiveTool = bar.Select);
+        ink.OtherPageAt = pages.OtherPageAt;
+        ink.TransferToPage = edit.TransferToPage;
         export = new PdfExportCommand(AppWindow.Id, session, messages);
-        inkTools.Selection.SelectionChanged += (_, _) => selectionCommands.ShowFor(inkTools.Selection.Current);
-
-        bar.ShapeKind.SelectedIndex = (int)settings.Shape;
-        bar.SelectMode.SelectedIndex = (int)settings.SelectMode;
-        bar.ShapeKind.SelectionChanged += OnShapeChoiceChanged;
-        bar.SelectMode.SelectionChanged += OnSelectModeChanged;
-        tools.CustomToolChanged += (_, _) => inkTools.Tool =
-            tools.CustomTool == bar.Select ? InkTool.Select :
-            tools.CustomTool == bar.Shapes ? InkTool.Shape : InkTool.None;
-        var eraser = new PartialEraser(undo, erased =>
+        ink.Undo.Changed += (_, _) =>
         {
-            // A selection must not keep strokes that are gone.
-            var ids = erased.Select(s => s.Id).ToHashSet();
-            if (inkTools.Selection.Current?.Strokes.Any(s => ids.Contains(s.Id)) == true)
-            {
-                inkTools.Selection.Clear();
-            }
-        }) { Radius = settings.EraserRadius };
-        inkTools.EraserToolActive = () => tools.EraserActive;
-        inkTools.ReleaseEraserEnd = () => tools.EraserEndTakenOver = false;
-        inkTools.TakeEraserEnd = () => tools.EraserEndTakenOver = true;
-        inkTools.TakeForSelection = over => tools.SelectionTakenOver = over;
-        // Without a selection there is nothing to grab: the pen inks again even before its next hover.
-        inkTools.Selection.SelectionChanged += (_, _) =>
-        {
-            if (inkTools.Selection.Current == null)
-            {
-                tools.SelectionTakenOver = false;
-            }
-        };
-        bar.EraserRadius.Value = settings.EraserRadius;
-        bar.EraserRadius.ValueChanged += OnEraserRadiusChanged;
-        bar.PartialEraser.IsChecked = settings.PartialErasing;
-        void ApplyEraserMode()
-        {
-            bool partial = bar.PartialEraser.IsChecked == true;
-            inkTools.Eraser = partial ? eraser : null; // first: a running erase ends while the app still has the pen
-            tools.EraserEndTakenOver = false;
-            tools.PartialErasing = partial;
-            if (!partial)
-            {
-                eraser.Hide();
-            }
-        }
-        ApplyEraserMode();
-        bar.PartialEraser.Click += (_, _) =>
-        {
-            ApplyEraserMode();
-            settings.PartialErasing = bar.PartialEraser.IsChecked == true;
-            settings.Save();
-        };
-        partialEraser = eraser;
-        bar.RecognizeShapes.IsChecked = settings.RecognizeShapes;
-        bar.RecognizeShapes.Click += (_, _) =>
-        {
-            settings.RecognizeShapes = bar.RecognizeShapes.IsChecked == true;
-            settings.Save();
-        };
-        undo.Changed += (_, _) =>
-        {
-            bar.Undo.IsEnabled = UndoMenuItem.IsEnabled = undo.CanUndo;
-            bar.Redo.IsEnabled = RedoMenuItem.IsEnabled = undo.CanRedo;
+            UndoMenuItem.IsEnabled = ink.Undo.CanUndo;
+            RedoMenuItem.IsEnabled = ink.Undo.CanRedo;
             session.MarkChanged();
         };
         pages.PagesChanged += (_, _) => session.MarkChanged();
@@ -272,8 +198,7 @@ public sealed partial class MainWindow : Window
         {
             return;
         }
-        inkTools.Selection.Clear(); // undo may replace the selected strokes
-        undo.Undo();
+        ink.UndoStep();
     }
 
     private void OnRedo(object sender, RoutedEventArgs e)
@@ -282,8 +207,7 @@ public sealed partial class MainWindow : Window
         {
             return;
         }
-        inkTools.Selection.Clear();
-        undo.Redo();
+        ink.RedoStep();
     }
 
     private async void OnCut(object sender, RoutedEventArgs e) => await edit.CutAsync();
@@ -332,30 +256,37 @@ public sealed partial class MainWindow : Window
         bar.Extensions.Add(deletePage);
     }
 
-    private void OnShapeChoiceChanged(object sender, SelectionChangedEventArgs e)
+    // The toolbar's controls hold the tools' choices (the workspace reads them); the settings keep them. Set before the
+    // workspace is created, saved on each change.
+    private void SetToolChoices()
     {
-        if (bar.ShapeKind.SelectedIndex >= 0 && inkTools != null)
-        {
-            inkTools.Shapes.Shape = settings.Shape = (ShapeKind)bar.ShapeKind.SelectedIndex;
-            settings.Save();
-        }
+        bar.ShapeKind.SelectedIndex = (int)settings.Shape;
+        bar.SelectMode.SelectedIndex = (int)settings.SelectMode;
+        bar.EraserRadius.Value = settings.EraserRadius;
+        bar.PartialEraser.IsChecked = settings.PartialErasing;
+        bar.RecognizeShapes.IsChecked = settings.RecognizeShapes;
     }
 
-    private void OnEraserRadiusChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+    private void KeepToolSettings()
     {
-        if (partialEraser != null)
+        bar.ShapeKind.SelectionChanged += (_, _) => Save(() => settings.Shape = (ShapeKind)bar.ShapeKind.SelectedIndex, bar.ShapeKind.SelectedIndex >= 0);
+        bar.SelectMode.SelectionChanged += (_, _) => Save(() => settings.SelectMode = (SelectMode)bar.SelectMode.SelectedIndex, bar.SelectMode.SelectedIndex >= 0);
+        bar.EraserRadius.ValueChanged += (_, e) => Save(() => settings.EraserRadius = e.NewValue);
+        bar.PartialEraser.Click += (_, _) => Save(() => settings.PartialErasing = bar.PartialEraser.IsChecked == true);
+        bar.RecognizeShapes.Click += (_, _) => Save(() => settings.RecognizeShapes = bar.RecognizeShapes.IsChecked == true);
+        ink.Tools.StrokeWidthsChanged += (_, _) => Save(() =>
         {
-            partialEraser.Radius = settings.EraserRadius = e.NewValue;
-            settings.Save();
-        }
-    }
+            settings.Pens = ink.Tools.PenSettings.Select(p => new PenSetting { ColorIndex = p.ColorIndex, Width = p.Width }).ToList();
+            settings.HighlighterStrokeWidth = ink.Tools.HighlighterStrokeWidth;
+        });
 
-    private void OnSelectModeChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (bar.SelectMode.SelectedIndex >= 0 && inkTools != null)
+        void Save(Action change, bool valid = true)
         {
-            inkTools.Selection.Mode = settings.SelectMode = (SelectMode)bar.SelectMode.SelectedIndex;
-            settings.Save();
+            if (valid)
+            {
+                change();
+                settings.Save();
+            }
         }
     }
 

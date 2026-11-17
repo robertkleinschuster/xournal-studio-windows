@@ -35,6 +35,9 @@
     <Content Include="Assets\app.ico" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
+    <Using Include="InkPages" />
+  </ItemGroup>
+  <ItemGroup>
     <!-- The writing surface and its toolbar (a library, reusable by other apps). -->
     <ProjectReference Include="..\InkPages\InkPages.csproj" />
   </ItemGroup>

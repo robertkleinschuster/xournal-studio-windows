@@ -149,47 +149,53 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 
 ## Architecture
 
-- `InkPages/` (library, namespace `InkPages`, no app dependencies): `PenToolbar` (the InkToolbar with pen presets,
-  tools and commands; `Extensions` for app buttons; `PenToolbar.Command` makes a dense command button),
-  `PenToolbarTexts` (texts, English defaults), `BallpointPen`/`HighlighterPen` (custom pens). See open work 9.
+- `InkPages/` (library, namespace `InkPages`, no app dependencies; the writing area): `InkWorkspace` (the facade:
+  wires toolbar, tools, input, auto-scroll and undo; `Attach(page)`, `SetPages`, `Reset`, `Removing/Removed`,
+  `UndoStep`; the toolbar's controls hold the tools' choices), `InkPage` (abstract page: `UnderInk` layers of the app,
+  InkCanvas, `Overlay`, `Surface`; the app implements its content – stroke identity/preview/transform, placements,
+  pictures as the app's objects, removal tokens), `PenToolbar` (+ `PenToolbarTexts`, `BallpointPen`/`HighlighterPen`,
+  `Extensions` for app buttons, `PenToolbar.Command`), `ToolController` (copies the InkToolbar's tool to all pages'
+  presenters; processing mode None for a custom tool and for hover takeovers – only the mode is switched then),
+  `InkTools` (routes the presenters' unprocessed pen/mouse input to `SelectionTool`, `ShapeTool`, `PartialEraser`;
+  barrel → selection; hover takeovers of the eraser end and of the tip over the selection), `Selection` (selected
+  strokes/pictures, frame + corner handles, live preview, commit as `TransformEdit`), `SelectionDrag` (XAML pointer
+  move/scale), `DragAutoScroll`, `SelectionCommands` (enables the selection's buttons), `PartialEraser` (circle cursor,
+  cuts with `Model/StrokeEraser`, one undo step per drag), `UndoStack` of `IPageEdit` (`PageEdit`, `TransformEdit`,
+  `CombinedEdit`; the InkCanvas has no undo; undo/redo re-add copies, resolved by `InkPage.CurrentStrokes`),
+  `ShapeRecognition` (InkAnalyzer → clean stroke), `InkLog` (the app routes it to `DebugLog`), `Model/` (no UI;
+  compiled into the unit tests: `StrokeEraser`, `ShapeGeometry`/`ShapeKind`, `InkStrokes` (drawn width, strokes from
+  samples), `SelectMode`). See open work 9.
 - `Model/` – `XoppDocument` (gzip XML; the XML tree is kept as loaded, pages are taken out and put back on save;
   save writes `<file>~` then replaces), `XoppPage` (page element; strokes live in the page's InkStrokeContainer,
   unchanged strokes are written back as their original elements, mapped by ink stroke id; pictures stay XML),
   `StrokeConverter` (Xournal per-segment widths ↔ ink pressure), `XoppImage` (`<image>`/`<teximage>`),
-  `XoppFormat` (creator, file version), `ShapeGeometry` (outlines of shapes and recognized shapes → stroke).
+  `XoppFormat` (creator, file version).
   Moved/scaled strokes: the ink by `PointTransform`, their original elements by `StrokeConverter.Transform`
   (`Selection.Preview` sets `PointTransform` live and registers the committed transforms with the page –
   `XoppPage.BeginPreview`, read back by `CommittedTransform`, ended by every exit of a drag – so a snapshot writes
   strokes drawn in this session unmoved; `Commit` → `XoppPage.RecordTransform`; widths stay, as Xournal;
   undo/redo restore an exact `Placement` captured before and after); pictures change their attributes in
   place. `XoppPage.ElementOf`/`AddStrokeElement` copy strokes as their elements (exact widths, unknown attributes).
-  `XoppClip` (a copied group relative to its corner; clipboard only), `TodoTxt` (todo.txt lines, doc: links),
-  `SelectMode`. `XoppDocument.Snapshot` (detached XML, PDF references as from a given base) + `Write` (any thread)
+  `XoppClip` (a copied group relative to its corner; clipboard only), `TodoTxt` (todo.txt lines, doc: links).
+  `XoppDocument.Snapshot` (detached XML, PDF references as from a given base) + `Write` (any thread)
   serve saving and recovery copies; `SuggestedName`/`DefaultName` = Xournal's date-time name.
 - `MainWindow` only wires menus, toolbar and panes to the feature classes below (no feature logic).
-- `Views/` – `PageView` (background: color + ruling or PDF page rendered at the current zoom near the viewport;
-  pictures layer; InkCanvas; overlay `ToolLayer` for tool feedback), `PagesController` (page views in the
+- `Views/` – `AppToolbar` (German texts, Xournal's palette, pen presets), `PageView` (the library's `InkPage` for a
+  `XoppPage`: background color + ruling or PDF page rendered at the current zoom near the viewport, pictures, texts,
+  drawn strokes; implements the page content over `XoppPage`), `PagesController` (page views in the
   ScrollView, zoom, page in view, insert/remove pages, PDF rendering near the viewport), `DocumentSession` (open,
   save, save-as with the suggested name/folder, the leave question, recovery offer and `Autosave`),
   `RecoveryPrompt`, `SyncController`, `ExplorerCommands` (what the explorer asks for), `Dialogs` (all
-  ContentDialogs; hides the ink while one is open), `Messages` (InfoBar), `ToolController` (copies the InkToolbar's
-  tool to all pages' presenters; processing mode None for a custom tool and for hover takeovers – only the mode is
-  switched then),
-  `InkTools` (routes the presenters' unprocessed pen/mouse input to `SelectionTool`, `ShapeTool`, `PartialEraser`;
-  barrel → selection; hover takeovers of the eraser end and of the tip over the selection),
-  `Selection` (selected strokes/pictures, frame + corner handles, live preview, commit as `TransformEdit`),
+  ContentDialogs; hides the ink while one is open), `Messages` (InfoBar),
   `EditCommands` (cut/copy/paste/duplicate/delete/select all; pasted content placed at the left margin below the
-  page's content and selected), `SelectionCommands` (enables the selection's buttons in the command row), `TasksView` + `TaskItem` (todo.txt pane), `PartialEraser`
-  (circle cursor, cuts with `Model/StrokeEraser`, one undo step per drag), `PdfExportCommand` (picker, never over the
-  background PDF),
+  page's content and selected; moves a dragged selection's elements to another page), `TasksView` + `TaskItem`
+  (todo.txt pane), `PdfExportCommand` (picker, never over the background PDF),
   `ExplorerView` + `ExplorerItem` (TreeView of the project folder in the SplitView pane, git colors incl. folders,
   sync button; context menus `ItemMenu`/`FolderMenu` and F2/Del/Ctrl+Shift+C on the tree raise `CommandRequested`,
   which `MainWindow` carries out because the open document may be affected; "Im Explorer anzeigen" = WinRT
   `Launcher.LaunchFolderPathAsync` with `ItemsToSelect`, "Als Pfad kopieren" = quoted path like File Explorer;
   a `FolderWatcher` change restarts a 400 ms timer, then the window refreshes the tree).
-- `Services/` – `UndoStack` of `IPageEdit`: `PageEdit` (strokes/pictures removed/added) and `TransformEdit` (the
-  InkCanvas has no undo; strokes are resolved through `XoppPage.CurrentAll` because undo/redo re-adds copies),
-  `ShapeRecognition` (InkAnalyzer result → clean stroke), `PdfBackground`, `PdfRenderer` (Windows.Data.Pdf on the
+- `Services/` – `PdfBackground`, `PdfRenderer` (Windows.Data.Pdf on the
   app's own D3D device, see "Current WinUI ink state"), `PictureRenderer`,
   `ClipboardService` (own format `XournalStudio.Clip` = a `XoppClip`, plus a bitmap for other apps; bitmaps of
   other apps paste as pictures, their ink (Windows ink's format) as strokes; copies are always the exact elements), `Recovery` (recovery copies +
@@ -372,9 +378,10 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
    `InkToolbarPenConfigurationControl` flyout, saved as `AppSettings.Pens`), highlighter (`HighlighterPen`), eraser,
    partial-eraser toggle, select, shapes, ruler, shape recognition, undo/redo, the selection's commands; the app adds
    paste/insert page/delete page in `Extensions` (`Views/AppToolbar` = German texts + presets). Toolbar layout chosen
-   by the user: pens directly in the row. **Stage 2 open:** move the engine (InkTools, SelectionTool/Selection/
-   SelectionDrag, ShapeTool, PartialEraser/StrokeEraser, DragAutoScroll, undo primitives) into InkPages behind an
-   interface for the app's page content; .xopp/PDF/explorer/tasks/sync stay in the app. Stage 3: README/API docs.
+   by the user: pens directly in the row. **Stage 2 done 2026-11-17:** the engine is in InkPages (`InkWorkspace`,
+   `InkPage`); .xopp/PDF/explorer/tasks/sync stay in the app (sandbox: full test and cross-page drag pass).
+   **Next:** toolbar design pass (user 2026-11-17: highlighter colors need a quick choice too; the toolbar "wirkt noch
+   nicht professionell / nicht durchdacht" – propose a concept first). Stage 3: README/API docs.
 
 ## Decided with the user (2026-11-16 morning)
 

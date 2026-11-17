@@ -1,15 +1,12 @@
-using System.Xml.Linq;
-using Windows.Foundation;
 using Windows.UI.Input.Inking;
-using XournalStudio.Model;
 
-namespace XournalStudio.Services;
+namespace InkPages;
 
 /// <summary>A change of pages that can be undone and redone. Recorded after it was made.</summary>
 public interface IPageEdit
 {
     /// <summary>Whether the edit changes <paramref name="page"/> (its history goes with the page).</summary>
-    bool Touches(XoppPage page);
+    bool Touches(InkPage page);
 
     bool IsEmpty { get; }
 
@@ -22,74 +19,83 @@ public interface IPageEdit
 /// Strokes and pictures removed and added (by the InkPresenter or a tool), so <see cref="Undo"/> reverses it and
 /// <see cref="Redo"/> repeats it.
 /// </summary>
-public sealed class PageEdit(XoppPage page) : IPageEdit
+public sealed class PageEdit(InkPage page) : IPageEdit
 {
-    public XoppPage Page { get; } = page;
+    public InkPage Page { get; } = page;
     public List<InkStroke> RemovedStrokes { get; private set; } = new();
     public List<InkStroke> AddedStrokes { get; private set; } = new();
-    public List<XElement> RemovedImages { get; } = new();
-    public List<XElement> AddedImages { get; } = new();
-    private List<ImagePlace> removedPlaces = new();
+    public List<object> RemovedPictures { get; } = new();
+    public List<object> AddedPictures { get; } = new();
+    private List<object> removals = new(); // the page's tokens of removed pictures, in order
 
     /// <summary>Removes pictures from the page as part of this edit (undo puts them back at their place).</summary>
-    public void RemoveImages(IReadOnlyCollection<XElement> images)
+    public void RemovePictures(IReadOnlyCollection<object> pictures)
     {
-        removedPlaces.AddRange(Page.RemoveImages(images));
-        RemovedImages.AddRange(images);
+        removals.Add(Page.RemovePictures(pictures));
+        RemovedPictures.AddRange(pictures);
     }
 
-    public bool IsEmpty => RemovedStrokes.Count + AddedStrokes.Count + RemovedImages.Count + AddedImages.Count == 0;
+    public bool IsEmpty => RemovedStrokes.Count + AddedStrokes.Count + RemovedPictures.Count + AddedPictures.Count == 0;
 
-    public bool Touches(XoppPage page) => page == Page;
+    public bool Touches(InkPage page) => page == Page;
 
     public void Undo()
     {
         RemoveStrokes(Page, AddedStrokes);
         RemovedStrokes = RestoreStrokes(Page, RemovedStrokes);
-        Page.RemoveImages(AddedImages);
-        Page.RestoreImages(removedPlaces);
+        if (AddedPictures.Count > 0)
+        {
+            Page.RemovePictures(AddedPictures);
+        }
+        for (int i = removals.Count - 1; i >= 0; i--)
+        {
+            Page.RestorePictures(removals[i]);
+        }
     }
 
     public void Redo()
     {
         RemoveStrokes(Page, RemovedStrokes);
         AddedStrokes = RestoreStrokes(Page, AddedStrokes);
-        removedPlaces = Page.RemoveImages(RemovedImages);
-        Page.AddImages(AddedImages);
+        removals = RemovedPictures.Count > 0 ? [Page.RemovePictures(RemovedPictures)] : [];
+        if (AddedPictures.Count > 0)
+        {
+            Page.AddPictures(AddedPictures);
+        }
     }
 
     /// <summary>Removes strokes (or the copies undo/redo put in their place) from the page's ink.</summary>
-    public static void RemoveStrokes(XoppPage page, IReadOnlyCollection<InkStroke> strokes)
+    public static void RemoveStrokes(InkPage page, IReadOnlyCollection<InkStroke> strokes)
     {
         if (strokes.Count == 0)
         {
             return;
         }
         SelectOnly(page, strokes);
-        page.Ink!.DeleteSelected();
+        page.Ink.StrokeContainer.DeleteSelected();
     }
 
     /// <summary>Marks exactly these strokes (as they are on the page now) as selected; returns them.</summary>
-    public static List<InkStroke> SelectOnly(XoppPage page, IEnumerable<InkStroke> strokes)
+    public static List<InkStroke> SelectOnly(InkPage page, IEnumerable<InkStroke> strokes)
     {
-        foreach (var s in page.Ink!.GetStrokes())
+        foreach (var s in page.Ink.StrokeContainer.GetStrokes())
         {
             s.Selected = false;
         }
-        var current = page.CurrentAll(strokes).OfType<InkStroke>().ToList();
+        var current = page.CurrentStrokes(strokes).OfType<InkStroke>().ToList();
         current.ForEach(s => s.Selected = true);
         return current;
     }
 
     /// <summary>Puts removed strokes back: a removed stroke cannot be added again, its copy takes its place (also in the file).</summary>
-    public static List<InkStroke> RestoreStrokes(XoppPage page, List<InkStroke> strokes)
+    public static List<InkStroke> RestoreStrokes(InkPage page, List<InkStroke> strokes)
     {
         var copies = new List<InkStroke>(strokes.Count);
         foreach (var s in strokes)
         {
             var copy = s.Clone();
-            page.Ink!.AddStroke(copy);
-            page.TransferStrokeIdentity(s.Id, copy.Id);
+            page.Ink.StrokeContainer.AddStroke(copy);
+            page.StrokeReplaced(s.Id, copy.Id);
             copies.Add(copy);
         }
         return copies;
@@ -100,13 +106,14 @@ public sealed class PageEdit(XoppPage page) : IPageEdit
 /// Strokes and pictures moved/scaled (a selection dragged or resized): undo and redo put back the exact placement
 /// before and after (no inverse transform, so the file gets back exactly its numbers).
 /// </summary>
-public sealed class TransformEdit(XoppPage page, Placement before, Placement after) : IPageEdit
+public sealed class TransformEdit(InkPage page, object before, object after) : IPageEdit
 {
-    public XoppPage Page { get; } = page;
+    public InkPage Page { get; } = page;
 
-    public bool IsEmpty => before.Strokes.Count + before.Images.Count == 0;
+    
+    public bool IsEmpty => false; // made only for a transform other than identity
 
-    public bool Touches(XoppPage page) => page == Page;
+    public bool Touches(InkPage page) => page == Page;
 
     public void Undo() => Page.RestorePlacement(before);
 
@@ -118,7 +125,7 @@ public sealed class CombinedEdit(IReadOnlyList<IPageEdit> edits) : IPageEdit
 {
     public bool IsEmpty => edits.All(e => e.IsEmpty);
 
-    public bool Touches(XoppPage page) => edits.Any(e => e.Touches(page));
+    public bool Touches(InkPage page) => edits.Any(e => e.Touches(page));
 
     public void Undo()
     {
@@ -168,7 +175,7 @@ public sealed class UndoStack
     }
 
     /// <summary>Forgets the history of a deleted page.</summary>
-    public void Forget(XoppPage page)
+    public void Forget(InkPage page)
     {
         Filter(undo, page);
         Filter(redo, page);
@@ -195,7 +202,7 @@ public sealed class UndoStack
         }
     }
 
-    private static void Filter(Stack<IPageEdit> stack, XoppPage page)
+    private static void Filter(Stack<IPageEdit> stack, InkPage page)
     {
         var kept = stack.Where(e => !e.Touches(page)).Reverse().ToList();
         stack.Clear();

@@ -17,6 +17,8 @@
   <ItemGroup>
     <!-- The file format code has no UI dependencies beyond the ink types. -->
     <Compile Include="..\XournalStudio\Model\*.cs" Link="Model\%(Filename)%(Extension)" />
+    <!-- The library's geometry (partial eraser, shapes, ink widths) and the tool settings. -->
+    <Compile Include="..\InkPages\Model\*.cs" Link="InkPages\%(Filename)%(Extension)" />
     <!-- Explorer logic without UI. -->
     <Compile Include="..\XournalStudio\Services\ProjectTree.cs" Link="Services\ProjectTree.cs" />
     <Compile Include="..\XournalStudio\Services\GitSync.cs" Link="Services\GitSync.cs" />
@@ -30,6 +32,9 @@
     <Compile Include="..\XournalStudio\Services\TaskFile.cs" Link="Services\TaskFile.cs" />
     <!-- PDF export. -->
     <Compile Include="..\XournalStudio\Services\PdfExport.cs" Link="Services\PdfExport.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Using Include="InkPages" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="LibGit2Sharp" Version="0.32.0" />

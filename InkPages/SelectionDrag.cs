@@ -2,10 +2,8 @@ using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Input;
 using Windows.Foundation;
-using XournalStudio.Model;
-using XournalStudio.Services;
 
-namespace XournalStudio.Views;
+namespace InkPages;
 
 /// <summary>
 /// Moving and scaling the selection with the pen, as XAML pointer input: an app interaction, not ink – Microsoft's
@@ -17,7 +15,7 @@ namespace XournalStudio.Views;
 /// </summary>
 public sealed class SelectionDrag(SelectionTool selection, Action<bool> takeOver)
 {
-    private PageView? page;        // the drag's page (a hand-over moves it to another page)
+    private InkPage? page;        // the drag's page (a hand-over moves it to another page)
     private UIElement? captured;   // the page surface holding the pen
     private uint pointer;
 
@@ -25,7 +23,7 @@ public sealed class SelectionDrag(SelectionTool selection, Action<bool> takeOver
 
     public bool IsRunning => captured != null;
 
-    public void Attach(PageView view)
+    public void Attach(InkPage view)
     {
         var surface = view.Surface;
         surface.PointerMoved += (_, e) => Logged("moved", () => OnMoved(view, e));
@@ -55,7 +53,7 @@ public sealed class SelectionDrag(SelectionTool selection, Action<bool> takeOver
     }
 
     /// <summary>The drag went on to another page (SelectionTool.DragChangedPage): positions are taken there.</summary>
-    public void FollowPage(PageView view)
+    public void FollowPage(InkPage view)
     {
         if (IsRunning)
         {
@@ -82,7 +80,7 @@ public sealed class SelectionDrag(SelectionTool selection, Action<bool> takeOver
 
     private static bool IsPen(PointerRoutedEventArgs e) => e.Pointer.PointerDeviceType == PointerDeviceType.Pen;
 
-    private void OnMoved(PageView view, PointerRoutedEventArgs e)
+    private void OnMoved(InkPage view, PointerRoutedEventArgs e)
     {
         if (Owns(e))
         {
@@ -105,7 +103,7 @@ public sealed class SelectionDrag(SelectionTool selection, Action<bool> takeOver
         }
     }
 
-    private void OnPressed(PageView view, PointerRoutedEventArgs e)
+    private void OnPressed(InkPage view, PointerRoutedEventArgs e)
     {
         if (IsRunning || !IsPen(e))
         {
@@ -154,7 +152,7 @@ public sealed class SelectionDrag(SelectionTool selection, Action<bool> takeOver
         }
         catch (Exception ex)
         {
-            DebugLog.Write($"selection drag {name}", ex);
+            InkLog.Write($"selection drag {name}", ex);
             throw;
         }
     }

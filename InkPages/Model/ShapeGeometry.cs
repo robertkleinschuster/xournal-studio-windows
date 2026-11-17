@@ -2,7 +2,7 @@ using System.Numerics;
 using Windows.Foundation;
 using Windows.UI.Input.Inking;
 
-namespace XournalStudio.Model;
+namespace InkPages;
 
 public enum ShapeKind
 {

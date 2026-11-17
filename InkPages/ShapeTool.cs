@@ -1,22 +1,20 @@
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
 using Windows.Foundation;
-using XournalStudio.Model;
-using XournalStudio.Services;
 using InkDrawingAttributes = Windows.UI.Input.Inking.InkDrawingAttributes;
 
-namespace XournalStudio.Views;
+namespace InkPages;
 
 /// <summary>The shape tool: line, arrow, rectangle or ellipse dragged out, previewed, then added as one stroke.</summary>
 public sealed class ShapeTool(UndoStack undo, Func<InkDrawingAttributes> pen)
 {
-    private PageView? view;
+    private InkPage? view;
     private Point start;
     private Polyline? preview;
 
     public ShapeKind Shape { get; set; }
 
-    public void Begin(PageView page, Point p)
+    public void Begin(InkPage page, Point p)
     {
         view = page;
         start = p;
@@ -44,7 +42,7 @@ public sealed class ShapeTool(UndoStack undo, Func<InkDrawingAttributes> pen)
 
     public void End(Point end)
     {
-        var page = view!.Page;
+        var page = view!;
         Cancel();
         if (Math.Abs(end.X - start.X) + Math.Abs(end.Y - start.Y) < 2)
         {
@@ -52,7 +50,7 @@ public sealed class ShapeTool(UndoStack undo, Func<InkDrawingAttributes> pen)
         }
         var attributes = pen();
         var stroke = ShapeGeometry.CreateStroke(ShapeGeometry.Outline(Shape, start, end, attributes.Size.Width), attributes);
-        page.Ink!.AddStroke(stroke);
+        page.Ink.StrokeContainer.AddStroke(stroke);
         var edit = new PageEdit(page);
         edit.AddedStrokes.Add(stroke);
         undo.Push(edit);

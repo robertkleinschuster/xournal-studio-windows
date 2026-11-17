@@ -1,12 +1,10 @@
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
 using Windows.Foundation;
-using XournalStudio.Model;
-using XournalStudio.Services;
 using InkStroke = Windows.UI.Input.Inking.InkStroke;
 using XamlCanvas = Microsoft.UI.Xaml.Controls.Canvas;
 
-namespace XournalStudio.Views;
+namespace InkPages;
 
 /// <summary>
 /// The partial eraser (user, 2026-11-16; Windows ink only erases whole strokes): erases exactly the circle shown at the
@@ -15,9 +13,9 @@ namespace XournalStudio.Views;
 /// </summary>
 public sealed class PartialEraser(UndoStack undo, Action<IReadOnlyCollection<InkStroke>> erased)
 {
-    private PageView? cursorPage;
+    private InkPage? cursorPage;
     private Ellipse? cursor;
-    private PageView? page;
+    private InkPage? page;
     private PageEdit? edit;
     private Point last;
 
@@ -25,7 +23,7 @@ public sealed class PartialEraser(UndoStack undo, Action<IReadOnlyCollection<Ink
     public double Radius { get; set; } = 4;
 
     /// <summary>Shows the circle at <paramref name="p"/> on <paramref name="view"/>.</summary>
-    public void Hover(PageView view, Point p)
+    public void Hover(InkPage view, Point p)
     {
         if (cursorPage != view)
         {
@@ -48,10 +46,10 @@ public sealed class PartialEraser(UndoStack undo, Action<IReadOnlyCollection<Ink
         }
     }
 
-    public void Begin(PageView view, Point p)
+    public void Begin(InkPage view, Point p)
     {
         page = view;
-        edit = new PageEdit(view.Page);
+        edit = new PageEdit(view);
         last = p;
         Hover(view, p);
         EraseAt([p]);
@@ -100,8 +98,7 @@ public sealed class PartialEraser(UndoStack undo, Action<IReadOnlyCollection<Ink
         {
             return;
         }
-        var xopp = page!.Page;
-        var ink = xopp.Ink!;
+        var ink = page!.Ink.StrokeContainer;
         double left = centers.Min(p => p.X) - Radius, right = centers.Max(p => p.X) + Radius;
         double top = centers.Min(p => p.Y) - Radius, bottom = centers.Max(p => p.Y) + Radius;
         var sweepBounds = new Rect(left, top, right - left, bottom - top);
@@ -122,7 +119,7 @@ public sealed class PartialEraser(UndoStack undo, Action<IReadOnlyCollection<Ink
                 var at = System.Numerics.Vector2.Transform(new((float)p.Position.X, (float)p.Position.Y), transform);
                 return new InkSample(new Point(at.X, at.Y), p.Pressure);
             }).ToList();
-            var halfWidth = (InkSample s) => StrokeConverter.DrawnWidth(attributes, s.Pressure) / 2;
+            var halfWidth = (InkSample s) => InkStrokes.DrawnWidth(attributes, s.Pressure) / 2;
             List<List<InkSample>> pieces = [samples];
             bool touched = false;
             foreach (var center in centers)
@@ -160,7 +157,7 @@ public sealed class PartialEraser(UndoStack undo, Action<IReadOnlyCollection<Ink
             }
             foreach (var piece in pieces)
             {
-                var rest = StrokeConverter.FromSamples(piece, attributes);
+                var rest = InkStrokes.FromSamples(piece, attributes);
                 ink.AddStroke(rest);
                 edit.AddedStrokes.Add(rest);
             }

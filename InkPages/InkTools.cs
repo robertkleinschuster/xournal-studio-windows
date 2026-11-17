@@ -1,10 +1,8 @@
 using CorePointerEventArgs = Windows.UI.Core.PointerEventArgs;
 using Windows.Foundation;
-using XournalStudio.Model;
-using XournalStudio.Services;
 using InkDrawingAttributes = Windows.UI.Input.Inking.InkDrawingAttributes;
 
-namespace XournalStudio.Views;
+namespace InkPages;
 
 public enum InkTool
 {
@@ -26,7 +24,7 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
 {
     // The drag in progress: its tool, its page and its pointer – a gesture belongs to its pointer, another one (a palm,
     // a finger beside the pen) neither moves, finishes nor cancels it.
-    private sealed record Running(InkTool Tool, PageView Page, uint Pointer);
+    private sealed record Running(InkTool Tool, InkPage Page, uint Pointer);
 
     private InkTool tool;
     private Running? running;
@@ -61,7 +59,7 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
     public Action TakeEraserEnd { get; set; } = () => { };
 
     /// <summary>The dragged selection went on to another page (SelectionTool.DragChangedPage): the drag follows it.</summary>
-    public void FollowDrag(PageView page, Point p)
+    public void FollowDrag(InkPage page, Point p)
     {
         Drag?.FollowPage(page); // a drag by XAML pointer input (it acts only while it runs)
         if (running is { Tool: InkTool.Select } r)
@@ -73,7 +71,7 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
     }
 
     // The page of a XAML selection drag (the selection's page).
-    private PageView? inkSelectionPage() => Selection.Current?.View;
+    private InkPage? inkSelectionPage() => Selection.Current?.Page;
 
     /// <summary>Moving and scaling the selection as XAML pointer input (set by the window; see SelectionDrag).</summary>
     public SelectionDrag? Drag { get; set; }
@@ -99,7 +97,7 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
     }
 
     /// <summary>Handles the presenter's native unprocessed input stream (once per page view).</summary>
-    public void Attach(PageView view)
+    public void Attach(InkPage view)
     {
         Drag?.Attach(view);
         var input = view.Ink.UnprocessedInput;
@@ -136,13 +134,13 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
         }
         catch (Exception ex)
         {
-            DebugLog.Write($"unprocessed {name}", ex);
+            InkLog.Write($"unprocessed {name}", ex);
             throw;
         }
     }
 
     // The running gesture is on this page and of this pointer.
-    private bool Owns(PageView view, CorePointerEventArgs e) =>
+    private bool Owns(InkPage view, CorePointerEventArgs e) =>
         running is { } r && r.Page == view && r.Pointer == e.CurrentPoint.PointerId;
 
     // The running gesture's pen, on whichever page it is now (a drag may cross pages; see LocalPosition).
@@ -159,7 +157,7 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
         return true;
     }
 
-    private void OnPressed(PageView view, CorePointerEventArgs e)
+    private void OnPressed(InkPage view, CorePointerEventArgs e)
     {
         var point = e.CurrentPoint;
         if (running != null || IsTouch(point))
@@ -208,7 +206,7 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
         Start(active, view, point.PointerId, e);
     }
 
-    private void OnMoved(PageView view, CorePointerEventArgs e)
+    private void OnMoved(InkPage view, CorePointerEventArgs e)
     {
         if (running == null)
         {
@@ -244,7 +242,7 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
         e.Handled = true;
     }
 
-    private void MoveTo(PageView view, Windows.UI.Input.PointerPoint point) => MoveAlong([LocalPosition(view, point)]);
+    private void MoveTo(InkPage view, Windows.UI.Input.PointerPoint point) => MoveAlong([LocalPosition(view, point)]);
 
     // The running gesture follows the pen along these points (its page's coordinates, oldest first).
     private void MoveAlong(List<Point> path)
@@ -285,7 +283,7 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
     // No gesture: hovering shows the eraser's circle (and the tip hovering gives the pen back to the ink). Nothing begins
     // here – every gesture begins with a press on the page (the eraser end too: its first touch, taken by Windows ink,
     // hands it over; the next touch cuts – see PagesController).
-    private void OnHover(PageView view, CorePointerEventArgs e)
+    private void OnHover(InkPage view, CorePointerEventArgs e)
     {
         var point = e.CurrentPoint;
         if (IsTouch(point))
@@ -325,13 +323,13 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
         }
     }
 
-    private void Start(InkTool active, PageView view, uint pointerId, CorePointerEventArgs e)
+    private void Start(InkTool active, InkPage view, uint pointerId, CorePointerEventArgs e)
     {
         running = new Running(active, view, pointerId);
         e.Handled = true;
     }
 
-    private void OnReleased(PageView view, CorePointerEventArgs e)
+    private void OnReleased(InkPage view, CorePointerEventArgs e)
     {
         var point = e.CurrentPoint;
         if (!OwnsPointer(e))
@@ -370,7 +368,7 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
     /// taken-over eraser end stays with the app until the tip hovers again; only a newly shown document gives it back at
     /// once (PagesController.Show).
     /// </summary>
-    public void CancelGestureOn(Func<PageView, bool> affected)
+    public void CancelGestureOn(Func<InkPage, bool> affected)
     {
         if (Drag is { IsRunning: true } && inkSelectionPage() is { } dragPage && affected(dragPage))
         {
@@ -424,7 +422,7 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
     // the page's overlay, which share the InkCanvas' place in the sheet. No transform (sandbox log 2026-11-16).
     // Over another page than the running gesture's (a drag crossing pages), its presenter reports in its own coordinates:
     // converted to the gesture's page (pages differ by a translation).
-    private Point LocalPosition(PageView view, Windows.UI.Input.PointerPoint point) =>
+    private Point LocalPosition(InkPage view, Windows.UI.Input.PointerPoint point) =>
         running is { } r && r.Page != view
             ? view.InkCanvas.TransformToVisual(r.Page.InkCanvas).TransformPoint(point.Position)
             : point.Position;

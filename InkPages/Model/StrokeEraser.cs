@@ -1,6 +1,6 @@
 using Windows.Foundation;
 
-namespace XournalStudio.Model;
+namespace InkPages;
 
 /// <summary>A point of a stroke with its pen pressure (page points).</summary>
 public readonly record struct InkSample(Point Position, float Pressure);

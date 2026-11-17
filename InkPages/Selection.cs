@@ -1,16 +1,12 @@
 using System.Numerics;
-using System.Xml.Linq;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
-using Image = Microsoft.UI.Xaml.Controls.Image;
 using Windows.Foundation;
-using XournalStudio.Model;
-using XournalStudio.Services;
 using InkStroke = Windows.UI.Input.Inking.InkStroke;
 using XamlCanvas = Microsoft.UI.Xaml.Controls.Canvas;
 
-namespace XournalStudio.Views;
+namespace InkPages;
 
 /// <summary>
 /// Selected strokes and pictures of one page – after selecting, pasting or duplicating – with a dashed frame and
@@ -27,41 +23,40 @@ public sealed class Selection
     private readonly Rectangle frame;
     private readonly Rectangle[] handles;
     // The strokes' transforms when the drag began (null: no drag); the page gets them too, for snapshots
-    // (XoppPage.BeginPreview).
+    // (InkPage.BeginStrokePreview).
     private Dictionary<InkStroke, Matrix3x2>? starts;
-    private List<(Image Shown, XElement Element)>? shownPictures; // found once per drag
+    private Action<Matrix3x2>? picturePreview; // started once per drag
     // A move slides the frame and handles by a render transform (no layout pass); a scale places them anew.
     private readonly TranslateTransform slide = new();
     private Matrix3x2 live = Matrix3x2.Identity;
 
-    public Selection(PageView view, List<InkStroke> strokes, List<XElement> images, Rect? area)
+    public Selection(InkPage page, List<InkStroke> strokes, List<object> pictures, Rect? area)
     {
-        View = view;
+        Page = page;
         // Each stroke and picture once: its element is moved once. (A selection's strokes are of one page's ink, where ids
         // are unique.)
         Strokes = strokes.DistinctBy(s => s.Id).ToList();
-        Images = images.Distinct().ToList();
+        Pictures = pictures.Distinct().ToList();
         Area = area;
         Bounds = area ?? ContentBounds();
         frame = new Rectangle { Stroke = AccentBrush, StrokeThickness = 1, StrokeDashArray = [4, 2], RenderTransform = slide };
-        view.Overlay.Children.Add(frame);
+        page.Overlay.Children.Add(frame);
         handles = HasContent
             ? Enumerable.Range(0, 4).Select(_ => new Rectangle { Width = HandleSize, Height = HandleSize, Fill = AccentBrush, RenderTransform = slide }).ToArray()
             : [];
         foreach (var handle in handles)
         {
-            view.Overlay.Children.Add(handle);
+            page.Overlay.Children.Add(handle);
         }
         PlaceFeedback(Bounds);
     }
 
-    public PageView View { get; }
-
-    public XoppPage Page => View.Page;
+    public InkPage Page { get; }
 
     public List<InkStroke> Strokes { get; }
 
-    public List<XElement> Images { get; }
+    /// <summary>The app's pictures (see <see cref="InkPage.Pictures"/>).</summary>
+    public List<object> Pictures { get; }
 
     /// <summary>The rectangle drawn on a PDF page (copying renders it); null once the content was moved.</summary>
     public Rect? Area { get; private set; }
@@ -69,7 +64,7 @@ public sealed class Selection
     /// <summary>The area, otherwise what the strokes and pictures cover (page points).</summary>
     public Rect Bounds { get; private set; }
 
-    public bool HasContent => Strokes.Count + Images.Count > 0;
+    public bool HasContent => Strokes.Count + Pictures.Count > 0;
 
     public static Brush AccentBrush => (Brush)Application.Current.Resources["AccentFillColorDefaultBrush"];
 
@@ -112,18 +107,17 @@ public sealed class Selection
             foreach (var stroke in Strokes)
             {
                 starts[stroke] = stroke.PointTransform; // (a stroke listed twice is taken once)
-                Page.BeginPreview(stroke, stroke.PointTransform);
+                Page.BeginStrokePreview(stroke, stroke.PointTransform);
             }
         }
         foreach (var (stroke, start) in starts)
         {
             stroke.PointTransform = start * m;
         }
-        shownPictures ??= Images.Select(i => (Shown: View.FindPicture(i), Element: i)).Where(x => x.Shown != null)
-            .Select(x => (x.Shown!, x.Element)).ToList();
-        foreach (var (shown, element) in shownPictures)
+        if (Pictures.Count > 0)
         {
-            PageView.Place(shown, element, m);
+            picturePreview ??= Page.PreviewPictures(Pictures);
+            picturePreview(m);
         }
         live = m;
         if (m.M11 == 1 && m.M22 == 1 && m.M12 == 0 && m.M21 == 0)
@@ -138,7 +132,7 @@ public sealed class Selection
         else
         {
             slide.X = slide.Y = 0;
-            PlaceFeedback(XoppImage.Transform(Bounds, m));
+            PlaceFeedback(TransformBounds(Bounds, m));
         }
     }
 
@@ -155,14 +149,17 @@ public sealed class Selection
         // A transform other than identity comes only from Preview, which set them (keys stay the same objects: CsWinRT
         // keeps one wrapper per ink stroke).
         var begun = starts!;
-        var before = Page.CapturePlacement(Strokes, Images, s => begun[s]);
+        var before = Page.CapturePlacement(Strokes, Pictures, s => begun[s]);
         EndPreview();
         foreach (var stroke in Strokes)
         {
-            Page.RecordTransform(stroke, m); // the ink shows it already
+            Page.StrokeTransformed(stroke, m); // the ink shows it already
         }
-        Page.TransformImages(Images, m); // pictures are redrawn at the new place
-        var edit = new TransformEdit(Page, before, Page.CapturePlacement(Strokes, Images));
+        if (Pictures.Count > 0)
+        {
+            Page.TransformPictures(Pictures, m); // pictures are redrawn at the new place
+        }
+        var edit = new TransformEdit(Page, before, Page.CapturePlacement(Strokes, Pictures));
         Area = null;
         Bounds = ContentBounds();
         PlaceFeedback(Bounds);
@@ -184,19 +181,19 @@ public sealed class Selection
     {
         if (starts != null)
         {
-            Page.EndPreview(starts.Keys);
+            Page.EndStrokePreview(starts.Keys);
             starts = null;
         }
-        shownPictures = null;
+        picturePreview = null;
         slide.X = slide.Y = 0;
     }
 
     public void Remove()
     {
-        View.Overlay.Children.Remove(frame);
+        Page.Overlay.Children.Remove(frame);
         foreach (var handle in handles)
         {
-            View.Overlay.Children.Remove(handle);
+            Page.Overlay.Children.Remove(handle);
         }
     }
 
@@ -207,9 +204,9 @@ public sealed class Selection
         {
             bounds.Union(stroke.BoundingRect);
         }
-        foreach (var image in Images)
+        foreach (var picture in Pictures)
         {
-            bounds.Union(XoppImage.GetBounds(image));
+            bounds.Union(Page.PictureBounds(picture));
         }
         return bounds;
     }
@@ -239,6 +236,13 @@ public sealed class Selection
         XamlCanvas.SetTop(element, r.Y);
         element.Width = r.Width;
         element.Height = r.Height;
+    }
+
+    /// <summary>A rectangle moved/scaled by <paramref name="m"/> (the selection's transforms: no rotation), in double.</summary>
+    public static Rect TransformBounds(Rect r, Matrix3x2 m)
+    {
+        Point Map(double x, double y) => new(x * m.M11 + y * m.M21 + m.M31, x * m.M12 + y * m.M22 + m.M32);
+        return new Rect(Map(r.Left, r.Top), Map(r.Right, r.Bottom));
     }
 
     private static Rect Inflate(Rect r, double by) => new(r.X - by, r.Y - by, r.Width + 2 * by, r.Height + 2 * by);

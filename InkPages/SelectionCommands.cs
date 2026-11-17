@@ -1,6 +1,6 @@
 using Microsoft.UI.Xaml.Controls;
 
-namespace XournalStudio.Views;
+namespace InkPages;
 
 /// <summary>
 /// The selection's commands (Ausschneiden, Kopieren, Duplizieren, Löschen) in the command row: always in their place

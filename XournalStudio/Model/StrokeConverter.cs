@@ -5,6 +5,7 @@ using System.Xml.Linq;
 using Windows.Foundation;
 using Windows.UI;
 using Windows.UI.Input.Inking;
+using InkPages;
 
 namespace XournalStudio.Model;
 
@@ -14,22 +15,9 @@ namespace XournalStudio.Model;
 /// </summary>
 public static class StrokeConverter
 {
-    // Xournal stores per-segment widths (tool width * pressure). Windows ink draws a stroke of size s at
-    // pressure p about s * (0.25 + 1.5 p) wide (measured), i.e. exactly s at p = 0.5.
-    private static double WidthFactor(double pressure) => 0.25 + 1.5 * pressure;
-
-    /// <summary>The width Windows ink draws a stroke with at a pressure (measured, see WidthFactor).</summary>
-    public static double DrawnWidth(InkDrawingAttributes attributes, float pressure) =>
-        attributes.IgnorePressure ? attributes.Size.Width : attributes.Size.Width * WidthFactor(pressure);
-
-    /// <summary>A stroke through these samples with these attributes (what the partial eraser leaves of a stroke).</summary>
-    public static InkStroke FromSamples(IEnumerable<InkSample> samples, InkDrawingAttributes attributes)
-    {
-        Builder.SetDefaultDrawingAttributes(attributes);
-        var stroke = Builder.CreateStrokeFromInkPoints(samples.Select(s => new InkPoint(s.Position, s.Pressure)), Matrix3x2.Identity);
-        stroke.DrawingAttributes = attributes;
-        return stroke;
-    }
+    // Xournal stores per-segment widths (tool width * pressure); Windows ink draws a stroke wider with pressure
+    // (InkStrokes.WidthFactor, measured): exactly its size at p = 0.5.
+    private static double WidthFactor(double pressure) => InkStrokes.WidthFactor(pressure);
 
     private static double PressureFor(double widthFactor) => (widthFactor - 0.25) / 1.5;
 

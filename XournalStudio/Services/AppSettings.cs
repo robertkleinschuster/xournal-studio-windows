@@ -29,9 +29,9 @@ public sealed class AppSettings
 
     public double HighlighterStrokeWidth { get; set; } = 8.5;
 
-    public Model.ShapeKind Shape { get; set; }
+    public InkPages.ShapeKind Shape { get; set; }
 
-    public Model.SelectMode SelectMode { get; set; }
+    public InkPages.SelectMode SelectMode { get; set; }
 
     /// <summary>The eraser erases partially (a circle of <see cref="EraserRadius"/> points) instead of whole strokes.</summary>
     public bool PartialErasing { get; set; }

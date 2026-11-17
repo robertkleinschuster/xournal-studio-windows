@@ -47,9 +47,12 @@ public sealed class EditCommands(
         var edit = new PageEdit(page);
         // Only what is still on the page (the eraser may have taken a selected stroke meanwhile).
         edit.RemovedStrokes.AddRange(PageEdit.SelectOnly(page, current.Strokes));
-        page.Ink!.DeleteSelected();
-        var images = current.Images.Where(i => i.Parent != null).ToList();
-        edit.RemoveImages(images);
+        page.Ink.StrokeContainer.DeleteSelected();
+        var images = PicturesOf(current);
+        if (images.Count > 0)
+        {
+            edit.RemovePictures(images);
+        }
         selection.Clear();
         undo.Push(edit); // (an empty edit – everything selected was erased meanwhile – is not recorded)
         return !edit.IsEmpty;
@@ -75,12 +78,13 @@ public sealed class EditCommands(
             // Taken now: the selection may be moved while the area renders.
             var bounds = current.Bounds;
             var area = current.Area;
-            var elements = current.Images.Select(i => new XElement(i))
-                .Concat(current.Strokes.Select(current.Page.ElementOf)).ToList();
+            var page = (PageView)current.Page;
+            var elements = current.Pictures.Cast<XElement>().Select(i => new XElement(i))
+                .Concat(current.Strokes.Select(page.Page.ElementOf)).ToList();
             byte[]? bitmap = null;
             if (area is { } a)
             {
-                var (png, width, height) = await current.View.Pdf!.RenderAreaAsync(current.Page.PdfPageIndex, a, PdfAreaPixelsPerPoint);
+                var (png, width, height) = await page.Pdf!.RenderAreaAsync(page.Page.PdfPageIndex, a, PdfAreaPixelsPerPoint);
                 elements.Insert(0, XoppImage.Create(a, png, width, height)); // below the notes on it
                 bitmap = png;
             }
@@ -174,10 +178,11 @@ public sealed class EditCommands(
         var offset = Matrix3x2.CreateTranslation((float)Grid, (float)Grid);
         try
         {
-            var elements = current.Images.Select(i => XoppClip.Transformed(i, offset))
-                .Concat(current.Strokes.Select(s => XoppClip.Transformed(current.Page.ElementOf(s), offset)))
+            var page = (PageView)current.Page;
+            var elements = current.Pictures.Cast<XElement>().Select(i => XoppClip.Transformed(i, offset))
+                .Concat(current.Strokes.Select(s => XoppClip.Transformed(page.Page.ElementOf(s), offset)))
                 .ToList();
-            Add(current.View, elements, "duplicate");
+            Add(page, elements, "duplicate");
         }
         catch (Exception e)
         {
@@ -194,7 +199,7 @@ public sealed class EditCommands(
             return;
         }
         activateSelectTool();
-        selection.Select(view, view.Page.Ink!.GetStrokes().ToList(), view.Page.Images.ToList());
+        selection.Select(view, view.Ink.StrokeContainer.GetStrokes().ToList(), view.Pictures.ToList());
     }
 
     /// <summary>
@@ -203,28 +208,31 @@ public sealed class EditCommands(
     /// Returns what was added and the edit of both pages (not recorded: the drag records itself), or null when nothing
     /// moved (the user was told) – all or nothing.
     /// </summary>
-    public (List<InkStroke> Strokes, List<XElement> Images, IPageEdit Edit)? TransferToPage(Selection current,
-        PageView target, Matrix3x2 m)
+    public (List<InkStroke> Strokes, List<object> Pictures, IPageEdit Edit)? TransferToPage(Selection current,
+        InkPage target, Matrix3x2 m)
     {
         List<InkStroke> strokes = [];
         try
         {
             current.Revert(); // the elements as before the drag (m includes the move)
-            var source = current.Page;
+            var source = (PageView)current.Page;
             strokes = PageEdit.SelectOnly(source, current.Strokes); // what is still on the page (now marked)
-            var images = current.Images.Where(i => i.Parent != null).ToList();
-            var elements = images.Select(i => XoppClip.Transformed(i, m))
-                .Concat(strokes.Select(s => XoppClip.Transformed(source.ElementOf(s), m))).ToList();
-            if (AddElements(target, elements, "move to page", allOrNothing: true) is not { } adding)
+            var images = PicturesOf(current);
+            var elements = images.Cast<XElement>().Select(i => XoppClip.Transformed(i, m))
+                .Concat(strokes.Select(s => XoppClip.Transformed(source.Page.ElementOf(s), m))).ToList();
+            if (AddElements((PageView)target, elements, "move to page", allOrNothing: true) is not { } adding)
             {
                 strokes.ForEach(s => s.Selected = false);
                 return null; // nothing could be added (said): the content stays where it was
             }
             var removal = new PageEdit(source);
             removal.RemovedStrokes.AddRange(strokes);
-            source.Ink!.DeleteSelected(); // the strokes marked above
-            removal.RemoveImages(images);
-            return (adding.AddedStrokes.ToList(), adding.AddedImages.ToList(), new CombinedEdit([removal, adding]));
+            source.Ink.StrokeContainer.DeleteSelected(); // the strokes marked above
+            if (images.Count > 0)
+            {
+                removal.RemovePictures(images);
+            }
+            return (adding.AddedStrokes.ToList(), adding.AddedPictures.ToList(), new CombinedEdit([removal, adding]));
         }
         catch (Exception e)
         {
@@ -240,7 +248,7 @@ public sealed class EditCommands(
         if (AddElements(view, elements, operation) is { } edit)
         {
             undo.Push(edit);
-            SelectAdded(view, edit.AddedStrokes.ToList(), edit.AddedImages.ToList(), operation);
+            SelectAdded(view, edit.AddedStrokes.ToList(), edit.AddedPictures.ToList(), operation);
         }
     }
 
@@ -250,7 +258,7 @@ public sealed class EditCommands(
     private PageEdit? AddElements(PageView view, List<XElement> elements, string operation, bool allOrNothing = false)
     {
         var page = view.Page;
-        var edit = new PageEdit(page);
+        var edit = new PageEdit(view);
         int skipped = 0;
         try
         {
@@ -269,21 +277,21 @@ public sealed class EditCommands(
                 }
                 else if (XoppImage.IsImage(e))
                 {
-                    edit.AddedImages.Add(e); // recorded before attached: a take-back finds it
+                    edit.AddedPictures.Add(e); // recorded before attached: a take-back finds it
                 }
                 else
                 {
                     skipped++; // an element this app does not place
                 }
             }
-            page.AddImages(edit.AddedImages);
+            page.AddImages(edit.AddedPictures.Cast<XElement>().ToList());
         }
         catch
         {
             TakeBack(edit); // nothing half added; the caller reports the original error
             throw;
         }
-        bool nothing = edit.AddedStrokes.Count == 0 && edit.AddedImages.Count == 0;
+        bool nothing = edit.AddedStrokes.Count == 0 && edit.AddedPictures.Count == 0;
         if (skipped > 0 || nothing)
         {
             // Said, not silently dropped: strokes that cannot be ink (drawn from a file only) and elements this app
@@ -311,7 +319,7 @@ public sealed class EditCommands(
 
     // Selects what was just added (and undoable). A failure here is not a failed paste or duplicate: logged and said
     // as what it is.
-    private void SelectAdded(PageView view, List<InkStroke> strokes, List<XElement> images, string operation)
+    private void SelectAdded(PageView view, List<InkStroke> strokes, List<object> images, string operation)
     {
         try
         {
@@ -327,9 +335,9 @@ public sealed class EditCommands(
 
     private void PasteInk(PageView view)
     {
-        var ink = view.Page.Ink!;
+        var ink = view.Ink.StrokeContainer;
         var before = ink.GetStrokes().Select(s => s.Id).ToHashSet();
-        var edit = new PageEdit(view.Page);
+        var edit = new PageEdit(view);
         try
         {
             ink.PasteFromClipboard(new Point(Grid, PasteTop(view.Page, 0)));
@@ -386,12 +394,12 @@ public sealed class EditCommands(
         {
             DebugLog.Write("taking back the strokes of a failed add", e);
         }
-        var attached = edit.AddedImages.Where(i => i.Parent != null).ToList();
+        var attached = edit.AddedPictures.Cast<XElement>().Where(i => i.Parent != null).ToList();
         if (attached.Count > 0)
         {
             try
             {
-                edit.Page.RemoveImages(attached);
+                ((PageView)edit.Page).Page.RemoveImages(attached);
             }
             catch (Exception e)
             {
@@ -399,6 +407,10 @@ public sealed class EditCommands(
             }
         }
     }
+
+    // The selected pictures still on their page (a picture of a selection may have been taken meanwhile).
+    private static List<object> PicturesOf(Selection selection) =>
+        selection.Pictures.Cast<XElement>().Where(i => i.Parent != null).Cast<object>().ToList();
 
     private static double PasteTop(XoppPage page, double height)
     {

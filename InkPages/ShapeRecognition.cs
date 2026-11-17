@@ -1,8 +1,7 @@
 using Windows.UI.Input.Inking;
 using Windows.UI.Input.Inking.Analysis;
-using XournalStudio.Model;
 
-namespace XournalStudio.Services;
+namespace InkPages;
 
 /// <summary>
 /// Shape recognition by Windows ink analysis (<see cref="InkAnalyzer"/>): a stroke Windows recognizes as a circle,

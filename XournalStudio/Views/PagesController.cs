@@ -4,7 +4,6 @@ using Microsoft.UI.Xaml.Controls;
 using Windows.Foundation;
 using XournalStudio.Model;
 using XournalStudio.Services;
-using InkStroke = Windows.UI.Input.Inking.InkStroke;
 
 namespace XournalStudio.Views;
 
@@ -16,25 +15,18 @@ public sealed class PagesController
 {
     private readonly ScrollView scroller;
     private readonly StackPanel panel;
-    private readonly ToolController tools;
-    private readonly InkTools inkTools;
-    private readonly UndoStack undo;
-    private readonly Func<bool> recognizeShapes;
+    private readonly InkWorkspace ink;
     private readonly DispatcherQueueTimer viewTimer;
     private XoppDocument? document;
     private PdfBackground? pdf;
     private bool fitWidthPending = true;
     private float? requestedZoom; // asked for with ZoomTo, until the ScrollView shows it
 
-    public PagesController(ScrollView scroller, StackPanel panel, ToolController tools, InkTools inkTools,
-        UndoStack undo, Func<bool> recognizeShapes)
+    public PagesController(ScrollView scroller, StackPanel panel, InkWorkspace ink)
     {
         this.scroller = scroller;
         this.panel = panel;
-        this.tools = tools;
-        this.inkTools = inkTools;
-        this.undo = undo;
-        this.recognizeShapes = recognizeShapes;
+        this.ink = ink;
 
         viewTimer = scroller.DispatcherQueue.CreateTimer();
         viewTimer.Interval = TimeSpan.FromMilliseconds(120);
@@ -115,12 +107,7 @@ public sealed class PagesController
     {
         document = doc;
         pdf = background;
-        inkTools.CancelGestureOn(_ => true); // a drag on the old pages ends with them
-        // A new document starts with the pen as ink (otherwise its first tip stroke could stay without ink until a hover
-        // reaches a page); an eraser end still touching while a document is replaced is the rare case.
-        inkTools.ReleaseEraserEnd();
-        inkTools.Selection.Clear();
-        undo.Clear();
+        ink.Reset();
         panel.Children.Clear();
         foreach (var page in doc.Pages)
         {
@@ -136,7 +123,7 @@ public sealed class PagesController
     /// The page under a point given in <paramref name="from"/>'s coordinates (page points), if it is another page, with
     /// the offset from <paramref name="from"/>'s coordinates to its own (pages differ by a translation: same zoom).
     /// </summary>
-    public (PageView Page, System.Numerics.Vector2 Offset)? OtherPageAt(PageView from, Point p)
+    public (InkPage Page, System.Numerics.Vector2 Offset)? OtherPageAt(InkPage from, Point p)
     {
         // One transform into the panel; the pages are compared by their layout offsets in it (every page has its
         // InkCanvas at the same place in its view), not by a transform per page – this runs on every pen event of a drag
@@ -151,7 +138,7 @@ public sealed class PagesController
             }
             var origin = view.ActualOffset;
             double x = inPanel.X - origin.X - inner.X, y = inPanel.Y - origin.Y - inner.Y;
-            if (x >= 0 && y >= 0 && x <= view.Page.Width && y <= view.Page.Height)
+            if (x >= 0 && y >= 0 && x <= view.Width && y <= view.Height)
             {
                 return (view, new System.Numerics.Vector2((float)(x - p.X), (float)(y - p.Y)));
             }
@@ -183,16 +170,12 @@ public sealed class PagesController
         {
             return; // not in the shown document any more
         }
-        var view = panel.Children[index] as PageView;
+        var view = (PageView)panel.Children[index];
         // A drag on this page or below ends: those pages move up under the pen. One above goes on.
-        inkTools.CancelGestureOn(gestureView => panel.Children.IndexOf(gestureView) >= index);
-        if (inkTools.Selection.Current?.View == view)
-        {
-            inkTools.Selection.Clear(); // a selection on another page stays
-        }
+        ink.Removing(view, gestureView => panel.Children.IndexOf(gestureView) >= index);
         doc.Pages.RemoveAt(index);
         panel.Children.RemoveAt(index);
-        undo.Forget(page);
+        ink.Removed(view);
         OnViewsChanged();
         PagesChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -247,76 +230,13 @@ public sealed class PagesController
     private PageView CreateView(XoppPage page)
     {
         var view = new PageView(page, pdf);
-        inkTools.Attach(view);
-        ToolController.Attach(view);
-        view.Ink.StrokesCollected += (_, e) => OnStrokesCollected(view, e.Strokes);
-        view.Ink.StrokesErased += (_, e) =>
-        {
-            // A selection must not keep strokes that are gone (it would copy, move or bring them back) – also when they
-            // are put back below: as copies, not the selected strokes; the selection ends.
-            var erased = e.Strokes.Select(s => s.Id).ToHashSet();
-            if (inkTools.Selection.Current?.Strokes.Any(s => erased.Contains(s.Id)) == true)
-            {
-                inkTools.Selection.Clear();
-            }
-            if (tools.PartialErasing && !tools.EraserActive)
-            {
-                // Fallback: the eraser end touched with partial erasing on before its hover handed it to the app
-                // (InkTools.TakeEraserEnd), and Windows ink erased whole strokes. They are put back, and from its next
-                // press on it goes to the partial eraser until the tip hovers again.
-                // (The copies are added on top: InkStrokeContainer has no insert at a position.)
-                PageEdit.RestoreStrokes(page, e.Strokes.ToList());
-                tools.EraserEndTakenOver = true; // the next eraser-end touch is a press the partial eraser gets (InkTools)
-                return;
-            }
-            var edit = new PageEdit(page);
-            edit.RemovedStrokes.AddRange(e.Strokes);
-            undo.Push(edit);
-        };
+        ink.Attach(view);
         return view;
-    }
-
-    /// <summary>Records new ink for undo; with shape recognition on, hand-drawn shapes become clean ones.</summary>
-    private async void OnStrokesCollected(PageView view, IReadOnlyList<InkStroke> strokes)
-    {
-        var shown = document;
-        var page = view.Page;
-        var edit = new PageEdit(page);
-        foreach (var stroke in strokes.ToList())
-        {
-            InkStroke? shape = null;
-            if (recognizeShapes() && !stroke.DrawingAttributes.DrawAsHighlighter)
-            {
-                try
-                {
-                    shape = await ShapeRecognition.RecognizeAsync(stroke);
-                }
-                catch (Exception e)
-                {
-                    DebugLog.Write("shape recognition (stroke kept as drawn)", e);
-                }
-                if (document != shown)
-                {
-                    return; // another document was opened meanwhile: this one's history is gone
-                }
-            }
-            if (shape != null && page.Ink!.GetStrokes().Contains(stroke))
-            {
-                PageEdit.RemoveStrokes(page, [stroke]);
-                page.Ink!.AddStroke(shape);
-                edit.AddedStrokes.Add(shape);
-            }
-            else
-            {
-                edit.AddedStrokes.Add(stroke);
-            }
-        }
-        undo.Push(edit);
     }
 
     private void OnViewsChanged()
     {
-        tools.SetPages(Views);
+        ink.SetPages(Views);
         viewTimer.Start();
     }
 
@@ -329,10 +249,10 @@ public sealed class PagesController
         foreach (var view in Views)
         {
             // The page of a dragged selection stays shown: its pictures are being moved (and may be far off by now).
-            bool dragged = inkTools.Selection.IsDragging && inkTools.Selection.Current?.View == view;
+            bool dragged = ink.Selection.IsDragging && ink.Selection.Current?.Page == view;
             view.UpdateBackground(dragged || Intersects(BoundsInViewport(view), near), scale);
         }
-        tools.SetCurrentPage(CurrentView);
+        ink.SetCurrentPage(CurrentView);
     }
 
     private Rect BoundsInViewport(PageView view) =>
