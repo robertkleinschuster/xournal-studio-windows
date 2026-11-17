@@ -357,6 +357,11 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
    along. Merged into main 2026-11-16 morning (user: "du kannst gerne mergen"). Reviews were still finding edge cases
    (mostly the eraser end, now a question for the user) – not a clean round.
 8. Not started, only if the user asks: inserting pages of another PDF, page reordering, a text tool.
+9. **Goal (user, 2026-11-17), not started – plan with the user first:** the writing area becomes a reusable module –
+   a library (possibly its own public GitHub repo) other apps can embed: pages with InkCanvas, the custom tools
+   (selection, shapes, partial eraser), input routing and auto-scroll. The toolbar becomes a professional part of that
+   library (icons, dropdowns/flyouts, which functions and buttons exist, design), with the base functions in the
+   library and app-specific extensions on top (e.g. .xopp/PDF features stay in this app).
 
 ## Decided with the user (2026-11-16 morning)
 

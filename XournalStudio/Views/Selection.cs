@@ -3,6 +3,7 @@ using System.Xml.Linq;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
+using Image = Microsoft.UI.Xaml.Controls.Image;
 using Windows.Foundation;
 using XournalStudio.Model;
 using XournalStudio.Services;
@@ -28,6 +29,9 @@ public sealed class Selection
     // The strokes' transforms when the drag began (null: no drag); the page gets them too, for snapshots
     // (XoppPage.BeginPreview).
     private Dictionary<InkStroke, Matrix3x2>? starts;
+    private List<(Image Shown, XElement Element)>? shownPictures; // found once per drag
+    // A move slides the frame and handles by a render transform (no layout pass); a scale places them anew.
+    private readonly TranslateTransform slide = new();
     private Matrix3x2 live = Matrix3x2.Identity;
 
     public Selection(PageView view, List<InkStroke> strokes, List<XElement> images, Rect? area)
@@ -39,10 +43,10 @@ public sealed class Selection
         Images = images.Distinct().ToList();
         Area = area;
         Bounds = area ?? ContentBounds();
-        frame = new Rectangle { Stroke = AccentBrush, StrokeThickness = 1, StrokeDashArray = [4, 2] };
+        frame = new Rectangle { Stroke = AccentBrush, StrokeThickness = 1, StrokeDashArray = [4, 2], RenderTransform = slide };
         view.Overlay.Children.Add(frame);
         handles = HasContent
-            ? Enumerable.Range(0, 4).Select(_ => new Rectangle { Width = HandleSize, Height = HandleSize, Fill = AccentBrush }).ToArray()
+            ? Enumerable.Range(0, 4).Select(_ => new Rectangle { Width = HandleSize, Height = HandleSize, Fill = AccentBrush, RenderTransform = slide }).ToArray()
             : [];
         foreach (var handle in handles)
         {
@@ -98,6 +102,10 @@ public sealed class Selection
     /// <summary>Shows the content transformed by <paramref name="m"/> (relative to where it was when the drag began).</summary>
     public void Preview(Matrix3x2 m)
     {
+        if (starts != null && m == live)
+        {
+            return; // nothing moved (the pen held still, the view at its end): no stroke or picture to touch
+        }
         if (starts == null)
         {
             starts = new Dictionary<InkStroke, Matrix3x2>();
@@ -111,15 +119,27 @@ public sealed class Selection
         {
             stroke.PointTransform = start * m;
         }
-        foreach (var image in Images)
+        shownPictures ??= Images.Select(i => (Shown: View.FindPicture(i), Element: i)).Where(x => x.Shown != null)
+            .Select(x => (x.Shown!, x.Element)).ToList();
+        foreach (var (shown, element) in shownPictures)
         {
-            if (View.FindPicture(image) is { } picture)
-            {
-                PageView.Place(picture, image, m);
-            }
+            PageView.Place(shown, element, m);
         }
         live = m;
-        PlaceFeedback(XoppImage.Transform(Bounds, m));
+        if (m.M11 == 1 && m.M22 == 1 && m.M12 == 0 && m.M21 == 0)
+        {
+            if (slide.X == 0 && slide.Y == 0)
+            {
+                PlaceFeedback(Bounds); // the frame at the content's place; the move slides it
+            }
+            slide.X = m.M31;
+            slide.Y = m.M32;
+        }
+        else
+        {
+            slide.X = slide.Y = 0;
+            PlaceFeedback(XoppImage.Transform(Bounds, m));
+        }
     }
 
     /// <summary>Writes the previewed transform to the page; returns its undo step (null: nothing changed).</summary>
@@ -167,6 +187,8 @@ public sealed class Selection
             Page.EndPreview(starts.Keys);
             starts = null;
         }
+        shownPictures = null;
+        slide.X = slide.Y = 0;
     }
 
     public void Remove()

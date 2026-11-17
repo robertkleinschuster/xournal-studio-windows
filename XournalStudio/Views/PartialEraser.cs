@@ -57,23 +57,29 @@ public sealed class PartialEraser(UndoStack undo, Action<IReadOnlyCollection<Ink
         EraseAt([p]);
     }
 
-    /// <summary>Erases along the way from the last point (in steps of half the radius: nothing is skipped).</summary>
-    public void Move(Point p)
+    /// <summary>
+    /// Erases along the way from the last point through <paramref name="path"/> (one pointer event's samples, oldest
+    /// first; circles every half radius: nothing is skipped) in one pass over the page's strokes.
+    /// </summary>
+    public void MoveAlong(IReadOnlyList<Point> path)
     {
-        if (page == null)
+        if (page == null || path.Count == 0)
         {
             return;
         }
-        double dx = p.X - last.X, dy = p.Y - last.Y;
-        int steps = Math.Max(1, (int)Math.Ceiling(Math.Sqrt(dx * dx + dy * dy) / (Radius / 2)));
-        var centers = new List<Point>(steps);
-        for (int i = 1; i <= steps; i++)
+        var centers = new List<Point>();
+        foreach (var p in path)
         {
-            centers.Add(new Point(last.X + dx * i / steps, last.Y + dy * i / steps));
+            double dx = p.X - last.X, dy = p.Y - last.Y;
+            int steps = Math.Max(1, (int)Math.Ceiling(Math.Sqrt(dx * dx + dy * dy) / (Radius / 2)));
+            for (int i = 1; i <= steps; i++)
+            {
+                centers.Add(new Point(last.X + dx * i / steps, last.Y + dy * i / steps));
+            }
+            last = p;
         }
         EraseAt(centers);
-        last = p;
-        Hover(page, p);
+        Hover(page, last);
     }
 
     /// <summary>The drag ended (or was canceled: what was erased stays erased): one undo step.</summary>

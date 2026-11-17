@@ -220,50 +220,67 @@ public sealed class InkTools(UndoStack undo, Func<InkDrawingAttributes> pen)
         {
             return; // (a hovering pen never moves, lassos or erases)
         }
-        var samples = e.GetIntermediatePoints();
         // Moving or scaling a selection needs only the newest position: each preview sets every selected stroke's
-        // transform and places the frame, and doing that per sample kept the UI thread busy while the ink (moved on its
-        // own thread) ran ahead of the frame (device 2026-11-16). A lasso, a shape and the eraser follow the whole path.
-        if (samples.Count == 0 || (running?.Tool == InkTool.Select && Selection.IsDragging))
+        // transform and places the frame (device 2026-11-16: per sample it kept the UI thread busy). A lasso, a shape and
+        // the eraser follow the whole path – the eraser in one pass per event (it looks at every stroke of the page).
+        if (running.Tool == InkTool.Select && Selection.IsDragging)
         {
             MoveTo(view, point);
         }
         else
         {
-            // Oldest first: the platform does not document the order of the history it reports.
-            foreach (var sample in samples.Where(s => s.PointerId == point.PointerId).OrderBy(s => s.Timestamp))
+            var samples = e.GetIntermediatePoints();
+            var path = samples.Count == 0
+                ? [LocalPosition(view, point)]
+                // Oldest first: the platform does not document the order of the ink events' history.
+                : samples.Where(s => s.PointerId == point.PointerId).OrderBy(s => s.Timestamp)
+                    .Select(s => LocalPosition(view, s)).ToList();
+            if (path.Count > 0)
             {
-                MoveTo(view, sample);
+                MoveAlong(path);
             }
         }
+        TrackAutoScroll();
         e.Handled = true;
     }
 
-    private void MoveTo(PageView view, Windows.UI.Input.PointerPoint point)
+    private void MoveTo(PageView view, Windows.UI.Input.PointerPoint point) => MoveAlong([LocalPosition(view, point)]);
+
+    // The running gesture follows the pen along these points (its page's coordinates, oldest first).
+    private void MoveAlong(List<Point> path)
     {
-        last = LocalPosition(view, point);
+        last = path[^1];
         switch (running?.Tool)
         {
             case InkTool.PartialEraser:
-                eraser!.Move(last);
+                eraser!.MoveAlong(path);
                 break;
             case InkTool.Select:
-                Selection.Move(last);
-                // Near the view's edge the pages scroll; the drag follows the content moving under the pen.
-                AutoScroll?.Track(running!.Page, last, p =>
-                {
-                    if (running is { Tool: InkTool.Select })
-                    {
-                        last = p;
-                        Selection.Move(p);
-                    }
-                });
+                path.ForEach(Selection.Move);
                 break;
             case InkTool.Shape:
                 Shapes.Move(last);
                 break;
         }
     }
+
+    // Near the view's edge the pages scroll during a selection gesture; the drag follows the content under the pen.
+    private void TrackAutoScroll()
+    {
+        if (running is { Tool: InkTool.Select } r)
+        {
+            AutoScroll?.Track(r.Page, last, followScroll ??= p =>
+            {
+                if (running is { Tool: InkTool.Select })
+                {
+                    last = p;
+                    Selection.Move(p);
+                }
+            });
+        }
+    }
+
+    private Action<Point>? followScroll;
 
     // No gesture: hovering shows the eraser's circle (and the tip hovering gives the pen back to the ink). Nothing begins
     // here – every gesture begins with a press on the page (the eraser end too: its first touch, taken by Windows ink,

@@ -46,7 +46,12 @@ public sealed class PagesController
             {
                 requestedZoom = null;
             }
-            viewTimer.Start();
+            // Throttled, not restarted: during a long scroll (auto-scroll, fling) the pages coming into view are drawn
+            // every 120 ms instead of only when the view rests.
+            if (!viewTimer.IsRunning)
+            {
+                viewTimer.Start();
+            }
         };
         scroller.SizeChanged += (_, _) =>
         {
@@ -133,16 +138,22 @@ public sealed class PagesController
     /// </summary>
     public (PageView Page, System.Numerics.Vector2 Offset)? OtherPageAt(PageView from, Point p)
     {
+        // One transform into the panel; the pages are compared by their layout offsets in it (every page has its
+        // InkCanvas at the same place in its view), not by a transform per page – this runs on every pen event of a drag
+        // beside the page.
+        var inPanel = from.InkCanvas.TransformToVisual(panel).TransformPoint(p);
+        var inner = from.InkCanvas.TransformToVisual(from).TransformPoint(default);
         foreach (var view in Views)
         {
             if (view == from)
             {
                 continue;
             }
-            var q = from.InkCanvas.TransformToVisual(view.InkCanvas).TransformPoint(p);
-            if (q.X >= 0 && q.Y >= 0 && q.X <= view.Page.Width && q.Y <= view.Page.Height)
+            var origin = view.ActualOffset;
+            double x = inPanel.X - origin.X - inner.X, y = inPanel.Y - origin.Y - inner.Y;
+            if (x >= 0 && y >= 0 && x <= view.Page.Width && y <= view.Page.Height)
             {
-                return (view, new System.Numerics.Vector2((float)(q.X - p.X), (float)(q.Y - p.Y)));
+                return (view, new System.Numerics.Vector2((float)(x - p.X), (float)(y - p.Y)));
             }
         }
         return null;
