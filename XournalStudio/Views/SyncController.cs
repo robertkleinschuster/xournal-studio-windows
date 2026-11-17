@@ -25,6 +25,7 @@ public sealed class SyncController(DocumentSession session, Dialogs dialogs, Mes
         starting = true;
         try
         {
+            await session.WhenSaved(); // git never sees a file being written
             if (session.IsDirty && await session.AskSaveAsync("Hochgeladen wird nur, was gespeichert ist. Ohne " +
                 "Speichern bleiben die Änderungen ungespeichert im Fenster.") == SaveChoice.Cancelled)
             {
@@ -63,7 +64,7 @@ public sealed class SyncController(DocumentSession session, Dialogs dialogs, Mes
             // Saving was asked for during the sync (Ctrl+S) and the pull did not change the document.
             if (session.SaveRequested && session.IsDirty && session.Document.FilePath != null)
             {
-                session.Save();
+                await session.SaveAsync();
             }
             session.SaveRequested = false;
             StateChanged?.Invoke(this, EventArgs.Empty);

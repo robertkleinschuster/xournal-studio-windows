@@ -132,10 +132,14 @@ public sealed class XoppDocument
         return doc;
     }
 
-    /// <summary>Writes "&lt;path&gt;~" first and replaces the file only once it is complete (Ctrl+S: nothing else).</summary>
-    public void Save(string path)
+    /// <summary>
+    /// Writes "&lt;path&gt;~" first and replaces the file only once it is complete (Ctrl+S: nothing else). The snapshot
+    /// is taken at once (on the caller's thread: the ink's); compressing and writing run on the thread pool.
+    /// </summary>
+    public async Task SaveAsync(string path)
     {
-        Write(Snapshot(path), path);
+        var snapshot = Snapshot(path);
+        await Task.Run(() => Write(snapshot, path));
         FilePath = path;
     }
 
@@ -143,9 +147,9 @@ public sealed class XoppDocument
     /// Save As (upstream's way): the attachments go along (<see cref="CopyAttachments"/>), the file keeps "attach", and
     /// the document refers to its own attachments from then on. If writing fails, the copies just made are removed.
     /// </summary>
-    public void SaveAs(string path)
+    public async Task SaveAsAsync(string path)
     {
-        var copies = WriteWithAttachments(path);
+        var copies = await WriteWithAttachmentsAsync(path);
         FilePath = path;
         foreach (var (from, to) in copies)
         {
@@ -164,16 +168,19 @@ public sealed class XoppDocument
     /// A copy of the document at <paramref name="path"/> with its own attachments (the document itself stays where it is).
     /// If writing fails, the copies just made are removed.
     /// </summary>
-    public void SaveCopy(string path) => WriteWithAttachments(path);
+    public Task SaveCopyAsync(string path) => WriteWithAttachmentsAsync(path);
 
-    private Dictionary<string, string> WriteWithAttachments(string path)
+    // The attachments are found and the snapshot is taken on the caller's thread (the ink's); copying and writing files
+    // run on the thread pool.
+    private async Task<Dictionary<string, string>> WriteWithAttachmentsAsync(string path)
     {
         var copies = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         try
         {
-            CopyAttachments(path, copies);
+            var attachments = Attachments();
+            await Task.Run(() => CopyAttachments(attachments, path, copies));
             var snapshot = Snapshot(path, copies);
-            Write(snapshot, path);
+            await Task.Run(() => Write(snapshot, path));
             // The PDF reference now is what this file says (attach where copied, a path where not).
             if (snapshot.Root!.Elements("page").Elements("background")
                     .FirstOrDefault(b => (string?)b.Attribute("type") == "pdf" && b.Attribute("filename") != null) is { } pdf)
@@ -206,38 +213,46 @@ public sealed class XoppDocument
         return copies;
     }
 
-    /// <summary>
-    /// Copies the attached PDF and picture backgrounds (domain "attach": "&lt;document&gt;.&lt;filename&gt;") next to
-    /// <paramref name="target"/> as "&lt;target&gt;.&lt;filename&gt;", as upstream does when it saves under another name.
-    /// Never over an existing file (then the reference is written as a path). Each copy made goes into
-    /// <paramref name="copies"/> (source → copy, full paths) at once, so a failure takes back exactly those.
-    /// </summary>
-    private void CopyAttachments(string target, Dictionary<string, string> copies)
+    // The attached PDF and picture backgrounds (domain "attach": "<document>.<filename>"): their files and names.
+    private List<(string? Source, string Filename)> Attachments()
     {
-        void Copy(string? source, string filename)
-        {
-            if (source == null || !File.Exists(source))
-            {
-                return; // missing: the reference is written as a path instead (Snapshot)
-            }
-            string from = Path.GetFullPath(source), to = Path.GetFullPath(target + "." + filename);
-            if (SamePath(from, to) || copies.ContainsKey(from) || File.Exists(to))
-            {
-                return; // already there, already copied, or another file of that name: never overwritten
-            }
-            File.Copy(from, to);
-            copies[from] = to;
-        }
+        var attachments = new List<(string?, string)>();
         if (loadedPdfReference is ("attach", { } pdfName))
         {
-            Copy(PdfPath, pdfName);
+            attachments.Add((PdfPath, pdfName));
         }
         foreach (var page in Pages.Where(p => p.IsImageBackground && p.BackgroundCloneSource == null))
         {
             if ((string?)page.Background.Attribute("domain") == "attach" && (string?)page.Background.Attribute("filename") is { } name)
             {
-                Copy(page.BackgroundImagePath, name);
+                attachments.Add((page.BackgroundImagePath, name));
             }
+        }
+        return attachments;
+    }
+
+    /// <summary>
+    /// Copies the attachments (<see cref="Attachments"/>) next to <paramref name="target"/> as
+    /// "&lt;target&gt;.&lt;filename&gt;", as upstream does when it saves under another name. Never over an existing file
+    /// (then the reference is written as a path). Each copy made goes into <paramref name="copies"/> (source → copy, full
+    /// paths) at once, so a failure takes back exactly those.
+    /// </summary>
+    private static void CopyAttachments(List<(string? Source, string Filename)> attachments, string target,
+        Dictionary<string, string> copies)
+    {
+        foreach (var (source, filename) in attachments)
+        {
+            if (source == null || !File.Exists(source))
+            {
+                continue; // missing: the reference is written as a path instead (Snapshot)
+            }
+            string from = Path.GetFullPath(source), to = Path.GetFullPath(target + "." + filename);
+            if (SamePath(from, to) || copies.ContainsKey(from) || File.Exists(to))
+            {
+                continue; // already there, already copied, or another file of that name: never overwritten
+            }
+            File.Copy(from, to);
+            copies[from] = to;
         }
     }
 

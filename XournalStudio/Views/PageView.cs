@@ -61,13 +61,7 @@ public sealed partial class PageView : InkPage
         }
 
         page.AttachInk(InkCanvas.InkPresenter.StrokeContainer);
-        page.ImagesChanged += (_, _) =>
-        {
-            if (picturesShown)
-            {
-                ShowPictures(picturePixelsPerPoint);
-            }
-        };
+        page.ImagesChanged += (_, changed) => PicturesChanged(changed);
         page.ImagesMoved += (_, moved) => MovePictures(moved);
         ShowTexts();
         ShowDrawnStrokes();
@@ -99,14 +93,23 @@ public sealed partial class PageView : InkPage
 
     public override Action<Matrix3x2> PreviewPictures(IReadOnlyCollection<object> pictures)
     {
-        // Found once per drag (only the pictures shown near the viewport).
-        var shown = pictures.Cast<XElement>().Select(e => (Shown: FindPicture(e), Element: e))
-            .Where(x => x.Shown != null).Select(x => (Shown: x.Shown!, x.Element)).ToList();
+        // Found and read once per drag (only the pictures shown near the viewport): each event only sets the matrix of
+        // one transform per picture (the drag's end places them anew, MovePictures).
+        var shown = new List<(MatrixTransform Transform, Matrix3x2 Placed)>();
+        foreach (var element in pictures.Cast<XElement>())
+        {
+            if (FindPicture(element) is { } image)
+            {
+                var transform = new MatrixTransform();
+                image.RenderTransform = transform;
+                shown.Add((transform, XoppImage.GetPlacement(element).Transform));
+            }
+        }
         return m =>
         {
-            foreach (var (image, element) in shown)
+            foreach (var (transform, placed) in shown)
             {
-                Place(image, element, m);
+                transform.Matrix = ToMatrix(placed * m);
             }
         };
     }
@@ -412,13 +415,45 @@ public sealed partial class PageView : InkPage
         imagesLayer.Children.Clear();
         foreach (var element in Page.Images)
         {
-            var bounds = XoppImage.GetBounds(element);
-            var image = new Image { Stretch = Stretch.Fill, Tag = element };
-            Place(image, element);
-            image.SetValue(PlacedWidthProperty, bounds.Width);
-            imagesLayer.Children.Add(image);
-            LoadPicture(image, element, (uint)Math.Clamp(bounds.Width * pixelsPerPoint, 1, MaxPdfPixelWidth));
+            imagesLayer.Children.Add(CreatePicture(element));
         }
+    }
+
+    // Pictures were added, removed or put back: only those change (the others keep their decoded bitmaps). The layer
+    // holds the page's pictures bottom to top, so each shown one goes to its index among them.
+    private void PicturesChanged(IReadOnlyCollection<XElement> changed)
+    {
+        if (!picturesShown)
+        {
+            return;
+        }
+        foreach (var element in changed)
+        {
+            if (FindPicture(element) is { } image)
+            {
+                imagesLayer.Children.Remove(image);
+            }
+        }
+        var wanted = changed.ToHashSet();
+        int index = 0;
+        foreach (var element in Page.Images)
+        {
+            if (wanted.Contains(element))
+            {
+                imagesLayer.Children.Insert(index, CreatePicture(element));
+            }
+            index++;
+        }
+    }
+
+    private Image CreatePicture(XElement element)
+    {
+        var bounds = XoppImage.GetBounds(element);
+        var image = new Image { Stretch = Stretch.Fill, Tag = element };
+        Place(image, element);
+        image.SetValue(PlacedWidthProperty, bounds.Width);
+        LoadPicture(image, element, (uint)Math.Clamp(bounds.Width * picturePixelsPerPoint, 1, MaxPdfPixelWidth));
+        return image;
     }
 
     // The width on the page a picture was decoded for (to decode again when it is scaled).
@@ -431,18 +466,19 @@ public sealed partial class PageView : InkPage
         var placement = XoppImage.GetPlacement(element);
         image.Width = placement.Size.Width;
         image.Height = placement.Size.Height;
-        var m = placement.Transform * (preview ?? Matrix3x2.Identity);
-        image.RenderTransform = new MatrixTransform
-        {
-            Matrix = new Matrix { M11 = m.M11, M12 = m.M12, M21 = m.M21, M22 = m.M22, OffsetX = m.M31, OffsetY = m.M32 },
-        };
+        image.RenderTransform = new MatrixTransform { Matrix = ToMatrix(placement.Transform * (preview ?? Matrix3x2.Identity)) };
     }
+
+    private static Matrix ToMatrix(Matrix3x2 m) =>
+        new() { M11 = m.M11, M12 = m.M12, M21 = m.M21, M22 = m.M22, OffsetX = m.M31, OffsetY = m.M32 };
 
     private static async void LoadPicture(Image image, XElement element, uint pixelWidth)
     {
         try
         {
-            image.Source = await PictureRenderer.LoadAsync(XoppImage.GetData(element), pixelWidth, "picture on a page");
+            string content = element.Value; // read here (the element belongs to this thread), decoded on the thread pool
+            var data = await Task.Run(() => XoppImage.GetData(content));
+            image.Source = await PictureRenderer.LoadAsync(data, pixelWidth, "picture on a page");
         }
         catch (Exception e)
         {

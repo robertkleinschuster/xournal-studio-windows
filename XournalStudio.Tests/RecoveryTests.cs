@@ -27,7 +27,7 @@ public sealed class RecoveryTests : IDisposable
         File.WriteAllText(pdf, "");
         var doc = XoppDocument.FromPdf(pdf, [(595, 842), (595, 842)]);
         string path = Path.Combine(docs, "Skript.xopp");
-        doc.Save(path);
+        await doc.SaveAsync(path);
         doc.Pages.Add(XoppPage.CreateGraph(595, 842));
 
         var recovery = new Recovery(Folder);
@@ -41,7 +41,7 @@ public sealed class RecoveryTests : IDisposable
         Assert.Equal(path, restored.FilePath);
         Assert.Equal(pdf, restored.PdfPath); // the copy lies elsewhere, the reference still finds the PDF
 
-        restored.Save(path);
+        await restored.SaveAsync(path);
         Assert.Equal("Skript.pdf", (string?)ReadBackground(path).Attribute("filename")); // still relative
 
         recovery.Delete("a");
