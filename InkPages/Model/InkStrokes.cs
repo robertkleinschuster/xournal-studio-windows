@@ -13,7 +13,11 @@ public static class InkStrokes
     /// s * (0.25 + 1.5 p) wide (measured), i.e. exactly s at p = 0.5; without pressure its size.
     /// </summary>
     public static double DrawnWidth(InkDrawingAttributes attributes, float pressure) =>
-        attributes.IgnorePressure ? attributes.Size.Width : attributes.Size.Width * WidthFactor(pressure);
+        DrawnWidth(attributes.Size.Width, attributes.IgnorePressure, pressure);
+
+    /// <summary><see cref="DrawnWidth(InkDrawingAttributes, float)"/> with the attributes' size and pressure mode read once.</summary>
+    public static double DrawnWidth(double size, bool ignorePressure, float pressure) =>
+        ignorePressure ? size : size * WidthFactor(pressure);
 
     /// <summary>The factor of <see cref="DrawnWidth"/> at a pressure.</summary>
     public static double WidthFactor(double pressure) => 0.25 + 1.5 * pressure;

@@ -126,7 +126,7 @@ public sealed class ExplorerCommands(
             return;
         }
         string path = Path.Combine(folder, name + ProjectFiles.DocumentExtension);
-        XoppDocument.CreateNew().Save(path);
+        await XoppDocument.CreateNew().SaveAsync(path);
         await session.OpenAsync(path);
     }
 

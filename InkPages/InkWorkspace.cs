@@ -175,6 +175,10 @@ public sealed class InkWorkspace
         // page); an eraser end still touching while the pages are replaced is the rare case.
         Input.ReleaseEraserEnd();
         Selection.Clear();
+        // The tools keep no old page alive (its ink, pictures and overlay).
+        Selection.ForgetPages();
+        Input.Shapes.Cancel();
+        Eraser.ForgetPages();
         Undo.Clear();
     }
 

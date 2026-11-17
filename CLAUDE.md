@@ -30,6 +30,13 @@ Guidance for Claude Code in this repository. Keep it current: add what is learne
   and releases it on close (`MainWindow.OnClosing`); `RenderToStreamAsync` is not used any more (loading a PDF alone does
   not touch the GPU driver – probe). PdfPage/PdfDocument are agile: rendering runs on the thread pool. Debug a hang again
   with `cdb -pv -p <pid> -c ".reload; ~*kn 60; .dump /ma hang.dmp; q"` (WinDbg from winget, symbols from msdl).
+  Pixels come back with `SoftwareBitmap.CreateCopyFromSurfaceAsync` (surface wrapped by
+  `CreateDirect3D11SurfaceFromDXGISurface`): it reads back on the app's device and creates no device of its own (cdb
+  breakpoint on D3D11CreateDevice, 2026-11-17); the earlier staging-map → `byte[]` → `AsBuffer` copy left 11–55 MB of
+  pinned garbage per page (headless bench: working set 7.8 GB after 80 renders at 3200 px, now ~0.6 GB). Per-page time is
+  dominated by `RenderPageToSurface` itself (~30–40 ms at 1440 px, ~100–120 ms at 3200 px for a text+vector A4 page on
+  Iris Xe). Waiting render requests are cancellable (`PageView` drops them when the page leaves the viewport, another
+  width is wanted or the document changes) and pages in view are requested first.
 - **Release snapshots (`winui3/release/*`) cannot be built outside Microsoft:** they need internal package versions
   (e.g. InteractiveExperiences 2.1.0-experimental-27200…); the restore opens Microsoft sign-in pages through the build's
   `VSS.NuGet.AuthHelper`. Never run a WinUI restore that can prompt interactively.
@@ -335,6 +342,12 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   shapes) loses its pointer capture once, ~75 ms after the press: no popup open, presenters' devices None, pen still in
   contact, ScrollView state unchanged, focus on a toolbar button. Capturing again (`CapturePointer` while in contact)
   kept the drag to its end (experiment, removed) – a decision for the user; the thief is unknown.
+- **Ruler/protractor (WinUI source + sandbox probe, 2026-11-17):** the stencil belongs to the InkToolbar's
+  `TargetInkCanvas`: `InkToolbar::SetStencilVisibility` → `InkPresenter::SetRulerEnabled` creates an OS
+  `InkPresenterRuler` on that presenter (default place: rotated 45° at the page's top left, in page coordinates). When the
+  target changes, WinUI hides the stencil and unchecks the button (InkToolbar.cpp ~1567) – so re-targeting to the page in
+  view (`ToolController.SetCurrentPage`) makes the ruler vanish when another page becomes the middle one. Kept so (user, 2026-11-17: the target stays the page in view, not the page under the pen). Touch on the
+  ruler moves it. Set the target only after the first layout (before it every page lies at y 0).
 - Accelerators of the menu (Ctrl+A/C/V/X/D, Del) do not fire while a TextBox has focus (sandbox: Ctrl+A, Del in the
   task box edited the text, the page selection stayed).
 - `RegisterApplicationRestart` (kernel32) is registered at start: Windows restarts the app after a crash (after
@@ -420,8 +433,8 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
    `InkPage`); .xopp/PDF/explorer/tasks/sync stay in the app (sandbox: full test and cross-page drag pass).
    **Demo app `InkPages.Demo` (2026-11-17):** graph pages with in-memory content (`DemoPage` implements `InkPage`),
    the whole toolbar, its own small commands; the development and test app of the library (see Testing). Toolbar
-   design reviewed in every state with screenshots (and Codex). **Open:** the ruler (stencil button) turns on but no
-   ruler appears on the page (seen in the demo, 2026-11-17) – not investigated yet. Stage 3: README/API docs.
+   design reviewed in every state with screenshots (and Codex). The ruler "not shown" in the demo (2026-11-17) was the
+   demo targeting page 3 before the first layout (fixed); the app was never affected. Stage 3: README/API docs.
 
 ## Decided with the user (2026-11-16 morning)
 

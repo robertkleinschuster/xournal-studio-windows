@@ -61,13 +61,7 @@ public sealed partial class PageView : InkPage
         }
 
         page.AttachInk(InkCanvas.InkPresenter.StrokeContainer);
-        page.ImagesChanged += (_, _) =>
-        {
-            if (picturesShown)
-            {
-                ShowPictures(picturePixelsPerPoint);
-            }
-        };
+        page.ImagesChanged += (_, changed) => PicturesChanged(changed);
         page.ImagesMoved += (_, moved) => MovePictures(moved);
         ShowTexts();
         ShowDrawnStrokes();
@@ -99,14 +93,23 @@ public sealed partial class PageView : InkPage
 
     public override Action<Matrix3x2> PreviewPictures(IReadOnlyCollection<object> pictures)
     {
-        // Found once per drag (only the pictures shown near the viewport).
-        var shown = pictures.Cast<XElement>().Select(e => (Shown: FindPicture(e), Element: e))
-            .Where(x => x.Shown != null).Select(x => (Shown: x.Shown!, x.Element)).ToList();
+        // Found and read once per drag (only the pictures shown near the viewport): each event only sets the matrix of
+        // one transform per picture (the drag's end places them anew, MovePictures).
+        var shown = new List<(MatrixTransform Transform, Matrix3x2 Placed)>();
+        foreach (var element in pictures.Cast<XElement>())
+        {
+            if (FindPicture(element) is { } image)
+            {
+                var transform = new MatrixTransform();
+                image.RenderTransform = transform;
+                shown.Add((transform, XoppImage.GetPlacement(element).Transform));
+            }
+        }
         return m =>
         {
-            foreach (var (image, element) in shown)
+            foreach (var (transform, placed) in shown)
             {
-                Place(image, element, m);
+                transform.Matrix = ToMatrix(placed * m);
             }
         };
     }
@@ -276,6 +279,7 @@ public sealed partial class PageView : InkPage
         if (!nearViewport)
         {
             pdfImage.Source = null;
+            CancelPendingRender();
             renderedPixelWidth = requestedPixelWidth = 0;
             backgroundFailed = false; // looked for again when the page comes back (a sync may have brought it)
             backgroundRequested = backgroundShown = 0;
@@ -337,6 +341,16 @@ public sealed partial class PageView : InkPage
         }
     }
 
+    // The request of the PDF page's rendering that has not been shown yet; cancelled when the page leaves the viewport or
+    // another width is wanted, so a request that waits for the renderer is dropped instead of rendered for nothing.
+    private CancellationTokenSource? pendingRender;
+
+    private void CancelPendingRender()
+    {
+        pendingRender?.Cancel();
+        pendingRender = null;
+    }
+
     private async void RenderPdf(double pixelsPerPoint)
     {
         if (pdf == null)
@@ -345,20 +359,36 @@ public sealed partial class PageView : InkPage
         }
         uint wanted = (uint)Math.Min(MaxPdfPixelWidth, Math.Ceiling(Page.Width * pixelsPerPoint));
         bool sharpEnough = renderedPixelWidth >= wanted * 0.9 && renderedPixelWidth <= wanted * 1.6;
-        if (sharpEnough || requestedPixelWidth == wanted)
+        if (sharpEnough)
+        {
+            CancelPendingRender(); // e.g. zoomed back before a request for another width ran
+            requestedPixelWidth = renderedPixelWidth;
+            return;
+        }
+        if (requestedPixelWidth == wanted)
         {
             return;
         }
 
+        CancelPendingRender();
+        var request = pendingRender = new CancellationTokenSource();
         requestedPixelWidth = wanted;
         try
         {
-            var bitmap = await pdf.RenderAsync(Page.PdfPageIndex, wanted);
+            var bitmap = await pdf.RenderAsync(Page.PdfPageIndex, wanted, request.Token);
             if (requestedPixelWidth == wanted && bitmap != null)
             {
                 pdfImage.Source = bitmap;
                 renderedPixelWidth = wanted;
             }
+            else
+            {
+                DebugLog.Write($"pdf page {Page.PdfPageIndex} {wanted}px: not shown (no longer wanted)");
+            }
+        }
+        catch (OperationCanceledException) when (request.IsCancellationRequested) // dropped by CancelPendingRender
+        {
+            DebugLog.Write($"pdf page {Page.PdfPageIndex} {wanted}px: dropped before rendering");
         }
         catch (Exception e) // async void: nothing may escape; logged, the next viewport update tries again
         {
@@ -367,6 +397,14 @@ public sealed partial class PageView : InkPage
             {
                 requestedPixelWidth = 0;
             }
+        }
+        finally
+        {
+            if (pendingRender == request)
+            {
+                pendingRender = null;
+            }
+            request.Dispose();
         }
     }
 
@@ -377,13 +415,45 @@ public sealed partial class PageView : InkPage
         imagesLayer.Children.Clear();
         foreach (var element in Page.Images)
         {
-            var bounds = XoppImage.GetBounds(element);
-            var image = new Image { Stretch = Stretch.Fill, Tag = element };
-            Place(image, element);
-            image.SetValue(PlacedWidthProperty, bounds.Width);
-            imagesLayer.Children.Add(image);
-            LoadPicture(image, element, (uint)Math.Clamp(bounds.Width * pixelsPerPoint, 1, MaxPdfPixelWidth));
+            imagesLayer.Children.Add(CreatePicture(element));
         }
+    }
+
+    // Pictures were added, removed or put back: only those change (the others keep their decoded bitmaps). The layer
+    // holds the page's pictures bottom to top, so each shown one goes to its index among them.
+    private void PicturesChanged(IReadOnlyCollection<XElement> changed)
+    {
+        if (!picturesShown)
+        {
+            return;
+        }
+        foreach (var element in changed)
+        {
+            if (FindPicture(element) is { } image)
+            {
+                imagesLayer.Children.Remove(image);
+            }
+        }
+        var wanted = changed.ToHashSet();
+        int index = 0;
+        foreach (var element in Page.Images)
+        {
+            if (wanted.Contains(element))
+            {
+                imagesLayer.Children.Insert(index, CreatePicture(element));
+            }
+            index++;
+        }
+    }
+
+    private Image CreatePicture(XElement element)
+    {
+        var bounds = XoppImage.GetBounds(element);
+        var image = new Image { Stretch = Stretch.Fill, Tag = element };
+        Place(image, element);
+        image.SetValue(PlacedWidthProperty, bounds.Width);
+        LoadPicture(image, element, (uint)Math.Clamp(bounds.Width * picturePixelsPerPoint, 1, MaxPdfPixelWidth));
+        return image;
     }
 
     // The width on the page a picture was decoded for (to decode again when it is scaled).
@@ -396,18 +466,19 @@ public sealed partial class PageView : InkPage
         var placement = XoppImage.GetPlacement(element);
         image.Width = placement.Size.Width;
         image.Height = placement.Size.Height;
-        var m = placement.Transform * (preview ?? Matrix3x2.Identity);
-        image.RenderTransform = new MatrixTransform
-        {
-            Matrix = new Matrix { M11 = m.M11, M12 = m.M12, M21 = m.M21, M22 = m.M22, OffsetX = m.M31, OffsetY = m.M32 },
-        };
+        image.RenderTransform = new MatrixTransform { Matrix = ToMatrix(placement.Transform * (preview ?? Matrix3x2.Identity)) };
     }
+
+    private static Matrix ToMatrix(Matrix3x2 m) =>
+        new() { M11 = m.M11, M12 = m.M12, M21 = m.M21, M22 = m.M22, OffsetX = m.M31, OffsetY = m.M32 };
 
     private static async void LoadPicture(Image image, XElement element, uint pixelWidth)
     {
         try
         {
-            image.Source = await PictureRenderer.LoadAsync(XoppImage.GetData(element), pixelWidth, "picture on a page");
+            string content = element.Value; // read here (the element belongs to this thread), decoded on the thread pool
+            var data = await Task.Run(() => XoppImage.GetData(content));
+            image.Source = await PictureRenderer.LoadAsync(data, pixelWidth, "picture on a page");
         }
         catch (Exception e)
         {

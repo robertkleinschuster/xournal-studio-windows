@@ -30,6 +30,12 @@ public sealed class XoppPage
     // strokes are written back as they were, so attributes this app ignores survive a save.
     private readonly Dictionary<uint, XElement> strokeElements = new();
 
+    // Strokes drawn in this session, as written (see Snapshot).
+    private readonly ConvertedStrokes converted = new();
+
+    /// <summary>How many drawn strokes snapshots converted so far (for tests: each once per transform).</summary>
+    internal int StrokeConversions => converted.Conversions;
+
     // Undo/redo cannot re-add a removed stroke and adds a copy: old id -> id of the copy.
     private readonly Dictionary<uint, uint> replacedIds = new();
 
@@ -120,9 +126,9 @@ public sealed class XoppPage
     public static XoppPage FromXml(XElement element)
     {
         var page = new XoppPage(element);
-        foreach (var strokeElement in element.Elements("layer").Elements("stroke").Where(e => !StrokeConverter.NeedsOwnDrawing(e)))
+        foreach (var strokeElement in element.Elements("layer").Elements("stroke"))
         {
-            var stroke = StrokeConverter.FromXml(strokeElement);
+            var stroke = StrokeConverter.InkOf(strokeElement); // null: drawn from the file (DrawnStrokes) or no points
             if (stroke != null)
             {
                 page.pendingStrokes!.Add((stroke, strokeElement));
@@ -269,11 +275,7 @@ public sealed class XoppPage
     /// </summary>
     public InkStroke? AddStrokeElement(XElement e)
     {
-        if (StrokeConverter.NeedsOwnDrawing(e))
-        {
-            return null;
-        }
-        var stroke = StrokeConverter.FromXml(e);
+        var stroke = StrokeConverter.InkOf(e);
         if (stroke == null)
         {
             return null;
@@ -297,8 +299,8 @@ public sealed class XoppPage
     /// <summary>Pictures (&lt;image&gt;, &lt;teximage&gt;) of all layers, bottom to top.</summary>
     public IEnumerable<XElement> Images => element.Elements("layer").Elements().Where(XoppImage.IsImage);
 
-    /// <summary>Raised when pictures are added or removed.</summary>
-    public event EventHandler? ImagesChanged;
+    /// <summary>Raised when pictures are added or removed (put back by undo): those pictures.</summary>
+    public event EventHandler<IReadOnlyCollection<XElement>>? ImagesChanged;
 
     /// <summary>Raised when pictures got new bounds (moved, scaled).</summary>
     public event EventHandler<IReadOnlyCollection<XElement>>? ImagesMoved;
@@ -341,12 +343,12 @@ public sealed class XoppPage
         RaiseImagesChanged(places.Select(p => p.Image).ToList());
     }
 
-    // Once per change: the page view redraws all its pictures.
+    // Once per change, with the pictures changed: the page view shows or drops exactly those.
     private void RaiseImagesChanged(IReadOnlyCollection<XElement> images)
     {
         if (images.Count > 0)
         {
-            ImagesChanged?.Invoke(this, EventArgs.Empty);
+            ImagesChanged?.Invoke(this, images);
         }
     }
 
@@ -400,11 +402,12 @@ public sealed class XoppPage
     /// </summary>
     public XElement Snapshot()
     {
-        if (Ink == null)
-        {
-            return new XElement(element); // never shown: unchanged
-        }
-        var strokes = Ink.GetStrokes();
+        return Ink == null ? new XElement(element) /* never shown: unchanged */ : SnapshotOf(Ink.GetStrokes());
+    }
+
+    /// <summary>The page as <see cref="Snapshot"/> writes it with these strokes on its ink (in drawing order).</summary>
+    internal XElement SnapshotOf(IReadOnlyList<InkStroke> strokes)
+    {
         var live = strokes.Select(s => s.Id).ToHashSet();
         var idOf = strokeElements.ToDictionary(p => p.Value, p => p.Key);
         var copy = new XElement(element.Name, element.Attributes());
@@ -434,13 +437,15 @@ public sealed class XoppPage
         {
             if (!strokeElements.TryGetValue(stroke.Id, out var e))
             {
-                topLayer!.Add(StrokeConverter.ToXml(stroke, CommittedTransform(stroke)));
+                // Drawn in this session: converted once per transform, not on every recovery copy.
+                topLayer!.Add(converted.ElementOf(stroke, CommittedTransform(stroke) ?? stroke.PointTransform));
             }
             else if (e.Parent == null)
             {
                 topLayer!.Add(new XElement(e)); // pasted or duplicated: its element, at its place in the drawing order
             }
         }
+        converted.KeepOnly(live);
         return copy;
     }
 

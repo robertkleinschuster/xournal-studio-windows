@@ -24,7 +24,11 @@ public static class StrokeConverter
 
     private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
-    private static readonly InkStrokeBuilder Builder = new();
+    // InkStrokeBuilder is not agile (MarshalingType.None): one per thread – documents are loaded on the thread pool.
+    [ThreadStatic]
+    private static InkStrokeBuilder? builder;
+
+    private static InkStrokeBuilder Builder => builder ??= new InkStrokeBuilder();
 
     /// <summary>
     /// A stroke element as drawn by Xournal: its color (with the file's alpha), its points and the width of each
@@ -98,25 +102,45 @@ public static class StrokeConverter
 
     // A number of the stroke this app cannot read (not a number, beyond any page, a stray coordinate): the stroke is
     // shown as far as it can be read and never rewritten as ink or moved, so nothing of it is lost or misplaced.
-    private static bool IsDamaged(XElement e) =>
-        ReadPoints(e.Value).After.Count > 0 ||
-        ((string?)e.Attribute("width") ?? "1").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length !=
-            ParseNumbers((string?)e.Attribute("width") ?? "1").Count;
+    private static bool IsDamaged(XElement e) => IsDamaged(ReadPoints(e.Value).After, WidthText(e), out _);
+
+    private static bool IsDamaged(List<string> afterPoints, string widthText, out List<double> widths)
+    {
+        widths = ParseNumbers(widthText);
+        return afterPoints.Count > 0 ||
+            widthText.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length != widths.Count;
+    }
+
+    private static string WidthText(XElement e) => (string?)e.Attribute("width") ?? "1";
+
+    /// <summary>
+    /// The element as ink, or null when it cannot be: no points, or drawn from the file (<see cref="NeedsOwnDrawing"/>).
+    /// The same as <see cref="NeedsOwnDrawing"/> and then <see cref="FromXml"/>, with the points read once.
+    /// </summary>
+    public static InkStroke? InkOf(XElement e)
+    {
+        if (IsStyled(e))
+        {
+            return null;
+        }
+        var (points, after) = ReadPoints(e.Value);
+        return IsDamaged(after, WidthText(e), out var widths) ? null : Build(e, points, widths);
+    }
 
     // Any line style (also one this app or upstream cannot draw dashed): such a stroke is never rewritten as ink,
     // which would drop the attribute. Solid strokes carry none ("plain" is upstream's name for solid).
     private static bool IsLineStyle(string? style) => style is { Length: > 0 } and not "plain";
 
-    public static InkStroke? FromXml(XElement e)
+    public static InkStroke? FromXml(XElement e) => Build(e, ReadPoints(e.Value).Points, ParseNumbers(WidthText(e)));
+
+    private static InkStroke? Build(XElement e, List<Point> coords, List<double> widths)
     {
-        var coords = ReadPoints(e.Value).Points;
         int count = coords.Count;
         if (count == 0)
         {
             return null;
         }
 
-        var widths = ParseNumbers((string?)e.Attribute("width") ?? "1");
         double width = widths.Count > 0 && widths[0] > 0 ? widths[0] : 1;
         bool hasPressure = widths.Count > 1;
         bool highlighter = (string?)e.Attribute("tool") == "highlighter";

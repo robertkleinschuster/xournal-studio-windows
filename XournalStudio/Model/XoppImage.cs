@@ -101,11 +101,14 @@ public static class XoppImage
         return new Rect(Map(bounds.Left, bounds.Top), Map(bounds.Right, bounds.Bottom));
     }
 
-    public static byte[] GetData(XElement e)
+    public static byte[] GetData(XElement e) => GetData(e.Value);
+
+    /// <summary>The data of a picture element's content (base64; any thread: no element is touched).</summary>
+    public static byte[] GetData(string content)
     {
         try
         {
-            return Convert.FromBase64String(e.Value.Trim());
+            return Convert.FromBase64String(content.Trim());
         }
         catch (FormatException)
         {

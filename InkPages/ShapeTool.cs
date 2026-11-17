@@ -11,6 +11,7 @@ public sealed class ShapeTool(UndoStack undo, Func<InkDrawingAttributes> pen)
     private InkPage? view;
     private Point start;
     private Polyline? preview;
+    private double width; // the pen's size, read once per shape
 
     public ShapeKind Shape { get; set; }
 
@@ -19,6 +20,7 @@ public sealed class ShapeTool(UndoStack undo, Func<InkDrawingAttributes> pen)
         view = page;
         start = p;
         var attributes = pen();
+        width = attributes.Size.Width;
         preview = new Polyline
         {
             Stroke = new SolidColorBrush(attributes.Color),
@@ -33,7 +35,7 @@ public sealed class ShapeTool(UndoStack undo, Func<InkDrawingAttributes> pen)
     public void Move(Point p)
     {
         var points = new PointCollection();
-        foreach (var point in ShapeGeometry.Outline(Shape, start, p, pen().Size.Width))
+        foreach (var point in ShapeGeometry.Outline(Shape, start, p, width))
         {
             points.Add(point);
         }
@@ -63,5 +65,6 @@ public sealed class ShapeTool(UndoStack undo, Func<InkDrawingAttributes> pen)
             view?.Overlay.Children.Remove(preview);
             preview = null;
         }
+        view = null; // no page kept after the shape (another document may replace it)
     }
 }

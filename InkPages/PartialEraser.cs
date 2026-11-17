@@ -2,7 +2,6 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
 using Windows.Foundation;
 using InkStroke = Windows.UI.Input.Inking.InkStroke;
-using XamlCanvas = Microsoft.UI.Xaml.Controls.Canvas;
 
 namespace InkPages;
 
@@ -15,9 +14,14 @@ public sealed class PartialEraser(UndoStack undo, Action<IReadOnlyCollection<Ink
 {
     private InkPage? cursorPage;
     private Ellipse? cursor;
+    private readonly TranslateTransform cursorAt = new();
     private InkPage? page;
     private PageEdit? edit;
     private Point last;
+
+    // The strokes of the drag's page read so far (by ink id), and the pieces it made: each read from the ink once per
+    // drag, not on every pointer event.
+    private readonly Dictionary<uint, SampledStroke> sampled = new();
 
     private static readonly Windows.UI.Color CursorColor = Microsoft.UI.Colors.DimGray;
 
@@ -31,12 +35,23 @@ public sealed class PartialEraser(UndoStack undo, Action<IReadOnlyCollection<Ink
         {
             Hide();
             // On the sheet, not the window: a gray that shows on white paper in either theme.
-            cursor = new Ellipse { Stroke = new SolidColorBrush(CursorColor), StrokeThickness = 0.5, IsHitTestVisible = false };
+            cursor = new Ellipse
+            {
+                Stroke = new SolidColorBrush(CursorColor),
+                StrokeThickness = 0.5,
+                IsHitTestVisible = false,
+                RenderTransform = cursorAt, // moved per pen event without a layout pass
+            };
             view.Overlay.Children.Add(cursor);
             cursorPage = view;
         }
         // The stroke lies inside the ellipse's bounds: its outer edge is the radius.
-        Overlay.Place(cursor!, new Rect(p.X - Radius, p.Y - Radius, 2 * Radius, 2 * Radius));
+        if (cursor!.Width != 2 * Radius)
+        {
+            cursor.Width = cursor.Height = 2 * Radius;
+        }
+        cursorAt.X = p.X - Radius;
+        cursorAt.Y = p.Y - Radius;
     }
 
     public void Hide()
@@ -49,11 +64,21 @@ public sealed class PartialEraser(UndoStack undo, Action<IReadOnlyCollection<Ink
         }
     }
 
+    /// <summary>Other pages are shown: the circle goes and no old page is kept.</summary>
+    public void ForgetPages()
+    {
+        Hide();
+        page = null;
+        edit = null;
+        sampled.Clear();
+    }
+
     public void Begin(InkPage view, Point p)
     {
         page = view;
         edit = new PageEdit(view);
         last = p;
+        sampled.Clear();
         Hover(view, p);
         EraseAt([p]);
     }
@@ -92,6 +117,7 @@ public sealed class PartialEraser(UndoStack undo, Action<IReadOnlyCollection<Ink
         }
         edit = null;
         page = null;
+        sampled.Clear();
     }
 
     /// <summary>Applies one pointer event's swept eraser circles in a single pass over the page's strokes.</summary>
@@ -115,15 +141,14 @@ public sealed class PartialEraser(UndoStack undo, Action<IReadOnlyCollection<Ink
             {
                 continue;
             }
-            var attributes = stroke.DrawingAttributes;
-            var transform = stroke.PointTransform;
-            var samples = stroke.GetInkPoints().Select(p =>
+            uint id = stroke.Id;
+            if (!sampled.TryGetValue(id, out var read))
             {
-                var at = System.Numerics.Vector2.Transform(new((float)p.Position.X, (float)p.Position.Y), transform);
-                return new InkSample(new Point(at.X, at.Y), p.Pressure);
-            }).ToList();
-            var halfWidth = (InkSample s) => InkStrokes.DrawnWidth(attributes, s.Pressure) / 2;
-            List<List<InkSample>> pieces = [samples];
+                read = SampledStroke.Of(stroke);
+                sampled[id] = read;
+            }
+            var (attributes, halfWidth) = (read.Attributes, read.HalfWidth);
+            List<List<InkSample>> pieces = [read.Samples];
             bool touched = false;
             foreach (var center in centers)
             {
@@ -158,11 +183,13 @@ public sealed class PartialEraser(UndoStack undo, Action<IReadOnlyCollection<Ink
             {
                 edit.RemovedStrokes.Add(stroke); // was there before this drag
             }
+            sampled.Remove(stroke.Id);
             foreach (var piece in pieces)
             {
                 var rest = InkStrokes.FromSamples(piece, attributes);
                 ink.AddStroke(rest);
                 edit.AddedStrokes.Add(rest);
+                sampled[rest.Id] = SampledStroke.Made(piece, attributes); // what reading it would give
             }
         }
         if (removed.Count != 0)
