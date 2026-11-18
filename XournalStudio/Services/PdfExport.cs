@@ -51,7 +51,7 @@ public static class PdfExport
                     {
                         if (XoppPage.IsPdfBackground(bg) && backgroundPdf != null && File.Exists(backgroundPdf))
                         {
-                            background ??= XPdfForm.FromFile(backgroundPdf);
+                            background ??= BackgroundForm(backgroundPdf, keepOpen);
                             background.PageNumber = Math.Min(XoppPage.PdfPageIndexOf(bg) + 1, background.PageCount);
                             g.DrawImage(background, 0, 0, width, height);
                         }
@@ -103,6 +103,18 @@ public static class PdfExport
             background?.Dispose();
             keepOpen.ForEach(d => d.Dispose());
         }
+    }
+
+    // The lecture PDF with its annotations (signatures, texts and ink added in other apps) drawn into its pages, as the
+    // screen shows them: a page imported as a form brings only its content.
+    private static XPdfForm BackgroundForm(string path, List<IDisposable> keepOpen)
+    {
+        if (PdfAnnotationFlattener.Flatten(path) is not { } flattened)
+        {
+            return XPdfForm.FromFile(path);
+        }
+        keepOpen.Add(flattened);
+        return XPdfForm.FromStream(flattened);
     }
 
     private static void DrawSolid(XGraphics g, XElement background, double width, double height)

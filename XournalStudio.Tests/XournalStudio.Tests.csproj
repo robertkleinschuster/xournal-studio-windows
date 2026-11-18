@@ -32,6 +32,7 @@
     <Compile Include="..\XournalStudio\Services\TaskFile.cs" Link="Services\TaskFile.cs" />
     <!-- PDF export. -->
     <Compile Include="..\XournalStudio\Services\PdfExport.cs" Link="Services\PdfExport.cs" />
+    <Compile Include="..\XournalStudio\Services\PdfAnnotationFlattener.cs" Link="Services\PdfAnnotationFlattener.cs" />
   </ItemGroup>
   <ItemGroup>
     <Using Include="InkPages" />

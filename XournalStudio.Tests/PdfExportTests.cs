@@ -84,6 +84,60 @@ public sealed class PdfExportTests : IDisposable
         Assert.True(StrokeConverter.ReadShape(System.Xml.Linq.XElement.Parse(
             """<stroke tool="highlighter" color="#ffff007f" width="8.5">0 0 10 0</stroke>"""))!.EvenWidth);
     }
+    // A page with a signature as Apple's Preview writes it (a Stamp annotation with an appearance stream) and a hidden one.
+    private string SignedPdf()
+    {
+        string path = Path.Combine(temp, "signed.pdf");
+        using var pdf = new PdfDocument();
+        var page = pdf.AddPage();
+        var annotations = new PdfArray(pdf);
+        foreach (var (drawing, flags) in new[] { ("3.21 4.32 m 9.87 6.54 l S", 4), ("1.11 2.22 m 7.77 8.88 l S", 4 | 2) })
+        {
+            var appearance = new PdfDictionary(pdf);
+            appearance.Elements.SetName("/Type", "/XObject");
+            appearance.Elements.SetName("/Subtype", "/Form");
+            appearance.Elements["/BBox"] = new PdfArray(pdf, new PdfReal(0), new PdfReal(0), new PdfReal(20), new PdfReal(10));
+            appearance.CreateStream(System.Text.Encoding.ASCII.GetBytes(drawing));
+            pdf.Internals.AddObject(appearance);
+            var ap = new PdfDictionary(pdf);
+            ap.Elements["/N"] = appearance.Reference;
+            var stamp = new PdfDictionary(pdf);
+            stamp.Elements.SetName("/Type", "/Annot");
+            stamp.Elements.SetName("/Subtype", "/Stamp");
+            stamp.Elements["/Rect"] = new PdfArray(pdf, new PdfReal(100), new PdfReal(100), new PdfReal(140), new PdfReal(120));
+            stamp.Elements.SetInteger("/F", flags);
+            stamp.Elements["/AP"] = ap;
+            pdf.Internals.AddObject(stamp);
+            annotations.Elements.Add(stamp.Reference!);
+        }
+        page.Elements["/Annots"] = annotations;
+        pdf.Save(path);
+        return path;
+    }
+
+    private static string AllStreams(string path)
+    {
+        using var pdf = PdfReader.Open(path, PdfDocumentOpenMode.Import);
+        return string.Join("\n", pdf.Internals.GetAllObjects().OfType<PdfDictionary>()
+            .Where(d => d.Stream != null).Select(d => System.Text.Encoding.ASCII.GetString(d.Stream.UnfilteredValue)));
+    }
+
+    [Fact]
+    public void AnnotationsOfTheBackgroundPdfAreExportedAsTheyAreShown()
+    {
+        SignedPdf();
+        string doc = Xopp("s.xopp", """<page width="595" height="842"><background type="pdf" domain="absolute" filename="signed.pdf" pageno="1"/><layer/></page>""");
+        var document = XoppDocument.Load(doc);
+        string target = Path.Combine(temp, "s-export.pdf");
+
+        PdfExport.Write(document.Snapshot(doc), document.PdfPath, target);
+
+        string streams = AllStreams(target);
+        Assert.Contains("9.87 6.54 l S", streams); // the printable one, drawn at its rectangle
+        Assert.Contains("2 0 0 2 100 100 cm", streams);
+        Assert.DoesNotContain("7.77 8.88 l S", streams); // the hidden one is not
+    }
+
     [Fact]
     public void UnknownFontsUnreadablePictureBackgroundsAndOddStrokesDoNotStopTheExport()
     {
