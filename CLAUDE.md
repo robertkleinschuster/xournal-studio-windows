@@ -311,7 +311,7 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 - UI Automation: the InkToolbar's own buttons have the ids `InkToolbarBallpointPenButton`,
   `InkToolbarHighlighterButton`, `InkToolbarEraserButton` (their `x:Name`/`AutomationProperties.Name` is
   ignored); custom buttons and other controls use their `x:Name` (PenToolbar sets `AutomationId`s: `PenButton1..n`,
-  `HighlighterButton1..n`, `PartialEraseButton` (the eraser's mode toggle), `SelectButton`, `ShapeButton`, `StencilButton`, `UndoButton`, ...;
+  `HighlighterButton1..n`, `WholeStrokeEraseButton` (the eraser's mode toggle), `SelectButton`, `ShapeButton`, `StencilButton`, `UndoButton`, ...;
   `RecognizeButton` is a CheckBox in the shape tool's options).
 - **`InkToolbarCustomToolButton`'s template had no Checked visual states and no template defined
   `ShowExtensionGlyph`/`HideExtensionGlyph`** (WinUI InkToolbar.xaml; UWP's generic.xaml in the Windows SDK has a
@@ -532,8 +532,9 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 - **Partial eraser approved (user, 2026-11-16)** as a deliberate exception (Windows ink erases whole strokes only):
   **Mode toggle again (user, 2026-11-17 evening):** "Man soll den Radiermodus umschalten können, ohne das
   Zeichenwerkzeug auf Radierer zu ändern, weil man ja eh den Radierer-Stift hat" – one eraser tool (native) and the
-  toggle "Punktgenau radieren" (`PenToolbar.PartialErase`, an `InkToolbarCustomToggleButton`: it never changes the
-  active tool); the eraser tool and the pen's eraser button/end follow it. The two-tools variant of the same day
+  toggle (`PenToolbar.WholeStrokeErase`, an `InkToolbarCustomToggleButton`: it never changes the
+  active tool; **inverted 2026-11-18 by the user:** "Ganze Striche radieren", icon ED62 – an eraser in a selection frame –,
+  off by default, so the eraser erases exactly unless it is checked; setting `WholeStrokeErasing`); the eraser tool and the pen's eraser button/end follow it. The two-tools variant of the same day
   (mode = the eraser chosen last) is gone. InkToolbar puts toggles after the ruler, so the toggle cannot stand right
   beside the eraser. The user's pen (Lenovo Integrated Pen of the X13 Yoga Gen 4, garaged, 4X81M52316) has two side
   buttons (retailer specs; Lenovo's guide for its Integrated Smart Pen: upper = right-click, lower = erase; not checked

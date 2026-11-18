@@ -49,9 +49,11 @@ public sealed class PenToolbar : UserControl
         presetTip = texts.PresetTip;
         Ink = new InkToolbar { InitialControls = InkToolbarInitialControls.None, VerticalAlignment = VerticalAlignment.Center };
         // Presets: InkToolbar takes one built-in ballpoint and highlighter button only; any number of custom pen buttons,
-        // each with its own palette index and width and Windows' own pen flyout (InkToolbarPenConfigurationControl).
+        // each with its own palette index and width and Windows' own pen flyout (InkToolbarPenConfigurationControl). Its
+        // width slider moves in whole steps and shows whole numbers (WinUI's InkToolbarStrokeWidthSlider): the limits are
+        // whole numbers too (a minimum of 0.5 showed as a second "1").
         Pens = pens.Select((preset, i) =>
-            Preset(new BallpointPen(), texts.Pen, palette, preset, 0.5, 6, "\uE76D", "\uE88F", $"PenButton{i + 1}")).ToList();
+            Preset(new BallpointPen(), texts.Pen, palette, preset, 1, 6, "\uE76D", "\uE88F", $"PenButton{i + 1}")).ToList();
         Highlighters = highlighters.Select((preset, i) =>
             Preset(new HighlighterPen(), texts.Highlighter, highlighterPalette, preset, 2, 30, "\uE7E6", "\uE891", $"HighlighterButton{i + 1}")).ToList();
 
@@ -79,8 +81,8 @@ public sealed class PenToolbar : UserControl
         Describe(Shapes, texts.Shapes, texts.ShapesTip, "ShapeButton");
         Ink.Children.Add(Shapes);
 
-        // One eraser tool (Windows ink's) and the eraser's mode as a toggle beside it: whole strokes or exactly the circle
-        // at the pen. (InkToolbar orders its buttons itself – built-in pens, custom pens, eraser, custom tools, stencil,
+        // One eraser tool and the eraser's mode as a toggle beside it: exactly the circle at the pen (default) or, checked,
+        // whole strokes (Windows ink's own eraser). (InkToolbar orders its buttons itself – built-in pens, custom pens, eraser, custom tools, stencil,
         // toggles – so the mode toggle stands at the end of the ink group, after the ruler.) The mode applies to the tool and to the pen's eraser (button or
         // end), and switching it leaves the active tool alone – a pen with an eraser button erases without ever choosing
         // the eraser tool (the tool stays for mouse users and long erasing). The circle's size is the toggle's context
@@ -89,17 +91,18 @@ public sealed class PenToolbar : UserControl
         Describe(Eraser, texts.Eraser, texts.EraserTip);
         Ink.Children.Add(Eraser);
         EraserRadius = new Slider { Minimum = 1, Maximum = 20, StepFrequency = 0.5, Value = 4 };
-        PartialErase = new InkToolbarCustomToggleButton
+        WholeStrokeErase = new InkToolbarCustomToggleButton
         {
-            Content = Glyph("\uED61"), // Windows' PointErase glyph (the eraser button's is StrokeErase, ED60)
+            // An eraser in a selection frame: whole objects (Segoe Fluent Icons ED62; the eraser button shows ED60)
+            Content = Glyph("\uED62"),
             ContextFlyout = new Flyout
             {
                 Placement = Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.BottomEdgeAlignedLeft, // below the row, not over it
                 Content = Options(false, (texts.EraserRadius, RadiusPreview(EraserRadius)), (null, EraserRadius)),
             },
         };
-        Describe(PartialErase, texts.PartialErase, texts.PartialEraseTip, "PartialEraseButton");
-        Ink.Children.Add(PartialErase);
+        Describe(WholeStrokeErase, texts.WholeStrokeErase, texts.WholeStrokeEraseTip, "WholeStrokeEraseButton");
+        Ink.Children.Add(WholeStrokeErase);
 
         // Windows' own ruler and protractor: draw along the edge for straight lines; move/turn with fingers.
         Ruler = new InkToolbarStencilButton();
@@ -178,10 +181,10 @@ public sealed class PenToolbar : UserControl
     /// <summary>Windows ink's eraser: whole strokes.</summary>
     public InkToolbarEraserButton Eraser { get; }
     /// <summary>
-    /// The eraser's mode (see <see cref="PartialEraser"/>): checked, the eraser tool and the pen's eraser erase exactly the
-    /// circle at the pen; otherwise whole strokes. Not a tool: switching it keeps the active tool.
+    /// The eraser's mode: checked, the eraser tool and the pen's eraser erase whole strokes (Windows ink's eraser);
+    /// otherwise exactly the circle at the pen (<see cref="PartialEraser"/>). Not a tool: switching it keeps the active tool.
     /// </summary>
-    public InkToolbarCustomToggleButton PartialErase { get; }
+    public InkToolbarCustomToggleButton WholeStrokeErase { get; }
     /// <summary>The partial eraser's radius (the toggle's context flyout).</summary>
     public Slider EraserRadius { get; }
     public InkToolbarCustomToolButton Select { get; }

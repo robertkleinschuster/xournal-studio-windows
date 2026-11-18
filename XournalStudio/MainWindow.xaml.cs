@@ -43,7 +43,7 @@ public sealed partial class MainWindow : Window
         ToolbarHost.Content = bar;
         AddAppButtons();
         SetToolChoices();
-        ink = new InkWorkspace(bar, Scroller, settings.PartialErasing);
+        ink = new InkWorkspace(bar, Scroller, partialErasing: !settings.WholeStrokeErasing);
         KeepToolSettings();
         pages = new PagesController(Scroller, PagesPanel, ink);
         dialogs = new Dialogs(() => Content.XamlRoot, pages);
@@ -280,7 +280,7 @@ public sealed partial class MainWindow : Window
         bar.ShapeKind.SelectionChanged += (_, _) => Save(() => settings.Shape = (ShapeKind)bar.ShapeKind.SelectedIndex, bar.ShapeKind.SelectedIndex >= 0);
         bar.SelectMode.SelectionChanged += (_, _) => Save(() => settings.SelectMode = (SelectMode)bar.SelectMode.SelectedIndex, bar.SelectMode.SelectedIndex >= 0);
         bar.EraserRadius.ValueChanged += (_, e) => Save(() => settings.EraserRadius = e.NewValue);
-        ink.PartialErasingChanged += (_, _) => Save(() => settings.PartialErasing = ink.PartialErasing);
+        ink.PartialErasingChanged += (_, _) => Save(() => settings.WholeStrokeErasing = !ink.PartialErasing);
         bar.RecognizeShapes.Click += (_, _) => Save(() => settings.RecognizeShapes = bar.RecognizeShapes.IsChecked == true);
         ink.Tools.PresetsChanged += (_, _) => Save(() =>
         {

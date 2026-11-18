@@ -11,8 +11,8 @@ function States([string]$theme) {
     Button 'HighlighterButton1'; Shot "$theme-05-highlighter-options"; Escape
     Button 'InkToolbarEraserButton'; Shot "$theme-06-eraser-active"
     Button 'InkToolbarEraserButton'; Shot "$theme-07-eraser-options"; Escape
-    Button 'PartialEraseButton'; Shot "$theme-08-erase-exactly-on"
-    RightClick 'PartialEraseButton'; Shot "$theme-09-erase-exactly-size"; Escape
+    Button 'WholeStrokeEraseButton'; Shot "$theme-08-erase-whole-strokes-on"
+    RightClick 'WholeStrokeEraseButton'; Shot "$theme-09-eraser-size"; Escape
     Button 'SelectButton'; Shot "$theme-10-select-active"
     Button 'SelectButton'; Shot "$theme-11-select-options"; Escape
     Button 'ShapeButton'; Shot "$theme-12-shapes-active"

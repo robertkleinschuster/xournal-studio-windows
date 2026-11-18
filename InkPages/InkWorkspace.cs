@@ -15,8 +15,9 @@ public sealed class InkWorkspace
     private readonly PenToolbar bar;
     private int generation; // counts Reset: recognition still running for older pages is dropped
 
-    /// <param name="partialErasing">The eraser erases partially (the toolbar's mode toggle checked).</param>
-    public InkWorkspace(PenToolbar bar, ScrollView scroller, bool partialErasing = false)
+    /// <param name="partialErasing">The eraser erases exactly the circle at the pen (the default; the toolbar's
+    /// "whole strokes" toggle unchecked).</param>
+    public InkWorkspace(PenToolbar bar, ScrollView scroller, bool partialErasing = true)
     {
         this.bar = bar;
         Tools = new ToolController(bar.Ink, bar.Pens, bar.Highlighters);
@@ -68,9 +69,9 @@ public sealed class InkWorkspace
         Input.TakeForSelection = over => Tools.SelectionTakenOver = over;
         ApplyEraserMode();
         // The eraser's mode is the toolbar's toggle (not a tool): the eraser tool and the pen's eraser follow it.
-        bar.PartialErase.IsChecked = partialErasing;
-        bar.PartialErase.Checked += (_, _) => PartialErasing = true;
-        bar.PartialErase.Unchecked += (_, _) => PartialErasing = false;
+        bar.WholeStrokeErase.IsChecked = !partialErasing;
+        bar.WholeStrokeErase.Checked += (_, _) => PartialErasing = false;
+        bar.WholeStrokeErase.Unchecked += (_, _) => PartialErasing = true;
 
         Undo.Changed += (_, _) =>
         {
@@ -91,7 +92,7 @@ public sealed class InkWorkspace
 
     private bool partialErasing;
 
-    /// <summary>The eraser erases exactly the circle at the pen (the toolbar's mode toggle): the tool and the pen's eraser.</summary>
+    /// <summary>The eraser erases exactly the circle at the pen (the toolbar's "whole strokes" toggle off): the tool and the pen's eraser.</summary>
     public bool PartialErasing
     {
         get => partialErasing;

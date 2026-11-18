@@ -9,12 +9,12 @@ public sealed record PenToolbarTexts
     public string PresetTip { get; init; } = "tap again for color and size";
     public string Eraser { get; init; } = "Eraser";
     public string EraserTip { get; init; } = "Eraser – the pen's eraser button erases too, with any tool";
-    /// <summary>The eraser's mode toggle (exactly the circle at the pen instead of whole strokes).</summary>
-    public string PartialErase { get; init; } = "Erase exactly";
-    public string PartialEraseTip { get; init; } =
-        "Erase exactly: the eraser and the pen's eraser button erase only what is in the circle, not whole strokes. " +
-        "Right-click (pen: tap with the barrel button held): size";
-    /// <summary>The partial eraser's size (the mode toggle's context flyout).</summary>
+    /// <summary>The eraser's mode toggle (whole strokes instead of exactly the circle at the pen).</summary>
+    public string WholeStrokeErase { get; init; } = "Erase whole strokes";
+    public string WholeStrokeEraseTip { get; init; } =
+        "Erase whole strokes: the eraser and the pen's eraser button erase every stroke they touch. Off: only what is " +
+        "in the circle. Right-click (pen: tap with the barrel button held): the circle's size";
+    /// <summary>The exact eraser's circle size (the mode toggle's context flyout).</summary>
     public string EraserRadius { get; init; } = "Size";
     public string Select { get; init; } = "Select";
     public string SelectTip { get; init; } =

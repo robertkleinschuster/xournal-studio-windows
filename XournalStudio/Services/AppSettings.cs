@@ -36,8 +36,11 @@ public sealed class AppSettings
 
     public InkPages.SelectMode SelectMode { get; set; }
 
-    /// <summary>The eraser erases exactly a circle of <see cref="EraserRadius"/> points (the toolbar's mode toggle): the tool and the pen's eraser.</summary>
-    public bool PartialErasing { get; set; }
+    /// <summary>
+    /// The eraser erases whole strokes (the toolbar's mode toggle); otherwise exactly a circle of <see cref="EraserRadius"/>
+    /// points (the default since 2026-11-18; the former setting PartialErasing, off by default, is no longer read).
+    /// </summary>
+    public bool WholeStrokeErasing { get; set; }
 
     public double EraserRadius { get; set; } = 4;
 

@@ -15,6 +15,7 @@ function HoverAt($x, $y, $ms = 100) { for ($t = 0; $t -lt $ms; $t += 16) { [Inj]
 Invoke-Test {
     Start-TestApp 'InkPages.Demo.exe' '--light'
     Shot '01-start'
+    Button 'WholeStrokeEraseButton'   # whole strokes (the default erases exactly)
 
     # Stroke eraser (Windows ink): the touched stroke goes. The pen's eraser end too.
     [Inj]::PenStroke((L 300 130 550 130), $false, 512)
@@ -50,12 +51,12 @@ Invoke-Test {
     Shot '10-scaled'
     Button 'UndoButton'; Shot '11-scale-undone'
 
-    # Erasing exactly (the eraser's mode toggle, the tool stays the eraser): only the circle at the pen goes; the circle
+    # Erasing exactly (the eraser's mode toggle off again, the tool stays the eraser): only the circle at the pen goes; the circle
     # shows while hovering; undo.
     Button 'PenButton1'
     [Inj]::PenStroke((L 300 380 550 380), $false, 512)
     Button 'InkToolbarEraserButton'
-    Button 'PartialEraseButton'
+    Button 'WholeStrokeEraseButton'
     [Inj]::PenStroke((L 420 365 420 395), $false, 512)
     for ($k = 0; $k -lt 6; $k++) { [Inj]::PenFrame(470 + 3 * $k, 380, 0x22002, 0, 0) }
     [Inj]::Shot("$out\12-point-erased-circle.png"); "shot 12-point-erased-circle"
@@ -71,7 +72,7 @@ Invoke-Test {
     for ($k = 0; $k -lt 4; $k++) { [Inj]::PenFrame(300 + 3 * $k, 450, 0x22002, 0, 0) }
     [Inj]::PenStroke((L 300 450 600 450), $false, 512)
     Shot '14-eraser-end-partial-then-ink'
-    Button 'PartialEraseButton'   # back to whole strokes for the eraser end (the pen stays the tool)
+    Button 'WholeStrokeEraseButton'   # back to whole strokes for the eraser end (the pen stays the tool)
     Button 'PenButton1'
 
     # Shapes: an arrow with the shape tool; with recognition on, drawn shapes become clean ones.

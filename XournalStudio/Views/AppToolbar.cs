@@ -16,9 +16,9 @@ public static class AppToolbar
         PresetTip = "nochmal tippen für Farbe und Stärke",
         Eraser = "Radierer",
         EraserTip = "Radierer – die Radierer-Taste des Stifts radiert auch, mit jedem Werkzeug",
-        PartialErase = "Punktgenau radieren",
-        PartialEraseTip = "Punktgenau radieren: Radierer und Radierer-Taste des Stifts löschen nur, was im Kreis liegt, " +
-            "statt ganzer Striche. Rechtsklick (mit dem Stift: Stifttaste halten und tippen): Größe",
+        WholeStrokeErase = "Ganze Striche radieren",
+        WholeStrokeEraseTip = "Ganze Striche radieren: Radierer und Radierer-Taste des Stifts löschen jeden Strich, den sie " +
+            "berühren. Aus: nur, was im Kreis liegt. Rechtsklick (mit dem Stift: Stifttaste halten und tippen): Größe des Kreises",
         EraserRadius = "Größe",
         Select = "Auswählen",
         SelectTip = "Auswählen: Lasso oder Rechteck (nochmal tippen zum Wählen); ziehen verschiebt, Ecken skalieren; " +
