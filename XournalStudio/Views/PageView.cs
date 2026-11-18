@@ -98,9 +98,7 @@ public sealed partial class PageView : InkPage
     /// <summary>A rectangle on a PDF page also marks that area: copying takes what is seen there.</summary>
     public override bool KeepsSelectedAreas => pdf != null;
 
-    public override void StrokeReplaced(uint oldId, uint newId) => Page.TransferStrokeIdentity(oldId, newId);
-
-    public override List<InkStroke?> CurrentStrokes(IEnumerable<InkStroke> strokes) => Page.CurrentAll(strokes);
+    protected override void OnStrokeReplaced(uint oldId, uint newId) => Page.RenameStroke(oldId, newId);
 
     public override void BeginStrokePreview(InkStroke stroke, Matrix3x2 committed) => Page.BeginPreview(stroke, committed);
 
@@ -111,7 +109,103 @@ public sealed partial class PageView : InkPage
     public override object CapturePlacement(IEnumerable<InkStroke> strokes, IEnumerable<object> pictures,
         Func<InkStroke, Matrix3x2>? transformOf = null) => Page.CapturePlacement(strokes, pictures.Cast<XElement>(), transformOf);
 
-    public override void RestorePlacement(object placement) => Page.RestorePlacement((Placement)placement);
+    public override void RestorePlacement(object placement)
+    {
+        var p = (Placement)placement;
+        Page.RestorePlacement(p, CurrentStrokes(p.Strokes.Select(s => s.Stroke)));
+    }
+
+    /// <summary>
+    /// Adds stroke and picture elements (not recorded yet). <paramref name="skipped"/>: elements that cannot be ink or a
+    /// picture here (strokes drawn from the file only, elements this app does not place). If adding fails, what was
+    /// added is taken back and the error thrown.
+    /// </summary>
+    public PageEdit AddElements(IEnumerable<XElement> elements, out int skipped)
+    {
+        var edit = new PageEdit(this);
+        skipped = 0;
+        try
+        {
+            foreach (var e in elements)
+            {
+                if (e.Name == "stroke")
+                {
+                    if (Page.AddStrokeElement(e) is { } stroke)
+                    {
+                        edit.AddedStrokes.Add(stroke);
+                    }
+                    else
+                    {
+                        skipped++;
+                    }
+                }
+                else if (XoppImage.IsImage(e))
+                {
+                    edit.AddedPictures.Add(e); // recorded before attached: a take-back finds it
+                }
+                else
+                {
+                    skipped++;
+                }
+            }
+            Page.AddImages(edit.AddedPictures.Cast<XElement>().ToList());
+        }
+        catch
+        {
+            TakeBack(edit); // nothing half added; the caller reports the original error
+            throw;
+        }
+        return edit;
+    }
+
+    /// <summary>
+    /// Takes back what an add that failed or was refused had added: its strokes, and its pictures if they were attached
+    /// (nothing else an undo does applies). An error doing so is logged; the original one is what the caller reports.
+    /// </summary>
+    public void TakeBack(PageEdit edit)
+    {
+        try
+        {
+            PageEdit.RemoveStrokes(this, edit.AddedStrokes);
+        }
+        catch (Exception e)
+        {
+            DebugLog.Write("taking back the strokes of a failed add", e);
+        }
+        var attached = edit.AddedPictures.Cast<XElement>().Where(i => i.Parent != null).ToList();
+        if (attached.Count > 0)
+        {
+            try
+            {
+                Page.RemoveImages(attached);
+            }
+            catch (Exception e)
+            {
+                DebugLog.Write("taking back the pictures of a failed add", e);
+            }
+        }
+    }
+
+    /// <summary>
+    /// A dragged selection goes on to another page: the file's elements themselves (exact widths, unknown attributes),
+    /// transformed into the target's coordinates – all or nothing (null when one of them cannot be placed there; the
+    /// app says so on <c>SelectionTool.TransferFailed</c>).
+    /// </summary>
+    public override (List<InkStroke> Strokes, List<object> Pictures)? CopyTo(InkPage target, IReadOnlyList<InkStroke> strokes,
+        IReadOnlyCollection<object> pictures, Matrix3x2 m)
+    {
+        var to = (PageView)target;
+        var elements = pictures.Cast<XElement>().Select(i => XoppClip.Transformed(i, m))
+            .Concat(strokes.Select(s => XoppClip.Transformed(Page.ElementOf(s), m))).ToList();
+        var edit = to.AddElements(elements, out int skipped);
+        if (skipped > 0 || elements.Count == 0)
+        {
+            DebugLog.Write($"move to page: {skipped} of {elements.Count} element(s) cannot be placed there – nothing moved");
+            to.TakeBack(edit);
+            return null;
+        }
+        return (edit.AddedStrokes.ToList(), edit.AddedPictures.ToList());
+    }
 
     public override IEnumerable<object> Pictures => Page.Images;
 

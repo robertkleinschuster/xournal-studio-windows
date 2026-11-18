@@ -23,24 +23,49 @@ public sealed class EditCommands(
     private const double PdfAreaPixelsPerPoint = 3; // 216 dpi: sharp text when pasted at the original size
 
     /// <summary>
-    /// The one rule while the selection is being moved or scaled (<see cref="SelectionTool.IsDragging"/>): a command
-    /// that reads or changes content is refused and the user is told – the move is never lost or measured mid-way.
-    /// True: refused. Checked when a command starts and again after it waited (clipboard, rendering).
+    /// The library's one rule (<see cref="InkCommands.Refuses"/>): while the selection is being moved or scaled, or the
+    /// ink is hidden under a dialog, a command that reads or changes content is refused and the user is told
+    /// (<see cref="ReportRefused"/>) – the move is never lost or measured mid-way. True: refused. Checked when a command
+    /// starts and again after it waited (clipboard, rendering).
     /// </summary>
-    public bool RefusedWhileDragging(string command)
+    public bool Refused(InkCommand command) => commands.Refuses(command);
+
+    /// <summary>Tells the user that a command waits for the drag (the library's <see cref="InkCommands.Refused"/>).</summary>
+    public void ReportRefused(InkCommand command) =>
+        messages.Show(InfoBarSeverity.Informational, $"{Name(command)}: nicht ausgeführt", PenToolbarTexts.German.Refused);
+
+    private static string Name(InkCommand command) => command switch
     {
-        if (!selection.IsDragging)
+        InkCommand.Undo => "Rückgängig",
+        InkCommand.Redo => "Wiederholen",
+        InkCommand.Cut => "Ausschneiden",
+        InkCommand.Copy => "Kopieren",
+        InkCommand.Paste => "Einfügen",
+        InkCommand.Duplicate => "Duplizieren",
+        InkCommand.Delete => "Löschen",
+        InkCommand.SelectAll => "Alles auswählen",
+        InkCommand.ClearPage => "Seite leeren",
+        _ => command.ToString(),
+    };
+
+    /// <summary>A dragged selection could not go on to another page (the library's <see cref="SelectionTool.TransferFailed"/>).</summary>
+    public void ReportTransferFailed(Exception? e)
+    {
+        if (e != null)
         {
-            return false;
+            messages.Error("move to page", "Verschieben auf die andere Seite nicht möglich", e);
         }
-        messages.Show(InfoBarSeverity.Informational, $"{command}: nicht ausgeführt", "Erst loslassen – die Auswahl wird gerade verschoben.");
-        return true;
+        else
+        {
+            messages.Show(InfoBarSeverity.Warning, "Nicht verschoben",
+                "Nicht alles lässt sich dort als Tinte oder Bild übernehmen; alles bleibt auf seiner Seite.");
+        }
     }
 
     /// <summary>Deletes the selected strokes and pictures (undoable). False: nothing selected (or refused mid-drag).</summary>
     public bool Delete()
     {
-        if (selection.Current is not { HasContent: true } || RefusedWhileDragging("Löschen"))
+        if (selection.Current is not { HasContent: true } || Refused(InkCommand.Delete))
         {
             return false;
         }
@@ -58,7 +83,7 @@ public sealed class EditCommands(
         {
             return false;
         }
-        if (RefusedWhileDragging("Kopieren"))
+        if (Refused(InkCommand.Copy))
         {
             return false; // mid-drag the content is between two places
         }
@@ -93,7 +118,7 @@ public sealed class EditCommands(
 
     public async Task CutAsync()
     {
-        if (RefusedWhileDragging("Ausschneiden"))
+        if (Refused(InkCommand.Cut))
         {
             return;
         }
@@ -107,7 +132,7 @@ public sealed class EditCommands(
             messages.Show(InfoBarSeverity.Informational, "Nur kopieren", "Ein PDF-Bereich lässt sich kopieren, nicht ausschneiden.");
             return;
         }
-        if (await CopyAsync() && selection.Current == copied && !RefusedWhileDragging("Ausschneiden (kopiert)"))
+        if (await CopyAsync() && selection.Current == copied && !Refused(InkCommand.Cut))
         {
             Delete(); // only if the selection is still the one copied (a tap may have changed it meanwhile)
         }
@@ -117,7 +142,7 @@ public sealed class EditCommands(
     public async Task PasteAsync()
     {
         var target = pages.CurrentPageView()?.Page;
-        if (target == null || RefusedWhileDragging("Einfügen"))
+        if (target == null || Refused(InkCommand.Paste))
         {
             return; // mid-drag: the place below the content and the dragged content itself are not settled
         }
@@ -125,7 +150,7 @@ public sealed class EditCommands(
         {
             var clip = await ClipboardService.GetClipAsync();
             // The page's view now (taken again after waiting: a view far from the viewport may have been released).
-            if (RefusedWhileDragging("Einfügen") || pages.ViewOf(target) is not { } view)
+            if (Refused(InkCommand.Paste) || pages.ViewOf(target) is not { } view)
             {
                 return; // a drag began while the clipboard was read (or the page was deleted)
             }
@@ -135,7 +160,7 @@ public sealed class EditCommands(
                 return;
             }
             clip ??= await ClipboardService.GetBitmapAsClipAsync();
-            if (RefusedWhileDragging("Einfügen") || pages.ViewOf(target) is not { } viewNow)
+            if (Refused(InkCommand.Paste) || pages.ViewOf(target) is not { } viewNow)
             {
                 return;
             }
@@ -162,7 +187,7 @@ public sealed class EditCommands(
     public void Duplicate()
     {
         var current = selection.Current;
-        if (current == null || !current.HasContent || RefusedWhileDragging("Duplizieren"))
+        if (current == null || !current.HasContent || Refused(InkCommand.Duplicate))
         {
             return;
         }
@@ -185,45 +210,11 @@ public sealed class EditCommands(
     public void SelectAll()
     {
         var view = pages.CurrentPageView();
-        if (view == null || RefusedWhileDragging("Alles auswählen"))
+        if (view == null || Refused(InkCommand.SelectAll))
         {
             return;
         }
         commands.SelectAll(view);
-    }
-
-    /// <summary>
-    /// Hands a dragged selection over to another page: its elements, transformed by <paramref name="m"/> from where
-    /// they were before the drag into the target's coordinates, are added to the target, then taken from their page.
-    /// Returns what was added and the edit of both pages (not recorded: the drag records itself), or null when nothing
-    /// moved (the user was told) – all or nothing.
-    /// </summary>
-    public (List<InkStroke> Strokes, List<object> Pictures, IPageEdit Edit)? TransferToPage(Selection current,
-        InkPage target, Matrix3x2 m)
-    {
-        List<InkStroke> strokes = [];
-        try
-        {
-            current.Revert(); // the elements as before the drag (m includes the move)
-            var source = (PageView)current.Page;
-            strokes = PageEdit.SelectOnly(source, current.Strokes); // what is still on the page (now marked)
-            var images = PicturesOf(current);
-            var elements = images.Cast<XElement>().Select(i => XoppClip.Transformed(i, m))
-                .Concat(strokes.Select(s => XoppClip.Transformed(source.Page.ElementOf(s), m))).ToList();
-            if (AddElements((PageView)target, elements, "move to page", allOrNothing: true) is not { } adding)
-            {
-                strokes.ForEach(s => s.Selected = false);
-                return null; // nothing could be added (said): the content stays where it was
-            }
-            var removal = PageEdit.RemoveSelected(current);
-            return (adding.AddedStrokes.ToList(), adding.AddedPictures.ToList(), new CombinedEdit([removal, adding]));
-        }
-        catch (Exception e)
-        {
-            strokes.ForEach(s => s.Selected = false);
-            messages.Error("move to page", "Verschieben auf die andere Seite nicht möglich", e);
-            return null;
-        }
     }
 
     // Adds stroke and picture elements to the page (undoable) and selects them; operation names it in the log.
@@ -237,57 +228,16 @@ public sealed class EditCommands(
     }
 
     // Adds stroke and picture elements to the page; the edit is not recorded yet. If adding fails, what was added is
-    // taken back before the error is reported. Null: nothing was added (the user was told) – with allOrNothing also
-    // when an element could not be added (a move must not lose what stays behind).
-    private PageEdit? AddElements(PageView view, List<XElement> elements, string operation, bool allOrNothing = false)
+    // taken back before the error is reported. Null: nothing was added (the user was told).
+    private PageEdit? AddElements(PageView view, List<XElement> elements, string operation)
     {
-        var page = view.Page;
-        var edit = new PageEdit(view);
-        int skipped = 0;
-        try
-        {
-            foreach (var e in elements)
-            {
-                if (e.Name == "stroke")
-                {
-                    if (page.AddStrokeElement(e) is { } stroke)
-                    {
-                        edit.AddedStrokes.Add(stroke);
-                    }
-                    else
-                    {
-                        skipped++;
-                    }
-                }
-                else if (XoppImage.IsImage(e))
-                {
-                    edit.AddedPictures.Add(e); // recorded before attached: a take-back finds it
-                }
-                else
-                {
-                    skipped++; // an element this app does not place
-                }
-            }
-            page.AddImages(edit.AddedPictures.Cast<XElement>().ToList());
-        }
-        catch
-        {
-            TakeBack(edit); // nothing half added; the caller reports the original error
-            throw;
-        }
+        var edit = view.AddElements(elements, out int skipped);
         bool nothing = edit.AddedStrokes.Count == 0 && edit.AddedPictures.Count == 0;
         if (skipped > 0 || nothing)
         {
             // Said, not silently dropped: strokes that cannot be ink (drawn from a file only) and elements this app
             // does not place (from a clip of elsewhere; for a duplicate an error of this app).
             DebugLog.Write($"{operation}: {skipped} of {elements.Count} element(s) not added");
-            if (allOrNothing && skipped > 0)
-            {
-                TakeBack(edit);
-                messages.Show(InfoBarSeverity.Warning, "Nicht verschoben",
-                    $"{skipped} Element(e) lassen sich dort nicht als Tinte oder Bild übernehmen; alles bleibt auf seiner Seite.");
-                return null;
-            }
             string why = skipped > 0
                 ? $"{skipped} Element(e) lassen sich hier nicht als Tinte oder Bild übernehmen."
                 : "Es gibt nichts, was sich hier übernehmen lässt.";
@@ -319,43 +269,13 @@ public sealed class EditCommands(
     // Windows ink from another app (or from this one's copy as ink): at the left margin below the page's content.
     private void PasteInk(PageView view)
     {
-        if (commands.PasteInk(view, new Point(Grid, PasteTop(view.Page, 0)), Grid) == null)
+        if (commands.PasteInk(view, new Point(Grid, PasteTop(view.Page, 0)), Grid) is { Count: 0 })
         {
-            ReportNothingAdded("Die Tinte in der Zwischenablage enthält keine Striche.");
+            ReportNothingAdded("Die Tinte in der Zwischenablage enthält keine Striche."); // null: refused (said)
         }
     }
     // Nothing was added: no undo step, the selection and tool stay as they were – and the user is told.
     private void ReportNothingAdded(string why) => messages.Show(InfoBarSeverity.Warning, "Nichts übernommen", why);
-
-    // Takes back what a paste or duplicate that failed had added: its strokes, and its pictures if they were attached
-    // (nothing else an undo does applies). An error doing so is logged; the original one is what the caller reports.
-    private static void TakeBack(PageEdit edit)
-    {
-        try
-        {
-            PageEdit.RemoveStrokes(edit.Page, edit.AddedStrokes);
-        }
-        catch (Exception e)
-        {
-            DebugLog.Write("taking back the strokes of a failed add", e);
-        }
-        var attached = edit.AddedPictures.Cast<XElement>().Where(i => i.Parent != null).ToList();
-        if (attached.Count > 0)
-        {
-            try
-            {
-                ((PageView)edit.Page).Page.RemoveImages(attached);
-            }
-            catch (Exception e)
-            {
-                DebugLog.Write("taking back the pictures of a failed add", e);
-            }
-        }
-    }
-
-    // The selected pictures still on their page (a picture of a selection may have been taken meanwhile).
-    private static List<object> PicturesOf(Selection selection) =>
-        selection.Pictures.Cast<XElement>().Where(i => i.Parent != null).Cast<object>().ToList();
 
     private static double PasteTop(XoppPage page, double height)
     {

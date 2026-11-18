@@ -61,7 +61,8 @@ public sealed partial class MainWindow : Window
             pages.ScrollToPage(index);
         });
         edit = new EditCommands(ink.Commands, ink.Selection, pages, ink.Undo, messages);
-        ink.TransferToPage = edit.TransferToPage;
+        ink.Commands.Refused += (_, command) => edit.ReportRefused(command);
+        ink.Selection.TransferFailed += edit.ReportTransferFailed;
         export = new PdfExportCommand(AppWindow.Id, session, messages);
         import = new PdfImportCommand(AppWindow.Id, session, dialogs, messages);
         insertPdfPages = new InsertPdfPagesCommand(AppWindow.Id, session, pages, dialogs, messages);
@@ -202,23 +203,9 @@ public sealed partial class MainWindow : Window
 
     // ---------------------------------------------------------------- edit
 
-    private void OnUndo(object sender, RoutedEventArgs e)
-    {
-        if (edit.RefusedWhileDragging("Rückgängig"))
-        {
-            return;
-        }
-        ink.UndoStep();
-    }
+    private void OnUndo(object sender, RoutedEventArgs e) => ink.Commands.Undo(); // refused while dragging (said)
 
-    private void OnRedo(object sender, RoutedEventArgs e)
-    {
-        if (edit.RefusedWhileDragging("Wiederholen"))
-        {
-            return;
-        }
-        ink.RedoStep();
-    }
+    private void OnRedo(object sender, RoutedEventArgs e) => ink.Commands.Redo();
 
     private async void OnCut(object sender, RoutedEventArgs e) => await edit.CutAsync();
 

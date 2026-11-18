@@ -38,7 +38,6 @@ public sealed class XoppPage
     internal int StrokeConversions => converted.Conversions;
 
     // Undo/redo cannot re-add a removed stroke and adds a copy: old id -> id of the copy.
-    private readonly Dictionary<uint, uint> replacedIds = new();
 
     public double Width { get; }
     public double Height { get; }
@@ -214,50 +213,21 @@ public sealed class XoppPage
             }
         }
         strokeElements.Clear();
-        replacedIds.Clear(); // only edits look strokes up by an older identity, and none refers to this page
         previewed.Clear();
         converted.KeepOnly(new HashSet<uint>());
     }
 
-    /// <summary>Called when undo/redo puts a copy of a stroke back in place of the removed original.</summary>
-    public void TransferStrokeIdentity(uint oldId, uint newId)
-    {
-        // The edit may remember an older identity (S, while S' replaced it): continue the chain from its end, so every
-        // edit remembering S or S' finds the copy, and the element moves from the id that holds it.
-        while (replacedIds.TryGetValue(oldId, out uint next))
-        {
-            oldId = next;
-        }
-        replacedIds[oldId] = newId;
-        Rename(oldId, newId);
-    }
-
-    // The stroke's file element and its converted element go to its copy.
-    private void Rename(uint oldId, uint newId)
+    /// <summary>
+    /// Undo/redo put a copy of a stroke back in place of the removed original (the library follows the chain of
+    /// identities: <c>InkPage.StrokeReplaced</c>): the stroke's file element and its converted element go to its copy.
+    /// </summary>
+    public void RenameStroke(uint oldId, uint newId)
     {
         if (strokeElements.Remove(oldId, out var e))
         {
             strokeElements[newId] = e;
         }
         converted.Transfer(oldId, newId);
-    }
-
-    /// <summary>
-    /// The strokes on the page now for strokes an edit remembers: each itself, or the copy undo/redo put in its place;
-    /// null where it is not on the page. The ink's strokes are read once.
-    /// </summary>
-    public List<InkStroke?> CurrentAll(IEnumerable<InkStroke> strokes)
-    {
-        var byId = Ink?.GetStrokes().ToDictionary(s => s.Id) ?? [];
-        return strokes.Select(stroke =>
-        {
-            uint id = stroke.Id;
-            while (replacedIds.TryGetValue(id, out uint next))
-            {
-                id = next;
-            }
-            return byId.GetValueOrDefault(id);
-        }).ToList();
     }
 
     /// <summary>
@@ -270,9 +240,9 @@ public sealed class XoppPage
             strokeElements.TryGetValue(s.Id, out var e) ? e.Value : null)).ToList(),
         images.Select(i => (i, XoppImage.GetBounds(i))).ToList());
 
-    public void RestorePlacement(Placement placement)
+    /// <param name="current">The placement's strokes as they are on the page now (the copies undo/redo put in their place).</param>
+    public void RestorePlacement(Placement placement, IReadOnlyList<InkStroke?> current)
     {
-        var current = CurrentAll(placement.Strokes.Select(s => s.Stroke));
         for (int i = 0; i < current.Count; i++)
         {
             var (_, transform, coordinates) = placement.Strokes[i];
