@@ -19,9 +19,16 @@ public sealed class PdfImportCommand(WindowId window, DocumentSession session, D
 
     public async Task ImportAsync()
     {
+        var time = System.Diagnostics.Stopwatch.StartNew();
+        void Step(string what)
+        {
+            DebugLog.Write($"import: {what} {time.ElapsedMilliseconds} ms");
+            time.Restart();
+        }
         var open = new FileOpenPicker(window);
         open.FileTypeFilter.Add(".pdf");
         string? source = (await open.PickSingleFileAsync())?.Path;
+        Step("open picker");
         if (source == null)
         {
             return;
@@ -33,6 +40,7 @@ public sealed class PdfImportCommand(WindowId window, DocumentSession session, D
         }
         save.FileTypeChoices.Add("Xournal-Dokument", [".xopp"]);
         string? xopp = (await save.PickSaveFileAsync())?.Path;
+        Step("save picker");
         if (xopp == null)
         {
             return;
@@ -61,6 +69,7 @@ public sealed class PdfImportCommand(WindowId window, DocumentSession session, D
         try
         {
             import = await Task.Run(() => PdfMarkupImport.Prepare(source, staged, PicturesPdf));
+            Step("prepare");
             foreach (var group in import.Pictures.GroupBy(p => p.Pdf))
             {
                 var rendered = await PdfBackground.LoadAsync(group.Key);
@@ -71,9 +80,11 @@ public sealed class PdfImportCommand(WindowId window, DocumentSession session, D
                     picture.Element.ReplaceAll(image.Attributes(), image.Nodes());
                 }
             }
+            Step($"{import.Pictures.Count} pictures");
             var document = PdfMarkupImport.CreateDocument(import, pdf);
             File.Move(staged, pdf, overwrite: true);
             await document.SaveAsync(xopp);
+            Step("save");
             messages.Show(InfoBarSeverity.Success, "PDF importiert", Summary(import, xopp));
         }
         catch (Exception e)
@@ -91,7 +102,9 @@ public sealed class PdfImportCommand(WindowId window, DocumentSession session, D
         }
         if (await session.ConfirmLeaveAsync())
         {
+            Step("leave question");
             await session.OpenAsync(xopp);
+            Step("open");
         }
     }
 
