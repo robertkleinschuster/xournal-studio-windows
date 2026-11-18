@@ -20,16 +20,13 @@ namespace XournalStudio.Views;
 /// </summary>
 public sealed partial class PageView : InkPage
 {
-    private const uint MaxPdfPixelWidth = 3200;
-
     private readonly PdfBackground? pdf;
     private readonly Image pdfImage = new() { Stretch = Stretch.Fill };
     private readonly Microsoft.UI.Xaml.Controls.Canvas rulingLayer = new();
     private readonly Microsoft.UI.Xaml.Controls.Canvas imagesLayer = new(); // below the ink, as Xournal layers them
     private readonly Microsoft.UI.Xaml.Controls.Canvas textsLayer = new();
     private readonly Microsoft.UI.Xaml.Controls.Canvas drawnStrokesLayer = new(); // styled strokes Windows ink cannot draw
-    private uint renderedPixelWidth;
-    private uint requestedPixelWidth;
+    private readonly PageBackground background;
     private bool picturesShown;
     private double picturePixelsPerPoint;
 
@@ -62,11 +59,12 @@ public sealed partial class PageView : InkPage
             }
         }
 
+        background = new PageBackground(page, this.pdf, pdfImage);
         page.AttachInk(InkCanvas.InkPresenter.StrokeContainer, strokes);
         page.ImagesChanged += OnImagesChanged;
         page.ImagesMoved += OnImagesMoved;
-        ShowTexts();
-        ShowDrawnStrokes();
+        FileContentLayers.ShowTexts(page, textsLayer);
+        FileContentLayers.ShowDrawnStrokes(page, drawnStrokesLayer);
     }
 
     /// <summary>The sheet's color below a page's background: its solid color, white below a PDF page or a picture.</summary>
@@ -243,133 +241,6 @@ public sealed partial class PageView : InkPage
 
     public override void RestorePictures(object removed) => Page.RestoreImages((List<ImagePlace>)removed);
 
-    /// <summary>
-    /// The strokes shown from the file (filled, styled or damaged ones, <see cref="StrokeConverter.NeedsOwnDrawing"/>):
-    /// their <see cref="StrokeShape.Parts"/>, as the export draws them.
-    /// </summary>
-    private void ShowDrawnStrokes()
-    {
-        foreach (var element in Page.DrawnStrokes)
-        {
-            if (StrokeConverter.ReadShape(element) is not { } shape)
-            {
-                continue;
-            }
-            // A filled highlighter upstream is one translucent shape (filling and line drawn opaque into a mask, blended
-            // with the filling's alpha). XAML applies opacity per shape (a Canvas' Opacity and BitmapCache did not group
-            // them, sandbox 2026-11-16): both get that alpha, the line over the filling comes out a little stronger.
-            var color = shape.Highlighter && shape.Fill >= 0
-                ? Color.FromArgb((byte)Math.Clamp(shape.Fill, 0, 255), shape.Color.R, shape.Color.G, shape.Color.B)
-                : shape.Color;
-            var cap = shape.Cap switch
-            {
-                StrokeCap.Butt => PenLineCap.Flat,
-                StrokeCap.Square => PenLineCap.Square,
-                _ => PenLineCap.Round,
-            };
-            foreach (var part in shape.Parts())
-            {
-                drawnStrokesLayer.Children.Add(part switch
-                {
-                    StrokeFill fill => new Microsoft.UI.Xaml.Shapes.Polygon
-                    {
-                        Points = PointsOf(fill.Points),
-                        Fill = new SolidColorBrush(Color.FromArgb((byte)Math.Clamp(shape.Fill, 0, 255), color.R, color.G, color.B)),
-                        FillRule = FillRule.Nonzero,
-                    },
-                    StrokeDot dot => Dot(dot, color),
-                    StrokeLine line => Line(shape, line, color, cap),
-                    _ => throw new InvalidOperationException(part.GetType().Name),
-                });
-            }
-        }
-    }
-
-    // A PointCollection belongs to one shape: each part gets its own.
-    private static PointCollection PointsOf(IEnumerable<Point> points)
-    {
-        var collection = new PointCollection();
-        foreach (var p in points)
-        {
-            collection.Add(p);
-        }
-        return collection;
-    }
-
-    private static Microsoft.UI.Xaml.Shapes.Shape Dot(StrokeDot dot, Color color)
-    {
-        Microsoft.UI.Xaml.Shapes.Shape shape = dot.Square
-            ? new Microsoft.UI.Xaml.Shapes.Rectangle()
-            : new Microsoft.UI.Xaml.Shapes.Ellipse();
-        shape.Width = shape.Height = dot.Size;
-        shape.Fill = new SolidColorBrush(color);
-        Microsoft.UI.Xaml.Controls.Canvas.SetLeft(shape, dot.Center.X - dot.Size / 2);
-        Microsoft.UI.Xaml.Controls.Canvas.SetTop(shape, dot.Center.Y - dot.Size / 2);
-        return shape;
-    }
-
-    // XAML dash lengths and offset are in multiples of the thickness (StrokeShape.DashesFor).
-    private static Microsoft.UI.Xaml.Shapes.Shape Line(StrokeShape shape, StrokeLine line, Color color, PenLineCap cap)
-    {
-        DoubleCollection? dash = null;
-        if (shape.DashesFor(line.Width) is { } dashes)
-        {
-            dash = new DoubleCollection();
-            foreach (var d in dashes)
-            {
-                dash.Add(d);
-            }
-        }
-        return new Microsoft.UI.Xaml.Shapes.Polyline
-        {
-            Points = PointsOf(line.Points),
-            Stroke = new SolidColorBrush(color),
-            StrokeThickness = line.Width,
-            StrokeStartLineCap = cap,
-            StrokeEndLineCap = cap,
-            StrokeDashCap = cap,
-            StrokeLineJoin = PenLineJoin.Round,
-            StrokeDashArray = dash,
-            StrokeDashOffset = dash != null ? line.DashOffset / line.Width : 0,
-        };
-    }
-
-    /// <summary>The file's texts (and links) as TextBlocks: font, size, color, wrap width, alignment and placement as stored.</summary>
-    private void ShowTexts()
-    {
-        foreach (var element in Page.Texts)
-        {
-            var text = XoppText.Read(element);
-            var block = new TextBlock
-            {
-                Text = text.Content,
-                FontFamily = new FontFamily(text.WindowsFamily),
-                FontSize = text.Size, // points, as the page's units
-                FontWeight = text.Bold ? Microsoft.UI.Text.FontWeights.Bold : Microsoft.UI.Text.FontWeights.Normal,
-                FontStyle = text.Italic ? Windows.UI.Text.FontStyle.Italic : Windows.UI.Text.FontStyle.Normal,
-                Foreground = new SolidColorBrush(text.Color),
-                IsTextScaleFactorEnabled = false, // the page's size, not the system's text size
-                TextAlignment = text.Justify ? TextAlignment.Justify : text.Alignment switch
-                {
-                    XoppTextAlignment.Center => TextAlignment.Center,
-                    XoppTextAlignment.Right => TextAlignment.Right,
-                    _ => TextAlignment.Left,
-                },
-            };
-            if (text.Wrap is { } wrap)
-            {
-                block.Width = wrap;
-                block.TextWrapping = TextWrapping.Wrap;
-            }
-            var m = text.Transform;
-            block.RenderTransform = new MatrixTransform
-            {
-                Matrix = new Matrix { M11 = m.M11, M12 = m.M12, M21 = m.M21, M22 = m.M22, OffsetX = m.M31, OffsetY = m.M32 },
-            };
-            textsLayer.Children.Add(block);
-        }
-    }
-
     // Only the moved pictures change: new place and size; decoded again only when the size changed.
     private void MovePictures(IReadOnlyCollection<XElement> moved)
     {
@@ -385,7 +256,7 @@ public sealed partial class PageView : InkPage
             image.SetValue(PlacedWidthProperty, bounds.Width);
             if (resized)
             {
-                LoadPicture(image, element, (uint)Math.Clamp(bounds.Width * picturePixelsPerPoint, 1, MaxPdfPixelWidth));
+                LoadPicture(image, element, (uint)Math.Clamp(bounds.Width * picturePixelsPerPoint, 1, PageBackground.MaxPixelWidth));
             }
         }
     }
@@ -398,12 +269,7 @@ public sealed partial class PageView : InkPage
     {
         if (!nearViewport)
         {
-            ShowBackground(null);
-            CancelPendingRender();
-            renderedPixelWidth = requestedPixelWidth = 0;
-            backgroundFailed = false; // looked for again when the page comes back (a sync may have brought it)
-            backgroundRequested = backgroundShown = 0;
-            backgroundRelease++; // a load still running is not shown
+            background.Release();
             ClearPictures();
             picturesShown = false;
             return;
@@ -412,136 +278,7 @@ public sealed partial class PageView : InkPage
         {
             ShowPictures(pixelsPerPoint);
         }
-        if (Page.IsImageBackground)
-        {
-            ShowImageBackground(pixelsPerPoint);
-        }
-        RenderPdf(pixelsPerPoint);
-    }
-
-    // A picture background, stretched over the page as upstream draws it; decoded at about the shown size while the
-    // page is near the viewport (freed with the PDF bitmaps otherwise), again when zoomed in a lot. The file is read
-    // into memory off the UI thread (not held open: a sync or rename is not blocked) and decoded like the pictures
-    // (PictureRenderer); a decoded bitmap is shown when it is sharper than the one shown (the previous one stays
-    // meanwhile). A picture that cannot be read or decoded is logged and not tried again (the shown one, if any, stays) until
-    // the page leaves the viewport and comes back.
-    private bool backgroundFailed;
-    private uint backgroundRequested, backgroundShown; // pixel widths
-    private int backgroundRelease; // counts the page's releases: loads started before one are not shown
-
-    private async void ShowImageBackground(double pixelsPerPoint)
-    {
-        string? path = Page.BackgroundImagePath;
-        uint wanted = (uint)Math.Min(MaxPdfPixelWidth, Math.Ceiling(Page.Width * pixelsPerPoint));
-        if (path == null || backgroundFailed || backgroundRequested * 1.6 >= wanted)
-        {
-            return;
-        }
-        backgroundRequested = wanted; // not started again on every viewport update
-        int release = backgroundRelease;
-        try
-        {
-            byte[] data = await Task.Run(() => File.ReadAllBytes(path));
-            var bitmap = await PictureRenderer.LoadAsync(data, wanted, $"picture background {path}");
-            if (release == backgroundRelease && wanted > backgroundShown)
-            {
-                ShowBackground(bitmap);
-                backgroundShown = wanted;
-                backgroundRequested = Math.Max(backgroundRequested, wanted); // requested ≥ shown (a failure lowers it)
-            }
-            else
-            {
-                PictureRenderer.Release(bitmap);
-            }
-        }
-        catch (Exception e) // any failure of reading or decoding (async void: nothing may escape); logged
-        {
-            DebugLog.Write($"picture background {path}", e);
-            if (release == backgroundRelease && wanted == backgroundRequested) // not a load a newer one replaced
-            {
-                backgroundFailed = true; // a sharper decode failed: the shown one (if any) stays, not retried
-                backgroundRequested = backgroundShown;
-            }
-        }
-    }
-
-    // The request of the PDF page's rendering that has not been shown yet; cancelled when the page leaves the viewport or
-    // another width is wanted, so a request that waits for the renderer is dropped instead of rendered for nothing.
-    private CancellationTokenSource? pendingRender;
-
-    private void CancelPendingRender()
-    {
-        pendingRender?.Cancel();
-        pendingRender = null;
-    }
-
-    private async void RenderPdf(double pixelsPerPoint)
-    {
-        if (pdf == null)
-        {
-            return;
-        }
-        uint wanted = (uint)Math.Min(MaxPdfPixelWidth, Math.Ceiling(Page.Width * pixelsPerPoint));
-        bool sharpEnough = renderedPixelWidth >= wanted * 0.9 && renderedPixelWidth <= wanted * 1.6;
-        if (sharpEnough)
-        {
-            CancelPendingRender(); // e.g. zoomed back before a request for another width ran
-            requestedPixelWidth = renderedPixelWidth;
-            return;
-        }
-        if (requestedPixelWidth == wanted)
-        {
-            return;
-        }
-
-        CancelPendingRender();
-        var request = pendingRender = new CancellationTokenSource();
-        requestedPixelWidth = wanted;
-        try
-        {
-            var bitmap = await pdf.RenderAsync(Page.PdfPageIndex, wanted, request.Token);
-            if (requestedPixelWidth == wanted && bitmap != null)
-            {
-                ShowBackground(bitmap);
-                renderedPixelWidth = wanted;
-            }
-            else
-            {
-                PictureRenderer.Release(bitmap);
-                DebugLog.Write($"pdf page {Page.PdfPageIndex} {wanted}px: not shown (no longer wanted)");
-            }
-        }
-        catch (OperationCanceledException) when (request.IsCancellationRequested) // dropped by CancelPendingRender
-        {
-            DebugLog.Write($"pdf page {Page.PdfPageIndex} {wanted}px: dropped before rendering");
-        }
-        catch (Exception e) // async void: nothing may escape; logged, the next viewport update tries again
-        {
-            DebugLog.Write($"render pdf page {Page.PdfPageIndex}", e);
-            if (requestedPixelWidth == wanted)
-            {
-                requestedPixelWidth = 0;
-            }
-        }
-        finally
-        {
-            if (pendingRender == request)
-            {
-                pendingRender = null;
-            }
-            request.Dispose();
-        }
-    }
-
-    // The page's background bitmap (PDF page or picture background); the one shown before is freed.
-    private void ShowBackground(ImageSource? bitmap)
-    {
-        var shown = pdfImage.Source;
-        pdfImage.Source = bitmap;
-        if (shown != bitmap)
-        {
-            PictureRenderer.Release(shown);
-        }
+        background.Update(pixelsPerPoint);
     }
 
     // The pictures leave the page; their bitmaps are freed.
@@ -599,7 +336,7 @@ public sealed partial class PageView : InkPage
         var image = new Image { Stretch = Stretch.Fill, Tag = element };
         Place(image, element);
         image.SetValue(PlacedWidthProperty, bounds.Width);
-        LoadPicture(image, element, (uint)Math.Clamp(bounds.Width * picturePixelsPerPoint, 1, MaxPdfPixelWidth));
+        LoadPicture(image, element, (uint)Math.Clamp(bounds.Width * picturePixelsPerPoint, 1, PageBackground.MaxPixelWidth));
         return image;
     }
 
@@ -648,31 +385,5 @@ public sealed partial class PageView : InkPage
         {
             DebugLog.Write("show picture", e);
         }
-    }
-}
-
-/// <summary>A page's ruling lines of one color and width (<see cref="RulingLines"/>) as a XAML Path.</summary>
-internal static class BackgroundPattern
-{
-    public static Microsoft.UI.Xaml.Shapes.Path Create(RulingLines ruling)
-    {
-        var group = new GeometryGroup();
-        foreach (var (from, to) in ruling.Lines)
-        {
-            group.Children.Add(new LineGeometry { StartPoint = from, EndPoint = to });
-        }
-        double r = ruling.Width / 2;
-        foreach (var dot in ruling.Dots)
-        {
-            group.Children.Add(new EllipseGeometry { Center = dot, RadiusX = r, RadiusY = r });
-        }
-        var brush = new SolidColorBrush(ruling.Color);
-        return new Microsoft.UI.Xaml.Shapes.Path
-        {
-            Data = group,
-            Stroke = ruling.Lines.Count > 0 ? brush : null,
-            StrokeThickness = ruling.Width,
-            Fill = ruling.Dots.Count > 0 ? brush : null,
-        };
     }
 }

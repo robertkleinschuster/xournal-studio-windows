@@ -18,6 +18,7 @@ public sealed partial class TasksView : UserControl
 {
     private TaskFile? file;
     private Dialogs? dialogs;
+    private Messages messages = null!; // set by Initialize before the pane is shown
     private Func<(string? Document, int PageIndex)> currentPage = () => (null, -1);
     private Func<bool> syncing = () => false;
 
@@ -29,18 +30,19 @@ public sealed partial class TasksView : UserControl
     /// <summary>A task's linked page should be opened: the document and its 0-based page (-1: none).</summary>
     public event EventHandler<(string Document, int PageIndex)>? OpenRequested;
 
-    public event EventHandler<(string Title, string Message)>? Failed;
 
     /// <summary>The user switched done tasks on or off (a setting).</summary>
     public event EventHandler? ShowsDoneChanged;
 
     /// <param name="page">The open document (null if never saved) and the page in view, for links.</param>
-    /// <param name="isSyncing">True while git works on the folder: the file is not changed then.</param>
-    public void Initialize(Dialogs dialogs, Func<(string? Document, int PageIndex)> page, Func<bool> isSyncing)
+    /// <param name="refusedWhileSyncing">True (and said) while git works on the folder: the file is not changed then.</param>
+    public void Initialize(Dialogs dialogs, Messages messages, Func<(string? Document, int PageIndex)> page,
+        Func<bool> refusedWhileSyncing)
     {
         this.dialogs = dialogs;
+        this.messages = messages;
         currentPage = page;
-        syncing = isSyncing;
+        syncing = refusedWhileSyncing;
     }
 
     public bool ShowsDone
@@ -79,8 +81,7 @@ public sealed partial class TasksView : UserControl
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException)
         {
-            DebugLog.Write($"read {file!.Path}", e);
-            Failed?.Invoke(this, ("todo.txt konnte nicht gelesen werden", DebugLog.Describe(e)));
+            messages.Error($"read {file!.Path}", "todo.txt konnte nicht gelesen werden", e);
             return;
         }
         var today = DateOnly.FromDateTime(DateTime.Now);
@@ -116,8 +117,7 @@ public sealed partial class TasksView : UserControl
         }
         if (syncing())
         {
-            // Git commits and checks out the folder right now (as documents, the file waits).
-            Failed?.Invoke(this, ("Synchronisierung läuft", "Aufgaben können geändert werden, sobald sie fertig ist."));
+            // Git commits and checks out the folder right now (as documents, the file waits); said by the check.
             Reload(); // e.g. the check box back to what the file says
             return false;
         }
@@ -127,14 +127,13 @@ public sealed partial class TasksView : UserControl
             written = change(file);
             if (!written)
             {
-                Failed?.Invoke(this, ("Aufgabe wurde inzwischen geändert",
-                    "Eine andere App oder die Synchronisierung hat die Zeile geändert; die Liste ist neu geladen."));
+                messages.Show(InfoBarSeverity.Warning, "Aufgabe wurde inzwischen geändert",
+                    "Eine andere App oder die Synchronisierung hat die Zeile geändert; die Liste ist neu geladen.");
             }
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException)
         {
-            DebugLog.Write($"{what} {file.Path}", e);
-            Failed?.Invoke(this, ("todo.txt konnte nicht geschrieben werden", DebugLog.Describe(e)));
+            messages.Error($"{what} {file.Path}", "todo.txt konnte nicht geschrieben werden", e);
         }
         Reload();
         return written;

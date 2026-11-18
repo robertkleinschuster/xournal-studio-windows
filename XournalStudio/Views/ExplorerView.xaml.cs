@@ -49,19 +49,29 @@ public sealed partial class ExplorerView : UserControl
         changeTimer.IsRepeating = false;
         changeTimer.Tick += (_, _) =>
         {
-            DebugLog.Write("explorer: folder changed on disk");
+            DebugLog.Write("explorer: refresh (changes on disk, a save, activation or a command)");
             FolderChanged?.Invoke(this, EventArgs.Empty);
         };
     }
 
     public event EventHandler<string>? FileInvoked;
 
+    /// <summary>
+    /// The tree should be shown again a moment from now: changes on disk, a save, the window activated, a command done –
+    /// several in a row (a save also changes the folder) give one refresh (<see cref="FolderChanged"/>).
+    /// </summary>
+    public void RefreshSoon()
+    {
+        changeTimer.Stop();
+        changeTimer.Start();
+    }
+
     public event EventHandler? SyncRequested;
 
     public event EventHandler<ExplorerCommandRequest>? CommandRequested;
 
-    /// <summary>An action done here failed (title, message for the user; already logged).</summary>
-    public event EventHandler<(string Title, string Message)>? Failed;
+    /// <summary>Tells the user what failed here (set by the window before the explorer is used).</summary>
+    public Messages Messages { get; set; } = null!;
 
     /// <summary>Files or folders changed on disk (raised once a burst of changes is over).</summary>
     public event EventHandler? FolderChanged;
@@ -364,8 +374,7 @@ public sealed partial class ExplorerView : UserControl
         }
         catch (Exception e)
         {
-            DebugLog.Write($"show in explorer {t.Path}", e);
-            Failed?.Invoke(this, ("Im Explorer anzeigen nicht möglich", DebugLog.Describe(e)));
+            Messages.Error($"show in explorer {t.Path}", "Im Explorer anzeigen nicht möglich", e);
         }
     }
 
@@ -384,8 +393,7 @@ public sealed partial class ExplorerView : UserControl
         }
         catch (Exception e)
         {
-            DebugLog.Write("copy path", e);
-            Failed?.Invoke(this, ("Pfad nicht kopiert", DebugLog.Describe(e)));
+            Messages.Error("copy path", "Pfad nicht kopiert", e);
         }
     }
 }

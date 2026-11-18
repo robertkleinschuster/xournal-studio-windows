@@ -25,23 +25,16 @@ public sealed class PdfImportCommand(WindowId window, DocumentSession session, D
             DebugLog.Write($"import: {what} {time.ElapsedMilliseconds} ms");
             time.Restart();
         }
-        var open = new FileOpenPicker(window);
-        open.FileTypeFilter.Add(".pdf");
-        string? source = (await open.PickSingleFileAsync())?.Path;
+        string? source = await Pickers.OpenAsync(window, Pickers.Pdf);
         Step("open picker");
         if (source == null)
         {
             return;
         }
-        var save = new FileSavePicker(window) { SuggestedFileName = Path.GetFileNameWithoutExtension(source) };
-        if (Path.GetDirectoryName(source) is { } folder && Directory.Exists(folder))
-        {
-            save.SuggestedFolder = folder;
-        }
-        save.FileTypeChoices.Add("Xournal-Dokument", [".xopp"]);
-        string? xopp = (await save.PickSaveFileAsync())?.Path;
+        string? xopp = await Pickers.SaveAsync(window, Pickers.Document, Path.GetFileNameWithoutExtension(source),
+            Path.GetDirectoryName(source));
         Step("save picker");
-        if (xopp == null)
+        if (xopp == null || session.RefusedWhileSyncing("Importieren"))
         {
             return;
         }
@@ -100,12 +93,8 @@ public sealed class PdfImportCommand(WindowId window, DocumentSession session, D
                 Delete(file);
             }
         }
-        if (await session.ConfirmLeaveAsync())
-        {
-            Step("leave question");
-            await session.OpenAsync(xopp);
-            Step("open");
-        }
+        await session.LeaveAndOpenAsync(xopp);
+        Step("open");
     }
 
     private static string Summary(MarkupImport import, string xopp)

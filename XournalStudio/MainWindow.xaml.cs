@@ -25,8 +25,8 @@ public sealed partial class MainWindow : Window
     private readonly EditCommands edit;
     private readonly PdfExportCommand export;
     private readonly PdfImportCommand import;
-    private readonly InsertPdfPagesCommand insertPdfPages;
     private readonly PageThumbnails thumbnails;
+    private readonly PageCommands pageCommands;
     private readonly PenToolbar bar;
     private bool closeConfirmed;
 
@@ -54,9 +54,9 @@ public sealed partial class MainWindow : Window
         };
         pages = new PagesController(Scroller, PagesPanel, ink);
         dialogs = new Dialogs(() => Content.XamlRoot, pages);
-        session = new DocumentSession(AppWindow.Id, pages, dialogs, messages, settings, () => ProjectFolder);
+        session = new DocumentSession(AppWindow.Id, pages, dialogs, messages, settings);
         sync = new SyncController(session, dialogs, messages);
-        var explorerCommands = new ExplorerCommands(Explorer, session, sync, dialogs, messages, FocusDocument, RefreshExplorer, index =>
+        var explorerCommands = new ExplorerCommands(Explorer, session, dialogs, messages, FocusDocument, Explorer.RefreshSoon, index =>
         {
             Root.UpdateLayout(); // a document just opened: its pages are laid out before scrolling
             pages.ScrollToPage(index);
@@ -66,9 +66,9 @@ public sealed partial class MainWindow : Window
         ink.Selection.TransferFailed += edit.ReportTransferFailed;
         export = new PdfExportCommand(AppWindow.Id, session, messages);
         import = new PdfImportCommand(AppWindow.Id, session, dialogs, messages);
-        insertPdfPages = new InsertPdfPagesCommand(AppWindow.Id, session, pages, dialogs, messages);
         thumbnails = new PageThumbnails(session, PagesList, pages);
-        WirePagesPane();
+        pageCommands = new PageCommands(pages, session, ink, PagesList, thumbnails,
+            new InsertPdfPagesCommand(AppWindow.Id, session, pages, dialogs, messages), dialogs, messages);
         ink.Undo.Changed += (_, _) =>
         {
             UndoMenuItem.IsEnabled = ink.Undo.CanUndo;
@@ -78,10 +78,10 @@ public sealed partial class MainWindow : Window
         ink.Undo.ContentChanged += (_, _) => session.MarkChanged();
         pages.PagesChanged += (_, _) => session.MarkChanged();
         session.StateChanged += (_, _) => Title = $"{session.Title} – Xournal Studio";
-        session.FilesChanged += (_, _) => RefreshExplorer();
+        session.FilesChanged += (_, _) => Explorer.RefreshSoon();
         sync.StateChanged += (_, _) =>
         {
-            SyncMenuItem.IsEnabled = Explorer.RepositoryRoot != null && !sync.IsSyncing;
+            UpdateSyncMenu();
             Explorer.IsSyncing = sync.IsSyncing;
             if (!sync.IsSyncing)
             {
@@ -93,17 +93,17 @@ public sealed partial class MainWindow : Window
         Explorer.CommandRequested += explorerCommands.OnCommand;
         Explorer.SyncRequested += (_, _) => sync.Sync(Explorer.RepositoryRoot);
         Explorer.FolderChanged += (_, _) => RefreshExplorer();
-        Explorer.Failed += (_, m) => messages.Show(InfoBarSeverity.Warning, m.Title, m.Message);
+        Explorer.Messages = messages;
         SetExplorerOpen(settings.ExplorerOpen);
 
-        Tasks.Initialize(dialogs, () => (session.Document.FilePath, pages.CurrentIndex), () => sync.IsSyncing);
+        Tasks.Initialize(dialogs, messages, () => (session.Document.FilePath, pages.CurrentIndex),
+            () => session.RefusedWhileSyncing("Das Ändern von Aufgaben"));
         Tasks.ShowsDone = settings.DoneTasksShown;
         Tasks.ShowsDoneChanged += (_, _) =>
         {
             settings.DoneTasksShown = Tasks.ShowsDone;
             settings.Save();
         };
-        Tasks.Failed += (_, m) => messages.Show(InfoBarSeverity.Warning, m.Title, m.Message);
         Tasks.OpenRequested += async (_, link) => await explorerCommands.OpenDocumentAsync(link.Document, link.PageIndex);
         (settings.PagesShown ? PagesTab : settings.TasksShown ? TasksTab : FilesTab).IsSelected = true;
 
@@ -151,7 +151,7 @@ public sealed partial class MainWindow : Window
         }
         else if (!sync.IsSyncing)
         {
-            RefreshExplorer(); // files may have changed outside the app (refreshed after a sync anyway)
+            Explorer.RefreshSoon(); // files may have changed outside the app (refreshed after a sync anyway)
         }
     }
 
@@ -167,6 +167,8 @@ public sealed partial class MainWindow : Window
             return;
         }
         closeConfirmed = true;
+        settings.Keep(ink.Choices); // a choice of the last moment (ChoicesChanged waits until the choices settle)
+        settings.Save();
         await session.EndAsync(); // the recovery copy is gone before the process ends
         await thumbnails.CloseAsync(); // its temporary PDF (the user's notes) too
         await Services.PdfRenderer.Shared.ShutdownAsync(); // its GPU device goes while the app still runs (see there)
@@ -175,23 +177,13 @@ public sealed partial class MainWindow : Window
 
     // ---------------------------------------------------------------- file
 
-    private async void OnNew(object sender, RoutedEventArgs e)
-    {
-        if (await session.ConfirmLeaveAsync())
-        {
-            session.ShowNew();
-        }
-    }
+    private async void OnNew(object sender, RoutedEventArgs e) => await session.LeaveAndShowNewAsync();
 
     private async void OnOpen(object sender, RoutedEventArgs e)
     {
-        var picker = new FileOpenPicker(AppWindow.Id);
-        picker.FileTypeFilter.Add(".xopp");
-        picker.FileTypeFilter.Add(".pdf");
-        var result = await picker.PickSingleFileAsync();
-        if (result != null && await session.ConfirmLeaveAsync())
+        if (await Pickers.OpenAsync(AppWindow.Id, Pickers.Document, Pickers.Pdf) is { } path)
         {
-            await session.OpenAsync(result.Path);
+            await session.LeaveAndOpenAsync(path);
         }
     }
 
@@ -235,7 +227,7 @@ public sealed partial class MainWindow : Window
 
     private void OnSelectAll(object sender, RoutedEventArgs e) => edit.SelectAll();
 
-    // The toolbar's own commands and the app's buttons at its end (paste, pages).
+    // The toolbar's own commands and the app's buttons at its end (paste, pages); the menu shows the same icons.
     private void AddAppButtons()
     {
         bar.Undo.Click += OnUndo;
@@ -244,90 +236,22 @@ public sealed partial class MainWindow : Window
         bar.Copy.Click += OnRowCopy;
         bar.Duplicate.Click += OnRowDuplicate;
         bar.DeleteSelection.Click += OnRowDelete;
-        // Short tips: the snipping-tool hint is in the message when the clipboard has nothing to paste.
-        var paste = PenToolbar.Command(new SymbolIcon(Symbol.Paste), "Einfügen (Strg+V)", "PasteButton");
+        var (paste, insertPage, deletePage) = AppToolbar.AddButtons(bar);
         paste.Click += OnPaste;
-        // A page with a plus and a page with a minus (user, 2026-11-17: both in the row; deleting always asks first).
-        var insertPage = PenToolbar.Command(PenToolbar.Path(InsertPageIcon), "Seite einfügen (nach der Seite im Blick)", "InsertPageButton");
         insertPage.Click += OnInsertPage;
-        var deletePage = PenToolbar.Command(PenToolbar.Path(DeletePageIcon),
-            "Seite löschen (die Seite im Blick, mit Rückfrage)", "DeletePageButton");
         deletePage.Click += OnDeletePage;
-        bar.Extensions.Add(paste);
-        bar.Extensions.Add(new AppBarSeparator());
-        bar.Extensions.Add(insertPage);
-        bar.Extensions.Add(deletePage);
-        // The menu shows the same icons as the row.
         DuplicateMenuItem.Icon = PenToolbar.Path(PenToolbar.DuplicateIcon);
-        InsertPageMenuItem.Icon = PenToolbar.Path(InsertPageIcon);
-        DeletePageMenuItem.Icon = PenToolbar.Path(DeletePageIcon);
+        InsertPageMenuItem.Icon = PenToolbar.Path(AppToolbar.InsertPageIcon);
+        DeletePageMenuItem.Icon = PenToolbar.Path(AppToolbar.DeletePageIcon);
     }
-
-    private const string InsertPageIcon = "F0 M1,1 H11 V19 H1 Z M2.5,2.5 V17.5 H9.5 V2.5 Z " +
-        "M15.25,9.5 H16.75 V13.25 H19.5 V14.75 H16.75 V18.5 H15.25 V14.75 H12.5 V13.25 H15.25 Z";
-    private const string DeletePageIcon = "F0 M1,1 H11 V19 H1 Z M2.5,2.5 V17.5 H9.5 V2.5 Z M12.5,13.25 H19.5 V14.75 H12.5 Z";
 
     // ---------------------------------------------------------------- pages and view
 
-    private void OnInsertPage(object sender, RoutedEventArgs e) => pages.InsertAfterCurrent();
+    private void OnInsertPage(object sender, RoutedEventArgs e) => pageCommands.InsertAfterCurrent();
 
-    private async void OnInsertPdfPages(object sender, RoutedEventArgs e) => await insertPdfPages.InsertAsync(pages.CurrentIndex);
+    private async void OnInsertPdfPages(object sender, RoutedEventArgs e) => await pageCommands.InsertPdfPagesAsync();
 
-    // ---------------------------------------------------------------- pages pane
-
-    // The pages pane shows the document's pages (thumbnails a moment after a change) and asks for the page actions.
-    private void WirePagesPane()
-    {
-        pages.DocumentShown += (_, _) => ShowPagesPane(newDocument: true);
-        pages.PagesChanged += (_, _) => ShowPagesPane(newDocument: false);
-        pages.CurrentPageChanged += (_, _) => PagesList.Select(pages.CurrentIndex);
-        // The pages an edit touched: their thumbnails are drawn again.
-        ink.Undo.ContentEdited += (_, edited) => thumbnails.Edited(edited);
-        PagesList.GoToRequested += (_, index) => pages.ScrollToPage(index);
-        PagesList.InsertBlankRequested += (_, index) => pages.InsertBlankAt(index);
-        PagesList.InsertPdfRequested += async (_, index) => await insertPdfPages.InsertAsync(index);
-        PagesList.MoveRequested += (_, move) =>
-        {
-            if (!pages.Move(move.From, move.To))
-            {
-                ShowPagesPane(newDocument: false); // the list showed the drag's order: back to the document's
-                if (ink.Selection.IsDragging)
-                {
-                    messages.Show(InfoBarSeverity.Informational, "Seite nicht verschoben", PenToolbarTexts.German.Refused);
-                }
-            }
-        };
-        PagesList.DeleteRequested += async (_, index) => await DeletePageAsync(index);
-    }
-
-    private void ShowPagesPane(bool newDocument) =>
-        PagesList.Show(session.Document.Pages, () => pages.Count == 0 ? -1 : pages.CurrentIndex, newDocument);
-
-    private async void OnDeletePage(object sender, RoutedEventArgs e) => await DeletePageAsync(pages.CurrentIndex);
-
-    // Deletes a page after asking (always: it cannot be undone).
-    private async Task DeletePageAsync(int index)
-    {
-        var doc = session.Document;
-        if (doc.Pages.Count <= 1)
-        {
-            messages.Show(InfoBarSeverity.Informational, "Seite nicht gelöscht", "Ein Dokument behält mindestens eine Seite.");
-            return;
-        }
-        if (index < 0 || index >= doc.Pages.Count)
-        {
-            return;
-        }
-        var page = doc.Pages[index];
-        // Always asked (user, 2026-11-17): deleting a page cannot be undone (its history goes with it).
-        string content = page.Strokes.Count > 0 || page.Images.Any() ? "Die Seite enthält Notizen. " : "";
-        if (!await dialogs.ConfirmAsync($"Seite {index + 1} löschen?",
-            content + "Das Löschen einer Seite lässt sich nicht rückgängig machen.", "Löschen"))
-        {
-            return;
-        }
-        pages.Remove(page);
-    }
+    private async void OnDeletePage(object sender, RoutedEventArgs e) => await pageCommands.DeleteCurrentAsync();
 
     private void OnFitWidth(object sender, RoutedEventArgs e) => pages.FitWidth();
 
@@ -337,39 +261,19 @@ public sealed partial class MainWindow : Window
 
     // ---------------------------------------------------------------- explorer
 
-    /// <summary>The chosen folder, otherwise the git repository of the open document.</summary>
-    private string? ProjectFolder
-    {
-        get
-        {
-            string? file = session.Document.FilePath;
-            if (settings.ProjectFolder != null || file == null)
-            {
-                return settings.ProjectFolder;
-            }
-            try
-            {
-                return GitSync.FindRoot(Path.GetDirectoryName(file)!);
-            }
-            catch (Exception e)
-            {
-                DebugLog.Write("find git root", e);
-                return null;
-            }
-        }
-    }
-
     private async void RefreshExplorer()
     {
         if (sync.IsSyncing)
         {
             return; // git status would compete with the sync for the index; refreshed afterwards
         }
-        string? folder = ProjectFolder;
+        string? folder = session.ProjectFolder;
         Tasks.Show(folder);
         await Explorer.ShowAsync(folder, session.OpenPath);
-        SyncMenuItem.IsEnabled = Explorer.RepositoryRoot != null && !sync.IsSyncing;
+        UpdateSyncMenu();
     }
+
+    private void UpdateSyncMenu() => SyncMenuItem.IsEnabled = Explorer.RepositoryRoot != null && !sync.IsSyncing;
 
     private void OnPaneSelectionChanged(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
     {
@@ -408,12 +312,11 @@ public sealed partial class MainWindow : Window
 
     private async void OnOpenFolder(object sender, RoutedEventArgs e)
     {
-        var result = await new FolderPicker(AppWindow.Id).PickSingleFolderAsync();
-        if (result == null)
+        if (await Pickers.FolderAsync(AppWindow.Id) is not { } folder)
         {
             return;
         }
-        settings.ProjectFolder = result.Path;
+        settings.ProjectFolder = folder;
         settings.Save();
         SetExplorerOpen(true);
         RefreshExplorer();

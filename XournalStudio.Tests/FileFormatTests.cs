@@ -53,6 +53,30 @@ public class FileFormatTests : IDisposable
         """;
 
     [Fact]
+    public void ADocumentUsesItsFileItsPdfAndTheFoldersHoldingThem()
+    {
+        File.WriteAllText(Path.Combine(dir, "lecture.pdf"), "");
+        string path = Write("a.xopp", Sample);
+        var doc = XoppDocument.Load(path);
+
+        Assert.True(doc.Uses(path));
+        Assert.True(doc.Uses(Path.Combine(dir, "LECTURE.pdf"))); // Windows ignores letter case
+        Assert.True(doc.Uses(dir)); // a folder holding it
+        Assert.False(doc.Uses(Path.Combine(dir, "a.xopp.bak"))); // a name that only begins like it
+        Assert.False(doc.Uses(Path.Combine(dir, "other.pdf")));
+    }
+
+    [Fact]
+    public void APageWithoutViewTellsWhetherAnythingLiesOnIt()
+    {
+        var doc = XoppDocument.Load(Write("h.xopp", Sample));
+
+        Assert.True(doc.Pages[0].HasContent);
+        Assert.True(doc.Pages[1].HasContent);
+        Assert.False(doc.Pages[2].HasContent);
+    }
+
+    [Fact]
     public void LoadsPagesBackgroundsAndPdfReference()
     {
         File.WriteAllText(Path.Combine(dir, "lecture.pdf"), "");

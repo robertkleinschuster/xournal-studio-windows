@@ -19,20 +19,18 @@ public sealed class DocumentSession
     private readonly Dialogs dialogs;
     private readonly Messages messages;
     private readonly AppSettings settings;
-    private readonly Func<string?> projectFolder;
     private readonly Recovery recovery = Recovery.ForApp();
     private readonly Autosave autosave;
     private readonly DateTime processStart = Recovery.CurrentProcessStart();
 
     public DocumentSession(WindowId window, PagesController pages, Dialogs dialogs, Messages messages,
-        AppSettings settings, Func<string?> projectFolder)
+        AppSettings settings)
     {
         this.window = window;
         this.pages = pages;
         this.dialogs = dialogs;
         this.messages = messages;
         this.settings = settings;
-        this.projectFolder = projectFolder;
         autosave = new Autosave(recovery, Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread(), Snapshot);
         autosave.Failed += (_, e) => messages.Show(InfoBarSeverity.Warning, "Wiederherstellungskopie fehlgeschlagen",
             $"Nicht gespeicherte Änderungen sind bei einem Absturz nicht gesichert: {DebugLog.Describe(e)}");
@@ -56,6 +54,28 @@ public sealed class DocumentSession
     }
 
     public bool IsDirty { get; private set; }
+
+    /// <summary>The project folder: the one chosen (Datei → Ordner öffnen), otherwise the git repository of the document.</summary>
+    public string? ProjectFolder
+    {
+        get
+        {
+            string? file = Document.FilePath;
+            if (settings.ProjectFolder != null || file == null)
+            {
+                return settings.ProjectFolder;
+            }
+            try
+            {
+                return GitSync.FindRoot(Path.GetDirectoryName(file)!);
+            }
+            catch (Exception e)
+            {
+                DebugLog.Write("find git root", e);
+                return null;
+            }
+        }
+    }
 
     /// <summary>The file the explorer marks as open: the document, or the PDF of one never saved.</summary>
     public string? OpenPath => Document.FilePath ?? Document.PdfPath;
@@ -126,6 +146,47 @@ public sealed class DocumentSession
     }
 
     public void ShowNew() => Show(XoppDocument.CreateNew(), null);
+
+    /// <summary>
+    /// While a git sync runs, nothing that opens or writes the project's files starts (git works on them): says so for
+    /// <paramref name="what"/> ("Öffnen", "Importieren", ...) and returns true.
+    /// </summary>
+    public bool RefusedWhileSyncing(string what)
+    {
+        if (SaveBlocked)
+        {
+            messages.Show(InfoBarSeverity.Informational, "Synchronisierung läuft",
+                $"{what} ist möglich, sobald die Synchronisierung fertig ist.");
+        }
+        return SaveBlocked;
+    }
+
+    /// <summary>
+    /// Opens <paramref name="path"/> instead of the open document: not during a sync, after the leave question. True when
+    /// it is open now (also when it already was).
+    /// </summary>
+    public async Task<bool> LeaveAndOpenAsync(string path)
+    {
+        if (ProjectFiles.SamePath(path, OpenPath))
+        {
+            return true;
+        }
+        if (RefusedWhileSyncing("Öffnen") || !await ConfirmLeaveAsync())
+        {
+            return false;
+        }
+        await OpenAsync(path);
+        return ProjectFiles.SamePath(path, OpenPath); // false: not opened (OpenAsync said why)
+    }
+
+    /// <summary>A new, empty document instead of the open one (after the leave question).</summary>
+    public async Task LeaveAndShowNewAsync()
+    {
+        if (await ConfirmLeaveAsync())
+        {
+            ShowNew();
+        }
+    }
 
     /// <summary>Opens a .xopp, or a PDF as a new unsaved document on it (the first save asks where).</summary>
     public async Task OpenAsync(string path)
@@ -271,11 +332,8 @@ public sealed class DocumentSession
     private async Task<bool> SaveAsync(string path, bool saveAs)
     {
         await WhenSaved(); // never two writes at once (of "<file>~" or of attachments)
-        if (SaveBlocked && saveAs)
+        if (saveAs && RefusedWhileSyncing("Speichern unter")) // a sync began while the picker was open
         {
-            // Not deferred like Ctrl+S: the picked place would have to wait somewhere unseen; the user saves again.
-            messages.Show(InfoBarSeverity.Informational, "Synchronisierung läuft",
-                "Nicht gespeichert: Speichern unter ist möglich, sobald die Synchronisierung fertig ist.");
             return false;
         }
         if (SaveBlocked)
@@ -315,11 +373,9 @@ public sealed class DocumentSession
     /// <summary>Saves where the user picks: suggested is the document's name in its folder, the PDF's or the project's.</summary>
     public async Task<bool> SaveAsAsync()
     {
-        if (SaveBlocked)
+        // Not deferred like Save: the picked place would have to wait somewhere unseen; the user saves again.
+        if (RefusedWhileSyncing("Speichern unter"))
         {
-            // Not deferred like Save: the picked place would have to wait somewhere unseen; the user saves again.
-            messages.Show(InfoBarSeverity.Informational, "Synchronisierung läuft",
-                "Speichern unter ist möglich, sobald die Synchronisierung fertig ist.");
             return false;
         }
         string? picked = await PickSavePathAsync();
@@ -328,14 +384,8 @@ public sealed class DocumentSession
 
     private async Task<string?> PickSavePathAsync()
     {
-        string? folder = Path.GetDirectoryName(Document.FilePath ?? Document.PdfPath) ?? projectFolder();
-        var picker = new FileSavePicker(window) { SuggestedFileName = Document.SuggestedName };
-        if (folder != null && Directory.Exists(folder))
-        {
-            picker.SuggestedFolder = folder;
-        }
-        picker.FileTypeChoices.Add("Xournal++-Dokument", [".xopp"]);
-        return (await picker.PickSaveFileAsync())?.Path;
+        string? folder = Path.GetDirectoryName(Document.FilePath ?? Document.PdfPath) ?? ProjectFolder;
+        return await Pickers.SaveAsync(window, Pickers.Document, Document.SuggestedName, folder);
     }
 
     /// <summary>Speichern (Ctrl+S): to the document's file, or where the user picks for a new one.</summary>

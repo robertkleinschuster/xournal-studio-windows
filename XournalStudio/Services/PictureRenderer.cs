@@ -13,27 +13,13 @@ public static class PictureRenderer
     /// <param name="what">Names the picture in the log.</param>
     public static async Task<ImageSource> LoadAsync(byte[] data, uint pixelWidth, string what)
     {
-        using var stream = await ToStreamAsync(data);
         if (XoppImage.IsPdf(data))
         {
-            var pdf = await PdfDocument.LoadFromStreamAsync(stream);
-            using var page = pdf.GetPage(0);
-            uint pixelHeight = (uint)Math.Max(1, Math.Round(pixelWidth * page.Size.Height / page.Size.Width));
-            // Not disposed: the source keeps it and copies it again later (see PdfBackground.RenderAsync).
-            var rendered = await PdfRenderer.Shared.RenderAsync(page, null, pixelWidth, pixelHeight);
-            var source = new SoftwareBitmapSource();
-            try
-            {
-                await source.SetBitmapAsync(rendered);
-            }
-            catch
-            {
-                source.Dispose(); // closes the bitmap too (the exception goes on to the caller)
-                rendered.Dispose();
-                throw;
-            }
-            return source;
+            // Rendered like a background page (the same renderer, the bitmap kept by its source).
+            using var pdf = await PdfBackground.LoadAsync(data);
+            return await pdf.RenderAsync(0, pixelWidth) ?? throw new InvalidDataException($"{what}: the PDF has no page");
         }
+        using var stream = await ToStreamAsync(data);
         var bitmap = new BitmapImage();
         // Failures while decoding throw from SetSourceAsync; one reported later (when drawn) comes here.
         bitmap.ImageFailed += (_, e) => DebugLog.Write($"{what}: ImageFailed {e.ErrorMessage}");

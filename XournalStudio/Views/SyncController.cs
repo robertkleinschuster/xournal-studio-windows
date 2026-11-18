@@ -42,7 +42,7 @@ public sealed class SyncController(DocumentSession session, Dialogs dialogs, Mes
             var result = await Task.Run(() =>
                 GitSync.Sync(root, GitCredentials.Get, Environment.MachineName, DateTimeOffset.Now));
             var doc = session.Document;
-            bool documentChanged = result.PulledFiles.Any(f => ProjectFiles.SamePath(f, doc.FilePath) || ProjectFiles.SamePath(f, doc.PdfPath));
+            bool documentChanged = result.PulledFiles.Any(doc.Uses); // also a picture background it shows
             if (!documentChanged || await ResolvePulledDocumentAsync())
             {
                 messages.Show(InfoBarSeverity.Success, "Synchronisiert", Describe(result));

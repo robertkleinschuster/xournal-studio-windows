@@ -326,8 +326,8 @@ public sealed class PagesController
         {
             view.UpdateBackground(true, scale);
         }
-        ink.SetCurrentPage(CurrentPageView());
-        int current = CurrentIndex;
+        int current = CurrentIndex; // once per update (it lays out and scans the pages)
+        ink.SetCurrentPage(slots.Realize(current));
         if (current != lastCurrent)
         {
             lastCurrent = current;

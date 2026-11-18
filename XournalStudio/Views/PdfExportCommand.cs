@@ -21,14 +21,8 @@ public sealed class PdfExportCommand(WindowId window, DocumentSession session, M
         {
             name += " (mit Notizen)"; // the lecture PDF itself stays untouched
         }
-        var picker = new FileSavePicker(window) { SuggestedFileName = name };
-        if (Directory.Exists(folder))
-        {
-            picker.SuggestedFolder = folder;
-        }
-        picker.FileTypeChoices.Add("PDF-Dokument", [".pdf"]);
-        string? target = (await picker.PickSaveFileAsync())?.Path;
-        if (target == null)
+        string? target = await Pickers.SaveAsync(window, Pickers.Pdf, name, folder);
+        if (target == null || session.RefusedWhileSyncing("Exportieren"))
         {
             return;
         }

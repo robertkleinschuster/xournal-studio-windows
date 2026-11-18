@@ -9,7 +9,7 @@ namespace XournalStudio.Views;
 /// open document when it is affected.
 /// </summary>
 public sealed class ExplorerCommands(
-    ExplorerView explorer, DocumentSession session, SyncController sync, Dialogs dialogs, Messages messages,
+    ExplorerView explorer, DocumentSession session, Dialogs dialogs, Messages messages,
     Action focusDocument, Action refreshExplorer, Action<int> scrollToPage)
 {
     /// <summary>.xopp and .pdf open here; everything else in the app Windows has for it, as in File Explorer.</summary>
@@ -47,23 +47,9 @@ public sealed class ExplorerCommands(
             messages.Show(InfoBarSeverity.Warning, "Dokument nicht gefunden", path);
             return;
         }
-        if (!ProjectFiles.SamePath(path, session.OpenPath))
+        if (!await session.LeaveAndOpenAsync(path))
         {
-            if (sync.IsSyncing)
-            {
-                messages.Show(InfoBarSeverity.Informational, "Synchronisierung läuft",
-                    "Dokumente lassen sich öffnen, sobald die Synchronisierung fertig ist.");
-                return;
-            }
-            if (!await session.ConfirmLeaveAsync())
-            {
-                return;
-            }
-            await session.OpenAsync(path);
-            if (!ProjectFiles.SamePath(path, session.OpenPath))
-            {
-                return; // not opened (the message says why)
-            }
+            return; // not opened (refused during a sync, canceled, or the message says why)
         }
         if (pageIndex >= 0)
         {
@@ -75,10 +61,8 @@ public sealed class ExplorerCommands(
     /// <summary>New document/folder, rename, delete from the explorer's context menu or keys (F2, Del).</summary>
     public async void OnCommand(object? sender, ExplorerCommandRequest request)
     {
-        if (sync.IsSyncing)
+        if (session.RefusedWhileSyncing("Das Ändern von Dateien und Ordnern"))
         {
-            messages.Show(InfoBarSeverity.Informational, "Synchronisierung läuft",
-                "Dateien und Ordner können geändert werden, sobald die Synchronisierung fertig ist.");
             return;
         }
         string parent = request.IsFolder ? request.Path : Path.GetDirectoryName(request.Path)!;
@@ -194,7 +178,7 @@ public sealed class ExplorerCommands(
         {
             return;
         }
-        if (ProjectFiles.IsAtOrBelow(session.Document.FilePath, path) || ProjectFiles.IsAtOrBelow(session.Document.PdfPath, path))
+        if (session.Document.Uses(path)) // the document, its PDF or a picture background of it (or a folder holding one)
         {
             if (!await session.ConfirmLeaveAsync())
             {
@@ -221,8 +205,7 @@ public sealed class ExplorerCommands(
         await session.WhenSaved(); // a save running must not write after the checkout
         string? open = session.OpenPath;
         var doc = session.Document;
-        bool affected = ProjectFiles.SamePath(doc.FilePath, path) || ProjectFiles.SamePath(doc.PdfPath, path) ||
-            doc.Pages.Any(p => ProjectFiles.SamePath(p.BackgroundImagePath, path)); // the files the document shows
+        bool affected = doc.Uses(path); // the document, its PDF or a picture background it shows
         string name = Path.GetFileName(path);
         if (!await dialogs.ConfirmAsync($"Änderungen an „{name}“ verwerfen?",
                 "Die Datei bekommt wieder den Stand des letzten Commits (der letzten Synchronisierung). Was seitdem an ihr " +

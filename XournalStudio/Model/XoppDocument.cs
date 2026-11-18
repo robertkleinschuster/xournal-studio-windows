@@ -24,6 +24,24 @@ public sealed class XoppDocument
 
     public List<XoppPage> Pages { get; } = new();
 
+    /// <summary>
+    /// The files the document consists of and shows: its own file, its background PDF and its pages' picture backgrounds.
+    /// </summary>
+    public IEnumerable<string> Files =>
+        new[] { FilePath, PdfPath }.Concat(Pages.Select(p => p.BackgroundImagePath)).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Whether <paramref name="path"/> (a file or a folder) is or holds one of the document's <see cref="Files"/>: what
+    /// happens to it there (deleted, renamed, discarded, pulled) happens to the open document.
+    /// </summary>
+    public bool Uses(string path)
+    {
+        string item = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+        return Files.Select(Path.GetFullPath).Any(file =>
+            string.Equals(file, item, StringComparison.OrdinalIgnoreCase) ||
+            file.StartsWith(item + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase));
+    }
+
     /// <summary>When the document was created in this app (for the default file name); null for loaded files.</summary>
     public DateTime? CreatedAt { get; set; }
 

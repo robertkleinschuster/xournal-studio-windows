@@ -17,4 +17,26 @@ public static class AppToolbar
     };
 
     public static PenToolbar Create(AppSettings settings) => new(Texts, settings.ToolChoices());
+
+    // A page with a plus and a page with a minus (user, 2026-11-17: both in the row; deleting always asks first).
+    public const string InsertPageIcon = "F0 M1,1 H11 V19 H1 Z M2.5,2.5 V17.5 H9.5 V2.5 Z " +
+        "M15.25,9.5 H16.75 V13.25 H19.5 V14.75 H16.75 V18.5 H15.25 V14.75 H12.5 V13.25 H15.25 Z";
+    public const string DeletePageIcon = "F0 M1,1 H11 V19 H1 Z M2.5,2.5 V17.5 H9.5 V2.5 Z M12.5,13.25 H19.5 V14.75 H12.5 Z";
+
+    /// <summary>The app's buttons at the end of the row (paste, insert page, delete page); the window wires their clicks.</summary>
+    public static (Microsoft.UI.Xaml.Controls.AppBarButton Paste, Microsoft.UI.Xaml.Controls.AppBarButton InsertPage,
+        Microsoft.UI.Xaml.Controls.AppBarButton DeletePage) AddButtons(PenToolbar bar)
+    {
+        // Short tips: the snipping-tool hint is in the message when the clipboard has nothing to paste.
+        var paste = PenToolbar.Command(new Microsoft.UI.Xaml.Controls.SymbolIcon(Microsoft.UI.Xaml.Controls.Symbol.Paste),
+            "Einfügen (Strg+V)", "PasteButton");
+        var insertPage = PenToolbar.Command(PenToolbar.Path(InsertPageIcon), "Seite einfügen (nach der Seite im Blick)", "InsertPageButton");
+        var deletePage = PenToolbar.Command(PenToolbar.Path(DeletePageIcon),
+            "Seite löschen (die Seite im Blick, mit Rückfrage)", "DeletePageButton");
+        bar.Extensions.Add(paste);
+        bar.Extensions.Add(new Microsoft.UI.Xaml.Controls.AppBarSeparator());
+        bar.Extensions.Add(insertPage);
+        bar.Extensions.Add(deletePage);
+        return (paste, insertPage, deletePage);
+    }
 }

@@ -20,9 +20,7 @@ public sealed class InsertPdfPagesCommand(WindowId window, DocumentSession sessi
     /// <summary>Inserts pages before or after page <paramref name="around"/> (0-based; the dialog asks which).</summary>
     public async Task InsertAsync(int around)
     {
-        var picker = new FileOpenPicker(window);
-        picker.FileTypeFilter.Add(".pdf");
-        string? source = (await picker.PickSingleFileAsync())?.Path;
+        string? source = await Pickers.OpenAsync(window, Pickers.Pdf);
         if (source == null)
         {
             return;
@@ -44,6 +42,10 @@ public sealed class InsertPdfPagesCommand(WindowId window, DocumentSession sessi
             if (await AskAsync(Path.GetFileName(source), sourcePdf, where, around) is not { } choice)
             {
                 return;
+            }
+            if (target != null && !same && session.RefusedWhileSyncing("Seiten an das PDF anhängen"))
+            {
+                return; // appending writes the document's PDF, which git may be working on
             }
             int at = choice.Before ? around : around + 1;
             if (target == null || same)

@@ -50,6 +50,14 @@ public sealed class XoppPage
     /// <summary>The page's ink strokes: those of its view, or (no view) read from its element.</summary>
     public IReadOnlyList<InkStroke> Strokes => Ink?.GetStrokes() ?? ReadStrokes().Select(s => s.Stroke).ToList();
 
+    /// <summary>
+    /// Whether anything lies on the page (strokes, pictures, texts, ...): from the ink while the page has a view (its
+    /// strokes live there), otherwise from the element – without turning strokes into ink.
+    /// </summary>
+    public bool HasContent =>
+        element.Elements("layer").Elements().Any(e => Ink == null || e.Name != "stroke" || StrokeConverter.NeedsOwnDrawing(e)) ||
+        (Ink?.GetStrokes().Count ?? 0) > 0; // with a view: its ink (the elements of erased strokes stay until written back)
+
     public bool IsPdf => IsPdfBackground(Background);
 
     /// <summary>0-based page index in the background PDF.</summary>
