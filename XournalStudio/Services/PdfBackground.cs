@@ -9,10 +9,12 @@ namespace XournalStudio.Services;
 public sealed class PdfBackground
 {
     private readonly PdfDocument pdf;
+    private readonly Windows.Storage.Streams.IRandomAccessStream? stream; // read by the renderer: lives as long as this
 
-    private PdfBackground(PdfDocument pdf)
+    private PdfBackground(PdfDocument pdf, Windows.Storage.Streams.IRandomAccessStream? stream = null)
     {
         this.pdf = pdf;
+        this.stream = stream;
     }
 
     public int PageCount => (int)pdf.PageCount;
@@ -21,6 +23,13 @@ public sealed class PdfBackground
     {
         var file = await StorageFile.GetFileFromPathAsync(Path.GetFullPath(path));
         return new PdfBackground(await PdfDocument.LoadFromFileAsync(file));
+    }
+
+    /// <summary>A PDF in memory (written by <see cref="PdfExport"/> into a stream).</summary>
+    public static async Task<PdfBackground> LoadAsync(byte[] data)
+    {
+        var stream = new MemoryStream(data, writable: false).AsRandomAccessStream();
+        return new PdfBackground(await PdfDocument.LoadFromStreamAsync(stream), stream);
     }
 
     /// <summary>Page sizes in points (1/72"); the PDF API reports DIPs (1/96").</summary>

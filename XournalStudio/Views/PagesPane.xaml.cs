@@ -38,6 +38,9 @@ public sealed partial class PageThumb(XoppPage page, double width, double height
     /// <summary>The content layer must be drawn again (the page was edited, or it is new).</summary>
     public bool ContentStale { get; set; } = true;
 
+    /// <summary>The background layer was rendered (or failed: not tried again).</summary>
+    public bool BackgroundTried { get; set; }
+
     private ImageSource? background, content;
 
     public ImageSource? Background
@@ -104,11 +107,11 @@ public sealed partial class PagesPane : UserControl
     private readonly Dictionary<XoppPage, PageThumb> byPage = new();
 
     /// <summary>
-    /// The document's pages, with <paramref name="current"/> selected; a page shown before keeps its thumbnail (not when
-    /// <paramref name="newDocument"/>). Applied after the running event – never inside the list's own events: replacing
-    /// its items while it finishes a reordering drag is not safe in WinUI.
+    /// The document's pages, with the page <paramref name="current"/> gives selected (asked when applied); a page shown
+    /// before keeps its thumbnail (not when <paramref name="newDocument"/>). Applied after the running event – never inside
+    /// the list's own events: replacing its items while it finishes a reordering drag is not safe in WinUI.
     /// </summary>
-    public void Show(IReadOnlyList<XoppPage> pages, int current, bool newDocument)
+    public void Show(IReadOnlyList<XoppPage> pages, Func<int> current, bool newDocument)
     {
         var shown = pages.ToList();
         DispatcherQueue.TryEnqueue(() =>
@@ -135,7 +138,7 @@ public sealed partial class PagesPane : UserControl
             // reorder it while the user drags.
             items = new ObservableCollection<PageThumb>(thumbs);
             List.ItemsSource = items;
-            Select(current);
+            Select(current());
             Shown?.Invoke(this, EventArgs.Empty);
         });
     }
@@ -151,20 +154,31 @@ public sealed partial class PagesPane : UserControl
         List.ScrollIntoView(items[index]);
     }
 
-    // The right-clicked page becomes the selected one: the menu and the buttons act on the selected page.
+    // The menu acts on the right-clicked page (kept: the selection may follow the page in view meanwhile); the buttons
+    // on the selected page.
+    private PageThumb? menuPage;
+
     private void OnContextRequested(UIElement sender, Microsoft.UI.Xaml.Input.ContextRequestedEventArgs args)
     {
-        if ((args.OriginalSource as FrameworkElement)?.DataContext is PageThumb thumb)
+        menuPage = (args.OriginalSource as FrameworkElement)?.DataContext as PageThumb;
+        if (menuPage != null)
         {
-            List.SelectedIndex = thumb.Index;
+            List.SelectedIndex = menuPage.Index;
         }
     }
 
-    private void Act(Action<int> action)
+    private void Act(object sender, Action<int> action)
     {
+        int target = sender is MenuFlyoutItem && menuPage != null && items.Contains(menuPage)
+            ? menuPage.Index
+            : Math.Max(0, List.SelectedIndex);
+        if (sender is MenuFlyoutItem)
+        {
+            menuPage = null;
+        }
         if (items.Count > 0)
         {
-            action(Math.Max(0, List.SelectedIndex));
+            action(target);
         }
     }
 
@@ -176,13 +190,13 @@ public sealed partial class PagesPane : UserControl
         }
     }
 
-    private void OnInsertBefore(object sender, RoutedEventArgs e) => Act(i => InsertBlankRequested?.Invoke(this, i));
+    private void OnInsertBefore(object sender, RoutedEventArgs e) => Act(sender, i => InsertBlankRequested?.Invoke(this, i));
 
-    private void OnInsertAfter(object sender, RoutedEventArgs e) => Act(i => InsertBlankRequested?.Invoke(this, i + 1));
+    private void OnInsertAfter(object sender, RoutedEventArgs e) => Act(sender, i => InsertBlankRequested?.Invoke(this, i + 1));
 
-    private void OnInsertPdf(object sender, RoutedEventArgs e) => Act(i => InsertPdfRequested?.Invoke(this, i));
+    private void OnInsertPdf(object sender, RoutedEventArgs e) => Act(sender, i => InsertPdfRequested?.Invoke(this, i));
 
-    private void OnMoveUp(object sender, RoutedEventArgs e) => Act(i =>
+    private void OnMoveUp(object sender, RoutedEventArgs e) => Act(sender, i =>
     {
         if (i > 0)
         {
@@ -190,7 +204,7 @@ public sealed partial class PagesPane : UserControl
         }
     });
 
-    private void OnMoveDown(object sender, RoutedEventArgs e) => Act(i =>
+    private void OnMoveDown(object sender, RoutedEventArgs e) => Act(sender, i =>
     {
         if (i < items.Count - 1)
         {
@@ -198,7 +212,7 @@ public sealed partial class PagesPane : UserControl
         }
     });
 
-    private void OnDelete(object sender, RoutedEventArgs e) => Act(i => DeleteRequested?.Invoke(this, i));
+    private void OnDelete(object sender, RoutedEventArgs e) => Act(sender, i => DeleteRequested?.Invoke(this, i));
 
     // Reordering by dragging: the list reorders its items itself; the window then moves the page (the pages are shown
     // again after this event).

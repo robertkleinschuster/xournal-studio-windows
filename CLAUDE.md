@@ -507,10 +507,10 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   (also by dragging with finger or mouse; `PagesController.Move`, the file's page order is its `<page>` order as
   upstream), delete (asked). Thumbnails in two layers per page (`PageThumb`, kept per page while the document is
   shown): the background PDF's page rendered once from the loaded PDF, and the page's content (ink, pictures, texts;
-  a page without PDF with its paper) drawn by `PdfExport` for that one page without the background PDF into a temporary
-  PDF, rendered (transparent) and deleted at once (it holds the user's notes; leftovers of a crash are deleted at start).
-  Drawn again only for edited pages (the pages with a view), nearest to the page in view first, only while the pane is
-  shown. The first version exported the whole document (with the lecture PDF) per change – slow, the user noticed. The
+  a page without PDF with its paper) drawn by `PdfExport` for that one page without the background PDF into memory
+  (`PdfExport.Write` to a stream, `PdfBackground.LoadAsync(byte[])`: nothing of the user's notes goes to a file) and
+  rendered (transparent). Drawn again only for the pages an edit touched (InkPages `UndoStack.ContentEdited`), nearest
+  to the page in view first, only while the pane is shown; a failed page is logged and left, a cancelled one redrawn. The first version exported the whole document (with the lecture PDF) per change – slow, the user noticed. The
   pane never replaces its list inside the list's own events (`Show` is enqueued): a crash (0xc000027b in
   Microsoft.UI.Xaml.dll) happened on the device when a page was selected – not reproduced in the sandbox, cause unknown.
   Sandbox: `UiTests/PagesPaneTest.ps1` (thumbnails with ink, taps by mouse/pen/finger, move, delete). Not automated: the

@@ -10,16 +10,16 @@ namespace XournalStudio.Views;
 /// <list type="bullet">
 /// <item>the background PDF's page, rendered by Windows.Data.Pdf from the document's PDF already loaded – once per page;</item>
 /// <item>what lies on it – ink, pictures, texts (a page without PDF: its paper too) – drawn as the PDF export draws it
-/// (<see cref="PdfExport"/>, this one page, without the background PDF) into a temporary PDF that is rendered (transparent
-/// on a PDF page) and deleted at once. Drawn again only for pages that were edited (only pages with a view can be).</item>
+/// (<see cref="PdfExport"/>, this one page, without the background PDF) into memory and rendered (transparent on a PDF
+/// page). Drawn again only for pages an edit touched. Nothing of the user's notes is written to a file.</item>
 /// </list>
-/// Pages near the page in view first; only while the pane is shown; a moment after the last change.
+/// Pages near the page in view first; only while the pane is shown; a moment after the last change. A page whose layer
+/// fails is logged and left (the others go on); a refresh that is cancelled leaves its page marked to be drawn.
 /// </summary>
 public sealed class PageThumbnails
 {
     private static readonly TimeSpan Settle = TimeSpan.FromMilliseconds(500);
     private const uint PixelWidth = (uint)(PagesPane.ThumbWidth * 1.5); // sharp at 150 %
-    private const string FilePrefix = "xournal-studio-thumbnails-";
 
     private readonly DocumentSession session;
     private readonly PagesPane pane;
@@ -39,7 +39,6 @@ public sealed class PageThumbnails
         timer.IsRepeating = false;
         timer.Tick += (_, _) => runningTask = RefreshAsync(runningTask);
         pane.Shown += (_, _) => Schedule();
-        DeleteLeftovers();
     }
 
     /// <summary>Whether the pane is shown (thumbnails are made only then).</summary>
@@ -61,11 +60,11 @@ public sealed class PageThumbnails
         }
     }
 
-    /// <summary>These pages were edited: their content layer is drawn again a moment later.</summary>
-    public void Edited(IEnumerable<XoppPage> edited)
+    /// <summary>An edit was recorded, undone or redone: the pages it touched get their content layer drawn again.</summary>
+    public void Edited(InkPages.IPageEdit edit)
     {
-        var set = edited.ToHashSet();
-        foreach (var thumb in pane.Thumbs.Where(t => set.Contains(t.Page)))
+        var touched = pages.Views.Where(edit.Touches).Select(v => v.Page).ToHashSet(); // only pages with a view are edited
+        foreach (var thumb in pane.Thumbs.Where(t => touched.Contains(t.Page)))
         {
             thumb.ContentStale = true;
         }
@@ -82,7 +81,7 @@ public sealed class PageThumbnails
         }
     }
 
-    /// <summary>The app closes: no refresh any more (its temporary files go as each is rendered).</summary>
+    /// <summary>The app closes: no refresh any more.</summary>
     public async Task CloseAsync()
     {
         timer.Stop();
@@ -93,34 +92,50 @@ public sealed class PageThumbnails
     private async Task RefreshAsync(Task previous)
     {
         running?.Cancel();
-        var cancel = new CancellationTokenSource();
+        using var cancel = new CancellationTokenSource();
         running = cancel;
         await previous; // one refresh at a time (the renderer takes one page at a time anyway)
         int current = pages.Count == 0 ? 0 : pages.CurrentIndex;
-        try
+        var pdf = session.Pdf;
+        foreach (var thumb in pane.Thumbs.OrderBy(t => Math.Abs(t.Index - current)).ToList())
         {
-            foreach (var thumb in pane.Thumbs.OrderBy(t => Math.Abs(t.Index - current)).ToList())
+            if (cancel.IsCancellationRequested)
             {
-                cancel.Token.ThrowIfCancellationRequested();
-                var page = thumb.Page;
-                if (thumb.Background == null && page.IsPdf && session.Pdf is { } pdf)
+                DebugLog.Write("page thumbnails: refresh canceled (a newer one follows, or the pane was closed)");
+                break;
+            }
+            var page = thumb.Page;
+            try
+            {
+                if (!thumb.BackgroundTried && page.IsPdf && pdf != null)
                 {
+                    thumb.BackgroundTried = true; // a page the PDF cannot render is not tried again on every change
                     thumb.Background = await pdf.RenderAsync(page.PdfPageIndex, PixelWidth, cancel.Token);
                 }
                 if (thumb.ContentStale)
                 {
-                    thumb.ContentStale = false;
                     thumb.Content = await ContentAsync(page, cancel.Token);
+                    thumb.ContentStale = false; // only once drawn
                 }
             }
+            catch (OperationCanceledException)
+            {
+                DebugLog.Write($"page thumbnails: page {thumb.Index + 1} canceled (drawn by the next refresh)");
+                if (page.IsPdf && thumb.Background == null)
+                {
+                    thumb.BackgroundTried = false;
+                }
+                break;
+            }
+            catch (Exception e)
+            {
+                DebugLog.Write($"page thumbnails: page {thumb.Index + 1} (left as it is)", e);
+                thumb.ContentStale = false; // not again until the page is edited
+            }
         }
-        catch (OperationCanceledException)
+        if (running == cancel)
         {
-            // a newer refresh follows (or the pane was closed); stale layers stay marked
-        }
-        catch (Exception e)
-        {
-            DebugLog.Write("page thumbnails (the pane shows what it has)", e);
+            running = null;
         }
     }
 
@@ -129,44 +144,13 @@ public sealed class PageThumbnails
     {
         var snapshot = new XDocument(new XElement("xournal", page.Snapshot()));
         string? picture = page.BackgroundImagePath;
-        string file = Path.Combine(Path.GetTempPath(), $"{FilePrefix}{Guid.NewGuid():N}.pdf");
-        try
+        byte[] data = await Task.Run(() =>
         {
-            await Task.Run(() => PdfExport.Write(snapshot, null, file, _ => picture), cancel);
-            var pdf = await PdfBackground.LoadAsync(file);
-            return await pdf.RenderAsync(0, PixelWidth, cancel, transparent: page.IsPdf);
-        }
-        finally
-        {
-            Delete(file); // it holds the user's notes: rendered, it goes
-        }
-    }
-
-    // Thumbnail PDFs a session that ended while rendering (a crash) left in the temp folder.
-    private static void DeleteLeftovers()
-    {
-        try
-        {
-            foreach (var leftover in Directory.EnumerateFiles(Path.GetTempPath(), FilePrefix + "*.pdf"))
-            {
-                Delete(leftover);
-            }
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            DebugLog.Write($"page thumbnails: listing the temp folder: {e.GetType().Name} 0x{e.HResult:X8} {e.Message}");
-        }
-    }
-
-    private static void Delete(string path)
-    {
-        try
-        {
-            File.Delete(path);
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            DebugLog.Write($"page thumbnails: temporary file {path}: {e.GetType().Name} 0x{e.HResult:X8} {e.Message}");
-        }
+            using var stream = new MemoryStream();
+            PdfExport.Write(snapshot, null, stream, _ => picture);
+            return stream.ToArray();
+        }, cancel);
+        var pdf = await PdfBackground.LoadAsync(data);
+        return await pdf.RenderAsync(0, PixelWidth, cancel, transparent: page.IsPdf);
     }
 }

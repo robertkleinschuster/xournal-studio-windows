@@ -34,6 +34,22 @@ public static class PdfExport
         {
             throw new IOException("Die Hintergrund-PDF des Dokuments kann nicht überschrieben werden.");
         }
+        return Write(snapshot, backgroundPdf, output =>
+        {
+            string temp = target + "~";
+            output.Save(temp);
+            File.Move(temp, target, overwrite: true);
+        }, pictureBackground);
+    }
+
+    /// <summary>The same into a stream (e.g. thumbnails: nothing of the user's notes is written to a file).</summary>
+    public static PdfExportResult Write(XDocument snapshot, string? backgroundPdf, Stream target,
+        Func<int, string?>? pictureBackground = null) =>
+        Write(snapshot, backgroundPdf, output => output.Save(target, closeStream: false), pictureBackground);
+
+    private static PdfExportResult Write(XDocument snapshot, string? backgroundPdf, Action<PdfDocument> save,
+        Func<int, string?>? pictureBackground)
+    {
         var keepOpen = new List<IDisposable>(); // pictures are read when the document is saved
         XPdfForm? background = null;
         bool annotationsLeftOut = false;
@@ -97,9 +113,7 @@ public static class PdfExport
                 }
                 pages++;
             }
-            string temp = target + "~";
-            output.Save(temp);
-            File.Move(temp, target, overwrite: true);
+            save(output);
             return new PdfExportResult(pages, skipped, missing, annotationsLeftOut);
         }
         finally

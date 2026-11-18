@@ -281,8 +281,8 @@ public sealed partial class MainWindow : Window
         pages.DocumentShown += (_, _) => ShowPagesPane(newDocument: true);
         pages.PagesChanged += (_, _) => ShowPagesPane(newDocument: false);
         pages.CurrentPageChanged += (_, _) => PagesList.Select(pages.CurrentIndex);
-        // Only pages with a view can be edited: their thumbnails are drawn again.
-        ink.Undo.ContentChanged += (_, _) => thumbnails.Edited(pages.Views.Select(v => v.Page));
+        // The pages an edit touched: their thumbnails are drawn again.
+        ink.Undo.ContentEdited += (_, edited) => thumbnails.Edited(edited);
         PagesList.GoToRequested += (_, index) => pages.ScrollToPage(index);
         PagesList.InsertBlankRequested += (_, index) => pages.InsertBlankAt(index);
         PagesList.InsertPdfRequested += async (_, index) => await insertPdfPages.InsertAsync(index);
@@ -301,7 +301,7 @@ public sealed partial class MainWindow : Window
     }
 
     private void ShowPagesPane(bool newDocument) =>
-        PagesList.Show(session.Document.Pages, pages.Count == 0 ? -1 : pages.CurrentIndex, newDocument);
+        PagesList.Show(session.Document.Pages, () => pages.Count == 0 ? -1 : pages.CurrentIndex, newDocument);
 
     private async void OnDeletePage(object sender, RoutedEventArgs e) => await DeletePageAsync(pages.CurrentIndex);
 
