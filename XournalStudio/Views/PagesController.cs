@@ -59,6 +59,9 @@ public sealed class PagesController
     /// <summary>Pages were inserted or removed (the document changed).</summary>
     public event EventHandler? PagesChanged;
 
+    /// <summary>Another document is shown (its pages, nothing changed).</summary>
+    public event EventHandler? DocumentShown;
+
     /// <summary>The pages' views that exist now (near the viewport, or held by the ink workspace).</summary>
     public IEnumerable<PageView> Views => slots.Views;
 
@@ -131,6 +134,7 @@ public sealed class PagesController
     public void Show(XoppDocument doc, PdfBackground? background)
     {
         document = doc;
+        lastCurrent = -1;
         restoreOffset = null; // the previous document's
         ink.Reset();
         slots.Show(doc.Pages, background); // placeholders: the views near the viewport come with the next update
@@ -139,48 +143,80 @@ public sealed class PagesController
         scroller.ScrollTo(0, 0, new ScrollingScrollOptions(ScrollingAnimationMode.Disabled));
         FitWidth();
         viewTimer.Start();
+        DocumentShown?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>The shown document's pages' sizes in points (for the pages pane).</summary>
+    public List<(double Width, double Height)> PageSizes => document?.Pages.Select(p => (p.Width, p.Height)).ToList() ?? [];
+
+    /// <summary>The number of pages of the shown document.</summary>
+    public int Count => document?.Pages.Count ?? 0;
+
+    /// <summary>The page in view changed (scrolling, inserting, removing): <see cref="CurrentIndex"/>.</summary>
+    public event EventHandler? CurrentPageChanged;
+
+    private int lastCurrent = -1;
+
     /// <summary>A graph page (size of the current one) after the page in view, scrolled into view.</summary>
-    public void InsertAfterCurrent()
+    public void InsertAfterCurrent() => InsertBlankAt(Count == 0 ? 0 : CurrentIndex + 1);
+
+    /// <summary>A graph page at <paramref name="index"/> (the size of the page before it, else after it), scrolled into view.</summary>
+    public void InsertBlankAt(int index)
     {
         var doc = document!;
-        int index = doc.Pages.Count == 0 ? -1 : CurrentIndex;
-        var current = index >= 0 ? doc.Pages[index] : null;
-        var page = XoppPage.CreateGraph(current?.Width ?? XoppDocument.A4Width, current?.Height ?? XoppDocument.A4Height);
-        doc.Pages.Insert(index + 1, page);
-        slots.Insert(index + 1, page);
-        slots.Realize(index + 1); // it comes into view now
-        viewTimer.Start();
-        MarkCurrentPage();
-        PagesChanged?.Invoke(this, EventArgs.Empty);
-        ScrollIntoView(index + 1);
+        index = Math.Clamp(index, 0, doc.Pages.Count);
+        var like = doc.Pages.Count == 0 ? null : doc.Pages[Math.Max(0, index - 1)];
+        var page = XoppPage.CreateGraph(like?.Width ?? XoppDocument.A4Width, like?.Height ?? XoppDocument.A4Height);
+        InsertPages(index, [page]);
     }
 
     /// <summary>
-    /// Pages with the document's PDF pages <paramref name="pdfPages"/> (0-based) as background after the page in view,
-    /// the first scrolled into view; <paramref name="background"/> is the document's PDF with them (loaded again after
-    /// pages were appended to it).
+    /// Pages with the document's PDF pages <paramref name="pdfPages"/> (0-based) as background at
+    /// <paramref name="index"/>, the first scrolled into view; <paramref name="background"/> is the document's PDF with
+    /// them (loaded again after pages were appended to it).
     /// </summary>
-    public void InsertPdfPagesAfterCurrent(IReadOnlyList<int> pdfPages, PdfBackground background)
+    public void InsertPdfPagesAt(int index, IReadOnlyList<int> pdfPages, PdfBackground background)
     {
-        var doc = document!;
         slots.UseBackground(background);
         var sizes = background.GetPageSizes();
-        int index = doc.Pages.Count == 0 ? -1 : CurrentIndex;
-        foreach (int pdfPage in pdfPages)
+        InsertPages(index, pdfPages.Select(p => XoppPage.CreatePdf(sizes[p].Width, sizes[p].Height, p)).ToList());
+    }
+
+    private void InsertPages(int index, IReadOnlyList<XoppPage> added)
+    {
+        var doc = document!;
+        index = Math.Clamp(index, 0, doc.Pages.Count);
+        for (int i = 0; i < added.Count; i++)
         {
-            var page = XoppPage.CreatePdf(sizes[pdfPage].Width, sizes[pdfPage].Height, pdfPage);
-            index++;
-            doc.Pages.Insert(index, page);
-            slots.Insert(index, page);
+            doc.Pages.Insert(index + i, added[i]);
+            slots.Insert(index + i, added[i]);
         }
-        int first = index - pdfPages.Count + 1;
-        slots.Realize(first);
+        slots.Realize(index); // it comes into view now
         viewTimer.Start();
         MarkCurrentPage();
         PagesChanged?.Invoke(this, EventArgs.Empty);
-        ScrollIntoView(first);
+        ScrollIntoView(index);
+    }
+
+    /// <summary>
+    /// Moves the page at <paramref name="from"/> to <paramref name="to"/> (its index afterwards) and scrolls to it. The
+    /// file's order of pages is the order of its &lt;page&gt; elements (as upstream). Not while a selection is dragged.
+    /// </summary>
+    public bool Move(int from, int to)
+    {
+        var doc = document!;
+        if (from == to || from < 0 || to < 0 || from >= doc.Pages.Count || to >= doc.Pages.Count || ink.Selection.IsDragging)
+        {
+            return false;
+        }
+        var page = doc.Pages[from];
+        doc.Pages.RemoveAt(from);
+        doc.Pages.Insert(to, page);
+        slots.Move(from, to);
+        viewTimer.Start();
+        PagesChanged?.Invoke(this, EventArgs.Empty);
+        ScrollIntoView(to);
+        return true;
     }
 
     /// <summary>Removes this page (taken by the page, not an index: the document may have changed meanwhile).</summary>
@@ -293,6 +329,12 @@ public sealed class PagesController
             view.UpdateBackground(true, scale);
         }
         ink.SetCurrentPage(CurrentPageView());
+        int current = CurrentIndex;
+        if (current != lastCurrent)
+        {
+            lastCurrent = current;
+            CurrentPageChanged?.Invoke(this, EventArgs.Empty);
+        }
     }
 
     // The viewport in the panel's coordinates (page units: the zoom is taken out).

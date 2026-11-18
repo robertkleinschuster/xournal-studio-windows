@@ -179,9 +179,13 @@
                         <SelectorBarItem x:Name="TasksTab" Text="Aufgaben">
                             <SelectorBarItem.Icon><FontIcon Glyph="&#xE9D5;" /></SelectorBarItem.Icon>
                         </SelectorBarItem>
+                        <SelectorBarItem x:Name="PagesTab" Text="Seiten">
+                            <SelectorBarItem.Icon><FontIcon Glyph="&#xE8A5;" /></SelectorBarItem.Icon>
+                        </SelectorBarItem>
                     </SelectorBar>
                     <views:ExplorerView x:Name="Explorer" Grid.Row="1" />
                     <views:TasksView x:Name="Tasks" Grid.Row="1" Visibility="Collapsed" />
+                    <views:PagesPane x:Name="PagesList" Grid.Row="1" Visibility="Collapsed" />
                 </Grid>
             </SplitView.Pane>
             <Grid Background="{ThemeResource LayerFillColorDefaultBrush}"

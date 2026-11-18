@@ -26,6 +26,7 @@ public sealed partial class MainWindow : Window
     private readonly PdfExportCommand export;
     private readonly PdfImportCommand import;
     private readonly InsertPdfPagesCommand insertPdfPages;
+    private readonly PageThumbnails thumbnails;
     private readonly PenToolbar bar;
     private bool closeConfirmed;
 
@@ -66,6 +67,8 @@ public sealed partial class MainWindow : Window
         export = new PdfExportCommand(AppWindow.Id, session, messages);
         import = new PdfImportCommand(AppWindow.Id, session, dialogs, messages);
         insertPdfPages = new InsertPdfPagesCommand(AppWindow.Id, session, pages, dialogs, messages);
+        thumbnails = new PageThumbnails(session, PagesList);
+        WirePagesPane();
         ink.Undo.Changed += (_, _) =>
         {
             UndoMenuItem.IsEnabled = ink.Undo.CanUndo;
@@ -102,7 +105,7 @@ public sealed partial class MainWindow : Window
         };
         Tasks.Failed += (_, m) => messages.Show(InfoBarSeverity.Warning, m.Title, m.Message);
         Tasks.OpenRequested += async (_, link) => await explorerCommands.OpenDocumentAsync(link.Document, link.PageIndex);
-        (settings.TasksShown ? TasksTab : FilesTab).IsSelected = true;
+        (settings.PagesShown ? PagesTab : settings.TasksShown ? TasksTab : FilesTab).IsSelected = true;
 
         Activated += OnActivated;
         AppWindow.Closing += OnClosing;
@@ -267,9 +270,44 @@ public sealed partial class MainWindow : Window
 
     private void OnInsertPage(object sender, RoutedEventArgs e) => pages.InsertAfterCurrent();
 
-    private async void OnInsertPdfPages(object sender, RoutedEventArgs e) => await insertPdfPages.InsertAsync();
+    private async void OnInsertPdfPages(object sender, RoutedEventArgs e) => await insertPdfPages.InsertAsync(pages.CurrentIndex);
 
-    private async void OnDeletePage(object sender, RoutedEventArgs e)
+    // ---------------------------------------------------------------- pages pane
+
+    // The pages pane shows the document's pages (thumbnails a moment after a change) and asks for the page actions.
+    private void WirePagesPane()
+    {
+        pages.DocumentShown += (_, _) => ShowPagesPane();
+        pages.PagesChanged += (_, _) => ShowPagesPane();
+        pages.CurrentPageChanged += (_, _) => PagesList.Select(pages.CurrentIndex);
+        ink.Undo.ContentChanged += (_, _) => thumbnails.Invalidate();
+        PagesList.GoToRequested += (_, index) => pages.ScrollToPage(index);
+        PagesList.InsertBlankRequested += (_, index) => pages.InsertBlankAt(index);
+        PagesList.InsertPdfRequested += async (_, index) => await insertPdfPages.InsertAsync(index);
+        PagesList.MoveRequested += (_, move) =>
+        {
+            if (!pages.Move(move.From, move.To))
+            {
+                ShowPagesPane(); // the list showed the drag's order: back to the document's
+                if (ink.Selection.IsDragging)
+                {
+                    messages.Show(InfoBarSeverity.Informational, "Seite nicht verschoben", PenToolbarTexts.German.Refused);
+                }
+            }
+        };
+        PagesList.DeleteRequested += async (_, index) => await DeletePageAsync(index);
+    }
+
+    private void ShowPagesPane()
+    {
+        PagesList.Show(pages.PageSizes, pages.Count == 0 ? -1 : pages.CurrentIndex);
+        thumbnails.Invalidate();
+    }
+
+    private async void OnDeletePage(object sender, RoutedEventArgs e) => await DeletePageAsync(pages.CurrentIndex);
+
+    // Deletes a page after asking (always: it cannot be undone).
+    private async Task DeletePageAsync(int index)
     {
         var doc = session.Document;
         if (doc.Pages.Count <= 1)
@@ -277,7 +315,10 @@ public sealed partial class MainWindow : Window
             messages.Show(InfoBarSeverity.Informational, "Seite nicht gelöscht", "Ein Dokument behält mindestens eine Seite.");
             return;
         }
-        int index = pages.CurrentIndex;
+        if (index < 0 || index >= doc.Pages.Count)
+        {
+            return;
+        }
         var page = doc.Pages[index];
         // Always asked (user, 2026-11-17): deleting a page cannot be undone (its history goes with it).
         string content = page.Strokes.Count > 0 || page.Images.Any() ? "Die Seite enthält Notizen. " : "";
@@ -333,12 +374,18 @@ public sealed partial class MainWindow : Window
 
     private void OnPaneSelectionChanged(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
     {
-        bool tasks = sender.SelectedItem == TasksTab;
+        bool tasks = sender.SelectedItem == TasksTab, pagesShown = sender.SelectedItem == PagesTab;
         Tasks.Visibility = tasks ? Visibility.Visible : Visibility.Collapsed;
-        Explorer.Visibility = tasks ? Visibility.Collapsed : Visibility.Visible;
-        if (settings.TasksShown != tasks)
+        PagesList.Visibility = pagesShown ? Visibility.Visible : Visibility.Collapsed;
+        Explorer.Visibility = tasks || pagesShown ? Visibility.Collapsed : Visibility.Visible;
+        if (thumbnails != null)
+        {
+            thumbnails.Active = pagesShown && Split.IsPaneOpen;
+        }
+        if (settings.TasksShown != tasks || settings.PagesShown != pagesShown)
         {
             settings.TasksShown = tasks;
+            settings.PagesShown = pagesShown;
             settings.Save();
         }
     }
@@ -346,6 +393,10 @@ public sealed partial class MainWindow : Window
     private void SetExplorerOpen(bool open)
     {
         Split.IsPaneOpen = ExplorerMenuItem.IsChecked = open;
+        if (thumbnails != null)
+        {
+            thumbnails.Active = open && PagesTab.IsSelected;
+        }
         ExplorerButton.IsChecked = open;
         if (settings.ExplorerOpen != open)
         {

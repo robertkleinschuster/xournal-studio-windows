@@ -501,6 +501,15 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   pages refer to them; annotations of the inserted pages are drawn into them first. A document without PDF takes the
   chosen PDF as its PDF. PDF has no hidden pages: the appended pages show in other viewers (the alternative – an
   attached copy `<name>.xopp.bg.pdf` – was offered to the user, not chosen yet).
+- **Pages pane (user, 2026-11-18; side pane tab "Seiten", `Views/PagesPane` + `PageThumbnails`):** thumbnails of all
+  pages (tap = go to the page; the page in view is selected), insert a blank page before/after, insert pages of a PDF
+  (dialog with the PDF's pages as thumbnails to tap and "vor/nach Seite N" – `InsertPdfPagesCommand`), move up/down
+  (also by dragging with finger or mouse; `PagesController.Move`, the file's page order is its `<page>` order as
+  upstream), delete (asked). Thumbnails = the document exported as PDF (`PdfExport`, so ink of pages without a view,
+  pictures, texts too) into a temporary file, rendered by Windows.Data.Pdf; made again 0.8 s after a change, only while
+  the pane is shown (a full export per refresh – fine for the user's documents; per-page export would be the next step if
+  it gets slow). Sandbox: `UiTests/PagesPaneTest.ps1` (thumbnails with ink, move, delete). Not automated: the PDF
+  picker of the insert dialog.
 - **Explorer order:** names with numbers by value, as File Explorer shows them (Vorlesung 2 before 11):
   `ProjectTree.NameOrder` = .NET's `CompareOptions.NumericOrdering` + ignore case, ties in ordinal order.
 - The page in view is outlined (accent) in documents with more than one page (InkPages `MarkCurrentPage`, set by

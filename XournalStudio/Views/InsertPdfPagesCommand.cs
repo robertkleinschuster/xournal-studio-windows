@@ -1,20 +1,24 @@
 using Microsoft.UI;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.Windows.Storage.Pickers;
-using XournalStudio.Model;
 using XournalStudio.Services;
 
 namespace XournalStudio.Views;
 
 /// <summary>
-/// Seite → Seiten aus PDF einfügen: pages of another PDF (e.g. a cover sheet) after the page in view, stored as upstream
-/// Xournal++ stores a document – one background PDF, pages refer to its pages by number. The chosen pages are appended to
-/// the end of the document's PDF (<see cref="PdfPageAppender"/>, the file changes at once; the dialog says so); a page of
-/// the document's own PDF is just referred to, and a document without PDF takes the chosen PDF as its PDF.
+/// Seiten aus PDF einfügen (page menu and the pages pane): pages of another PDF (e.g. a cover sheet) before or after a
+/// page, chosen as thumbnails, stored as upstream Xournal++ stores a document – one background PDF, pages refer to its
+/// pages by number. The chosen pages are appended to the end of the document's PDF (<see cref="PdfPageAppender"/>, the
+/// file changes at once; the dialog says so); a page of the document's own PDF is just referred to, and a document
+/// without PDF takes the chosen PDF as its PDF.
 /// </summary>
 public sealed class InsertPdfPagesCommand(WindowId window, DocumentSession session, PagesController pages, Dialogs dialogs, Messages messages)
 {
-    public async Task InsertAsync()
+    private const uint ThumbnailWidth = 120; // pixels: a page about as wide as a stamp, its layout recognizable
+
+    /// <summary>Inserts pages before or after page <paramref name="around"/> (0-based; the dialog asks which).</summary>
+    public async Task InsertAsync(int around)
     {
         var picker = new FileOpenPicker(window);
         picker.FileTypeFilter.Add(".pdf");
@@ -35,25 +39,25 @@ public sealed class InsertPdfPagesCommand(WindowId window, DocumentSession sessi
                     ? "Es ist das PDF des Dokuments: Die Seiten werden nur eingefügt."
                     : $"Die Seiten werden ans Ende von „{Path.GetFileName(target)}“ angehängt – das PDF des Dokuments wird " +
                       "dabei sofort geändert (wie in Xournal++ hat ein Dokument ein PDF), seine bisherigen Seiten bleiben.";
-            var chosen = await AskPagesAsync(Path.GetFileName(source), sourcePdf.PageCount, where);
-            if (chosen == null)
+            if (await AskAsync(Path.GetFileName(source), sourcePdf, where, around) is not { } choice)
             {
                 return;
             }
+            int at = choice.Before ? around : around + 1;
             if (target == null || same)
             {
                 session.UsePdf(source, sourcePdf);
-                pages.InsertPdfPagesAfterCurrent(chosen, sourcePdf);
+                pages.InsertPdfPagesAt(at, choice.Pages, sourcePdf);
             }
             else
             {
-                int first = await Task.Run(() => PdfPageAppender.Append(target, source, chosen));
+                int first = await Task.Run(() => PdfPageAppender.Append(target, source, choice.Pages));
                 var background = await PdfBackground.LoadAsync(target);
                 session.UsePdf(target, background);
-                pages.InsertPdfPagesAfterCurrent(Enumerable.Range(first, chosen.Count).ToList(), background);
+                pages.InsertPdfPagesAt(at, Enumerable.Range(first, choice.Pages.Count).ToList(), background);
             }
             messages.Show(InfoBarSeverity.Success, "Seiten eingefügt",
-                $"{chosen.Count} Seite(n) aus {Path.GetFileName(source)}" + (target == null || same ? "." : $" – an {Path.GetFileName(target)} angehängt."));
+                $"{choice.Pages.Count} Seite(n) aus {Path.GetFileName(source)}" + (target == null || same ? "." : $" – an {Path.GetFileName(target)} angehängt."));
         }
         catch (Exception e)
         {
@@ -61,29 +65,102 @@ public sealed class InsertPdfPagesCommand(WindowId window, DocumentSession sessi
         }
     }
 
-    // Which pages (as typed: "1", "1, 3-5", empty = all); null: canceled.
-    private async Task<List<int>?> AskPagesAsync(string file, int count, string where)
+    // The pages to insert (thumbnails to tap, in the PDF's order) and before or after which page; null: canceled.
+    private async Task<(List<int> Pages, bool Before)?> AskAsync(string file, PdfBackground pdf, string where, int around)
     {
-        var box = new TextBox { Header = $"Seiten aus „{file}“ ({count} {(count == 1 ? "Seite" : "Seiten")}; z. B. 1 oder 1, 3-5 – leer: alle)", PlaceholderText = "alle" };
-        var problem = new TextBlock { Foreground = (Microsoft.UI.Xaml.Media.Brush)Microsoft.UI.Xaml.Application.Current.Resources["SystemFillColorCriticalBrush"], TextWrapping = Microsoft.UI.Xaml.TextWrapping.Wrap };
+        int count = pdf.PageCount;
+        var thumbnails = new GridView
+        {
+            SelectionMode = ListViewSelectionMode.Multiple,
+            MaxHeight = 360,
+            ItemsSource = Enumerable.Range(0, count).Select(Thumbnail).ToList(),
+        };
+        var all = new HyperlinkButton { Content = "Alle auswählen", Padding = new Thickness(0) };
+        all.Click += (_, _) => thumbnails.SelectAll();
+        var after = new RadioButton { Content = $"nach Seite {around + 1}", IsChecked = true, GroupName = "where" };
+        var before = new RadioButton { Content = $"vor Seite {around + 1}", GroupName = "where" };
         var dialog = new ContentDialog
         {
-            Title = "Seiten aus PDF einfügen",
-            Content = new StackPanel { Spacing = 12, Children = { box, Dialogs.Text(where + " Sie kommen nach der Seite im Blick."), problem } },
+            Title = $"Seiten aus „{file}“ einfügen",
+            Content = new StackPanel
+            {
+                Spacing = 8,
+                Children =
+                {
+                    Dialogs.Text($"{count} {(count == 1 ? "Seite" : "Seiten")} – die gewünschten antippen."),
+                    all,
+                    thumbnails,
+                    new StackPanel { Orientation = Orientation.Horizontal, Spacing = 16, Children = { after, before } },
+                    Dialogs.Text(where),
+                },
+            },
             PrimaryButtonText = "Einfügen",
             CloseButtonText = "Abbrechen",
             DefaultButton = ContentDialogButton.Primary,
+            IsPrimaryButtonEnabled = count == 1,
         };
-        List<int>? result = null;
-        void Validate()
+        if (count == 1)
         {
-            var (parsed, message) = PageRanges.Parse(box.Text, count);
-            result = parsed;
-            problem.Text = message ?? "";
-            dialog.IsPrimaryButtonEnabled = parsed != null;
+            thumbnails.SelectAll(); // one page: nothing to choose
         }
-        box.TextChanged += (_, _) => Validate();
-        Validate();
-        return await dialogs.ShowAsync(dialog) == ContentDialogResult.Primary ? result : null;
+        thumbnails.SelectionChanged += (_, _) => dialog.IsPrimaryButtonEnabled = thumbnails.SelectedItems.Count > 0;
+        var rendering = RenderThumbnailsAsync(pdf, (List<FrameworkElement>)thumbnails.ItemsSource);
+        var result = await dialogs.ShowAsync(dialog);
+        canceled = true; // the rest of the thumbnails is not needed any more
+        await rendering;
+        if (result != ContentDialogResult.Primary)
+        {
+            return null;
+        }
+        var chosen = thumbnails.SelectedItems.Cast<FrameworkElement>().Select(t => (int)t.Tag).Order().ToList();
+        return (chosen, before.IsChecked == true);
+    }
+
+    private bool canceled;
+
+    private static FrameworkElement Thumbnail(int index) => new StackPanel
+    {
+        Tag = index,
+        Width = ThumbnailWidth / 1.5 + 8,
+        Spacing = 2,
+        Padding = new Thickness(4),
+        Children =
+        {
+            new Border
+            {
+                Height = ThumbnailWidth / 1.5 * 1.414, // A4's proportion until the page is rendered
+                Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Colors.White),
+                BorderBrush = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["CardStrokeColorDefaultBrush"],
+                BorderThickness = new Thickness(1),
+                Child = new Image { Stretch = Microsoft.UI.Xaml.Media.Stretch.Uniform },
+            },
+            new TextBlock { Text = (index + 1).ToString(), HorizontalAlignment = HorizontalAlignment.Center },
+        },
+    };
+
+    // One page after the other (Windows.Data.Pdf renders one page at a time), until the dialog closes.
+    private async Task RenderThumbnailsAsync(PdfBackground pdf, List<FrameworkElement> items)
+    {
+        canceled = false;
+        foreach (var item in items)
+        {
+            if (canceled)
+            {
+                return;
+            }
+            try
+            {
+                var frame = (Border)((StackPanel)item).Children[0];
+                if (await pdf.RenderAsync((int)item.Tag, ThumbnailWidth) is { } image)
+                {
+                    frame.Height = double.NaN;
+                    ((Image)frame.Child).Source = image;
+                }
+            }
+            catch (Exception e)
+            {
+                DebugLog.Write($"insert PDF pages: thumbnail of page {(int)item.Tag + 1}", e); // that page shows no thumbnail
+            }
+        }
     }
 }

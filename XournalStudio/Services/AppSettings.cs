@@ -18,6 +18,9 @@ public sealed class AppSettings
     /// <summary>The side pane shows the tasks (todo.txt) instead of the files.</summary>
     public bool TasksShown { get; set; }
 
+    /// <summary>The side pane shows the pages (wins over <see cref="TasksShown"/>).</summary>
+    public bool PagesShown { get; set; }
+
     public bool DoneTasksShown { get; set; }
 
     public bool RecognizeShapes { get; set; }

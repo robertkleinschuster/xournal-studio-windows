@@ -73,6 +73,16 @@ public sealed class PageSlots(StackPanel panel, InkWorkspace ink, Action strokes
         panel.Children.Insert(index, Placeholder(page));
     }
 
+    /// <summary>The page at <paramref name="from"/> is at <paramref name="to"/> now (its view, if any, moves along).</summary>
+    public void Move(int from, int to)
+    {
+        var page = pages[from];
+        pages.RemoveAt(from);
+        pages.Insert(to, page);
+        panel.Children.Move((uint)from, (uint)to);
+        ink.SetPages(Views); // the same views, in their new order
+    }
+
     /// <summary>The page left the document: its view (if any) goes with its history.</summary>
     public void Remove(XoppPage page)
     {
