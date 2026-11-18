@@ -399,8 +399,8 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   not opened - public, needs the user's approval). Side effect: the built-in highlighter button now gets UWP's chisel
   tip (unused here). Loaded .xopp highlighter strokes were never affected (`StrokeConverter` sets the attributes).
 - **Local WinUI builds** (2026-11-18): `tools/Build-WinUILocal.ps1 -Source D:\wb` (a worktree of the fork on the Dev
-  Drive; short path) runs the fork workflow's x64fre steps with Windows PowerShell; the first build loads all 12 cores
-  (MSBuild /m:4, cl /MP); later builds compile only what changed. For iterating on WinUI fixes; the app's pin still
+  Drive; short path) runs the fork workflow's x64fre steps with Windows PowerShell; the first build took 57 min and loads all 12
+  cores (MSBuild /m:4, cl /MP); how fast an incremental build is was not measured yet. For iterating on WinUI fixes; the app's pin still
   comes from a fork release built by Actions.
 - **Ruler/protractor (WinUI source + sandbox probe, 2026-11-17):** the stencil belongs to the InkToolbar's
   `TargetInkCanvas`: `InkToolbar::SetStencilVisibility` → `InkPresenter::SetRulerEnabled` creates an OS
