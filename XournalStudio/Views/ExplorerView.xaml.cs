@@ -17,6 +17,8 @@ public enum ExplorerCommand
     NewFolder,
     Rename,
     Delete,
+    /// <summary>A modified file gets its committed content back (git).</summary>
+    Discard,
 }
 
 /// <summary>A command of the explorer's context menu or keyboard for a file or folder (the window carries it out).</summary>
@@ -264,6 +266,11 @@ public sealed partial class ExplorerView : UserControl
         {
             entry.Visibility = menuItem is { IsFolder: false } ? Visibility.Visible : Visibility.Collapsed;
         }
+        // Only a modified file has a committed state to go back to (a new one has none; a folder: file by file).
+        foreach (var entry in menu.Items.Where(i => (string?)i.Tag == "modified"))
+        {
+            entry.Visibility = menuItem is { IsFolder: false, IsModified: true } ? Visibility.Visible : Visibility.Collapsed;
+        }
     }
 
     /// <summary>The tree's empty area stands for the project folder.</summary>
@@ -302,6 +309,8 @@ public sealed partial class ExplorerView : UserControl
     private void OnRename(object sender, RoutedEventArgs e) => Request(ExplorerCommand.Rename, MenuTarget);
 
     private void OnDelete(object sender, RoutedEventArgs e) => Request(ExplorerCommand.Delete, MenuTarget);
+
+    private void OnDiscard(object sender, RoutedEventArgs e) => Request(ExplorerCommand.Discard, MenuTarget);
 
     private void OnShowInExplorer(object sender, RoutedEventArgs e) => _ = ShowInExplorerAsync(MenuTarget);
 

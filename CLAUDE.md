@@ -56,6 +56,22 @@ Guidance for Claude Code in this repository. Keep it current: add what is learne
   dominated by `RenderPageToSurface` itself (~30–40 ms at 1440 px, ~100–120 ms at 3200 px for a text+vector A4 page on
   Iris Xe). Waiting render requests are cancellable (`PageView` drops them when the page leaves the viewport, another
   width is wanted or the document changes) and pages in view are requested first.
+- **Never dispose a SoftwareBitmap handed to a `SoftwareBitmapSource` (the 0xc000027b crashes, found 2026-11-18 with a
+  cdb dump):** the source keeps the bitmap and copies it again on a worker thread whenever its surfaces were released
+  (out of view while scrolling, recycled thumbnails, device lost – WinUI `SoftwareBitmapSource.cpp`,
+  `EnsureAndUpdateHardwareResources` → `ReloadSource`); a closed bitmap fails there with RO_E_CLOSED (0x80000013) and
+  WinUI fails fast (`RoFailFastWithErrorContext` on a thread-pool thread, stowed exception in Microsoft.UI.Xaml.dll).
+  `PdfBackground.RenderAsync` and `PictureRenderer` used `using var bitmap`. (`BitmapImage.SetSourceAsync` copies its
+  stream at once – disposing that stream is fine.) The fork's release artifact has no PDBs: the XAML frames are only
+  offsets.
+- **Windows.Data.Pdf keeps a file open:** a `PdfDocument` from `LoadFromFileAsync` holds its file as long as it lives
+  (no Close); deleting the open document's PDF from the explorer failed with 0x80070005 even after the document was left
+  (sandbox 2026-11-18). PDFs are read into memory and loaded with `LoadFromStreamAsync` (`PdfBackground.LoadAsync`).
+- **Errors always land in `%LOCALAPPDATA%\XournalStudioForWindows\errors.log`** (`DebugLog.Error`, rolled over at
+  1 MB): unhandled exceptions (XAML, tasks, threads), every logged exception and ink errors; the detailed log only with
+  `XOURNAL_STUDIO_LOG`. A crash in WinUI itself (fail fast) leaves nothing there – run the app under cdb
+  (`cdb -g -G -logo <log> <exe>`); when it stops at the failure, dump it from a second cdb (`cdb -pv -p <pid> -c ".dump
+  /ma <file>; q"`) – an `sxe` given with `-c` comes too late with `-g`.
 - **Release snapshots (`winui3/release/*`) cannot be built outside Microsoft:** they need internal package versions
   (e.g. InteractiveExperiences 2.1.0-experimental-27200…); the restore opens Microsoft sign-in pages through the build's
   `VSS.NuGet.AuthHelper`. Never run a WinUI restore that can prompt interactively.
@@ -232,7 +248,8 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   vectors, `Model/BackgroundRuling` shared with the screen, strokes per segment), `AppSettings`, `DebugLog`, `ProjectTree` (sorted by name, numbers by value: `NameOrder`; the folder as it is on
   disk: all files and folders, Windows-hidden/system items left out, links shown but not entered), `GitSync` (LibGit2Sharp: status,
   `WithFolders` marks folders by what is below them – modified/deleted > new; sync = commit all, fetch,
-  rebase/fast-forward, push; conflicts are aborted), `GitCredentials` (reads Git for Windows' stored credential, see
+  rebase/fast-forward, push; conflicts are aborted; `Discard` = `git checkout HEAD -- file` for one modified file,
+  explorer menu "Änderungen verwerfen", asked, the open document left and opened again), `GitCredentials` (reads Git for Windows' stored credential, see
   Facts learned), `ProjectFiles` (new folder, rename, delete to the recycle bin with `StorageFile`/`StorageFolder`,
   exactly the item given; name validation, "Name (2)" like File Explorer),
   `FolderWatcher` (`FileSystemWatcher` on the project folder, hidden folders such as .git ignored).
@@ -283,8 +300,8 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 - Explorer (2026-11-15): one `MenuFlyout` resource is shared by all rows as `ContextFlyout` (`FlyoutBase.Target` =
   the TreeViewItem, `TreeView.ItemFromContainer` gives the row). `DispatcherQueue.TryEnqueue(
   timer.Start)` (method group of a WinRT object) throws InvalidCastException while marshaling – use a lambda. A
-  `FileSystemWatcher` handler runs on the thread pool: an exception there ends the app. A loaded `PdfDocument`
-  (Windows.Data.Pdf) does not lock its file: it and its folder can be renamed or recycled while open.
+  `FileSystemWatcher` handler runs on the thread pool: an exception there ends the app. A `PdfDocument` loaded
+  from a file keeps it open (see "Current WinUI ink state"); PDFs are loaded from memory.
   `StorageFile.GetFileFromPathAsync` rejects forward slashes (FileNotFoundException) – pass `Path.GetFullPath`.
 - Upstream .xopp PDF reference: `domain="absolute"` + `filename` = path written by `Util::normalizeAssetPath`
   (absolute or relative to the .xopp, by the path storage mode), or `domain="attach"` + `filename="bg.pdf"` =
@@ -350,6 +367,8 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
    the real repo by Claude). Context menu, F2/Del/Ctrl+Shift+C, folder git colors, tree follows changes on disk.
    Flat (see constraints): rename/delete act on exactly one item; files other than .xopp/.pdf open in their Windows
    app; renaming the open document's PDF makes the document refer to the new name. Not done: drag & drop moving.
+   Discarding a modified file's local changes (git) and deleting the open document's PDF: done 2026-11-18 (sandbox:
+   `UiTests/DiscardTest.ps1 -Extra <a git repo with test.xopp + PDF>`).
 2. **Selection tool, shapes, ruler – done 2026-11-15**, on `UnprocessedInput` since 2026-11-16 evening (sandbox and
    device: lasso, barrel/tip move). Open: a tap selects pictures only (not strokes).
 3. **Saving by choice + crash recovery – done 2026-11-15** (sandbox: question on close, crash → offer → restore →

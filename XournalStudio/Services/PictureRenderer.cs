@@ -19,7 +19,8 @@ public static class PictureRenderer
             var pdf = await PdfDocument.LoadFromStreamAsync(stream);
             using var page = pdf.GetPage(0);
             uint pixelHeight = (uint)Math.Max(1, Math.Round(pixelWidth * page.Size.Height / page.Size.Width));
-            using var rendered = await PdfRenderer.Shared.RenderAsync(page, null, pixelWidth, pixelHeight);
+            // Not disposed: the source keeps it and copies it again later (see PdfBackground.RenderAsync).
+            var rendered = await PdfRenderer.Shared.RenderAsync(page, null, pixelWidth, pixelHeight);
             var source = new SoftwareBitmapSource();
             await source.SetBitmapAsync(rendered);
             return source;

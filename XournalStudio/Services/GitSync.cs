@@ -165,6 +165,23 @@ public static class GitSync
         return new GitSyncResult(pulled, committed, pushed);
     }
 
+    /// <summary>
+    /// Discards the local changes of one file: it gets its content of the last commit (HEAD) back, in the index too
+    /// (<c>git checkout HEAD -- file</c>). Throws when the file is not in the last commit (a new file has nothing to go
+    /// back to).
+    /// </summary>
+    public static void Discard(string root, string path)
+    {
+        using var repo = new Repository(root);
+        string relative = Path.GetRelativePath(repo.Info.WorkingDirectory, Path.GetFullPath(path)).Replace('\\', '/');
+        var head = repo.Head.Tip ?? throw new InvalidOperationException("Das Repository hat noch keinen Commit.");
+        if (head[relative] == null)
+        {
+            throw new InvalidOperationException($"„{relative}“ ist im letzten Commit nicht enthalten.");
+        }
+        repo.CheckoutPaths(head.Sha, [relative], new CheckoutOptions { CheckoutModifiers = CheckoutModifiers.Force });
+    }
+
     private static string FullPath(Repository repo, string relative) =>
         Path.GetFullPath(Path.Combine(repo.Info.WorkingDirectory, relative));
 }

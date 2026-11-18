@@ -248,6 +248,28 @@ public sealed class ExplorerTests : IDisposable
     }
 
     [Fact]
+    public void DiscardGivesOneFileItsCommittedContentBack()
+    {
+        var (a, _) = TwoClones();
+        File.WriteAllText(Path.Combine(a, "start.xopp"), "changed");
+        File.WriteAllText(Path.Combine(a, "other.xopp"), "new");
+        using (var repo = new Repository(a))
+        {
+            Commands.Stage(repo, "start.xopp"); // staged changes go too
+        }
+
+        GitSync.Discard(a, Path.Combine(a, "start.xopp"));
+
+        Assert.Equal("start", File.ReadAllText(Path.Combine(a, "start.xopp")));
+        Assert.Equal("new", File.ReadAllText(Path.Combine(a, "other.xopp"))); // nothing else touched
+        var status = GitSync.GetStatus(a);
+        Assert.False(status.ContainsKey(Path.Combine(a, "start.xopp")));
+        // A file the last commit does not have cannot go back.
+        Assert.Throws<InvalidOperationException>(() => GitSync.Discard(a, Path.Combine(a, "other.xopp")));
+        Assert.True(File.Exists(Path.Combine(a, "other.xopp")));
+    }
+
+    [Fact]
     public void SyncCommitsPushesAndPulls()
     {
         var (a, b) = TwoClones();

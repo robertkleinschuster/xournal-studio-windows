@@ -98,6 +98,9 @@ public sealed class ExplorerCommands(
                 case ExplorerCommand.Delete:
                     await DeleteAsync(request.Path, request.IsFolder);
                     break;
+                case ExplorerCommand.Discard:
+                    await DiscardAsync(request.Path);
+                    break;
             }
         }
         catch (Exception e)
@@ -107,6 +110,7 @@ public sealed class ExplorerCommands(
                 ExplorerCommand.NewDocument => "Dokument konnte nicht erstellt werden",
                 ExplorerCommand.NewFolder => "Ordner konnte nicht erstellt werden",
                 ExplorerCommand.Rename => "Umbenennen fehlgeschlagen",
+                ExplorerCommand.Discard => "Änderungen konnten nicht verworfen werden",
                 _ => "Löschen fehlgeschlagen",
             };
             messages.Error($"explorer {request.Command} {request.Path}", title, e, request.Path);
@@ -199,6 +203,41 @@ public sealed class ExplorerCommands(
             session.ShowNew();
         }
         await ProjectFiles.DeleteAsync(path, isFolder);
+    }
+
+    /// <summary>
+    /// Gives exactly this file its committed content back (git), after asking. If it is the open document (or its PDF),
+    /// the document is left first (save question) and opened again from the restored file.
+    /// </summary>
+    private async Task DiscardAsync(string path)
+    {
+        string? root = GitSync.FindRoot(path);
+        if (root == null)
+        {
+            return; // only modified files offer it, and those lie in a repository
+        }
+        string name = Path.GetFileName(path);
+        if (!await dialogs.ConfirmAsync($"Änderungen an „{name}“ verwerfen?",
+                "Die Datei bekommt wieder den Stand des letzten Commits (der letzten Synchronisierung). Was seitdem an ihr " +
+                "geändert wurde, geht verloren.", "Verwerfen"))
+        {
+            return;
+        }
+        string? open = session.OpenPath;
+        bool affected = ProjectFiles.SamePath(session.Document.FilePath, path) || ProjectFiles.SamePath(session.Document.PdfPath, path);
+        if (affected && !await session.ConfirmLeaveAsync())
+        {
+            return;
+        }
+        await Task.Run(() => GitSync.Discard(root, path));
+        if (affected && open != null && File.Exists(open))
+        {
+            await session.OpenAsync(open);
+        }
+        else if (affected)
+        {
+            session.ShowNew();
+        }
     }
 
     private static string? ValidateNewName(string folder, string name, string? current)

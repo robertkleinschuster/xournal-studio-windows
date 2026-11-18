@@ -19,11 +19,13 @@ public sealed class PdfBackground
 
     public int PageCount => (int)pdf.PageCount;
 
-    public static async Task<PdfBackground> LoadAsync(string path)
-    {
-        var file = await StorageFile.GetFileFromPathAsync(Path.GetFullPath(path));
-        return new PdfBackground(await PdfDocument.LoadFromFileAsync(file));
-    }
+    /// <summary>
+    /// A PDF file, read into memory first: a <see cref="PdfDocument"/> loaded from the file keeps it open as long as it lives
+    /// (it has no Close), so the open document's PDF could not be deleted (sandbox 2026-11-18: 0x80070005 even after the
+    /// document was left). From memory the file is free for deleting, renaming and syncing.
+    /// </summary>
+    public static async Task<PdfBackground> LoadAsync(string path) =>
+        await LoadAsync(await File.ReadAllBytesAsync(Path.GetFullPath(path)));
 
     /// <summary>A PDF in memory (written by <see cref="PdfExport"/> into a stream).</summary>
     public static async Task<PdfBackground> LoadAsync(byte[] data)
@@ -76,7 +78,10 @@ public sealed class PdfBackground
         var time = System.Diagnostics.Stopwatch.StartNew();
         using var page = pdf.GetPage((uint)pageIndex);
         uint pixelHeight = (uint)Math.Max(1, Math.Round(pixelWidth * page.Size.Height / page.Size.Width));
-        using var bitmap = await PdfRenderer.Shared.RenderAsync(page, null, pixelWidth, pixelHeight, cancellation, transparent);
+        // Not disposed: the SoftwareBitmapSource keeps the bitmap and copies it again whenever its surfaces were released
+        // (out of view, recycled, device lost) – on a worker thread, where a closed bitmap fails fast (RO_E_CLOSED, the
+        // 0xc000027b crashes of 2026-11-18). The source closes it when it is closed or released.
+        var bitmap = await PdfRenderer.Shared.RenderAsync(page, null, pixelWidth, pixelHeight, cancellation, transparent);
         var rendered = time.Elapsed;
         var source = new SoftwareBitmapSource();
         await source.SetBitmapAsync(bitmap);

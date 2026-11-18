@@ -25,6 +25,9 @@
             <MenuFlyoutItem Text="Löschen" KeyboardAcceleratorTextOverride="Entf" Click="OnDelete">
                 <MenuFlyoutItem.Icon><SymbolIcon Symbol="Delete" /></MenuFlyoutItem.Icon>
             </MenuFlyoutItem>
+            <MenuFlyoutItem Tag="modified" Text="Änderungen verwerfen" Click="OnDiscard">
+                <MenuFlyoutItem.Icon><SymbolIcon Symbol="Undo" /></MenuFlyoutItem.Icon>
+            </MenuFlyoutItem>
             <MenuFlyoutSeparator />
             <MenuFlyoutItem Text="Im Explorer anzeigen" Click="OnShowInExplorer">
                 <MenuFlyoutItem.Icon><FontIcon Glyph="&#xEC50;" /></MenuFlyoutItem.Icon>

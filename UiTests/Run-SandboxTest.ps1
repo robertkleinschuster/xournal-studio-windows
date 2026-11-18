@@ -13,7 +13,8 @@ param(
     [string]$App = (Join-Path $env:LOCALAPPDATA 'Programs\Xournal Studio for Windows'),
     [string]$Test = (Join-Path $PSScriptRoot 'SandboxTest.ps1'),
     [int]$TimeoutSeconds = 240,
-    [string]$GtkExe = (Join-Path $env:LOCALAPPDATA 'Programs\Xournal Studio\bin\xournalpp.exe')
+    [string]$GtkExe = (Join-Path $env:LOCALAPPDATA 'Programs\Xournal Studio\bin\xournalpp.exe'),
+    [string]$Extra                                 # a folder the test needs (e.g. a git repository): C:\sbx\extra
 )
 $ErrorActionPreference = 'Stop'
 
@@ -24,6 +25,7 @@ if ($Document) {
     Copy-Item $Document "$Work\data\test.xopp"
     Get-ChildItem (Split-Path $Document) -File | Where-Object { $_.Extension -in '.pdf', '.png', '.jpg' } | Copy-Item -Destination "$Work\data"
 }
+if ($Extra) { robocopy $Extra "$Work\extra" /E /NFL /NDL /NJH /NJS | Out-Null }
 $kit = Join-Path $PSScriptRoot '..\external\InkPages\UiTests'
 Copy-Item "$kit\Inj.cs", "$kit\TestKit.ps1" $Work
 Copy-Item $Test "$Work\test.ps1"
