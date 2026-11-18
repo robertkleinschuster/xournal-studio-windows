@@ -1,13 +1,13 @@
 # Fetches the WinUI Release runtime that XournalStudio.csproj copies over the official package's runtime:
 # upstream microsoft-ui-xaml main + PR #12292 (readable InkPresenter.UnprocessedInput pointer args) + the InkToolbar custom
-# tool states fix (branch fix/ink-runtime-inktoolbar), built in the fork
+# tool states fix + pointer capture kept across PointerRoutedAway/To (branch fix/ink-runtime-capture), built in the fork
 # robertkleinschuster/microsoft-ui-xaml and published there as a release asset. See CLAUDE.md, "Current WinUI ink state".
 # Pinned by URL and SHA-256; extracted to .local-build\winui-fre. Does nothing when that runtime is already there.
 param([switch]$Force)
 
 $ErrorActionPreference = 'Stop'
-$url = 'https://github.com/robertkleinschuster/microsoft-ui-xaml/releases/download/winui-ink-fix-1cc68a49/winui-runtime-x64fre-1cc68a49.zip'
-$sha256 = '97E02521411B9AF4959853848E5FA6EA85CCA9BB495426B3A83D2F6EFB54F48C'
+$url = 'https://github.com/robertkleinschuster/microsoft-ui-xaml/releases/download/winui-ink-fix-3d994d89/winui-runtime-x64fre-3d994d89.zip'
+$sha256 = '6AA9D325D31DB6F7A7CEF1D654461435F62BE0000D5736BD8C743F939658D9BE'
 
 $root = Split-Path $PSScriptRoot
 $target = Join-Path $root '.local-build\winui-fre'

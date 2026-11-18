@@ -6,11 +6,12 @@ Guidance for Claude Code in this repository. Keep it current: add what is learne
 
 - **Build:** the app compiles against the official `Microsoft.WindowsAppSDK.WinUI` + `.DWrite` **2.6.6-experimental**
   (XAML compiler, projection, metadata) and `XournalStudio.csproj` copies the **Release (fre) runtime** of the WinUI fork
-  (robertkleinschuster/microsoft-ui-xaml, branch `fix/ink-runtime-inktoolbar` = upstream main of 2026-11-16 +
-  microsoft-ui-xaml PR #12292 + the fork's InkToolbar custom tool states fix, see Facts) from `.local-build/winui-fre`
+  (robertkleinschuster/microsoft-ui-xaml, branch `fix/ink-runtime-capture` = upstream main of 2026-11-16 +
+  microsoft-ui-xaml PR #12292 + the fork's InkToolbar custom tool states fix + its pointer-capture-across-routing fix,
+  see Facts) from `.local-build/winui-fre`
   over the package's runtime after Build/Publish, for every configuration; the build fails if it is missing.
-  `tools/Get-WinUIRuntime.ps1` fetches it (pinned URL + SHA-256) from the fork's release `winui-ink-fix-1cc68a49` (zip
-  of the fre payload of fork Actions run 44183617903, started by `gh workflow run winui-source-product.yml --ref
+  `tools/Get-WinUIRuntime.ps1` fetches it (pinned URL + SHA-256) from the fork's release `winui-ink-fix-3d994d89` (zip
+  of the fre payload of fork Actions run 44198320891, started by `gh workflow run winui-source-product.yml --ref
   <branch>`; the release zip holds `runtimes/win10-x64/native/**`); `install.ps1`
   and `.github/workflows/release.yml` call it. A tag `v*` builds a pre-release with the self-contained zip; a manual
   run only builds. When an official package ships PR #12292: reference it and drop the overlay and the script.
@@ -372,17 +373,20 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   open a barrel gesture's release is lost and a XAML drag can lose its capture. Accelerators on a root element need
   `KeyboardAcceleratorPlacementMode = Hidden` (the demo); the app's accelerators are on menu items. Tests move the
   mouse off the toolbar after each click (`TestKit.Button`).
-- **Selection drag loses its capture once (root cause, sandbox 2026-11-18):** ~60 ms into a XAML selection drag the
-  island's `Microsoft.UI.Input.InputPointerSource` raises `PointerRoutedAway` for the pen and ~3 ms later
-  `PointerRoutedTo` (subscribed via `InputPointerSource.GetForIsland(XamlRoot.ContentIsland)`). WinUI XAML maps
-  WM_POINTERROUTEDAWAY to XCP_POINTERSUSPENDED (`PlatWinBrowserHost.cpp:50`) and releases the capture
-  (`PointerInputProcessor.cpp:423-440`: PointerCaptureLost without PointerCanceled); WM_POINTERROUTEDTO has no mapping,
-  so the route-back is ignored. The pen's input keeps arriving. Trigger: a barrel drag after an earlier XAML drag
-  with the pen TIP (only barrel drags, or a touch pan in between: no loss) - possible with a real pen. Who routes the
-  pointer away and back is closed source (Microsoft.UI.Input routing / the lifted InkCanvas' output link); not a
-  popup, not the ScrollView, not mouse, not the presenters' settings. Cause-level fix belongs in WinUI XAML (keep the
-  capture across RoutedAway when RoutedTo follows); repro scripts and diagnostics: scratchpad capture-diag.patch,
-  V12.ps1 (fails), V13.ps1 (passes). Upstream reports are public: the user's decision.
+- **Selection drag lost its capture once - fixed in the fork's WinUI (2026-11-18):** ~60 ms into a XAML selection drag
+  the island's `Microsoft.UI.Input.InputPointerSource` raises `PointerRoutedAway` for the pen and ~3 ms later
+  `PointerRoutedTo` (seen via `InputPointerSource.GetForIsland(XamlRoot.ContentIsland)`). Trigger: a barrel drag after an
+  earlier XAML drag with the pen TIP (possible with a real pen). Who routes the pointer away and back is closed source
+  (Microsoft.UI.Input routing / the OS ink presenter behind the lifted InkCanvas); not a popup, not the ScrollView, not
+  mouse, not the presenters' settings. WinUI XAML mapped WM_POINTERROUTEDAWAY to XCP_POINTERSUSPENDED (capture released,
+  PointerCaptureLost, pointer state dropped) and ignored WM_POINTERROUTEDTO/RELEASED; Win32 does not change capture on a
+  route-away (WM_POINTERROUTEDAWAY "is not sent with either a WM_POINTERUP message or a WM_POINTERCAPTURECHANGED
+  message"; a route back sends no WM_POINTERDOWN). Fork commit 3d994d89 "Keep pointer capture while a pointer is routed
+  away and back" (branch `fix/ink-runtime-capture`; upstream PR branch `fix/xaml-capture-across-pointer-route`; issue/PR
+  not opened - public, needs the user's approval): `PointerInputProcessor` remembers routed-away pointers and keeps their
+  state; RoutedTo (or any further input) resumes, RoutedReleased (or a new press) ends the interaction as before.
+  Sandbox: the repro (barrel drag after a tip drag, held at the view's edge) and `ToolsTest.ps1` record a CombinedEdit
+  without capture loss; with runtime 1cc68a49 the same repro logged "selection drag: pointer capture lost".
 - **Ruler/protractor (WinUI source + sandbox probe, 2026-11-17):** the stencil belongs to the InkToolbar's
   `TargetInkCanvas`: `InkToolbar::SetStencilVisibility` → `InkPresenter::SetRulerEnabled` creates an OS
   `InkPresenterRuler` on that presenter (default place: rotated 45° at the page's top left, in page coordinates). When the
