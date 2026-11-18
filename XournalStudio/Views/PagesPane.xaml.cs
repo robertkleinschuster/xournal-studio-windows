@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -93,6 +93,9 @@ public sealed partial class PageThumb(XoppPage page, double width, double height
     }
 
     private bool gone;
+
+    /// <summary>The page left the list (deleted, another document): nothing is drawn for it any more.</summary>
+    public bool IsGone => gone;
 
     private void Changed(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 

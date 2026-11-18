@@ -220,9 +220,9 @@ public sealed class ExplorerCommands(
         }
         await session.WhenSaved(); // a save running must not write after the checkout
         string? open = session.OpenPath;
-        string? file = session.Document.FilePath;
-        bool affected = ProjectFiles.SamePath(file, path) || ProjectFiles.SamePath(session.Document.PdfPath, path) ||
-            (file != null && Path.GetFullPath(path).StartsWith(Path.GetFullPath(file) + ".", StringComparison.OrdinalIgnoreCase));
+        var doc = session.Document;
+        bool affected = ProjectFiles.SamePath(doc.FilePath, path) || ProjectFiles.SamePath(doc.PdfPath, path) ||
+            doc.Pages.Any(p => ProjectFiles.SamePath(p.BackgroundImagePath, path)); // the files the document shows
         string name = Path.GetFileName(path);
         if (!await dialogs.ConfirmAsync($"Änderungen an „{name}“ verwerfen?",
                 "Die Datei bekommt wieder den Stand des letzten Commits (der letzten Synchronisierung). Was seitdem an ihr " +
@@ -232,11 +232,17 @@ public sealed class ExplorerCommands(
         {
             return;
         }
-        await session.WhenSaved();
+        if (affected)
+        {
+            // Left before the checkout (its unsaved changes go, as asked): nothing can save it over the restored file
+            // meanwhile, and if opening it again fails, the old state is not left open to be saved later.
+            await session.WhenSaved();
+            session.ShowNew();
+        }
         await Task.Run(() => GitSync.Discard(root, path));
         if (affected && open != null)
         {
-            await session.OpenAsync(open); // shows the restored state; the unsaved one and its recovery copy go
+            await session.OpenAsync(open); // shows the restored state (a failure is reported by OpenAsync)
         }
     }
 

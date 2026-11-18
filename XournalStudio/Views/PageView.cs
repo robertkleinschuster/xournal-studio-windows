@@ -619,20 +619,29 @@ public sealed partial class PageView : InkPage
     private static Matrix ToMatrix(Matrix3x2 m) =>
         new() { M11 = m.M11, M12 = m.M12, M21 = m.M21, M22 = m.M22, OffsetX = m.M31, OffsetY = m.M32 };
 
+    // Counts a picture's loads: only the latest one is shown (a decode for an earlier size may finish later).
+    private static readonly DependencyProperty LoadNumberProperty =
+        DependencyProperty.RegisterAttached("LoadNumber", typeof(int), typeof(PageView), new PropertyMetadata(0));
+
+    // Decodes a picture for this width; the image it replaces is freed (also when it is decoded again after scaling).
     private static async void LoadPicture(Image image, XElement element, uint pixelWidth)
     {
+        int load = (int)image.GetValue(LoadNumberProperty) + 1;
+        image.SetValue(LoadNumberProperty, load);
         try
         {
             string content = element.Value; // read here (the element belongs to this thread), decoded on the thread pool
             var data = await Task.Run(() => XoppImage.GetData(content));
             var source = await PictureRenderer.LoadAsync(data, pixelWidth, "picture on a page");
-            if (image.Parent == null)
+            if (image.Parent == null || (int)image.GetValue(LoadNumberProperty) != load)
             {
-                PictureRenderer.Release(source); // the picture left the page while it was decoded
+                PictureRenderer.Release(source); // the picture left the page, or a newer load replaces this one
             }
             else
             {
+                var shown = image.Source;
                 image.Source = source;
+                PictureRenderer.Release(shown);
             }
         }
         catch (Exception e)

@@ -72,7 +72,7 @@ public sealed class PdfImportCommand(WindowId window, DocumentSession session, D
             Step("prepare");
             foreach (var group in import.Pictures.GroupBy(p => p.Pdf))
             {
-                var rendered = await PdfBackground.LoadAsync(group.Key);
+                using var rendered = await PdfBackground.LoadAsync(group.Key); // its copy in memory goes after this group
                 foreach (var picture in group)
                 {
                     var (png, width, height) = await rendered.RenderAreaAsync(picture.Page, picture.Area, PicturePixelsPerPoint, transparent: true);

@@ -70,8 +70,9 @@ public static class GitSync
     {
         var all = new Dictionary<string, GitFileState>(status, StringComparer.OrdinalIgnoreCase);
         string top = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
-        foreach (var (path, state) in status)
+        foreach (var (path, fileState) in status)
         {
+            var state = fileState == GitFileState.Renamed ? GitFileState.Modified : fileState; // folders: modified > new
             for (string? dir = Path.GetDirectoryName(path);
                 dir != null && dir.Length > top.Length && dir.StartsWith(top, StringComparison.OrdinalIgnoreCase);
                 dir = Path.GetDirectoryName(dir))
@@ -196,10 +197,11 @@ public static class GitSync
         var current = tree;
         for (int i = 0; i < parts.Length; i++)
         {
-            var entry = current.FirstOrDefault(e => string.Equals(e.Name, parts[i], StringComparison.OrdinalIgnoreCase));
+            var matches = current.Where(e => string.Equals(e.Name, parts[i], StringComparison.OrdinalIgnoreCase)).ToList();
+            var entry = matches.FirstOrDefault(e => e.Name == parts[i]) ?? (matches.Count == 1 ? matches[0] : null);
             if (entry == null)
             {
-                return null;
+                return null; // not there, or several names that differ only in case: never guess which content is meant
             }
             names.Add(entry.Name);
             if (i == parts.Length - 1)

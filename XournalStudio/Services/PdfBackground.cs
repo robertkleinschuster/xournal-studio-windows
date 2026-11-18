@@ -6,15 +6,59 @@ using Windows.Storage;
 namespace XournalStudio.Services;
 
 /// <summary>Renders pages of the background PDF with the Windows PDF renderer (Windows.Data.Pdf, see <see cref="PdfRenderer"/>).</summary>
-public sealed class PdfBackground
+public sealed class PdfBackground : IDisposable
 {
     private readonly PdfDocument pdf;
-    private readonly Windows.Storage.Streams.IRandomAccessStream? stream; // read by the renderer: lives as long as this
+    private readonly Windows.Storage.Streams.IRandomAccessStream stream; // read by the renderer: lives as long as this
+    private readonly long size; // the PDF in native memory: told to the GC (it does not see it otherwise)
+    private bool disposed;
 
-    private PdfBackground(PdfDocument pdf, Windows.Storage.Streams.IRandomAccessStream? stream = null)
+    private PdfBackground(PdfDocument pdf, Windows.Storage.Streams.IRandomAccessStream stream, long size)
     {
         this.pdf = pdf;
         this.stream = stream;
+        this.size = size;
+        if (size > 0)
+        {
+            GC.AddMemoryPressure(size);
+        }
+    }
+
+    // A PDF still in use when nobody disposes it (the document's: renders may still run when it is replaced) is freed by
+    // the GC, which knows its size.
+    ~PdfBackground() => Free();
+
+    /// <summary>
+    /// Frees the PDF in memory now. Only for a PDF used in one place (a dialog, an import, a thumbnail): never for the
+    /// document's, whose page renders may still be running.
+    /// </summary>
+    public void Dispose()
+    {
+        stream.Dispose();
+        Free();
+        GC.SuppressFinalize(this);
+    }
+
+    private void Free()
+    {
+        if (!disposed && size > 0)
+        {
+            GC.RemoveMemoryPressure(size);
+        }
+        disposed = true;
+    }
+
+    private static async Task<PdfBackground> LoadAsync(Windows.Storage.Streams.IRandomAccessStream stream, long nativeSize)
+    {
+        try
+        {
+            return new PdfBackground(await PdfDocument.LoadFromStreamAsync(stream), stream, nativeSize);
+        }
+        catch
+        {
+            stream.Dispose(); // e.g. a password or a damaged file: the copy goes at once (the exception goes on)
+            throw;
+        }
     }
 
     public int PageCount => (int)pdf.PageCount;
@@ -34,14 +78,14 @@ public sealed class PdfBackground
             await Windows.Storage.Streams.RandomAccessStream.CopyAsync(input, memory);
         }
         memory.Seek(0);
-        return new PdfBackground(await PdfDocument.LoadFromStreamAsync(memory), memory);
+        return await LoadAsync(memory, (long)memory.Size);
     }
 
     /// <summary>A PDF in memory (written by <see cref="PdfExport"/> into a stream).</summary>
     public static async Task<PdfBackground> LoadAsync(byte[] data)
     {
-        var stream = new MemoryStream(data, writable: false).AsRandomAccessStream();
-        return new PdfBackground(await PdfDocument.LoadFromStreamAsync(stream), stream);
+        // A managed array: the GC sees it already.
+        return await LoadAsync(new MemoryStream(data, writable: false).AsRandomAccessStream(), 0);
     }
 
     /// <summary>Page sizes in points (1/72"); the PDF API reports DIPs (1/96").</summary>

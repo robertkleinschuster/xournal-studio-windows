@@ -30,9 +30,11 @@ public sealed class InsertPdfPagesCommand(WindowId window, DocumentSession sessi
         var doc = session.Document;
         string? target = doc.PdfPath;
         bool same = target != null && ProjectFiles.SamePath(source, target);
+        PdfBackground? sourcePdf = null;
+        bool kept = false; // the source became the document's PDF (then it is never disposed here)
         try
         {
-            var sourcePdf = await PdfBackground.LoadAsync(source);
+            sourcePdf = await PdfBackground.LoadAsync(source);
             string where = target == null
                 ? $"Das Dokument verwendet dann „{Path.GetFileName(source)}“ als PDF-Hintergrund."
                 : same
@@ -47,6 +49,7 @@ public sealed class InsertPdfPagesCommand(WindowId window, DocumentSession sessi
             if (target == null || same)
             {
                 session.UsePdf(source, sourcePdf);
+                kept = true;
                 pages.InsertPdfPagesAt(at, choice.Pages, sourcePdf);
             }
             else
@@ -62,6 +65,13 @@ public sealed class InsertPdfPagesCommand(WindowId window, DocumentSession sessi
         catch (Exception e)
         {
             messages.Error("insert PDF pages", "Seiten konnten nicht eingefügt werden", e, source);
+        }
+        finally
+        {
+            if (!kept)
+            {
+                sourcePdf?.Dispose(); // only read for the dialog (and the append): its copy in memory goes now
+            }
         }
     }
 
@@ -105,15 +115,23 @@ public sealed class InsertPdfPagesCommand(WindowId window, DocumentSession sessi
         }
         thumbnails.SelectionChanged += (_, _) => dialog.IsPrimaryButtonEnabled = thumbnails.SelectedItems.Count > 0;
         using var closed = new CancellationTokenSource();
-        var rendering = RenderThumbnailsAsync(pdf, (List<FrameworkElement>)thumbnails.ItemsSource, closed.Token);
-        var result = await dialogs.ShowAsync(dialog);
-        closed.Cancel(); // the rest of the thumbnails is not needed any more (also renders still waiting)
-        await rendering;
-        foreach (var item in (List<FrameworkElement>)thumbnails.ItemsSource)
+        var items = (List<FrameworkElement>)thumbnails.ItemsSource;
+        var rendering = RenderThumbnailsAsync(pdf, items, closed.Token);
+        ContentDialogResult result;
+        try
         {
-            var image = (Image)((Border)((StackPanel)item).Children[0]).Child;
-            Services.PictureRenderer.Release(image.Source); // the dialog is closed: its thumbnails are freed
-            image.Source = null;
+            result = await dialogs.ShowAsync(dialog);
+        }
+        finally // also when the dialog could not be shown: no rendering goes on, no thumbnail is kept
+        {
+            closed.Cancel(); // the rest of the thumbnails is not needed any more (also renders still waiting)
+            await rendering;
+            foreach (var item in items)
+            {
+                var image = (Image)((Border)((StackPanel)item).Children[0]).Child;
+                Services.PictureRenderer.Release(image.Source);
+                image.Source = null;
+            }
         }
         if (result != ContentDialogResult.Primary)
         {

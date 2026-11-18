@@ -104,6 +104,10 @@ public sealed class PageThumbnails
                 DebugLog.Write("page thumbnails: refresh canceled (a newer one follows, or the pane was closed)");
                 break;
             }
+            if (thumb.IsGone)
+            {
+                continue; // the list changed meanwhile (the next refresh draws the new one)
+            }
             var page = thumb.Page;
             try
             {
@@ -150,7 +154,7 @@ public sealed class PageThumbnails
             PdfExport.Write(snapshot, null, stream, _ => picture);
             return stream.ToArray();
         }, cancel);
-        var pdf = await PdfBackground.LoadAsync(data);
+        using var pdf = await PdfBackground.LoadAsync(data);
         return await pdf.RenderAsync(0, PixelWidth, cancel, transparent: page.IsPdf);
     }
 }
