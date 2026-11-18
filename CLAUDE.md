@@ -229,7 +229,7 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   other apps paste as pictures, their ink (Windows ink's format) as strokes; copies are always the exact elements), `Recovery` (recovery copies +
   info JSON with the writing process id/start time; abandoned = that process is gone), `Autosave` (timer + ordered
   write/delete queue), `TaskFile` (todo.txt line edits, re-read before each change), `PdfExport` (PDFsharp: imported PDF pages as
-  vectors, `Model/BackgroundRuling` shared with the screen, strokes per segment), `AppSettings`, `DebugLog`, `ProjectTree` (the folder as it is on
+  vectors, `Model/BackgroundRuling` shared with the screen, strokes per segment), `AppSettings`, `DebugLog`, `ProjectTree` (sorted by name, numbers by value: `NameOrder`; the folder as it is on
   disk: all files and folders, Windows-hidden/system items left out, links shown but not entered), `GitSync` (LibGit2Sharp: status,
   `WithFolders` marks folders by what is below them – modified/deleted > new; sync = commit all, fetch,
   rebase/fast-forward, push; conflicts are aborted), `GitCredentials` (reads Git for Windows' stored credential, see
@@ -370,7 +370,8 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
    consistent during a drag; gestures belong to their pointer and begin only with a press; Save As takes attachments
    along. Merged into main 2026-11-16 morning (user: "du kannst gerne mergen"). Reviews were still finding edge cases
    (mostly the eraser end, now a question for the user) – not a clean round.
-8. Not started, only if the user asks: inserting pages of another PDF, page reordering, a text tool.
+8. Not started, only if the user asks: page reordering, a text tool. (Inserting pages of another PDF: done
+   2026-11-18, see Facts.)
 9. **Library `InkPages` (user, 2026-11-17; own public repository since 2026-11-18, user's choice, submodule
    `external/InkPages`; the MatheTrainer is to embed it too – not switched yet):** the
    writing area becomes a reusable module other apps can embed, the toolbar a part of it (base functions in the
@@ -402,7 +403,7 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 - Barrel button = always the lasso. Recovery copy 5 s after a change and on focus loss.
 - "Meine behalten" after a sync changed the open document: stays unsaved until Ctrl+S.
 - `examples/Schaltungen.xopp` reset. Reviews (12 rounds) converged on edge cases; `overnight` merged into main 2026-11-16 (f37018e).
-- PDF export approved and done 2026-11-16. Later candidates: pages of another PDF, page reordering, a text tool.
+- PDF export approved and done 2026-11-16. Later candidates: page reordering, a text tool.
 - Still open: report the ink-over-dialog bug / comment on PR #12292 (public, needs approval).
 - **Save As with attachments – as Xournal++ (user, 2026-11-16 morning):** attached PDF and picture backgrounds
   (`domain="attach"`, `<doc>.xopp.<filename>`) are copied next to the new file (`XoppDocument.CopyAttachments`, also for
@@ -500,8 +501,8 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   pages refer to them; annotations of the inserted pages are drawn into them first. A document without PDF takes the
   chosen PDF as its PDF. PDF has no hidden pages: the appended pages show in other viewers (the alternative – an
   attached copy `<name>.xopp.bg.pdf` – was offered to the user, not chosen yet).
-- **Explorer order = File Explorer's:** `ExplorerOrder` uses Windows' `StrCmpLogicalW` (numbers by value: Vorlesung 2
-  before 11).
+- **Explorer order:** names with numbers by value, as File Explorer shows them (Vorlesung 2 before 11):
+  `ProjectTree.NameOrder` = .NET's `CompareOptions.NumericOrdering` + ignore case, ties in ordinal order.
 - The page in view is outlined (accent) in documents with more than one page (InkPages `MarkCurrentPage`, set by
   `PagesController` from the document's page count).
 - **PDF export:** PDFsharp pinned to 6.2.4, the last MIT version (6.5.0 is AGPL-3.0 with license acceptance – a

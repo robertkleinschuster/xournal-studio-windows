@@ -62,10 +62,15 @@ public sealed class ExplorerTests : IDisposable
         {
             File.WriteAllText(Path.Combine(folder, name), "");
         }
+        foreach (string name in new[] { "Übung 10", "Übung 2", "Übung 01" })
+        {
+            Directory.CreateDirectory(Path.Combine(folder, name));
+        }
 
         var vo = Assert.Single(ProjectTree.Read(temp).Children);
 
-        Assert.Equal(["vorlesung 1.pdf", "Vorlesung 2.pdf", "Vorlesung 11.pdf", "Vorlesung 12.pdf", "Vorlesung 13.xopp"],
+        Assert.Equal(["Übung 01", "Übung 2", "Übung 10", // folders first, numbers by value (01 as 1)
+            "vorlesung 1.pdf", "Vorlesung 2.pdf", "Vorlesung 11.pdf", "Vorlesung 12.pdf", "Vorlesung 13.xopp"],
             vo.Children.Select(c => c.Name));
     }
 
