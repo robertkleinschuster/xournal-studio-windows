@@ -146,8 +146,6 @@ public sealed class PagesController
         DocumentShown?.Invoke(this, EventArgs.Empty);
     }
 
-    /// <summary>The shown document's pages' sizes in points (for the pages pane).</summary>
-    public List<(double Width, double Height)> PageSizes => document?.Pages.Select(p => (p.Width, p.Height)).ToList() ?? [];
 
     /// <summary>The number of pages of the shown document.</summary>
     public int Count => document?.Pages.Count ?? 0;

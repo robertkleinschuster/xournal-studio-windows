@@ -104,9 +104,10 @@ public sealed class InsertPdfPagesCommand(WindowId window, DocumentSession sessi
             thumbnails.SelectAll(); // one page: nothing to choose
         }
         thumbnails.SelectionChanged += (_, _) => dialog.IsPrimaryButtonEnabled = thumbnails.SelectedItems.Count > 0;
-        var rendering = RenderThumbnailsAsync(pdf, (List<FrameworkElement>)thumbnails.ItemsSource);
+        using var closed = new CancellationTokenSource();
+        var rendering = RenderThumbnailsAsync(pdf, (List<FrameworkElement>)thumbnails.ItemsSource, closed.Token);
         var result = await dialogs.ShowAsync(dialog);
-        canceled = true; // the rest of the thumbnails is not needed any more
+        closed.Cancel(); // the rest of the thumbnails is not needed any more (also renders still waiting)
         await rendering;
         if (result != ContentDialogResult.Primary)
         {
@@ -115,8 +116,6 @@ public sealed class InsertPdfPagesCommand(WindowId window, DocumentSession sessi
         var chosen = thumbnails.SelectedItems.Cast<FrameworkElement>().Select(t => (int)t.Tag).Order().ToList();
         return (chosen, before.IsChecked == true);
     }
-
-    private bool canceled;
 
     private static FrameworkElement Thumbnail(int index) => new StackPanel
     {
@@ -139,23 +138,26 @@ public sealed class InsertPdfPagesCommand(WindowId window, DocumentSession sessi
     };
 
     // One page after the other (Windows.Data.Pdf renders one page at a time), until the dialog closes.
-    private async Task RenderThumbnailsAsync(PdfBackground pdf, List<FrameworkElement> items)
+    private static async Task RenderThumbnailsAsync(PdfBackground pdf, List<FrameworkElement> items, CancellationToken closed)
     {
-        canceled = false;
         foreach (var item in items)
         {
-            if (canceled)
+            if (closed.IsCancellationRequested)
             {
                 return;
             }
             try
             {
                 var frame = (Border)((StackPanel)item).Children[0];
-                if (await pdf.RenderAsync((int)item.Tag, ThumbnailWidth) is { } image)
+                if (await pdf.RenderAsync((int)item.Tag, ThumbnailWidth, closed) is { } image)
                 {
                     frame.Height = double.NaN;
                     ((Image)frame.Child).Source = image;
                 }
+            }
+            catch (OperationCanceledException)
+            {
+                return; // the dialog closed
             }
             catch (Exception e)
             {

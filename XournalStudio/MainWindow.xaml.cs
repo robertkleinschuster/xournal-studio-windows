@@ -67,7 +67,7 @@ public sealed partial class MainWindow : Window
         export = new PdfExportCommand(AppWindow.Id, session, messages);
         import = new PdfImportCommand(AppWindow.Id, session, dialogs, messages);
         insertPdfPages = new InsertPdfPagesCommand(AppWindow.Id, session, pages, dialogs, messages);
-        thumbnails = new PageThumbnails(session, PagesList);
+        thumbnails = new PageThumbnails(session, PagesList, pages);
         WirePagesPane();
         ink.Undo.Changed += (_, _) =>
         {
@@ -168,6 +168,7 @@ public sealed partial class MainWindow : Window
         }
         closeConfirmed = true;
         await session.EndAsync(); // the recovery copy is gone before the process ends
+        await thumbnails.CloseAsync(); // its temporary PDF (the user's notes) too
         await Services.PdfRenderer.Shared.ShutdownAsync(); // its GPU device goes while the app still runs (see there)
         Close();
     }
@@ -277,10 +278,11 @@ public sealed partial class MainWindow : Window
     // The pages pane shows the document's pages (thumbnails a moment after a change) and asks for the page actions.
     private void WirePagesPane()
     {
-        pages.DocumentShown += (_, _) => ShowPagesPane();
-        pages.PagesChanged += (_, _) => ShowPagesPane();
+        pages.DocumentShown += (_, _) => ShowPagesPane(newDocument: true);
+        pages.PagesChanged += (_, _) => ShowPagesPane(newDocument: false);
         pages.CurrentPageChanged += (_, _) => PagesList.Select(pages.CurrentIndex);
-        ink.Undo.ContentChanged += (_, _) => thumbnails.Invalidate();
+        // Only pages with a view can be edited: their thumbnails are drawn again.
+        ink.Undo.ContentChanged += (_, _) => thumbnails.Edited(pages.Views.Select(v => v.Page));
         PagesList.GoToRequested += (_, index) => pages.ScrollToPage(index);
         PagesList.InsertBlankRequested += (_, index) => pages.InsertBlankAt(index);
         PagesList.InsertPdfRequested += async (_, index) => await insertPdfPages.InsertAsync(index);
@@ -288,7 +290,7 @@ public sealed partial class MainWindow : Window
         {
             if (!pages.Move(move.From, move.To))
             {
-                ShowPagesPane(); // the list showed the drag's order: back to the document's
+                ShowPagesPane(newDocument: false); // the list showed the drag's order: back to the document's
                 if (ink.Selection.IsDragging)
                 {
                     messages.Show(InfoBarSeverity.Informational, "Seite nicht verschoben", PenToolbarTexts.German.Refused);
@@ -298,11 +300,8 @@ public sealed partial class MainWindow : Window
         PagesList.DeleteRequested += async (_, index) => await DeletePageAsync(index);
     }
 
-    private void ShowPagesPane()
-    {
-        PagesList.Show(pages.PageSizes, pages.Count == 0 ? -1 : pages.CurrentIndex);
-        thumbnails.Invalidate();
-    }
+    private void ShowPagesPane(bool newDocument) =>
+        PagesList.Show(session.Document.Pages, pages.Count == 0 ? -1 : pages.CurrentIndex, newDocument);
 
     private async void OnDeletePage(object sender, RoutedEventArgs e) => await DeletePageAsync(pages.CurrentIndex);
 

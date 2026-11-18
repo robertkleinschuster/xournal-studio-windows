@@ -3,13 +3,31 @@ using System.ComponentModel;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using XournalStudio.Model;
 
 namespace XournalStudio.Views;
 
-/// <summary>A page in the pages pane: its number, its size as a thumbnail and the thumbnail once rendered.</summary>
-public sealed partial class PageThumb(int index, double width, double height) : INotifyPropertyChanged
+/// <summary>
+/// A page in the pages pane: its number, its size as a thumbnail, and the thumbnail in two layers once rendered – the
+/// background PDF's page (<see cref="Background"/>) and what lies on it (<see cref="Content"/>: ink, pictures, texts; for
+/// a page without PDF its paper too). Kept for its page while the document is shown, so its images stay when pages are
+/// inserted, moved or deleted.
+/// </summary>
+public sealed partial class PageThumb(XoppPage page, double width, double height) : INotifyPropertyChanged
 {
-    public int Index { get; } = index;
+    public XoppPage Page { get; } = page;
+
+    private int index;
+
+    public int Index
+    {
+        get => index;
+        set
+        {
+            index = value;
+            Changed(nameof(Number));
+        }
+    }
 
     public string Number => (Index + 1).ToString();
 
@@ -17,17 +35,32 @@ public sealed partial class PageThumb(int index, double width, double height) : 
 
     public double Height { get; } = height;
 
-    private ImageSource? image;
+    /// <summary>The content layer must be drawn again (the page was edited, or it is new).</summary>
+    public bool ContentStale { get; set; } = true;
 
-    public ImageSource? Image
+    private ImageSource? background, content;
+
+    public ImageSource? Background
     {
-        get => image;
+        get => background;
         set
         {
-            image = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Image)));
+            background = value;
+            Changed(nameof(Background));
         }
     }
+
+    public ImageSource? Content
+    {
+        get => content;
+        set
+        {
+            content = value;
+            Changed(nameof(Content));
+        }
+    }
+
+    private void Changed(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 
     public event PropertyChangedEventHandler? PropertyChanged;
 }
@@ -35,7 +68,8 @@ public sealed partial class PageThumb(int index, double width, double height) : 
 /// <summary>
 /// The pages pane (beside the files and the tasks): the document's pages as thumbnails. A tap goes to the page, the
 /// selected page follows the page in view; insert (blank or from a PDF) before or after, move up or down (or drag with
-/// finger or mouse), delete. It only asks: the window carries the actions out (<see cref="PagesController"/>).
+/// finger or mouse), delete – all on the selected page (a right-click selects it first). It only asks: the window
+/// carries the actions out (<see cref="PagesController"/>); the thumbnails' images come from <see cref="PageThumbnails"/>.
 /// </summary>
 public sealed partial class PagesPane : UserControl
 {
@@ -60,19 +94,50 @@ public sealed partial class PagesPane : UserControl
 
     public event EventHandler<int>? DeleteRequested;
 
-    private ObservableCollection<PageThumb> items = [];
-    private bool showing; // selection set by the app, not the user
+    /// <summary>The pages were shown (after <see cref="Show"/>): their thumbnails can be rendered.</summary>
+    public event EventHandler? Shown;
 
-    /// <summary>The document's pages (their sizes in points), with <paramref name="current"/> selected.</summary>
-    public void Show(IReadOnlyList<(double Width, double Height)> sizes, int current)
+    /// <summary>The pages' thumbnails, in the document's order.</summary>
+    public IReadOnlyList<PageThumb> Thumbs => items;
+
+    private ObservableCollection<PageThumb> items = [];
+    private readonly Dictionary<XoppPage, PageThumb> byPage = new();
+
+    /// <summary>
+    /// The document's pages, with <paramref name="current"/> selected; a page shown before keeps its thumbnail (not when
+    /// <paramref name="newDocument"/>). Applied after the running event – never inside the list's own events: replacing
+    /// its items while it finishes a reordering drag is not safe in WinUI.
+    /// </summary>
+    public void Show(IReadOnlyList<XoppPage> pages, int current, bool newDocument)
     {
-        // A new collection each time, not Clear/Add (CLAUDE.md: lists are replaced, not mutated); observable, so the list
-        // can reorder it while the user drags.
-        items = new(sizes.Select((s, i) => new PageThumb(i, ThumbWidth, ThumbWidth * s.Height / Math.Max(1, s.Width))));
-        showing = true;
-        List.ItemsSource = items;
-        Select(current);
-        showing = false;
+        var shown = pages.ToList();
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            if (newDocument)
+            {
+                byPage.Clear();
+            }
+            var thumbs = shown.Select((page, i) =>
+            {
+                if (!byPage.TryGetValue(page, out var thumb))
+                {
+                    thumb = new PageThumb(page, ThumbWidth, ThumbWidth * page.Height / Math.Max(1, page.Width));
+                    byPage[page] = thumb;
+                }
+                thumb.Index = i;
+                return thumb;
+            }).ToList();
+            foreach (var gone in byPage.Keys.Except(shown).ToList())
+            {
+                byPage.Remove(gone);
+            }
+            // A new collection, not Clear/Add (CLAUDE.md: lists are replaced, not mutated); observable, so the list can
+            // reorder it while the user drags.
+            items = new ObservableCollection<PageThumb>(thumbs);
+            List.ItemsSource = items;
+            Select(current);
+            Shown?.Invoke(this, EventArgs.Empty);
+        });
     }
 
     /// <summary>The page in view changed: it is the selected one.</summary>
@@ -82,49 +147,30 @@ public sealed partial class PagesPane : UserControl
         {
             return;
         }
-        showing = true;
-        List.SelectedIndex = index;
+        List.SelectedIndex = index; // set in code: raises no ItemClick (no navigation)
         List.ScrollIntoView(items[index]);
-        showing = false;
     }
 
-    public int Count => items.Count;
-
-    public void SetThumbnail(int index, ImageSource? image)
-    {
-        if (index >= 0 && index < items.Count)
-        {
-            items[index].Image = image;
-        }
-    }
-
-    // The page an action applies to: the one right-clicked, else the selected one.
-    private int Target => menuTarget ?? Math.Max(0, List.SelectedIndex);
-
-    private int? menuTarget;
-
+    // The right-clicked page becomes the selected one: the menu and the buttons act on the selected page.
     private void OnContextRequested(UIElement sender, Microsoft.UI.Xaml.Input.ContextRequestedEventArgs args)
     {
-        menuTarget = (args.OriginalSource as FrameworkElement)?.DataContext is PageThumb thumb ? thumb.Index : null;
-        if (menuTarget is { } index)
+        if ((args.OriginalSource as FrameworkElement)?.DataContext is PageThumb thumb)
         {
-            Select(index);
+            List.SelectedIndex = thumb.Index;
         }
     }
 
     private void Act(Action<int> action)
     {
-        int target = Target;
-        menuTarget = null;
         if (items.Count > 0)
         {
-            action(target);
+            action(Math.Max(0, List.SelectedIndex));
         }
     }
 
     private void OnItemClick(object sender, ItemClickEventArgs e)
     {
-        if (!showing && e.ClickedItem is PageThumb thumb)
+        if (e.ClickedItem is PageThumb thumb)
         {
             GoToRequested?.Invoke(this, thumb.Index);
         }
@@ -154,8 +200,8 @@ public sealed partial class PagesPane : UserControl
 
     private void OnDelete(object sender, RoutedEventArgs e) => Act(i => DeleteRequested?.Invoke(this, i));
 
-    // Reordering by dragging: the list reorders its items itself; the window then moves the page and shows the pages
-    // again (the numbers follow).
+    // Reordering by dragging: the list reorders its items itself; the window then moves the page (the pages are shown
+    // again after this event).
     private PageThumb? dragged;
 
     private void OnDragItemsStarting(object sender, DragItemsStartingEventArgs e) => dragged = e.Items.FirstOrDefault() as PageThumb;

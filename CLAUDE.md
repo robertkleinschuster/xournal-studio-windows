@@ -505,11 +505,16 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   pages (tap = go to the page; the page in view is selected), insert a blank page before/after, insert pages of a PDF
   (dialog with the PDF's pages as thumbnails to tap and "vor/nach Seite N" – `InsertPdfPagesCommand`), move up/down
   (also by dragging with finger or mouse; `PagesController.Move`, the file's page order is its `<page>` order as
-  upstream), delete (asked). Thumbnails = the document exported as PDF (`PdfExport`, so ink of pages without a view,
-  pictures, texts too) into a temporary file, rendered by Windows.Data.Pdf; made again 0.8 s after a change, only while
-  the pane is shown (a full export per refresh – fine for the user's documents; per-page export would be the next step if
-  it gets slow). Sandbox: `UiTests/PagesPaneTest.ps1` (thumbnails with ink, move, delete). Not automated: the PDF
-  picker of the insert dialog.
+  upstream), delete (asked). Thumbnails in two layers per page (`PageThumb`, kept per page while the document is
+  shown): the background PDF's page rendered once from the loaded PDF, and the page's content (ink, pictures, texts;
+  a page without PDF with its paper) drawn by `PdfExport` for that one page without the background PDF into a temporary
+  PDF, rendered (transparent) and deleted at once (it holds the user's notes; leftovers of a crash are deleted at start).
+  Drawn again only for edited pages (the pages with a view), nearest to the page in view first, only while the pane is
+  shown. The first version exported the whole document (with the lecture PDF) per change – slow, the user noticed. The
+  pane never replaces its list inside the list's own events (`Show` is enqueued): a crash (0xc000027b in
+  Microsoft.UI.Xaml.dll) happened on the device when a page was selected – not reproduced in the sandbox, cause unknown.
+  Sandbox: `UiTests/PagesPaneTest.ps1` (thumbnails with ink, taps by mouse/pen/finger, move, delete). Not automated: the
+  PDF picker of the insert dialog.
 - **Explorer order:** names with numbers by value, as File Explorer shows them (Vorlesung 2 before 11):
   `ProjectTree.NameOrder` = .NET's `CompareOptions.NumericOrdering` + ignore case, ties in ordinal order.
 - The page in view is outlined (accent) in documents with more than one page (InkPages `MarkCurrentPage`, set by

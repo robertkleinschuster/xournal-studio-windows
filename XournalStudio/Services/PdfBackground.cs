@@ -53,10 +53,12 @@ public sealed class PdfBackground
     }
 
     /// <summary>
-    /// Renders a page into an image that is <paramref name="pixelWidth"/> pixels wide. UI thread only. Throws
-    /// <see cref="OperationCanceledException"/> when <paramref name="cancellation"/> is cancelled before the rendering began.
+    /// Renders a page into an image that is <paramref name="pixelWidth"/> pixels wide (on white, or only what the page
+    /// draws when <paramref name="transparent"/>). UI thread only. Throws <see cref="OperationCanceledException"/> when
+    /// <paramref name="cancellation"/> is cancelled before the rendering began.
     /// </summary>
-    public async Task<ImageSource?> RenderAsync(int pageIndex, uint pixelWidth, CancellationToken cancellation = default)
+    public async Task<ImageSource?> RenderAsync(int pageIndex, uint pixelWidth, CancellationToken cancellation = default,
+        bool transparent = false)
     {
         if (pageIndex < 0 || pageIndex >= PageCount)
         {
@@ -65,7 +67,7 @@ public sealed class PdfBackground
         var time = System.Diagnostics.Stopwatch.StartNew();
         using var page = pdf.GetPage((uint)pageIndex);
         uint pixelHeight = (uint)Math.Max(1, Math.Round(pixelWidth * page.Size.Height / page.Size.Width));
-        using var bitmap = await PdfRenderer.Shared.RenderAsync(page, null, pixelWidth, pixelHeight, cancellation);
+        using var bitmap = await PdfRenderer.Shared.RenderAsync(page, null, pixelWidth, pixelHeight, cancellation, transparent);
         var rendered = time.Elapsed;
         var source = new SoftwareBitmapSource();
         await source.SetBitmapAsync(bitmap);

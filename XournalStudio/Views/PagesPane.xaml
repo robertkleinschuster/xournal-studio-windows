@@ -69,9 +69,13 @@
             <ListView.ItemTemplate>
                 <DataTemplate x:DataType="local:PageThumb">
                     <StackPanel Padding="4,8" Spacing="4" HorizontalAlignment="Center">
+                        <!-- Two layers: the background PDF's page, and what lies on it (ink, pictures, texts). -->
                         <Border Width="{x:Bind Width}" Height="{x:Bind Height}" Background="White"
                                 BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
-                            <Image Source="{x:Bind Image, Mode=OneWay}" Stretch="Uniform" />
+                            <Grid>
+                                <Image Source="{x:Bind Background, Mode=OneWay}" Stretch="Fill" />
+                                <Image Source="{x:Bind Content, Mode=OneWay}" Stretch="Fill" />
+                            </Grid>
                         </Border>
                         <TextBlock Text="{x:Bind Number, Mode=OneWay}" HorizontalAlignment="Center"
                                    Style="{StaticResource CaptionTextBlockStyle}" />

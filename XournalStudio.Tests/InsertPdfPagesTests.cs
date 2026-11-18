@@ -7,42 +7,12 @@ using Xunit;
 
 namespace XournalStudio.Tests;
 
-/// <summary>Pages of another PDF: the page numbers typed, and appending them to the document's PDF as upstream stores it.</summary>
+/// <summary>Pages of another PDF appended to the document's PDF as upstream stores it.</summary>
 public sealed class InsertPdfPagesTests : IDisposable
 {
     private readonly string temp = Directory.CreateTempSubdirectory("xs-insert-").FullName;
 
     public void Dispose() => Directory.Delete(temp, true);
-
-    [Theory]
-    [InlineData("", 3, new[] { 0, 1, 2 })]
-    [InlineData("  ", 3, new[] { 0, 1, 2 })]
-    [InlineData("1", 3, new[] { 0 })]
-    [InlineData("3, 1", 3, new[] { 2, 0 })]
-    [InlineData("1-2; 3", 3, new[] { 0, 1, 2 })]
-    [InlineData("2-", 4, new[] { 1, 2, 3 })]
-    [InlineData("2 – 3", 3, new[] { 1, 2 })]
-    [InlineData("1, 1", 2, new[] { 0, 0 })]
-    public void PageNumbersAsTyped(string text, int count, int[] expected)
-    {
-        var (pages, problem) = PageRanges.Parse(text, count);
-        Assert.Null(problem);
-        Assert.Equal(expected, pages);
-    }
-
-    [Theory]
-    [InlineData("0", 3)]
-    [InlineData("4", 3)]
-    [InlineData("3-1", 3)]
-    [InlineData("a", 3)]
-    [InlineData("1-2-3", 3)]
-    [InlineData(",", 3)]
-    public void WrongPageNumbersAreProblems(string text, int count)
-    {
-        var (pages, problem) = PageRanges.Parse(text, count);
-        Assert.Null(pages);
-        Assert.False(string.IsNullOrEmpty(problem));
-    }
 
     // A PDF of pages with these widths (to recognize them), the first with a signature annotation as iPadOS writes it.
     private string Pdf(string name, double[] widths, bool signed = false)
