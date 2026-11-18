@@ -387,6 +387,13 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   state; RoutedTo (or any further input) resumes, RoutedReleased (or a new press) ends the interaction as before.
   Sandbox: the repro (barrel drag after a tip drag, held at the view's edge) and `ToolsTest.ps1` record a CombinedEdit
   without capture loss; with runtime 1cc68a49 the same repro logged "selection drag: pointer capture lost".
+- **Highlighter ink is drawn opaque (sandbox 2026-11-18, `InkPages.Demo/UiTests/HighlighterTest.ps1`):** a
+  `DrawAsHighlighter` stroke covers the page and the ink under it – with the fork's runtime and with the stock
+  2.6.6-experimental runtime alike. WinUI passes the attributes unchanged to the OS presenter (`IInkPresenterDesktop`,
+  `InkPresenter::UpdateDefaultDrawingAttributes`); the OS renders into a DComp visual that the lifted InkCanvas hosts in
+  a `ContentExternalOutputLink` with `IsAboveContent(true)` (`InkCanvas::AttachToLiftedCompositor`) – the highlighter's
+  blend with what lies below evidently does not reach across it (OS rendering is closed source; not proven which
+  step). No upstream issue found. Open – options reported to the user.
 - **Ruler/protractor (WinUI source + sandbox probe, 2026-11-17):** the stencil belongs to the InkToolbar's
   `TargetInkCanvas`: `InkToolbar::SetStencilVisibility` → `InkPresenter::SetRulerEnabled` creates an OS
   `InkPresenterRuler` on that presenter (default place: rotated 45° at the page's top left, in page coordinates). When the
