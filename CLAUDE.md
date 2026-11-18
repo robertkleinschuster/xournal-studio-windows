@@ -6,12 +6,12 @@ Guidance for Claude Code in this repository. Keep it current: add what is learne
 
 - **Build:** the app compiles against the official `Microsoft.WindowsAppSDK.WinUI` + `.DWrite` **2.6.6-experimental**
   (XAML compiler, projection, metadata) and `XournalStudio.csproj` copies the **Release (fre) runtime** of the WinUI fork
-  (robertkleinschuster/microsoft-ui-xaml, branch `fix/ink-runtime-capture` = upstream main of 2026-11-16 +
-  microsoft-ui-xaml PR #12292 + the fork's InkToolbar custom tool states fix + its pointer-capture-across-routing fix,
-  see Facts) from `.local-build/winui-fre`
+  (robertkleinschuster/microsoft-ui-xaml, branch `fix/ink-runtime-highlighter` = upstream main of 2026-11-16 +
+  microsoft-ui-xaml PR #12292 + the fork's InkToolbar custom tool states fix + its pointer-capture-across-routing fix +
+  its custom pen drawing attributes fix, see Facts) from `.local-build/winui-fre`
   over the package's runtime after Build/Publish, for every configuration; the build fails if it is missing.
-  `tools/Get-WinUIRuntime.ps1` fetches it (pinned URL + SHA-256) from the fork's release `winui-ink-fix-3d994d89` (zip
-  of the fre payload of fork Actions run 44198320891, started by `gh workflow run winui-source-product.yml --ref
+  `tools/Get-WinUIRuntime.ps1` fetches it (pinned URL + SHA-256) from the fork's release `winui-ink-fix-d3b1bf22` (zip
+  of the fre payload of fork Actions run 44272379119, started by `gh workflow run winui-source-product.yml --ref
   <branch>`; the release zip holds `runtimes/win10-x64/native/**`); `install.ps1`
   and `.github/workflows/release.yml` call it. A tag `v*` builds a pre-release with the self-contained zip; a manual
   run only builds. When an official package ships PR #12292: reference it and drop the overlay and the script.
@@ -387,13 +387,21 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   state; RoutedTo (or any further input) resumes, RoutedReleased (or a new press) ends the interaction as before.
   Sandbox: the repro (barrel drag after a tip drag, held at the view's edge) and `ToolsTest.ps1` record a CombinedEdit
   without capture loss; with runtime 1cc68a49 the same repro logged "selection drag: pointer capture lost".
-- **Highlighter ink is drawn opaque (sandbox 2026-11-18, `InkPages.Demo/UiTests/HighlighterTest.ps1`):** a
-  `DrawAsHighlighter` stroke covers the page and the ink under it – with the fork's runtime and with the stock
-  2.6.6-experimental runtime alike. WinUI passes the attributes unchanged to the OS presenter (`IInkPresenterDesktop`,
-  `InkPresenter::UpdateDefaultDrawingAttributes`); the OS renders into a DComp visual that the lifted InkCanvas hosts in
-  a `ContentExternalOutputLink` with `IsAboveContent(true)` (`InkCanvas::AttachToLiftedCompositor`) – the highlighter's
-  blend with what lies below evidently does not reach across it (OS rendering is closed source; not proven which
-  step). No upstream issue found. Open – options reported to the user.
+- **Highlighter presets drew opaque - fixed in the fork's WinUI (2026-11-18, `InkPages.Demo/UiTests/HighlighterTest.ps1`):**
+  not the compositor: Windows draws `DrawAsHighlighter` ink correctly in the lifted InkCanvas (probe: strokes added in
+  code, and pen strokes with attributes set by `UpdateDefaultDrawingAttributes`, blend as highlighters - the darker
+  color wins). WinUI's InkToolbar dropped custom pens' attributes: `InkToolbar::UpdateInkDrawingAttributes` built them
+  from the tool kind only (color, width), `InkToolbarCustomPen::CreateInkDrawingAttributes` called its own default core
+  instead of the app's override, and the pen buttons' `CreateInkDrawingAttributes` (never called before) read the width
+  through a null `try_as`. So `HighlighterPen` (an `InkToolbarCustomPen`) drew as a plain opaque pen, with the stock
+  2.6.6-experimental runtime too. Fork commit d3b1bf22 "InkToolbar: use the pen button's drawing attributes, including
+  custom pens" (branch `fix/ink-runtime-highlighter`; upstream PR branch `fix/inktoolbar-custompen-attributes`; issue/PR
+  not opened - public, needs the user's approval). Side effect: the built-in highlighter button now gets UWP's chisel
+  tip (unused here). Loaded .xopp highlighter strokes were never affected (`StrokeConverter` sets the attributes).
+- **Local WinUI builds** (2026-11-18): `tools/Build-WinUILocal.ps1 -Source D:\wb` (a worktree of the fork on the Dev
+  Drive; short path) runs the fork workflow's x64fre steps with Windows PowerShell; the first build loads all 12 cores
+  (MSBuild /m:4, cl /MP); later builds compile only what changed. For iterating on WinUI fixes; the app's pin still
+  comes from a fork release built by Actions.
 - **Ruler/protractor (WinUI source + sandbox probe, 2026-11-17):** the stencil belongs to the InkToolbar's
   `TargetInkCanvas`: `InkToolbar::SetStencilVisibility` → `InkPresenter::SetRulerEnabled` creates an OS
   `InkPresenterRuler` on that presenter (default place: rotated 45° at the page's top left, in page coordinates). When the
