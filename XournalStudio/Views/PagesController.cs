@@ -134,6 +134,7 @@ public sealed class PagesController
         restoreOffset = null; // the previous document's
         ink.Reset();
         slots.Show(doc.Pages, background); // placeholders: the views near the viewport come with the next update
+        MarkCurrentPage();
         fitWidthPending = true;
         scroller.ScrollTo(0, 0, new ScrollingScrollOptions(ScrollingAnimationMode.Disabled));
         FitWidth();
@@ -151,6 +152,7 @@ public sealed class PagesController
         slots.Insert(index + 1, page);
         slots.Realize(index + 1); // it comes into view now
         viewTimer.Start();
+        MarkCurrentPage();
         PagesChanged?.Invoke(this, EventArgs.Empty);
         ScrollIntoView(index + 1);
     }
@@ -172,8 +174,13 @@ public sealed class PagesController
         doc.Pages.RemoveAt(index);
         slots.Remove(page); // its view (if any) and its history go
         viewTimer.Start();
+        MarkCurrentPage();
         PagesChanged?.Invoke(this, EventArgs.Empty);
     }
+
+    // The page in view (the toolbar's, the ruler's) is outlined in a document with more than one page – decided by the
+    // document, as only the pages near the viewport have views.
+    private void MarkCurrentPage() => ink.MarkCurrentPage = document?.Pages.Count > 1;
 
     /// <summary>Scrolls to the page with this index (if the document has it).</summary>
     public void ScrollToPage(int index)
