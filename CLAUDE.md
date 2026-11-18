@@ -570,7 +570,9 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 - **PDF export of annotations (2026-11-18):** signatures and texts added in Apple's Preview (iPad) are PDF annotations
   (`/Stamp` with an appearance stream, `/FreeText`), not page content: Windows.Data.Pdf shows them, but PDFsharp's
   `XPdfForm` imports only a page's content, so the export lost them. `Services/PdfAnnotationFlattener` draws each
-  printable, visible annotation's normal appearance into the background PDF's pages (ISO 32000-1 12.5.5) before export.
+  annotation the screen shows (not Hidden/NoView) with its normal appearance into the background PDF's pages (ISO 32000-1
+  12.5.5) before export; PDFsharp's own `PdfAcroForm.Flatten` covers form fields only. A PDF PDFsharp cannot open for
+  changing (permissions password) is exported without them and the InfoBar says so (`AnnotationsLeftOut`).
   Converting such annotations to .xopp strokes was asked for too (not done: Preview's signatures are Stamps whose
   appearance is vector paths, not `/Ink` annotations).
 - **PDF export:** PDFsharp pinned to 6.2.4, the last MIT version (6.5.0 is AGPL-3.0 with license acceptance – a

@@ -7,19 +7,21 @@ using PdfSharp.Pdf.IO;
 namespace XournalStudio.Services;
 
 /// <summary>
-/// Puts what a PDF's annotations show into its pages' content, as printing does (ISO 32000-1, 12.5.5): annotations
+/// Puts what a PDF's annotations show into its pages' content (ISO 32000-1, 12.5.5): annotations
 /// (signatures and texts added in Apple's Preview are Stamp and FreeText annotations, comments, ink, form fields) are not
 /// part of a page's content, so a page imported as a form (<see cref="PdfSharp.Drawing.XPdfForm"/>) leaves them out.
-/// Each printable, visible annotation's normal appearance stream is drawn at its rectangle on top of the page's content,
-/// as a viewer draws it.
+/// Each annotation a viewer shows (not Hidden, not NoView) is drawn with its normal appearance stream at its rectangle on
+/// top of the page's content, as the screen shows it. PDFsharp's own flattening (<c>PdfAcroForm.Flatten</c>) covers form
+/// fields only. Not handled: NoZoom/NoRotate icons, optional content (/OC), annotations without an appearance stream.
 /// </summary>
 public static class PdfAnnotationFlattener
 {
-    private const int Hidden = 1 << 1, Print = 1 << 2;
+    private const int Hidden = 1 << 1, NoView = 1 << 5;
 
     /// <summary>
     /// The PDF with its annotations drawn into the pages, or null when no page has an annotation to draw (then the file is
-    /// used as it is).
+    /// used as it is). Throws <see cref="PdfSharp.PdfSharpException"/> when PDFsharp cannot open the file for changing (e.g.
+    /// a permissions password) or cannot write it.
     /// </summary>
     public static MemoryStream? Flatten(string path)
     {
@@ -27,7 +29,7 @@ public static class PdfAnnotationFlattener
         int drawn = 0;
         foreach (var page in document.Pages)
         {
-            drawn += FlattenPage(document, page);
+            drawn += FlattenPage(page);
         }
         if (drawn == 0)
         {
@@ -39,7 +41,7 @@ public static class PdfAnnotationFlattener
         return result;
     }
 
-    private static int FlattenPage(PdfDocument document, PdfPage page)
+    private static int FlattenPage(PdfPage page)
     {
         if (page.Elements.GetArray("/Annots") is not { } annotations)
         {
@@ -54,20 +56,22 @@ public static class PdfAnnotationFlattener
             {
                 continue;
             }
-            string name = AddXObject(document, page, appearance);
-            var rect = annotation.Elements.GetRectangle("/Rect");
-            var matrix = MatrixOf((PdfDictionary)appearance.Value);
-            var box = TransformedBox(((PdfDictionary)appearance.Value).Elements.GetRectangle("/BBox"), matrix);
-            if (box.Width <= 0 || box.Height <= 0)
+            var form = (PdfDictionary)appearance.Value;
+            var rect = annotation.Elements.GetRectangle("/Rect"); // any two opposite corners
+            var (x1, y1) = (Math.Min(rect.X1, rect.X2), Math.Min(rect.Y1, rect.Y2));
+            var (width, height) = (Math.Abs(rect.X2 - rect.X1), Math.Abs(rect.Y2 - rect.Y1));
+            var box = TransformedBox(form.Elements.GetRectangle("/BBox"), MatrixOf(form));
+            if (box.Width <= 0 || box.Height <= 0 || width <= 0 || height <= 0)
             {
-                continue; // an empty appearance shows nothing
+                continue; // an empty appearance or rectangle shows nothing
             }
+            string name = AddXObject(page, form, appearance);
             // The matrix that maps the appearance's transformed box onto the annotation's rectangle (the form's own
             // /Matrix is applied by Do).
-            double sx = rect.Width / box.Width, sy = rect.Height / box.Height;
+            double sx = width / box.Width, sy = height / box.Height;
             content.Append("q ")
                 .Append(Number(sx)).Append(" 0 0 ").Append(Number(sy)).Append(' ')
-                .Append(Number(rect.X1 - sx * box.X1)).Append(' ').Append(Number(rect.Y1 - sy * box.Y1))
+                .Append(Number(x1 - sx * box.X1)).Append(' ').Append(Number(y1 - sy * box.Y1))
                 .Append(" cm ").Append(name).Append(" Do Q\n");
             count++;
         }
@@ -80,11 +84,11 @@ public static class PdfAnnotationFlattener
         return count;
     }
 
-    /// <summary>The normal appearance a viewer prints (its state by /AS), or null for a hidden or non-printing one.</summary>
+    /// <summary>The normal appearance a viewer shows (its state by /AS), or null for a hidden one.</summary>
     private static PdfReference? Appearance(PdfDictionary annotation)
     {
         int flags = annotation.Elements.GetInteger("/F");
-        if ((flags & Print) == 0 || (flags & Hidden) != 0 ||
+        if ((flags & (Hidden | NoView)) != 0 ||
             annotation.Elements.GetDictionary("/AP") is not { } ap)
         {
             return null;
@@ -102,9 +106,8 @@ public static class PdfAnnotationFlattener
             : null;
     }
 
-    private static string AddXObject(PdfDocument document, PdfPage page, PdfReference appearance)
+    private static string AddXObject(PdfPage page, PdfDictionary form, PdfReference appearance)
     {
-        var form = (PdfDictionary)appearance.Value;
         if (!form.Elements.ContainsKey("/Subtype"))
         {
             form.Elements.SetName("/Subtype", "/Form"); // optional in some writers' appearance streams, required for Do
@@ -113,7 +116,7 @@ public static class PdfAnnotationFlattener
         var xobjects = resources.Elements.GetDictionary("/XObject");
         if (xobjects == null)
         {
-            xobjects = new PdfDictionary(document);
+            xobjects = new PdfDictionary(page.Owner);
             resources.Elements["/XObject"] = xobjects;
         }
         int i = 0;

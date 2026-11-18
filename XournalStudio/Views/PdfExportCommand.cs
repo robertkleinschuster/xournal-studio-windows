@@ -55,7 +55,11 @@ public sealed class PdfExportCommand(WindowId window, DocumentSession session, M
             {
                 text += $" {result.SkippedElements} Element(e), die diese App noch nicht darstellt, fehlen darin.";
             }
-            bool complete = result.MissingBackgrounds + result.SkippedElements == 0;
+            if (result.AnnotationsLeftOut)
+            {
+                text += " Anmerkungen der Hintergrund-PDF (z. B. Unterschriften aus anderen Apps) fehlen darin: die PDF lässt sich nicht verändern.";
+            }
+            bool complete = result.MissingBackgrounds + result.SkippedElements == 0 && !result.AnnotationsLeftOut;
             messages.Show(complete ? InfoBarSeverity.Success : InfoBarSeverity.Warning,
                 complete ? "Als PDF exportiert" : "Als PDF exportiert – unvollständig", text);
         }

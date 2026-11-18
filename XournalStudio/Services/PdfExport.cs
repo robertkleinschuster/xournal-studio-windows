@@ -6,8 +6,11 @@ using XournalStudio.Model;
 
 namespace XournalStudio.Services;
 
-/// <summary>What an export left out: elements the app does not draw yet, pages whose background PDF was not found.</summary>
-public sealed record PdfExportResult(int Pages, int SkippedElements, int MissingBackgrounds = 0);
+/// <summary>
+/// What an export left out: elements the app does not draw yet, pages whose background PDF was not found, the background
+/// PDF's annotations when they could not be drawn into it (<see cref="PdfAnnotationFlattener"/>).
+/// </summary>
+public sealed record PdfExportResult(int Pages, int SkippedElements, int MissingBackgrounds = 0, bool AnnotationsLeftOut = false);
 
 /// <summary>
 /// Writes a document as PDF with PDFsharp: each page's background (the lecture PDF's page as vector content, or color
@@ -33,6 +36,7 @@ public static class PdfExport
         }
         var keepOpen = new List<IDisposable>(); // pictures are read when the document is saved
         XPdfForm? background = null;
+        bool annotationsLeftOut = false;
         try
         {
             using var output = new PdfDocument();
@@ -51,7 +55,7 @@ public static class PdfExport
                     {
                         if (XoppPage.IsPdfBackground(bg) && backgroundPdf != null && File.Exists(backgroundPdf))
                         {
-                            background ??= BackgroundForm(backgroundPdf, keepOpen);
+                            background ??= BackgroundForm(backgroundPdf, keepOpen, out annotationsLeftOut);
                             background.PageNumber = Math.Min(XoppPage.PdfPageIndexOf(bg) + 1, background.PageCount);
                             g.DrawImage(background, 0, 0, width, height);
                         }
@@ -96,7 +100,7 @@ public static class PdfExport
             string temp = target + "~";
             output.Save(temp);
             File.Move(temp, target, overwrite: true);
-            return new PdfExportResult(pages, skipped, missing);
+            return new PdfExportResult(pages, skipped, missing, annotationsLeftOut);
         }
         finally
         {
@@ -106,10 +110,23 @@ public static class PdfExport
     }
 
     // The lecture PDF with its annotations (signatures, texts and ink added in other apps) drawn into its pages, as the
-    // screen shows them: a page imported as a form brings only its content.
-    private static XPdfForm BackgroundForm(string path, List<IDisposable> keepOpen)
+    // screen shows them: a page imported as a form brings only its content. A PDF PDFsharp can import but not change (a
+    // permissions password, a structure it cannot write back) is exported without them, and the result says so.
+    private static XPdfForm BackgroundForm(string path, List<IDisposable> keepOpen, out bool annotationsLeftOut)
     {
-        if (PdfAnnotationFlattener.Flatten(path) is not { } flattened)
+        annotationsLeftOut = false;
+        MemoryStream? flattened;
+        try
+        {
+            flattened = PdfAnnotationFlattener.Flatten(path);
+        }
+        catch (PdfSharp.PdfSharpException e)
+        {
+            DebugLog.Write($"export: annotations of {path}: {e.GetType().Name} 0x{e.HResult:X8} {e.Message}");
+            annotationsLeftOut = true;
+            flattened = null;
+        }
+        if (flattened == null)
         {
             return XPdfForm.FromFile(path);
         }

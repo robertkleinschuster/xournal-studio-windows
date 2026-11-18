@@ -85,13 +85,19 @@ public sealed class PdfExportTests : IDisposable
             """<stroke tool="highlighter" color="#ffff007f" width="8.5">0 0 10 0</stroke>"""))!.EvenWidth);
     }
     // A page with a signature as Apple's Preview writes it (a Stamp annotation with an appearance stream) and a hidden one.
-    private string SignedPdf()
+    private string SignedPdf(string? ownerPassword = null)
     {
         string path = Path.Combine(temp, "signed.pdf");
         using var pdf = new PdfDocument();
         var page = pdf.AddPage();
         var annotations = new PdfArray(pdf);
-        foreach (var (drawing, flags) in new[] { ("3.21 4.32 m 9.87 6.54 l S", 4), ("1.11 2.22 m 7.77 8.88 l S", 4 | 2) })
+        // Printable; without flags (shown on screen too); hidden. The second's rectangle is given by its other corners.
+        foreach (var (drawing, flags, rect) in new[]
+        {
+            ("3.21 4.32 m 9.87 6.54 l S", 4, new[] { 100.0, 100, 140, 120 }),
+            ("5.55 6.66 m 4.44 3.33 l S", 0, new[] { 240.0, 220, 200, 200 }),
+            ("1.11 2.22 m 7.77 8.88 l S", 4 | 2, new[] { 100.0, 100, 140, 120 }),
+        })
         {
             var appearance = new PdfDictionary(pdf);
             appearance.Elements.SetName("/Type", "/XObject");
@@ -104,13 +110,20 @@ public sealed class PdfExportTests : IDisposable
             var stamp = new PdfDictionary(pdf);
             stamp.Elements.SetName("/Type", "/Annot");
             stamp.Elements.SetName("/Subtype", "/Stamp");
-            stamp.Elements["/Rect"] = new PdfArray(pdf, new PdfReal(100), new PdfReal(100), new PdfReal(140), new PdfReal(120));
-            stamp.Elements.SetInteger("/F", flags);
+            stamp.Elements["/Rect"] = new PdfArray(pdf, rect.Select(v => (PdfItem)new PdfReal(v)).ToArray());
+            if (flags != 0)
+            {
+                stamp.Elements.SetInteger("/F", flags);
+            }
             stamp.Elements["/AP"] = ap;
             pdf.Internals.AddObject(stamp);
             annotations.Elements.Add(stamp.Reference!);
         }
         page.Elements["/Annots"] = annotations;
+        if (ownerPassword != null)
+        {
+            pdf.SecuritySettings.OwnerPassword = ownerPassword; // opens without a password, changes need it
+        }
         pdf.Save(path);
         return path;
     }
@@ -135,7 +148,24 @@ public sealed class PdfExportTests : IDisposable
         string streams = AllStreams(target);
         Assert.Contains("9.87 6.54 l S", streams); // the printable one, drawn at its rectangle
         Assert.Contains("2 0 0 2 100 100 cm", streams);
+        Assert.Contains("5.55 6.66 m 4.44 3.33 l S", streams); // no flags: shown, so exported
+        Assert.Contains("2 0 0 2 200 200 cm", streams); // its rectangle normalized, not mirrored
         Assert.DoesNotContain("7.77 8.88 l S", streams); // the hidden one is not
+    }
+
+    [Fact]
+    public void APdfThatCannotBeChangedIsExportedWithoutItsAnnotationsAndSaysSo()
+    {
+        SignedPdf(ownerPassword: "owner");
+        string doc = Xopp("p.xopp", """<page width="595" height="842"><background type="pdf" domain="absolute" filename="signed.pdf" pageno="1"/><layer/></page>""");
+        var document = XoppDocument.Load(doc);
+        string target = Path.Combine(temp, "p-export.pdf");
+
+        var result = PdfExport.Write(document.Snapshot(doc), document.PdfPath, target);
+
+        Assert.True(result.AnnotationsLeftOut);
+        Assert.Equal(0, result.MissingBackgrounds);
+        Assert.Equal(1, PdfReader.Open(target, PdfDocumentOpenMode.Import).PageCount);
     }
 
     [Fact]
