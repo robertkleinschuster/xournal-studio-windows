@@ -59,14 +59,6 @@ Guidance for Claude Code in this repository. Keep it current: add what is learne
 - **Release snapshots (`winui3/release/*`) cannot be built outside Microsoft:** they need internal package versions
   (e.g. InteractiveExperiences 2.1.0-experimental-27200…); the restore opens Microsoft sign-in pages through the build's
   `VSS.NuGet.AuthHelper`. Never run a WinUI restore that can prompt interactively.
-- **Custom tools on `InkPresenter.UnprocessedInput` (sandbox 2026-11-16, all steps pass):** custom tool → presenters
-  `InputProcessingMode.None`; barrel → `RightDragAction.LeaveUnprocessed`. With PR #12292 the args are readable on the
-  UI thread. **Positions are in the presenter's (InkCanvas') coordinates** = stroke and overlay coordinates – no
-  transform (an extra XamlRoot→page transform put every lasso beside the page). Unprocessed input also carries
-  **Entered/Hovered/Exited while the presenters ink**, with `IsInverted`: the eraser end is taken before its first
-  touch (`InkTools.TakeEraserEnd`, only in range and while erasing is partial), a tip hover in range gives it back –
-  partial erasing with the eraser end now works from the first touch. Handlers log exceptions themselves
-  (`InkTools.Logged`): WinUI's forwarding would not hand them to `App.UnhandledException`.
 
 ## What this is
 
@@ -247,6 +239,11 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 
 ## Facts learned (keep)
 
+- **The tools' facts are in InkPages (moved 2026-11-18):** everything learned about the writing area – presenter input
+  and hover takeovers, the selection drag on XAML input, ink above XAML and dialogs (the app: InfoBar in its own row,
+  `Dialogs` sets `InkHidden`), cross-page drags, lazy views' memory, pressure/width, the fork's fixes (highlighter,
+  capture, custom tool states), the toolbar and ruler – is in `external/InkPages/CLAUDE.md` ("Facts learned"); platform
+  facts in the user's global CLAUDE.md. Below only what is this app's own.
 - **Lazy page views (2026-11-17, `PageSlots`):** only pages within one viewport height of the view have a `PageView`
   (pages in view at once, the next near one per 120 ms tick); views beyond two heights are released unless
   `InkWorkspace.Holds` them (undo/redo history, selection, running gesture or a drag's hand-overs, shape recognition) –
@@ -265,9 +262,6 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 - `ScrollView.ZoomTo` is asynchronous: restoring a document's offset right after it (an enqueued `ScrollTo`) was lost
   once opening became fast; `PagesController.RestorePosition` scrolls on `ZoomCompleted` of its request (correlation id).
 
-- The `ScrollView` keeps `IgnoredInputKinds="Pen"`: the pen never pans (it would capture the pen otherwise).
-  `InkToolbarCustomToolButton.ConfigurationContent` gives the tool a native flyout (opens on the second tap, stays
-  open until a tap outside, like the pens' flyouts).
 - Clipboard: `Clipboard.Flush()` often failed with 0x800401D0 CLIPBRD_E_CANT_OPEN (another process – clipboard
   history – opens it right after `SetContent`), and after a successful flush a custom string format came back as an
   unreadable `IInspectable`. Not flushing: content stays while the app runs and the string arrives as `string`.
@@ -276,82 +270,16 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 - `PathIcon` fills its geometry: outline icons need even-odd rings (`F0`).
 - Saving adds formatting whitespace (newlines) between elements; element content and attributes stay identical.
 
-- **The experimental InkCanvas composes its ink above all XAML laid over it and takes pen/mouse input there**
-  (cause: `IsAboveContent(true)` on the lifted compositor; a fix was merged and reverted because pointer-drawn ink
-  then vanished – microsoft-ui-xaml #11904/#11928, issue #10461; still so in 2.6.6-experimental). Tested in the sandbox
-  2026-11-15: **ContentDialog** – ink over the dialog, pen strokes on it/its buttons became ink; `ShowDialogAsync`
-  (agreed with the user) collapses the pages' InkCanvas: no ink, the pen taps the dialog button – use it for every
-  dialog (`IsInputEnabled = false` also stops the input but leaves the ink drawn over the dialog). **InfoBar laid over
-  the pages** – overdrawn and inked: it now has its own row above the ScrollView; never lay XAML over a page.
-  **MenuBar menus and the custom tool flyout (`ConfigurationContent`)** – fine: drawn above the ink, a pen tap on a
-  menu item invokes it, no ink (windowed popups). Re-test and remove `ShowDialogAsync`'s hiding with each new
-  Windows App SDK release.
-- Strokes are polylines (`FitToCurve = false`, loaded and drawn): with Bezier fitting the few-point rectangles of
-  the user's circuit diagrams (resistors) came out round.
 - Git: LibGit2Sharp (user's choice over the git CLI). Sign-in = the credential the Git Credential Manager / wincred
   helper stores in the Windows Credential Manager (generic `git:https://host`, GCM as UTF-8, wincred as UTF-16),
   read with Meziantou.Framework.Win32.CredentialManager – the same as the GTK fork's libgit2 code. Verified against
   the user's private GitHub repo. The app never asks for credentials itself.
 
-- InkCanvas/InkToolbar exist for WinUI 3 only in the **experimental** Windows App SDK (`Microsoft.WindowsAppSDK.WinUI`
-  + `.DWrite` 2.6.6-experimental, component packages to avoid the AI/ML DLLs). The app is unpackaged and
-  self-contained; `EnableMsixTooling=true` is needed so `dotnet publish` includes the app's .pri (without it the
-  release build crashes at start in Microsoft.UI.Xaml.dll).
-- The XAML ink types are in `Microsoft.UI.Xaml.Controls` (InkPresenter, InkStrokeContainer, InkInputProcessingMode,
-  ...) and clash with `Windows.UI.Input.Inking` (InkStroke, InkPoint, InkStrokeBuilder, InkDrawingAttributes) –
-  use aliases.
-- `InkStrokeContainer` has no public constructor and `InkPresenter.StrokeContainer` is read-only: pages adopt the
-  canvas' container. A removed stroke cannot be re-added: undo adds `Clone()`s.
-- Windows ink draws a stroke of size s at pressure p about `s * (0.25 + 1.5 p)` wide (measured; the docs only say
-  `Size` is in DIPs): exactly s at half pressure, 1.75 s at full pressure. **Xournal++'s width means the width at full
-  pressure** (a segment is tool width × pressure). Until 2026-11-18 the app used the width as Windows ink's size, so the
-  same setting wrote thicker than Xournal (user's document: GTK strokes at 1.41 drawn 0.86 pt median, ours at "1" drawn
-  1.11 pt). Now a pen of Xournal width w has size w / 1.75 (`InkStrokes.FullPressureFactor`, `BallpointPen`), the file
-  gets tool width = size × 1.75 and the drawn width per segment, and a loaded pressure stroke gets size = its widest width
-  / 1.75 (Xournal's own strokes: the tool width; older strokes of this app keep their segment widths). Shapes have no
-  pressure and are drawn at the full width (`InkStrokes.ToolWidth`), as in Xournal. Real pen (user's Lenovo pen, demo
-  probe 2026-11-18, `InkWorkspace` logs "stroke collected" with the pressures): writing median 0.5–0.6, light 0.2–0.3,
-  firm up to 1.0 – the full range; at 1.41 handwriting is now drawn ~0.85–0.95 pt, like the user's GTK Xournal strokes.
-  The pens' width slider (whole steps only) chooses `PenWidths` steps 0.42 / 0.85 / 1.41 / 2.26 / 3.4 / 5.67 (Xournal's
-  pen widths), tested by `InkPages.Demo/UiTests/PenWidthTest.ps1`.
-- **Unprocessed input (with PR #12292, device and probe 2026-11-16):** positions are InkCanvas coordinates; Entered/
-  Hovered/Exited arrive also while the presenters ink, with `IsInverted` (eraser end and Lenovo eraser button: the
-  button press makes the pen re-enter as a new pointer, `inv=1`; the touch then has `IsEraser`); barrel = `barrel=1
-  right=1 kind=RightButtonPressed`. Switching only `InputProcessingConfiguration.Mode` during a hover is fine – the
-  press then arrives unprocessed. Rewriting `InputDeviceTypes`/`UpdateDefaultDrawingAttributes` or having
-  `IsEraserInputEnabled = false` made the presenter drop the hovering pointer (Exited in range, no press). With the
-  stock 2.6.6-experimental runtime the args threw 0x80004021 CO_E_NOT_SUPPORTED (WinUI forwarded the OS args from its
-  ink thread; `PointerPoint` is not marshalable) – that is what PR #12292 fixes. Probe app for such questions:
-  `.local-build/probe-pen` (not committed; InkCanvas + log + switches, the user triggers pen events).
 - UI tests on the user's desktop: check that the test window is in the foreground before injecting input (the user
   works in parallel); otherwise strokes go nowhere and the test lies.
-- `InkAnalyzer` (Windows.UI.Input.Inking.Analysis) works in the unpackaged app; for circles/ellipses
-  `InkAnalysisInkDrawing.Points` are the ends of both axes (0–2, 1–3).
-- The pen's eraser end works (native, `PEN_FLAG_INVERTED|PEN_FLAG_ERASER`; `INVERTED` alone draws ink). The
-  earlier "did not erase" was the synthetic input: strokes had a sample every ~38 DIPs and the eraser crossed between
-  two – the Windows eraser does not hit a collected stroke between far-apart samples (two-point shape strokes from
-  `InkStrokeBuilder` are hit along the line). `Inj` now injects a sample every ~4 DIPs, like a real pen.
-- UI Automation: the InkToolbar's own buttons have the ids `InkToolbarBallpointPenButton`,
-  `InkToolbarHighlighterButton`, `InkToolbarEraserButton` (their `x:Name`/`AutomationProperties.Name` is
-  ignored); custom buttons and other controls use their `x:Name` (PenToolbar sets `AutomationId`s: `PenButton1..n`,
-  `HighlighterButton1..n`, `WholeStrokeEraseButton` (the eraser's mode toggle), `SelectButton`, `ShapeButton`, `StencilButton`, `UndoButton`, ...;
-  `RecognizeButton` is a CheckBox in the shape tool's options).
-- **`InkToolbarCustomToolButton`'s template had no Checked visual states and no template defined
-  `ShowExtensionGlyph`/`HideExtensionGlyph`** (WinUI InkToolbar.xaml; UWP's generic.xaml in the Windows SDK has a
-  `GlyphVisualStates` group): an active custom tool (select, shapes) looked inactive and never showed the options
-  chevron. Fixed in the fork's runtime (commit "InkToolbar: show the checked state and the options chevron of custom
-  tools", branch `fix/ink-runtime-inktoolbar`; upstream PR branch `fix/inktoolbar-customtool-checked-state`, PR not
-  opened – needs the user's approval): custom tools show their state natively, the chevron follows
-  `IsExtensionGlyphShown` (checked and has `ConfigurationContent`); the app has no workaround any more. InkToolbar draws its glyphs at 16 (`InkToolbarButtonFontSize`),
-  FontIcon defaults to 20: custom buttons' icons are 16 (`PenToolbar.Glyph`/`Sized`).
-- InkToolbar keeps only **one** built-in ballpoint/highlighter/eraser button (further ones are ignored) and orders its
-  buttons itself: built-in pens, custom pens, eraser, custom tools, stencil, toggles. Several pens = custom pen buttons
-  (Microsoft's "custom pen" pattern); the highlighter is a custom pen too, so it stands after the pen presets.
-- `ScrollView` needs `ContentOrientation="Vertical"` (with `None`, zoomed content was clipped at its unzoomed width).
 - `PdfPage.Size` is in DIPs (points × 96/72); `PdfPageRenderOptions.SourceRect` too.
 - .xopp: highlighter alpha 0x7f; only the first PDF background carries `domain`/`filename`; `pageno` may look
   like "3ll" in old files; copied PDF areas of other builds are `<teximage>` with a one-page PDF as base64.
-- Ink ignores posted window messages: UI tests need real pointer input (`InjectSyntheticPointerInput`).
 - Explorer (2026-11-15): one `MenuFlyout` resource is shared by all rows as `ContextFlyout` (`FlyoutBase.Target` =
   the TreeViewItem, `TreeView.ItemFromContainer` gives the row). `DispatcherQueue.TryEnqueue(
   timer.Start)` (method group of a WinRT object) throws InvalidCastException while marshaling – use a lambda. A
@@ -368,69 +296,12 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 - The debug build (HEAD before the explorer work too) sometimes crashed with 0xc000027b (stowed exception) in
   CoreMessagingXP.dll when started/closed by a script (`Start-Process`, `CloseMainWindow`) – not investigated.
 
-- **`InkStroke.PointTransform` set on a stroke in the canvas' container is redrawn live** (sandbox 2026-11-15):
-  moving and scaling selections preview through it; the pen width is not scaled (the drawn width stays, matching
-  Xournal's file where only the points change). Windows ink's clipboard (`CopySelectedToClipboard`/`PasteFromClipboard`)
-  carries the transform: a scaled stroke pastes at its scaled size (sandbox step 03g2).
 - **TreeView crash** (0xC0000005/0xC0000374): replacing the tree's items while it still had an item of the old list
   selected, then selecting the new one, crashed WinUI when the explorer pane was closed (no containers). Also on main
   before 2026-11-15; reproduced locally without input (a new subfolder while the pane was closed). Fix: deselect
   before replacing `ItemsSource`. Lists in this app are given new `ItemsSource` lists instead of Clear/Add on a
   bound `ObservableCollection` (the tasks list did crash once that way in a run that also rebuilt the tree – not
   isolated).
-- `CommandBarFlyout` with `ShouldConstrainToRootBounds = false`, `ShowMode = Transient` and
-  `OverlayInputPassThroughElement` = the window's root: drawn above the ink, a pen tap beside it reaches the page.
-  It stays open over ContentDialogs. **But while it is open, the release of a barrel drag (pen + right button)
-  reaches no XAML element** (sandbox 2026-11-16, synthetic pen): not the page's surface (`CapturePointer` returned
-  true), not the window root with `handledEventsToo`, no PointerCaptureLost/Canceled; pen-tip releases arrive, and
-  without the flyout the barrel release arrives. Hiding it at the press or at the first move does not help (the
-  windowed popup has the pointer from the press). So a barrel move was only previewed, never committed. Not used any
-  more for the selection (see Decided); never lay a windowed popup over the page where the barrel drags.
-- **Hover takeover and stale presenter events (sandbox 2026-11-17, demo log):** switching the presenters' devices to
-  None when the pen hovers over the selection makes them report Exited about 50 ms later; before, that stale event gave
-  the pen back to the ink, so the press went to the presenters and the drag silently ran on the ink path (with its
-  scroll drift). Now only XAML gives the pen back (`InkTools.Hand`: presenter events never release a takeover, none
-  change it while a XAML drag runs).
-- **Windowed popups and pen drags:** a toolbar button's tooltip (the mouse resting on it) and the keyboard-accelerator
-  tooltip of an element with `KeyboardAccelerators` (shown wherever the pen hovers) are windowed popups; while one is
-  open a barrel gesture's release is lost and a XAML drag can lose its capture. Accelerators on a root element need
-  `KeyboardAcceleratorPlacementMode = Hidden` (the demo); the app's accelerators are on menu items. Tests move the
-  mouse off the toolbar after each click (`TestKit.Button`).
-- **Selection drag lost its capture once - fixed in the fork's WinUI (2026-11-18):** ~60 ms into a XAML selection drag
-  the island's `Microsoft.UI.Input.InputPointerSource` raises `PointerRoutedAway` for the pen and ~3 ms later
-  `PointerRoutedTo` (seen via `InputPointerSource.GetForIsland(XamlRoot.ContentIsland)`). Trigger: a barrel drag after an
-  earlier XAML drag with the pen TIP (possible with a real pen). Who routes the pointer away and back is closed source
-  (Microsoft.UI.Input routing / the OS ink presenter behind the lifted InkCanvas); not a popup, not the ScrollView, not
-  mouse, not the presenters' settings. WinUI XAML mapped WM_POINTERROUTEDAWAY to XCP_POINTERSUSPENDED (capture released,
-  PointerCaptureLost, pointer state dropped) and ignored WM_POINTERROUTEDTO/RELEASED; Win32 does not change capture on a
-  route-away (WM_POINTERROUTEDAWAY "is not sent with either a WM_POINTERUP message or a WM_POINTERCAPTURECHANGED
-  message"; a route back sends no WM_POINTERDOWN). Fork commit 3d994d89 "Keep pointer capture while a pointer is routed
-  away and back" (branch `fix/ink-runtime-capture`; upstream PR branch `fix/xaml-capture-across-pointer-route`; issue/PR
-  not opened - public, needs the user's approval): `PointerInputProcessor` remembers routed-away pointers and keeps their
-  state; RoutedTo (or any further input) resumes, RoutedReleased (or a new press) ends the interaction as before.
-  Sandbox: the repro (barrel drag after a tip drag, held at the view's edge) and `ToolsTest.ps1` record a CombinedEdit
-  without capture loss; with runtime 1cc68a49 the same repro logged "selection drag: pointer capture lost".
-- **Highlighter presets drew opaque - fixed in the fork's WinUI (2026-11-18, `InkPages.Demo/UiTests/HighlighterTest.ps1`):**
-  not the compositor: Windows draws `DrawAsHighlighter` ink correctly in the lifted InkCanvas (probe: strokes added in
-  code, and pen strokes with attributes set by `UpdateDefaultDrawingAttributes`, blend as highlighters - the darker
-  color wins). WinUI's InkToolbar dropped custom pens' attributes: `InkToolbar::UpdateInkDrawingAttributes` built them
-  from the tool kind only (color, width), `InkToolbarCustomPen::CreateInkDrawingAttributes` called its own default core
-  instead of the app's override, and the pen buttons' `CreateInkDrawingAttributes` (never called before) read the width
-  through a null `try_as`. So `HighlighterPen` (an `InkToolbarCustomPen`) drew as a plain opaque pen, with the stock
-  2.6.6-experimental runtime too. Fork commit d3b1bf22 "InkToolbar: use the pen button's drawing attributes, including
-  custom pens" (branch `fix/ink-runtime-highlighter`; upstream PR branch `fix/inktoolbar-custompen-attributes`; issue/PR
-  not opened - public, needs the user's approval). Side effect: the built-in highlighter button now gets UWP's chisel
-  tip (unused here). Loaded .xopp highlighter strokes were never affected (`StrokeConverter` sets the attributes).
-- **Local WinUI builds** (2026-11-18): `tools/Build-WinUILocal.ps1 -Source D:\wb` (a worktree of the fork on the Dev
-  Drive; short path) runs the fork workflow's x64fre steps with Windows PowerShell; the first build took 57 min and loads all 12
-  cores (MSBuild /m:4, cl /MP); how fast an incremental build is was not measured yet. For iterating on WinUI fixes; the app's pin still
-  comes from a fork release built by Actions.
-- **Ruler/protractor (WinUI source + sandbox probe, 2026-11-17):** the stencil belongs to the InkToolbar's
-  `TargetInkCanvas`: `InkToolbar::SetStencilVisibility` → `InkPresenter::SetRulerEnabled` creates an OS
-  `InkPresenterRuler` on that presenter (default place: rotated 45° at the page's top left, in page coordinates). When the
-  target changes, WinUI hides the stencil and unchecks the button (InkToolbar.cpp ~1567) – so re-targeting to the page in
-  view (`ToolController.SetCurrentPage`) makes the ruler vanish when another page becomes the middle one. Kept so (user, 2026-11-17: the target stays the page in view, not the page under the pen). Touch on the
-  ruler moves it. Set the target only after the first layout (before it every page lies at y 0).
 - Accelerators of the menu (Ctrl+A/C/V/X/D, Del) do not fire while a TextBox has focus (sandbox: Ctrl+A, Del in the
   task box edited the text, the page selection stayed).
 - `RegisterApplicationRestart` (kernel32) is registered at start: Windows restarts the app after a crash (after
