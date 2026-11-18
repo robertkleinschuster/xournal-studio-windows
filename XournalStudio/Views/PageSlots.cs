@@ -201,11 +201,7 @@ public sealed class PageSlots(StackPanel panel, InkWorkspace ink, Action strokes
         var page = pages[index];
         var started = System.Diagnostics.Stopwatch.StartNew();
         var view = new PageView(page, pdf, strokes);
-        if (ink.InkHidden)
-        {
-            view.InkCanvas.Visibility = Visibility.Collapsed; // a dialog is open (InkWorkspace.InkHidden; set again by SetPages)
-        }
-        ink.Attach(view);
+        ink.Attach(view); // hidden at once while a dialog is open (InkWorkspace.InkHidden)
         panel.Children[index] = view; // same size: the layout does not move
         views[page] = view;
         DebugLog.Write($"page {index + 1}: view created ({strokes.Count} strokes, {started.ElapsedMilliseconds} ms)");

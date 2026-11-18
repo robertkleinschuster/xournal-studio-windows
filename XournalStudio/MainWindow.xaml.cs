@@ -40,6 +40,7 @@ public sealed partial class MainWindow : Window
 
         messages = new Messages(Info);
         InkLog.Writer = DebugLog.Write;
+        InkLog.ErrorWriter = message => DebugLog.Write($"ink error: {message}");
         bar = AppToolbar.Create(settings);
         ToolbarHost.Content = bar;
         AddAppButtons();
@@ -66,8 +67,9 @@ public sealed partial class MainWindow : Window
         {
             UndoMenuItem.IsEnabled = ink.Undo.CanUndo;
             RedoMenuItem.IsEnabled = ink.Undo.CanRedo;
-            session.MarkChanged();
         };
+        // Only real edits of the ink (recorded, undone, redone) – not a cleared history when another document opens.
+        ink.Undo.ContentChanged += (_, _) => session.MarkChanged();
         pages.PagesChanged += (_, _) => session.MarkChanged();
         session.StateChanged += (_, _) => Title = $"{session.Title} – Xournal Studio";
         session.FilesChanged += (_, _) => RefreshExplorer();

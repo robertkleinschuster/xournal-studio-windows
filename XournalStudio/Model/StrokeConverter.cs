@@ -20,17 +20,12 @@ public static class StrokeConverter
     // strokes), and the tool width written back is size * 1.75 - so the file keeps Xournal's meaning of the width.
     private static double WidthFactor(double pressure) => InkStrokes.WidthFactor(pressure);
 
-    private static double PressureFor(double widthFactor) => (widthFactor - 0.25) / 1.5;
+    private static double PressureFor(double widthFactor) => InkStrokes.PressureFor(widthFactor);
 
     private const byte HighlighterAlpha = 0x7f;
 
     private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
-    // InkStrokeBuilder is not agile (MarshalingType.None): one per thread – pages' strokes are read on the thread pool.
-    [ThreadStatic]
-    private static InkStrokeBuilder? builder;
-
-    private static InkStrokeBuilder Builder => builder ??= new InkStrokeBuilder();
 
     /// <summary>
     /// A stroke element as drawn by Xournal: its color (with the file's alpha), its points and the width of each
@@ -180,10 +175,7 @@ public static class StrokeConverter
             points.Add(points[0]);
         }
 
-        Builder.SetDefaultDrawingAttributes(attributes);
-        var stroke = Builder.CreateStrokeFromInkPoints(points, Matrix3x2.Identity);
-        stroke.DrawingAttributes = attributes;
-        return stroke;
+        return InkStrokes.FromPoints(points, attributes); // on any thread: pages' strokes are read on the thread pool
     }
 
     /// <param name="committed">The stroke's transform as written (a move previewed on it is not); null: its PointTransform.</param>
