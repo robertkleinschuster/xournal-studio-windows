@@ -378,6 +378,9 @@ public sealed class XoppPage
     /// <summary>Raised when pictures got new bounds (moved, scaled).</summary>
     public event EventHandler<IReadOnlyCollection<XElement>>? ImagesMoved;
 
+    /// <summary>Adds elements to the top layer of a page without view (building a document: the iPad import).</summary>
+    public void AddToTopLayer(IEnumerable<XElement> elements) => element.Elements("layer").Last().Add(elements);
+
     /// <summary>Adds pictures (new ones go to the top layer, like strokes).</summary>
     public void AddImages(IReadOnlyCollection<XElement> images)
     {

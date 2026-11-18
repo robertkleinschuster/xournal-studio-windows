@@ -33,19 +33,20 @@ public sealed class PdfRenderer
 
     /// <summary>
     /// Renders <paramref name="sourceDips"/> of the page (its whole area when null; DIPs like <see cref="PdfPage.Size"/>)
-    /// into a bitmap of <paramref name="width"/> × <paramref name="height"/> pixels on white (BGRA8, premultiplied).
+    /// into a bitmap of <paramref name="width"/> × <paramref name="height"/> pixels on white, or on nothing when
+    /// <paramref name="transparent"/> (BGRA8, premultiplied).
     /// Throws <see cref="OperationCanceledException"/> when <paramref name="cancellation"/> is cancelled before the
     /// rendering began (a render that runs is finished).
     /// </summary>
     public async Task<SoftwareBitmap> RenderAsync(PdfPage page, Rect? sourceDips, uint width, uint height,
-        CancellationToken cancellation = default)
+        CancellationToken cancellation = default, bool transparent = false)
     {
         await gate.WaitAsync(cancellation);
         try
         {
             ObjectDisposedException.ThrowIf(shutDown, this);
             cancellation.ThrowIfCancellationRequested();
-            return await Task.Run(() => RenderWithRetryAsync(page, sourceDips, width, height));
+            return await Task.Run(() => RenderWithRetryAsync(page, sourceDips, width, height, transparent));
         }
         finally
         {
@@ -68,24 +69,24 @@ public sealed class PdfRenderer
         }
     }
 
-    private async Task<SoftwareBitmap> RenderWithRetryAsync(PdfPage page, Rect? sourceDips, uint width, uint height)
+    private async Task<SoftwareBitmap> RenderWithRetryAsync(PdfPage page, Rect? sourceDips, uint width, uint height, bool transparent)
     {
         try
         {
-            return await RenderOnceAsync(page, sourceDips, width, height);
+            return await RenderOnceAsync(page, sourceDips, width, height, transparent);
         }
         catch (Exception e) when (e.HResult is DxgiDeviceRemoved or DxgiDeviceReset) // COMException or Vortice's SharpGenException
         {
             // The GPU was reset or removed (driver update, sleep): a new device, once.
             DebugLog.Write("pdf render: device lost, recreating", e);
             ReleaseDevice();
-            return await RenderOnceAsync(page, sourceDips, width, height);
+            return await RenderOnceAsync(page, sourceDips, width, height, transparent);
         }
     }
 
     private const int DxgiDeviceRemoved = unchecked((int)0x887A0005), DxgiDeviceReset = unchecked((int)0x887A0007);
 
-    private async Task<SoftwareBitmap> RenderOnceAsync(PdfPage page, Rect? sourceDips, uint width, uint height)
+    private async Task<SoftwareBitmap> RenderOnceAsync(PdfPage page, Rect? sourceDips, uint width, uint height, bool transparent)
     {
         EnsureDevice();
         var target = new Texture2DDescription
@@ -111,7 +112,7 @@ public sealed class PdfRenderer
             Bottom = (float)(area.Y + area.Height),
             DestinationWidth = width,
             DestinationHeight = height,
-            R = 1, G = 1, B = 1, A = 1,
+            R = transparent ? 0 : 1, G = transparent ? 0 : 1, B = transparent ? 0 : 1, A = transparent ? 0 : 1,
             IgnoreHighContrast = 1,
         };
         IntPtr pageUnknown = WinRT.MarshalInspectable<object>.FromManaged(page);

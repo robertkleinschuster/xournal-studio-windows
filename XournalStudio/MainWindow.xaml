@@ -48,6 +48,9 @@
                         <KeyboardAccelerator Modifiers="Control" Key="E" />
                     </MenuFlyoutItem.KeyboardAccelerators>
                 </MenuFlyoutItem>
+                <MenuFlyoutItem Text="PDF mit iPad-Anmerkungen importieren…" Click="OnImportPdf">
+                    <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8B5;" /></MenuFlyoutItem.Icon>
+                </MenuFlyoutItem>
                 <MenuFlyoutSeparator />
                 <MenuFlyoutItem Text="Ordner öffnen…" Click="OnOpenFolder">
                     <MenuFlyoutItem.Icon><SymbolIcon Symbol="Folder" /></MenuFlyoutItem.Icon>

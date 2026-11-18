@@ -225,7 +225,7 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   ContentDialogs; hides the ink while one is open – `PagesController.InkHidden`, also on views created meanwhile), `Messages` (InfoBar),
   `EditCommands` (cut/copy/paste/duplicate/delete/select all; pasted content placed at the left margin below the
   page's content and selected; moves a dragged selection's elements to another page), `TasksView` + `TaskItem`
-  (todo.txt pane), `PdfExportCommand` (picker, never over the background PDF),
+  (todo.txt pane), `PdfExportCommand` (picker, never over the background PDF), `PdfImportCommand` (iPad import),
   `ExplorerView` + `ExplorerItem` (TreeView of the project folder in the SplitView pane, git colors incl. folders,
   sync button; context menus `ItemMenu`/`FolderMenu` and F2/Del/Ctrl+Shift+C on the tree raise `CommandRequested`,
   which `MainWindow` carries out because the open document may be affected; "Im Explorer anzeigen" = WinRT
@@ -588,7 +588,29 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   annotation the screen shows (not Hidden/NoView) with its normal appearance into the background PDF's pages (ISO 32000-1
   12.5.5) before export; PDFsharp's own `PdfAcroForm.Flatten` covers form fields only. A PDF PDFsharp cannot open for
   changing (permissions password) is exported without them and the InfoBar says so (`AnnotationsLeftOut`).
-  Converting such annotations to .xopp strokes was asked for too (not done: Preview's signatures are Stamps whose
-  appearance is vector paths, not `/Ink` annotations).
+- **iPad import (user, 2026-11-18): Datei → PDF mit iPad-Anmerkungen importieren** – explicit, never automatic: pick
+  the annotated PDF, then the .xopp to write; its PDF (the source without the markup) goes beside it with the same name,
+  the source stays untouched (`Views/PdfImportCommand`, `Services/PdfMarkupImport`). What iPadOS writes (the user's
+  ue1–3, Physik script, GET cover sheet; undocumented, decoded with the help of libfreeform's `pkdrawing.rs` and
+  notability-goodnotes' `pencilkit.py`):
+  - Handwriting = a `/Stamp` whose `/AAPL:AKExtras` holds a base64 NSKeyedArchiver plist (`AKInkAnnotation2`, read
+    with plist-cil: `Model/AppleMarkup`) with a PencilKit drawing (`Model/PencilKitDrawing`, protobuf read with
+    Google.Protobuf): `wrdð`+version, or older gzip; drawing coordinates = the page, top left, in points (`drawingSize`).
+    The appearance is only a raster image. Strokes may carry a transform (moved); erased strokes keep their whole path
+    and list visible pieces (#11) with parametric ranges and **mask polygons = the visible area** (a piece whose mask holds
+    none of its points is not shown – checked against Apple's images). Points are curve control points ~1 pt apart, used
+    as the polyline; force/opacity were constant (1) in all drawings: no pressure is taken over.
+  - Widths measured as ink area ÷ stroke length on Apple's appearance images (eight drawings, all 1.0 pt): pen width
+    2.5 → 1.0 pt (factor 0.4), marker ≈ 1.2 × (→ Xournal highlighter, alpha 0x7f).
+  - Pasted screenshots are `AKImageAnnotation`s without the original image (`imageAsData` is $null): taken as pictures
+    rendered by Windows.Data.Pdf from a temporary PDF holding only those annotations (transparent background,
+    `PdfRenderer` `transparent:`, 2 px/pt). Any other annotation that shows something becomes such a picture too
+    (stamps, signatures, a drawing that cannot be read, iOS 26 PaperKit drawings: `/PPK` "crdt" data, a further
+    undocumented format, not decoded). Links, form fields and annotations without appearance stay in the PDF.
+  - iPadOS (PaperKit) leaves an earlier appearance of a drawing as a separate `/Stamp` with only `/PPKID`/`/PPKHash`
+    at the drawing's exact rectangle – pixel-identical to the drawing's: dropped with the drawing.
+  - `/FreeText` → `<text font="Sans">`, placed and sized as its appearance stream draws it (PDFsharp's `ContentReader`:
+    CTM × text matrix at the first show-text operator; Apple drew 11 pt for a /DA of 12 pt), y = baseline − 0.905 em.
+  Checked visually against Apple's rendering (side-by-side renders of the imported document's PDF export).
 - **PDF export:** PDFsharp pinned to 6.2.4, the last MIT version (6.5.0 is AGPL-3.0 with license acceptance – a
   license change for this project is the user's decision).

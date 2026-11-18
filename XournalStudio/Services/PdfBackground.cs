@@ -35,9 +35,12 @@ public sealed class PdfBackground
         return sizes;
     }
 
-    /// <summary>Renders an area of a page (in points) as PNG with <paramref name="pixelsPerPoint"/>.</summary>
+    /// <summary>
+    /// Renders an area of a page (in points) as PNG with <paramref name="pixelsPerPoint"/>: on white, or only what the page
+    /// draws when <paramref name="transparent"/>.
+    /// </summary>
     public async Task<(byte[] Png, int Width, int Height)> RenderAreaAsync(int pageIndex, Windows.Foundation.Rect area,
-        double pixelsPerPoint)
+        double pixelsPerPoint, bool transparent = false)
     {
         using var page = pdf.GetPage((uint)pageIndex);
         const double DipsPerPoint = 96.0 / 72;
@@ -45,7 +48,7 @@ public sealed class PdfBackground
             area.Width * DipsPerPoint, area.Height * DipsPerPoint);
         using var bitmap = await PdfRenderer.Shared.RenderAsync(page, source,
             (uint)Math.Max(1, Math.Round(area.Width * pixelsPerPoint)),
-            (uint)Math.Max(1, Math.Round(area.Height * pixelsPerPoint)));
+            (uint)Math.Max(1, Math.Round(area.Height * pixelsPerPoint)), transparent: transparent);
         return (await PictureRenderer.ToPngAsync(bitmap), bitmap.PixelWidth, bitmap.PixelHeight);
     }
 

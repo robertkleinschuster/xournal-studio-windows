@@ -24,6 +24,7 @@ public sealed partial class MainWindow : Window
     private readonly SyncController sync;
     private readonly EditCommands edit;
     private readonly PdfExportCommand export;
+    private readonly PdfImportCommand import;
     private readonly PenToolbar bar;
     private bool closeConfirmed;
 
@@ -57,6 +58,7 @@ public sealed partial class MainWindow : Window
         edit = new EditCommands(ink.Selection, pages, ink.Undo, messages, () => bar.Ink.ActiveTool = bar.Select);
         ink.TransferToPage = edit.TransferToPage;
         export = new PdfExportCommand(AppWindow.Id, session, messages);
+        import = new PdfImportCommand(AppWindow.Id, session, dialogs, messages);
         ink.Undo.Changed += (_, _) =>
         {
             UndoMenuItem.IsEnabled = ink.Undo.CanUndo;
@@ -188,6 +190,8 @@ public sealed partial class MainWindow : Window
     private void OnSync(object sender, RoutedEventArgs e) => sync.Sync(Explorer.RepositoryRoot);
 
     private async void OnExportPdf(object sender, RoutedEventArgs e) => await export.ExportAsync();
+
+    private async void OnImportPdf(object sender, RoutedEventArgs e) => await import.ImportAsync();
 
     // ---------------------------------------------------------------- edit
 

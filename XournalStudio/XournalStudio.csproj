@@ -45,6 +45,9 @@
     <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="2.6.6-experimental" />
     <PackageReference Include="Microsoft.WindowsAppSDK.DWrite" Version="2.6.6-experimental" />
     <PackageReference Include="PDFsharp" Version="6.2.4" />
+    <!-- Importing iPad markup (Model/PencilKitDrawing, Model/AppleMarkup): protobuf wire format and binary plists. -->
+    <PackageReference Include="Google.Protobuf" Version="3.34.2" />
+    <PackageReference Include="plist-cil" Version="2.3.1" />
     <!-- Direct3D for Windows.Data.Pdf's DirectX interop (Services/PdfRenderer). -->
     <PackageReference Include="Vortice.Direct3D11" Version="3.8.3" />
   </ItemGroup>

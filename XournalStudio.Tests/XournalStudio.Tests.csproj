@@ -33,6 +33,8 @@
     <!-- PDF export. -->
     <Compile Include="..\XournalStudio\Services\PdfExport.cs" Link="Services\PdfExport.cs" />
     <Compile Include="..\XournalStudio\Services\PdfAnnotationFlattener.cs" Link="Services\PdfAnnotationFlattener.cs" />
+    <!-- iPad markup import (without rendering pictures). -->
+    <Compile Include="..\XournalStudio\Services\PdfMarkupImport.cs" Link="Services\PdfMarkupImport.cs" />
   </ItemGroup>
   <ItemGroup>
     <Using Include="InkPages" />
@@ -40,6 +42,8 @@
   <ItemGroup>
     <PackageReference Include="LibGit2Sharp" Version="0.32.0" />
     <PackageReference Include="PDFsharp" Version="6.2.4" />
+    <PackageReference Include="Google.Protobuf" Version="3.34.2" />
+    <PackageReference Include="plist-cil" Version="2.3.1" />
     <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="2.6.6-experimental" />
     <PackageReference Include="Microsoft.WindowsAppSDK.DWrite" Version="2.6.6-experimental" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
