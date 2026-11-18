@@ -10,12 +10,14 @@ namespace XournalStudio.Views;
 
 /// <summary>
 /// Cut, copy, paste, duplicate, delete and select all. Whatever is pasted or duplicated ends up selected (with the
-/// selection tool active), ready to be moved, scaled, duplicated or deleted.
+/// selection tool active), ready to be moved, scaled, duplicated or deleted. Delete, select all, pasting Windows ink and
+/// selecting what was added are the library's (<see cref="InkCommands"/>); copy, cut, paste and duplicate of the file's
+/// own elements (pictures, PDF areas) are this app's.
 /// Pasting goes to the page in view, at the left margin below what is already on it (on the next grid line), so parts
 /// of an exercise stack up on a graph page; wider than the page, it is scaled down to fit.
 /// </summary>
 public sealed class EditCommands(
-    SelectionTool selection, PagesController pages, UndoStack undo, Messages messages, Action activateSelectTool)
+    InkCommands commands, SelectionTool selection, PagesController pages, UndoStack undo, Messages messages)
 {
     private const double Grid = 14.17;              // Xournal's graph spacing (5 mm)
     private const double PdfAreaPixelsPerPoint = 3; // 216 dpi: sharp text when pasted at the original size
@@ -38,15 +40,11 @@ public sealed class EditCommands(
     /// <summary>Deletes the selected strokes and pictures (undoable). False: nothing selected (or refused mid-drag).</summary>
     public bool Delete()
     {
-        var current = selection.Current;
-        if (current == null || !current.HasContent || RefusedWhileDragging("Löschen"))
+        if (selection.Current is not { HasContent: true } || RefusedWhileDragging("Löschen"))
         {
             return false;
         }
-        var edit = PageEdit.RemoveSelected(current); // what of it is still on the page
-        selection.Clear();
-        undo.Push(edit); // (an empty edit – everything selected was erased meanwhile – is not recorded)
-        return !edit.IsEmpty;
+        return commands.Delete();
     }
 
     /// <summary>
@@ -191,8 +189,7 @@ public sealed class EditCommands(
         {
             return;
         }
-        activateSelectTool();
-        selection.Select(view, view.Ink.StrokeContainer.GetStrokes().ToList(), view.Pictures.ToList());
+        commands.SelectAll(view);
     }
 
     /// <summary>
@@ -310,8 +307,7 @@ public sealed class EditCommands(
     {
         try
         {
-            activateSelectTool();
-            selection.Select(view, strokes, images);
+            commands.SelectAdded(view, strokes, images);
         }
         catch (Exception e)
         {
@@ -320,52 +316,14 @@ public sealed class EditCommands(
         }
     }
 
+    // Windows ink from another app (or from this one's copy as ink): at the left margin below the page's content.
     private void PasteInk(PageView view)
     {
-        var ink = view.Ink.StrokeContainer;
-        var before = ink.GetStrokes().Select(s => s.Id).ToHashSet();
-        var edit = new PageEdit(view);
-        try
+        if (commands.PasteInk(view, new Point(Grid, PasteTop(view.Page, 0)), Grid) == null)
         {
-            ink.PasteFromClipboard(new Point(Grid, PasteTop(view.Page, 0)));
-            edit.AddedStrokes.AddRange(ink.GetStrokes().Where(s => !before.Contains(s.Id)));
-            if (edit.AddedStrokes.Count == 0)
-            {
-                DebugLog.Write("paste ink: the clipboard's ink added no strokes");
-                ReportNothingAdded("Die Tinte in der Zwischenablage enthält keine Striche.");
-                return;
-            }
-            // Its height is only known now: below the page's end it goes to the top instead (as pictures do).
-            var bounds = Rect.Empty;
-            edit.AddedStrokes.ForEach(s => bounds.Union(s.BoundingRect));
-            if (bounds.Bottom > view.Page.Height)
-            {
-                var up = Matrix3x2.CreateTranslation(0, (float)(Grid - bounds.Top));
-                edit.AddedStrokes.ForEach(s => s.PointTransform *= up);
-            }
-            edit.AddedStrokes.ForEach(s => s.Selected = false);
+            ReportNothingAdded("Die Tinte in der Zwischenablage enthält keine Striche.");
         }
-        catch
-        {
-            // Strokes Windows ink added before it failed are taken back too (found by id); the caller reports the
-            // original error, nothing here may replace it.
-            try
-            {
-                var found = ink.GetStrokes().Where(s => !before.Contains(s.Id)).ToList(); // the list stays if this fails
-                edit.AddedStrokes.Clear();
-                edit.AddedStrokes.AddRange(found);
-            }
-            catch (Exception e)
-            {
-                DebugLog.Write("paste ink: finding the strokes to take back", e);
-            }
-            TakeBack(edit);
-            throw;
-        }
-        undo.Push(edit);
-        SelectAdded(view, edit.AddedStrokes.ToList(), [], "paste ink");
     }
-
     // Nothing was added: no undo step, the selection and tool stay as they were – and the user is told.
     private void ReportNothingAdded(string why) => messages.Show(InfoBarSeverity.Warning, "Nichts übernommen", why);
 

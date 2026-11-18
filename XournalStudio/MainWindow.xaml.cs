@@ -43,9 +43,12 @@ public sealed partial class MainWindow : Window
         bar = AppToolbar.Create(settings);
         ToolbarHost.Content = bar;
         AddAppButtons();
-        SetToolChoices();
-        ink = new InkWorkspace(bar, Scroller, partialErasing: !settings.WholeStrokeErasing);
-        KeepToolSettings();
+        ink = new InkWorkspace(bar, Scroller, settings.ToolChoices());
+        ink.ChoicesChanged += (_, _) =>
+        {
+            settings.Keep(ink.Choices);
+            settings.Save();
+        };
         pages = new PagesController(Scroller, PagesPanel, ink);
         dialogs = new Dialogs(() => Content.XamlRoot, pages);
         session = new DocumentSession(AppWindow.Id, pages, dialogs, messages, settings, () => ProjectFolder);
@@ -55,7 +58,7 @@ public sealed partial class MainWindow : Window
             Root.UpdateLayout(); // a document just opened: its pages are laid out before scrolling
             pages.ScrollToPage(index);
         });
-        edit = new EditCommands(ink.Selection, pages, ink.Undo, messages, () => bar.Ink.ActiveTool = bar.Select);
+        edit = new EditCommands(ink.Commands, ink.Selection, pages, ink.Undo, messages);
         ink.TransferToPage = edit.TransferToPage;
         export = new PdfExportCommand(AppWindow.Id, session, messages);
         import = new PdfImportCommand(AppWindow.Id, session, dialogs, messages);
@@ -268,39 +271,6 @@ public sealed partial class MainWindow : Window
     private const string InsertPageIcon = "F0 M1,1 H11 V19 H1 Z M2.5,2.5 V17.5 H9.5 V2.5 Z " +
         "M15.25,9.5 H16.75 V13.25 H19.5 V14.75 H16.75 V18.5 H15.25 V14.75 H12.5 V13.25 H15.25 Z";
     private const string DeletePageIcon = "F0 M1,1 H11 V19 H1 Z M2.5,2.5 V17.5 H9.5 V2.5 Z M12.5,13.25 H19.5 V14.75 H12.5 Z";
-
-    // The toolbar's controls hold the tools' choices (the workspace reads them); the settings keep them. Set before the
-    // workspace is created, saved on each change.
-    private void SetToolChoices()
-    {
-        bar.ShapeKind.SelectedIndex = (int)settings.Shape;
-        bar.SelectMode.SelectedIndex = (int)settings.SelectMode;
-        bar.EraserRadius.Value = settings.EraserRadius;
-        bar.RecognizeShapes.IsChecked = settings.RecognizeShapes;
-    }
-
-    private void KeepToolSettings()
-    {
-        bar.ShapeKind.SelectionChanged += (_, _) => Save(() => settings.Shape = (ShapeKind)bar.ShapeKind.SelectedIndex, bar.ShapeKind.SelectedIndex >= 0);
-        bar.SelectMode.SelectionChanged += (_, _) => Save(() => settings.SelectMode = (SelectMode)bar.SelectMode.SelectedIndex, bar.SelectMode.SelectedIndex >= 0);
-        bar.EraserRadius.ValueChanged += (_, e) => Save(() => settings.EraserRadius = e.NewValue);
-        ink.PartialErasingChanged += (_, _) => Save(() => settings.WholeStrokeErasing = !ink.PartialErasing);
-        bar.RecognizeShapes.Click += (_, _) => Save(() => settings.RecognizeShapes = bar.RecognizeShapes.IsChecked == true);
-        ink.Tools.PresetsChanged += (_, _) => Save(() =>
-        {
-            settings.Pens = ink.Tools.PenSettings.Select(p => new PenSetting { ColorIndex = p.ColorIndex, Width = p.Width }).ToList();
-            settings.Highlighters = ink.Tools.HighlighterSettings.Select(p => new PenSetting { ColorIndex = p.ColorIndex, Width = p.Width }).ToList();
-        });
-
-        void Save(Action change, bool valid = true)
-        {
-            if (valid)
-            {
-                change();
-                settings.Save();
-            }
-        }
-    }
 
     // ---------------------------------------------------------------- pages and view
 

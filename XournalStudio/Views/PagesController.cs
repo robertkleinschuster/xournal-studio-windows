@@ -68,8 +68,8 @@ public sealed class PagesController
     /// <summary>The pages' ink is hidden while a dialog is open (see <see cref="Dialogs"/>).</summary>
     public bool InkHidden
     {
-        get => slots.InkHidden;
-        set => slots.InkHidden = value;
+        get => ink.InkHidden;
+        set => ink.InkHidden = value;
     }
 
     /// <summary>The page in the middle of the viewport (or the last one above it).</summary>

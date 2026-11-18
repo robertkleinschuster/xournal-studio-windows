@@ -28,7 +28,6 @@ public sealed class PageSlots(StackPanel panel, InkWorkspace ink, Action strokes
     // then), so nothing reads a page's element while its view changes it.
     private readonly Dictionary<XoppPage, Task<List<(InkStroke Stroke, XElement Element)>>> reading = new();
     private PdfBackground? pdf;
-    private bool inkHidden;
 
     public int Count => pages.Count;
 
@@ -41,23 +40,6 @@ public sealed class PageSlots(StackPanel panel, InkWorkspace ink, Action strokes
     public int IndexOf(XoppPage page) => pages.IndexOf(page);
 
     public PageView? ViewOf(XoppPage page) => views.GetValueOrDefault(page);
-
-    /// <summary>
-    /// The pages' ink is hidden (collapsed) while a dialog is open – also on views created meanwhile (see
-    /// <see cref="Dialogs"/>).
-    /// </summary>
-    public bool InkHidden
-    {
-        get => inkHidden;
-        set
-        {
-            inkHidden = value;
-            foreach (var view in views.Values)
-            {
-                view.InkCanvas.Visibility = value ? Visibility.Collapsed : Visibility.Visible;
-            }
-        }
-    }
 
     /// <summary>Another document's pages: all placeholders (the views come with the next <see cref="Update"/>).</summary>
     public void Show(IReadOnlyList<XoppPage> shown, PdfBackground? background)
@@ -219,9 +201,9 @@ public sealed class PageSlots(StackPanel panel, InkWorkspace ink, Action strokes
         var page = pages[index];
         var started = System.Diagnostics.Stopwatch.StartNew();
         var view = new PageView(page, pdf, strokes);
-        if (inkHidden)
+        if (ink.InkHidden)
         {
-            view.InkCanvas.Visibility = Visibility.Collapsed;
+            view.InkCanvas.Visibility = Visibility.Collapsed; // a dialog is open (InkWorkspace.InkHidden; set again by SetPages)
         }
         ink.Attach(view);
         panel.Children[index] = view; // same size: the layout does not move

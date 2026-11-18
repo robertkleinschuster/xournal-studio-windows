@@ -214,7 +214,7 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   `XoppDocument.Snapshot` (detached XML, PDF references as from a given base) + `Write` (any thread)
   serve saving and recovery copies; `SuggestedName`/`DefaultName` = Xournal's date-time name.
 - `MainWindow` only wires menus, toolbar and panes to the feature classes below (no feature logic).
-- `Views/` – `AppToolbar` (German texts, Xournal's palette, pen presets), `PageView` (the library's `InkPage` for a
+- `Views/` – `AppToolbar` (the library's `PenToolbarTexts.German` with this app's selection tip, `XournalPalette`, the user's `ToolChoices` from `AppSettings`, kept on `InkWorkspace.ChoicesChanged`), `PageView` (the library's `InkPage` for a
   `XoppPage`: background color + ruling or PDF page rendered at the current zoom near the viewport, pictures, texts,
   drawn strokes; implements the page content over `XoppPage`; `Close` when released), `PageSlots` (lazy page views:
   one child of the StackPanel per page – its `PageView` near the viewport, else a placeholder of its size; see Facts),
@@ -222,8 +222,8 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   which pages have views and PDF rendering near the viewport, every 120 ms while the view moves), `DocumentSession` (open,
   save, save-as with the suggested name/folder, the leave question, recovery offer and `Autosave`),
   `RecoveryPrompt`, `SyncController`, `ExplorerCommands` (what the explorer asks for), `Dialogs` (all
-  ContentDialogs; hides the ink while one is open – `PagesController.InkHidden`, also on views created meanwhile), `Messages` (InfoBar),
-  `EditCommands` (cut/copy/paste/duplicate/delete/select all; pasted content placed at the left margin below the
+  ContentDialogs; hides the ink while one is open – `PagesController.InkHidden` = the library's `InkWorkspace.InkHidden`, also on views created meanwhile), `Messages` (InfoBar),
+  `EditCommands` (cut/copy/paste/duplicate of the file's elements; delete, select all, pasting Windows ink and selecting what was added through the library's `InkCommands`; pasted content placed at the left margin below the
   page's content and selected; moves a dragged selection's elements to another page), `TasksView` + `TaskItem`
   (todo.txt pane), `PdfExportCommand` (picker, never over the background PDF), `PdfImportCommand` (iPad import),
   `ExplorerView` + `ExplorerItem` (TreeView of the project folder in the SplitView pane, git colors incl. folders,
