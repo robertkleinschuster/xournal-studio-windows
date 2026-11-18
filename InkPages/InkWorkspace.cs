@@ -311,6 +311,21 @@ public sealed class InkWorkspace
     }
 
     /// <summary>Records new ink for undo; with shape recognition on, hand-drawn shapes become clean ones.</summary>
+    // The pen's real pressures and the widths Windows ink draws from them (diagnostics for the pressure-width mapping).
+    private static void LogPressure(InkStroke stroke)
+    {
+        var a = stroke.DrawingAttributes;
+        var pressures = stroke.GetInkPoints().Select(p => (double)p.Pressure).Order().ToList();
+        if (pressures.Count == 0)
+        {
+            return;
+        }
+        double median = pressures[pressures.Count / 2];
+        InkLog.Write($"stroke collected: {pressures.Count} points, size {a.Size.Width:0.###} (tool width " +
+            $"{InkStrokes.ToolWidth(a):0.###}), pressure min {pressures[0]:0.00} median {median:0.00} max {pressures[^1]:0.00}, " +
+            $"drawn width at median {InkStrokes.DrawnWidth(a, (float)median):0.###}");
+    }
+
     private async void OnStrokesCollected(InkPage page, IReadOnlyList<InkStroke> strokes)
     {
         int shown = generation;
@@ -320,6 +335,7 @@ public sealed class InkWorkspace
         {
             foreach (var stroke in strokes.ToList())
             {
+                LogPressure(stroke);
                 InkStroke? shape = null;
                 if (bar.RecognizeShapes.IsChecked == true && !stroke.DrawingAttributes.DrawAsHighlighter)
                 {

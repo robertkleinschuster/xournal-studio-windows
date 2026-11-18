@@ -22,6 +22,17 @@ public static class InkStrokes
     /// <summary>The factor of <see cref="DrawnWidth"/> at a pressure.</summary>
     public static double WidthFactor(double pressure) => 0.25 + 1.5 * pressure;
 
+    /// <summary>
+    /// The factor at full pressure (1.75). Xournal++'s pen width is the width at full pressure (a segment is width ×
+    /// pressure), Windows ink's size the width at half pressure: a pen of Xournal width w draws with size w / this, so it
+    /// is never wider than w.
+    /// </summary>
+    public static double FullPressureFactor => WidthFactor(1);
+
+    /// <summary>The pen's width as Xournal means it: the width at full pressure (a pen without pressure: its size).</summary>
+    public static double ToolWidth(InkDrawingAttributes attributes) =>
+        attributes.IgnorePressure ? attributes.Size.Width : attributes.Size.Width * FullPressureFactor;
+
     /// <summary>A stroke through these samples with these attributes (what the partial eraser leaves of a stroke).</summary>
     public static InkStroke FromSamples(IEnumerable<InkSample> samples, InkDrawingAttributes attributes)
     {

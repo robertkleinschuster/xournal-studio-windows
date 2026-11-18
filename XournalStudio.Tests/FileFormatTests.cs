@@ -121,7 +121,7 @@ public class FileFormatTests : IDisposable
     [Fact]
     public void StrokeRoundTripKeepsPointsColorAndWidths()
     {
-        var e = XElement.Parse("""<stroke tool="pen" color="#ff0000ff" width="2 1.5 2.5 3">1.5 2.5 10 20 30 40 50 60</stroke>""");
+        var e = XElement.Parse("""<stroke tool="pen" color="#ff0000ff" width="2 1.5 1.8 1.2">1.5 2.5 10 20 30 40 50 60</stroke>""");
         var stroke = StrokeConverter.FromXml(e)!;
         var back = StrokeConverter.ToXml(stroke);
 
@@ -129,7 +129,19 @@ public class FileFormatTests : IDisposable
         Assert.Equal("#ff0000ff", (string?)back.Attribute("color"));
         Assert.Equal("1.5 2.5 10 20 30 40 50 60", back.Value);
         var widths = ((string)back.Attribute("width")!).Split(" ").Select(s => double.Parse(s, System.Globalization.CultureInfo.InvariantCulture)).ToArray();
-        Assert.Equal(new[] { 2, 1.5, 2.5, 3 }, widths.Select(w => Math.Round(w, 2)));
+        Assert.Equal(new[] { 2, 1.5, 1.8, 1.2 }, widths.Select(w => Math.Round(w, 2)));
+        // Xournal's width is the width at full pressure: the ink draws at most that wide.
+        Assert.Equal(2 / InkStrokes.FullPressureFactor, stroke.DrawingAttributes.Size.Width, 6);
+    }
+
+    [Fact]
+    public void SegmentsWiderThanTheToolWidthKeepTheirWidths()
+    {
+        // Strokes written before 2026-11-18 (Windows ink's size as the tool width) have segments up to 1.75 times wider.
+        var e = XElement.Parse("""<stroke tool="pen" color="#000000ff" width="1 0.7 1.2 1.6">0 0 10 0 20 0 30 0</stroke>""");
+        var back = StrokeConverter.ToXml(StrokeConverter.FromXml(e)!);
+        var widths = ((string)back.Attribute("width")!).Split(" ").Select(s => double.Parse(s, System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+        Assert.Equal(new[] { 1.6, 0.7, 1.2, 1.6 }, widths.Select(w => Math.Round(w, 2)));
     }
 
     [Fact]

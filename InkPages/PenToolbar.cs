@@ -50,10 +50,10 @@ public sealed class PenToolbar : UserControl
         Ink = new InkToolbar { InitialControls = InkToolbarInitialControls.None, VerticalAlignment = VerticalAlignment.Center };
         // Presets: InkToolbar takes one built-in ballpoint and highlighter button only; any number of custom pen buttons,
         // each with its own palette index and width and Windows' own pen flyout (InkToolbarPenConfigurationControl). Its
-        // width slider moves in whole steps and shows whole numbers (WinUI's InkToolbarStrokeWidthSlider): the limits are
-        // whole numbers too (a minimum of 0.5 showed as a second "1").
+        // width slider moves in whole steps and shows whole numbers (WinUI's InkToolbarStrokeWidthSlider; a minimum of 0.5
+        // showed as a second "1"): a pen's slider value is a step of PenWidths, which BallpointPen draws.
         Pens = pens.Select((preset, i) =>
-            Preset(new BallpointPen(), texts.Pen, palette, preset, 1, 6, "\uE76D", "\uE88F", $"PenButton{i + 1}")).ToList();
+            Preset(new BallpointPen(), texts.Pen, palette, preset with { Width = PenWidths.StepOf(preset.Width) }, 1, PenWidths.Steps.Count, "\uE76D", "\uE88F", $"PenButton{i + 1}")).ToList();
         Highlighters = highlighters.Select((preset, i) =>
             Preset(new HighlighterPen(), texts.Highlighter, highlighterPalette, preset, 2, 30, "\uE7E6", "\uE891", $"HighlighterButton{i + 1}")).ToList();
 

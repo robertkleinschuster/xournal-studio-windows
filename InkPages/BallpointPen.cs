@@ -9,7 +9,8 @@ namespace InkPages;
 /// <summary>
 /// A ballpoint pen as an <see cref="InkToolbarCustomPen"/> (round tip, pressure, polyline): InkToolbar holds one
 /// built-in ballpoint button only, so pen presets are custom pen buttons – Microsoft's documented way to add pens
-/// ("Add an InkToolbar to a Windows app – custom pen").
+/// ("Add an InkToolbar to a Windows app – custom pen"). The flyout's width slider gives steps; the pen draws them with
+/// <see cref="PenWidths"/> (thinner than the slider's whole numbers allow).
 /// </summary>
 public sealed partial class BallpointPen : InkToolbarCustomPen
 {
@@ -17,7 +18,8 @@ public sealed partial class BallpointPen : InkToolbarCustomPen
     {
         Color = (brush as SolidColorBrush)?.Color ?? Microsoft.UI.Colors.Black,
         PenTip = PenTipShape.Circle,
-        Size = new Size(strokeWidth, strokeWidth),
+        // A step's width is Xournal's: the width at full pressure (see InkStrokes.FullPressureFactor).
+        Size = new Size(PenWidths.Of(strokeWidth) / InkStrokes.FullPressureFactor, PenWidths.Of(strokeWidth) / InkStrokes.FullPressureFactor),
         IgnorePressure = false,
         FitToCurve = false,
     };

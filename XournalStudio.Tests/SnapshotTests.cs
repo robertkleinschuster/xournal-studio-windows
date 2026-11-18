@@ -161,7 +161,7 @@ public class SnapshotTests
             var loaded = await Task.Run(() => XoppDocument.Load(path));
             var stroke = loaded.Pages.Single().Strokes.Single();
             Assert.Equal(3, stroke.GetInkPoints().Count);
-            Assert.Equal(2, stroke.DrawingAttributes.Size.Width);
+            Assert.Equal(3 / InkStrokes.FullPressureFactor, stroke.DrawingAttributes.Size.Width, 6); // widest segment at full pressure
             // And the builder of this thread still works while another thread's built strokes.
             Assert.NotNull(StrokeConverter.FromXml(XElement.Parse("""<stroke tool="pen" color="#000000ff" width="1">0 0 1 1</stroke>""")));
         }

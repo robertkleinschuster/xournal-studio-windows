@@ -20,11 +20,11 @@ public sealed class ShapeTool(UndoStack undo, Func<InkDrawingAttributes> pen)
         view = page;
         start = p;
         var attributes = pen();
-        width = attributes.Size.Width;
+        width = InkStrokes.ToolWidth(attributes);
         preview = new Polyline
         {
             Stroke = new SolidColorBrush(attributes.Color),
-            StrokeThickness = attributes.Size.Width,
+            StrokeThickness = width,
             StrokeLineJoin = PenLineJoin.Round,
             StrokeStartLineCap = PenLineCap.Round,
             StrokeEndLineCap = PenLineCap.Round,
@@ -51,7 +51,7 @@ public sealed class ShapeTool(UndoStack undo, Func<InkDrawingAttributes> pen)
             return; // a tap, not a shape
         }
         var attributes = pen();
-        var stroke = ShapeGeometry.CreateStroke(ShapeGeometry.Outline(Shape, start, end, attributes.Size.Width), attributes);
+        var stroke = ShapeGeometry.CreateStroke(ShapeGeometry.Outline(Shape, start, end, InkStrokes.ToolWidth(attributes)), attributes);
         page.Ink.StrokeContainer.AddStroke(stroke);
         var edit = new PageEdit(page);
         edit.AddedStrokes.Add(stroke);

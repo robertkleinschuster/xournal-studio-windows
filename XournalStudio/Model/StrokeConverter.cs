@@ -14,8 +14,10 @@ namespace XournalStudio.Model;
 /// </summary>
 public static class StrokeConverter
 {
-    // Xournal stores per-segment widths (tool width * pressure); Windows ink draws a stroke wider with pressure
-    // (InkStrokes.WidthFactor, measured): exactly its size at p = 0.5.
+    // Xournal stores the tool width (the width at full pressure) and per-segment widths (tool width * pressure); Windows
+    // ink draws a stroke wider with pressure (InkStrokes.WidthFactor, measured): exactly its size at p = 0.5, 1.75 times
+    // it at p = 1. A pressure stroke's ink size is therefore its widest width / 1.75 (the tool width for Xournal's own
+    // strokes), and the tool width written back is size * 1.75 - so the file keeps Xournal's meaning of the width.
     private static double WidthFactor(double pressure) => InkStrokes.WidthFactor(pressure);
 
     private static double PressureFor(double widthFactor) => (widthFactor - 0.25) / 1.5;
@@ -143,6 +145,7 @@ public static class StrokeConverter
 
         double width = widths.Count > 0 && widths[0] > 0 ? widths[0] : 1;
         bool hasPressure = widths.Count > 1;
+        double size = hasPressure ? Math.Max(width, widths.Skip(1).Max()) / InkStrokes.FullPressureFactor : width;
         bool highlighter = (string?)e.Attribute("tool") == "highlighter";
 
         var color = XoppColor.Parse((string?)e.Attribute("color"), Microsoft.UI.Colors.Black);
@@ -151,7 +154,7 @@ public static class StrokeConverter
         var attributes = new InkDrawingAttributes
         {
             Color = color,
-            Size = new Size(width, width),
+            Size = new Size(size, size),
             PenTip = PenTipShape.Circle,
             // Xournal++ draws the points as a polyline; Bezier fitting rounds the corners of shapes (rectangles).
             FitToCurve = false,
@@ -167,7 +170,7 @@ public static class StrokeConverter
             {
                 // widths[i + 1] is the width of segment i; the last point has none.
                 double w = widths[Math.Min(i + 1, widths.Count - 1)];
-                pressure = (float)Math.Clamp(PressureFor(w / width), 0.01, 1.0);
+                pressure = (float)Math.Clamp(PressureFor(w / size), 0.01, 1.0);
             }
             points.Add(new InkPoint(coords[i], pressure));
         }
@@ -202,7 +205,7 @@ public static class StrokeConverter
             coords.Append(Format(pos.X)).Append(' ').Append(Format(pos.Y));
         }
 
-        var widthValue = new StringBuilder(Format(width));
+        var widthValue = new StringBuilder(Format(attributes.IgnorePressure ? width : width * InkStrokes.FullPressureFactor));
         if (!attributes.IgnorePressure)
         {
             for (int i = 0; i < points.Count - 1; i++)

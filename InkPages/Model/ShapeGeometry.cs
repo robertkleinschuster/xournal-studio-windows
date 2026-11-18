@@ -43,13 +43,16 @@ public static class ShapeGeometry
         return Ellipse(center, rx, ry, angle);
     }
 
-    /// <summary>A stroke along <paramref name="points"/> in the pen's color and width, without pressure.</summary>
+    /// <summary>
+    /// A stroke along <paramref name="points"/> in the pen's color and width (<see cref="InkStrokes.ToolWidth"/>: a
+    /// pressure pen's width at full pressure, as Xournal draws shapes), without pressure.
+    /// </summary>
     public static InkStroke CreateStroke(IReadOnlyList<Point> points, InkDrawingAttributes pen)
     {
         var attributes = new InkDrawingAttributes
         {
             Color = pen.Color,
-            Size = pen.Size,
+            Size = new Size(InkStrokes.ToolWidth(pen), InkStrokes.ToolWidth(pen)),
             PenTip = PenTipShape.Circle,
             FitToCurve = false,
             IgnorePressure = true,

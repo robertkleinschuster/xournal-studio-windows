@@ -70,11 +70,12 @@ public sealed class ToolController
     /// <summary>The toolbar's eraser is the active tool.</summary>
     public bool EraserActive => toolbar.ActiveTool is InkToolbarEraserButton;
 
-    /// <summary>Color and width of the pen button, for shapes.</summary>
+    /// <summary>Color and width of the pen button as the pen draws them (size at half pressure), for shapes.</summary>
     public InkDrawingAttributes PenAttributes => new()
     {
         Color = (pen.SelectedBrush as SolidColorBrush)?.Color ?? Microsoft.UI.Colors.Black,
-        Size = new Windows.Foundation.Size(pen.SelectedStrokeWidth, pen.SelectedStrokeWidth),
+        Size = new Windows.Foundation.Size(PenWidths.Of(pen.SelectedStrokeWidth) / InkStrokes.FullPressureFactor,
+            PenWidths.Of(pen.SelectedStrokeWidth) / InkStrokes.FullPressureFactor),
     };
 
     /// <param name="pens">The toolbar's pen presets (colors and widths set by the toolbar).</param>
@@ -105,7 +106,7 @@ public sealed class ToolController
 
     /// <summary>The pen presets' colors (palette index) and widths, in their order.</summary>
     public IEnumerable<(int ColorIndex, double Width)> PenSettings =>
-        pens.Select(p => (p.SelectedBrushIndex, p.SelectedStrokeWidth));
+        pens.Select(p => (p.SelectedBrushIndex, PenWidths.Of(p.SelectedStrokeWidth))); // the drawn width (the slider gives a step)
 
     /// <summary>The highlighter presets' colors (palette index) and widths, in their order.</summary>
     public IEnumerable<(int ColorIndex, double Width)> HighlighterSettings =>

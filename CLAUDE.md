@@ -290,7 +290,18 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   use aliases.
 - `InkStrokeContainer` has no public constructor and `InkPresenter.StrokeContainer` is read-only: pages adopt the
   canvas' container. A removed stroke cannot be re-added: undo adds `Clone()`s.
-- Windows ink draws a stroke of size s at pressure p about `s * (0.25 + 1.5 p)` wide (measured).
+- Windows ink draws a stroke of size s at pressure p about `s * (0.25 + 1.5 p)` wide (measured; the docs only say
+  `Size` is in DIPs): exactly s at half pressure, 1.75 s at full pressure. **Xournal++'s width means the width at full
+  pressure** (a segment is tool width × pressure). Until 2026-11-18 the app used the width as Windows ink's size, so the
+  same setting wrote thicker than Xournal (user's document: GTK strokes at 1.41 drawn 0.86 pt median, ours at "1" drawn
+  1.11 pt). Now a pen of Xournal width w has size w / 1.75 (`InkStrokes.FullPressureFactor`, `BallpointPen`), the file
+  gets tool width = size × 1.75 and the drawn width per segment, and a loaded pressure stroke gets size = its widest width
+  / 1.75 (Xournal's own strokes: the tool width; older strokes of this app keep their segment widths). Shapes have no
+  pressure and are drawn at the full width (`InkStrokes.ToolWidth`), as in Xournal. Real pen (user's Lenovo pen, demo
+  probe 2026-11-18, `InkWorkspace` logs "stroke collected" with the pressures): writing median 0.5–0.6, light 0.2–0.3,
+  firm up to 1.0 – the full range; at 1.41 handwriting is now drawn ~0.85–0.95 pt, like the user's GTK Xournal strokes.
+  The pens' width slider (whole steps only) chooses `PenWidths` steps 0.42 / 0.85 / 1.41 / 2.26 / 3.4 / 5.67 (Xournal's
+  pen widths), tested by `InkPages.Demo/UiTests/PenWidthTest.ps1`.
 - **Unprocessed input (with PR #12292, device and probe 2026-11-16):** positions are InkCanvas coordinates; Entered/
   Hovered/Exited arrive also while the presenters ink, with `IsInverted` (eraser end and Lenovo eraser button: the
   button press makes the pen re-enter as a new pointer, `inv=1`; the touch then has `IsEraser`); barrel = `barrel=1
