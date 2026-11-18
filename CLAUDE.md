@@ -492,5 +492,17 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   files on install did not help (still 11 s), nor did framework-dependent .NET (85 instead of 272 DLLs: cold 9–10 s,
   warm a little slower) – both reverted. Likely the large unsigned native DLLs (the fork's WinUI) cost the scan; not
   measured further. Decided with the user: left as it is (the first start does not matter much); no Defender exclusion.
+- **Pages of another PDF (user, 2026-11-18; Seite → Seiten aus PDF einfügen, `InsertPdfPagesCommand`):** upstream
+  Xournal++ has one background PDF per document (`LoadHandler::loadBgPdf`, only the first PDF background names the
+  file; its own "insert PDF page" features – "With PDF background", "Append New PDF Pages" – use that PDF only). So
+  the chosen pages are appended to the **end** of the document's PDF (`PdfPageAppender`; the user agreed the original
+  PDF may change; appending keeps the numbers of its pages, another .xopp using the same PDF stays right) and the new
+  pages refer to them; annotations of the inserted pages are drawn into them first. A document without PDF takes the
+  chosen PDF as its PDF. PDF has no hidden pages: the appended pages show in other viewers (the alternative – an
+  attached copy `<name>.xopp.bg.pdf` – was offered to the user, not chosen yet).
+- **Explorer order = File Explorer's:** `ExplorerOrder` uses Windows' `StrCmpLogicalW` (numbers by value: Vorlesung 2
+  before 11).
+- The page in view is outlined (accent) in documents with more than one page (InkPages `MarkCurrentPage`, set by
+  `PagesController` from the document's page count).
 - **PDF export:** PDFsharp pinned to 6.2.4, the last MIT version (6.5.0 is AGPL-3.0 with license acceptance – a
   license change for this project is the user's decision).

@@ -54,6 +54,22 @@ public sealed class ExplorerTests : IDisposable
     }
 
     [Fact]
+    public void NamesAreSortedAsFileExplorerSortsThem()
+    {
+        string folder = Path.Combine(temp, "VO");
+        Directory.CreateDirectory(folder);
+        foreach (string name in new[] { "Vorlesung 11.pdf", "Vorlesung 2.pdf", "vorlesung 1.pdf", "Vorlesung 13.xopp", "Vorlesung 12.pdf" })
+        {
+            File.WriteAllText(Path.Combine(folder, name), "");
+        }
+
+        var vo = Assert.Single(ProjectTree.Read(temp).Children);
+
+        Assert.Equal(["vorlesung 1.pdf", "Vorlesung 2.pdf", "Vorlesung 11.pdf", "Vorlesung 12.pdf", "Vorlesung 13.xopp"],
+            vo.Children.Select(c => c.Name));
+    }
+
+    [Fact]
     public void FolderStatusFollowsTheFilesBelow()
     {
         string root = Path.Combine(temp, "repo");
