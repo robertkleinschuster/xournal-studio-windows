@@ -45,8 +45,8 @@ public sealed partial class MainWindow : Window
         InkLog.ErrorWriter = message => DebugLog.Error($"ink error: {message}");
         bar = AppToolbar.Create(settings);
         ToolbarHost.Content = bar;
+        ink = new InkWorkspace(bar, Scroller);
         AddAppButtons();
-        ink = new InkWorkspace(bar, Scroller, settings.ToolChoices());
         ink.ChoicesChanged += (_, _) =>
         {
             settings.Keep(ink.Choices);
@@ -223,21 +223,24 @@ public sealed partial class MainWindow : Window
 
     private void OnRowDuplicate(object sender, RoutedEventArgs e) { FocusDocument(); OnDuplicate(sender, e); }
 
-    private void OnRowDelete(object sender, RoutedEventArgs e) { FocusDocument(); OnDeleteSelection(sender, e); }
+    private void OnRowPaste(object sender, RoutedEventArgs e) { FocusDocument(); OnPaste(sender, e); }
 
     private void OnSelectAll(object sender, RoutedEventArgs e) => edit.SelectAll();
 
-    // The toolbar's own commands and the app's buttons at its end (paste, pages); the menu shows the same icons.
+    // The toolbar's own commands (undo, redo, delete run the library's; cut, copy, duplicate and paste the file's own
+    // clipboard format, so not Windows ink's) and the app's page buttons at its end; the menu shows the same icons.
     private void AddAppButtons()
     {
-        bar.Undo.Click += OnUndo;
-        bar.Redo.Click += OnRedo;
+        ink.Commands.WireToolbar(clipboard: false);
+        bar.Undo.Click += (_, _) => FocusDocument();
+        bar.Redo.Click += (_, _) => FocusDocument();
+        bar.DeleteSelection.Click += (_, _) => FocusDocument();
         bar.Cut.Click += OnRowCut;
         bar.Copy.Click += OnRowCopy;
         bar.Duplicate.Click += OnRowDuplicate;
-        bar.DeleteSelection.Click += OnRowDelete;
-        var (paste, insertPage, deletePage) = AppToolbar.AddButtons(bar);
-        paste.Click += OnPaste;
+        bar.Paste.Click += OnRowPaste;
+        bar.Paste.IsEnabled = true; // always: pictures, the file's own format and ink of other apps paste too
+        var (insertPage, deletePage) = AppToolbar.AddButtons(bar);
         insertPage.Click += OnInsertPage;
         deletePage.Click += OnDeletePage;
         DuplicateMenuItem.Icon = PenToolbar.Path(PenToolbar.DuplicateIcon);

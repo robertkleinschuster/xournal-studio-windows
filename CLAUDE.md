@@ -225,13 +225,17 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   `XoppDocument.Snapshot` (detached XML, PDF references as from a given base) + `Write` (any thread)
   serve saving and recovery copies; `SuggestedName`/`DefaultName` = Xournal's date-time name.
 - `MainWindow` only wires menus, toolbar and panes to the feature classes below (no feature logic).
-- `Views/` – `AppToolbar` (the library's `PenToolbarTexts.German` with this app's selection tip, `XournalPalette`, the user's `ToolChoices` from `AppSettings`, kept on `InkWorkspace.ChoicesChanged`), `PageView` (the library's `InkPage` for a
-  `XoppPage`: background color + ruling or PDF page rendered at the current zoom near the viewport, pictures, texts,
-  drawn strokes; implements the page content over `XoppPage`; `Close` when released), `PageSlots` (lazy page views:
+- `Views/` – `AppToolbar` (the library's `PenToolbarTexts.German` with this app's selection tip, `XournalPalette`, the user's `ToolChoices` from `AppSettings`, kept on `InkWorkspace.ChoicesChanged` and on close; `AddButtons` = the page buttons; undo/redo/delete
+  and the library's paste button through `InkCommands.WireToolbar(clipboard: false)` – paste always enabled, its Click is
+  the app's), `PageView` (the library's `InkPage` for a `XoppPage`: pictures and the page content over `XoppPage`;
+  `Close` when released) with `PageBackground` (the PDF page or picture background bitmap, rendered for the zoom near the
+  viewport, freed otherwise) and `FileContentLayers` (texts, drawn strokes, ruling from the file), `PageCommands` (page
+  commands and the pages pane), `Pickers` (the file pickers), `PageSlots` (lazy page views:
   one child of the StackPanel per page – its `PageView` near the viewport, else a placeholder of its size; see Facts),
   `PagesController` (the ScrollView: zoom, page in view (`CurrentPageView()` creates its view), insert/remove pages,
   which pages have views and PDF rendering near the viewport, every 120 ms while the view moves), `DocumentSession` (open,
-  save, save-as with the suggested name/folder, the leave question, recovery offer and `Autosave`),
+  save, save-as with the suggested name/folder, the leave question, recovery offer and `Autosave`; `LeaveAndOpenAsync`,
+  `RefusedWhileSyncing` – every command that opens or writes project files checks it; `ProjectFolder`),
   `RecoveryPrompt`, `SyncController`, `ExplorerCommands` (what the explorer asks for), `Dialogs` (all
   ContentDialogs; hides the ink while one is open – `PagesController.InkHidden` = the library's `InkWorkspace.InkHidden`, also on views created meanwhile), `Messages` (InfoBar),
   `EditCommands` (cut/copy/paste/duplicate of the file's elements; delete, select all, pasting Windows ink and selecting what was added through the library's `InkCommands`; pasted content placed at the left margin below the
@@ -241,7 +245,9 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   sync button; context menus `ItemMenu`/`FolderMenu` and F2/Del/Ctrl+Shift+C on the tree raise `CommandRequested`,
   which `MainWindow` carries out because the open document may be affected; "Im Explorer anzeigen" = WinRT
   `Launcher.LaunchFolderPathAsync` with `ItemsToSelect`, "Als Pfad kopieren" = quoted path like File Explorer;
-  a `FolderWatcher` change restarts a 400 ms timer, then the window refreshes the tree).
+  a `FolderWatcher` change, a save, activation and commands restart one 400 ms timer (`RefreshSoon`), then the window
+  refreshes the tree; errors through `Messages`). Which files belong to the open document: `XoppDocument.Uses` (its file,
+  PDF, picture backgrounds, folders holding them).
 - `Services/` – `PdfBackground`, `PdfRenderer` (Windows.Data.Pdf on the
   app's own D3D device, see "Current WinUI ink state"), `PictureRenderer`,
   `ClipboardService` (own format `XournalStudio.Clip` = a `XoppClip`, plus a bitmap for other apps; bitmaps of

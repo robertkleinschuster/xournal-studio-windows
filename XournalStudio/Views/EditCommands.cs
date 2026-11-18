@@ -32,24 +32,10 @@ public sealed class EditCommands(
 
     /// <summary>Tells the user that a command waits for the drag (the library's <see cref="InkCommands.Refused"/>).</summary>
     public void ReportRefused(InkCommand command) =>
-        messages.Show(InfoBarSeverity.Informational, $"{Name(command)}: nicht ausgeführt", PenToolbarTexts.German.Refused);
-
-    private static string Name(InkCommand command) => command switch
-    {
-        InkCommand.Undo => "Rückgängig",
-        InkCommand.Redo => "Wiederholen",
-        InkCommand.Cut => "Ausschneiden",
-        InkCommand.Copy => "Kopieren",
-        InkCommand.Paste => "Einfügen",
-        InkCommand.Duplicate => "Duplizieren",
-        InkCommand.Delete => "Löschen",
-        InkCommand.SelectAll => "Alles auswählen",
-        InkCommand.ClearPage => "Seite leeren",
-        _ => command.ToString(),
-    };
+        messages.Show(InfoBarSeverity.Informational, AppToolbar.Texts.RefusedTitle(command), AppToolbar.Texts.Refused);
 
     /// <summary>A dragged selection could not go on to another page (the library's <see cref="SelectionTool.TransferFailed"/>).</summary>
-    public void ReportTransferFailed(Exception? e)
+    public void ReportTransferFailed(object? sender, Exception? e)
     {
         if (e != null)
         {
@@ -63,14 +49,7 @@ public sealed class EditCommands(
     }
 
     /// <summary>Deletes the selected strokes and pictures (undoable). False: nothing selected (or refused mid-drag).</summary>
-    public bool Delete()
-    {
-        if (selection.Current is not { HasContent: true } || Refused(InkCommand.Delete))
-        {
-            return false;
-        }
-        return commands.Delete();
-    }
+    public bool Delete() => commands.Delete(); // the library checks for a selection and refuses mid-drag
 
     /// <summary>
     /// Copies the selection in the app's own format – the .xopp elements themselves, so a copy or a cut and paste keeps
