@@ -18,7 +18,7 @@
     <!-- The file format code has no UI dependencies beyond the ink types. -->
     <Compile Include="..\XournalStudio\Model\*.cs" Link="Model\%(Filename)%(Extension)" />
     <!-- The library's geometry (partial eraser, shapes, ink widths) and the tool settings. -->
-    <Compile Include="..\InkPages\Model\*.cs" Link="InkPages\%(Filename)%(Extension)" />
+    <Compile Include="..\external\InkPages\InkPages\Model\*.cs" Link="InkPages\%(Filename)%(Extension)" />
     <!-- Explorer logic without UI. -->
     <Compile Include="..\XournalStudio\Services\ProjectTree.cs" Link="Services\ProjectTree.cs" />
     <Compile Include="..\XournalStudio\Services\GitSync.cs" Link="Services\GitSync.cs" />

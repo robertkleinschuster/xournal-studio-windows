@@ -7,9 +7,9 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "XournalStudio", "XournalStu
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "XournalStudio.Tests", "XournalStudio.Tests\XournalStudio.Tests.csproj", "{9C7BF1C3-FE2D-42F3-8E05-8AAA473BB863}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "InkPages", "InkPages\InkPages.csproj", "{C9332BB4-4E78-4960-81AB-8819F71550FC}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "InkPages", "InkPages", "{A1288B98-624D-B397-A02A-D3699CC49690}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "InkPages.Demo", "InkPages.Demo\InkPages.Demo.csproj", "{095BBBC7-3491-4F14-A559-0351D3847783}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "InkPages", "external\InkPages\InkPages\InkPages.csproj", "{8752A094-2765-4174-BCDC-A4E37C299957}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -45,32 +45,23 @@ Global
 		{9C7BF1C3-FE2D-42F3-8E05-8AAA473BB863}.Release|x64.Build.0 = Release|x64
 		{9C7BF1C3-FE2D-42F3-8E05-8AAA473BB863}.Release|x86.ActiveCfg = Release|x64
 		{9C7BF1C3-FE2D-42F3-8E05-8AAA473BB863}.Release|x86.Build.0 = Release|x64
-		{C9332BB4-4E78-4960-81AB-8819F71550FC}.Debug|Any CPU.ActiveCfg = Debug|x64
-		{C9332BB4-4E78-4960-81AB-8819F71550FC}.Debug|Any CPU.Build.0 = Debug|x64
-		{C9332BB4-4E78-4960-81AB-8819F71550FC}.Debug|x64.ActiveCfg = Debug|x64
-		{C9332BB4-4E78-4960-81AB-8819F71550FC}.Debug|x64.Build.0 = Debug|x64
-		{C9332BB4-4E78-4960-81AB-8819F71550FC}.Debug|x86.ActiveCfg = Debug|x64
-		{C9332BB4-4E78-4960-81AB-8819F71550FC}.Debug|x86.Build.0 = Debug|x64
-		{C9332BB4-4E78-4960-81AB-8819F71550FC}.Release|Any CPU.ActiveCfg = Release|x64
-		{C9332BB4-4E78-4960-81AB-8819F71550FC}.Release|Any CPU.Build.0 = Release|x64
-		{C9332BB4-4E78-4960-81AB-8819F71550FC}.Release|x64.ActiveCfg = Release|x64
-		{C9332BB4-4E78-4960-81AB-8819F71550FC}.Release|x64.Build.0 = Release|x64
-		{C9332BB4-4E78-4960-81AB-8819F71550FC}.Release|x86.ActiveCfg = Release|x64
-		{C9332BB4-4E78-4960-81AB-8819F71550FC}.Release|x86.Build.0 = Release|x64
-		{095BBBC7-3491-4F14-A559-0351D3847783}.Debug|Any CPU.ActiveCfg = Debug|x64
-		{095BBBC7-3491-4F14-A559-0351D3847783}.Debug|Any CPU.Build.0 = Debug|x64
-		{095BBBC7-3491-4F14-A559-0351D3847783}.Debug|x64.ActiveCfg = Debug|x64
-		{095BBBC7-3491-4F14-A559-0351D3847783}.Debug|x64.Build.0 = Debug|x64
-		{095BBBC7-3491-4F14-A559-0351D3847783}.Debug|x86.ActiveCfg = Debug|x64
-		{095BBBC7-3491-4F14-A559-0351D3847783}.Debug|x86.Build.0 = Debug|x64
-		{095BBBC7-3491-4F14-A559-0351D3847783}.Release|Any CPU.ActiveCfg = Release|x64
-		{095BBBC7-3491-4F14-A559-0351D3847783}.Release|Any CPU.Build.0 = Release|x64
-		{095BBBC7-3491-4F14-A559-0351D3847783}.Release|x64.ActiveCfg = Release|x64
-		{095BBBC7-3491-4F14-A559-0351D3847783}.Release|x64.Build.0 = Release|x64
-		{095BBBC7-3491-4F14-A559-0351D3847783}.Release|x86.ActiveCfg = Release|x64
-		{095BBBC7-3491-4F14-A559-0351D3847783}.Release|x86.Build.0 = Release|x64
+		{8752A094-2765-4174-BCDC-A4E37C299957}.Debug|Any CPU.ActiveCfg = Debug|x64
+		{8752A094-2765-4174-BCDC-A4E37C299957}.Debug|Any CPU.Build.0 = Debug|x64
+		{8752A094-2765-4174-BCDC-A4E37C299957}.Debug|x64.ActiveCfg = Debug|x64
+		{8752A094-2765-4174-BCDC-A4E37C299957}.Debug|x64.Build.0 = Debug|x64
+		{8752A094-2765-4174-BCDC-A4E37C299957}.Debug|x86.ActiveCfg = Debug|x64
+		{8752A094-2765-4174-BCDC-A4E37C299957}.Debug|x86.Build.0 = Debug|x64
+		{8752A094-2765-4174-BCDC-A4E37C299957}.Release|Any CPU.ActiveCfg = Release|x64
+		{8752A094-2765-4174-BCDC-A4E37C299957}.Release|Any CPU.Build.0 = Release|x64
+		{8752A094-2765-4174-BCDC-A4E37C299957}.Release|x64.ActiveCfg = Release|x64
+		{8752A094-2765-4174-BCDC-A4E37C299957}.Release|x64.Build.0 = Release|x64
+		{8752A094-2765-4174-BCDC-A4E37C299957}.Release|x86.ActiveCfg = Release|x64
+		{8752A094-2765-4174-BCDC-A4E37C299957}.Release|x86.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{8752A094-2765-4174-BCDC-A4E37C299957} = {A1288B98-624D-B397-A02A-D3699CC49690}
 	EndGlobalSection
 EndGlobal

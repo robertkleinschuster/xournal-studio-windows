@@ -22,7 +22,8 @@ It covers one workflow well: annotating lecture PDFs and solving exercises on gr
 
 ## Build and install
 
-Requires Windows 11 and the .NET 10 SDK.
+Requires Windows 11 and the .NET 10 SDK. The pen workspace is the [InkPages](https://github.com/robertkleinschuster/InkPages)
+library, a git submodule: clone with `--recurse-submodules` (or run `git submodule update --init`).
 
 ```powershell
 dotnet test XournalStudio.Tests   # unit tests

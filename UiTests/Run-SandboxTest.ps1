@@ -4,8 +4,9 @@
 # the saved .xopp files in <Work>\out. Then exports page 1-2 of the result with the GTK version
 # to check that it still reads the file.
 # -App runs another build (e.g. a dotnet publish folder) instead of the installed app; -Test runs another
-# in-sandbox script (an experiment, or the library demo's tests: InkPages.Demo\UiTests) instead of SandboxTest.ps1.
-# Scripts can dot-source C:\sbx\TestKit.ps1 (shared helpers).
+# in-sandbox script (an experiment) instead of SandboxTest.ps1.
+# Scripts can dot-source C:\sbx\TestKit.ps1 (shared helpers). TestKit.ps1 and Inj.cs come from the InkPages submodule
+# (external\InkPages\UiTests), which also has its own runner for the library demo's tests.
 param(
     [string]$Document,                             # .xopp (its PDF next to it); not needed by the demo's tests
     [string]$Work = (Join-Path $env:TEMP 'xs-sandbox-test'),
@@ -23,7 +24,8 @@ if ($Document) {
     Copy-Item $Document "$Work\data\test.xopp"
     Get-ChildItem (Split-Path $Document) -File | Where-Object { $_.Extension -in '.pdf', '.png', '.jpg' } | Copy-Item -Destination "$Work\data"
 }
-Copy-Item "$PSScriptRoot\Inj.cs", "$PSScriptRoot\TestKit.ps1" $Work
+$kit = Join-Path $PSScriptRoot '..\external\InkPages\UiTests'
+Copy-Item "$kit\Inj.cs", "$kit\TestKit.ps1" $Work
 Copy-Item $Test "$Work\test.ps1"
 
 $id = (wsb start --raw | ConvertFrom-Json).Id

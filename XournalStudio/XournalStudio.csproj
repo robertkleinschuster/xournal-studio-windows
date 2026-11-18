@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
@@ -33,13 +33,13 @@
     <Using Include="InkPages" />
   </ItemGroup>
   <ItemGroup>
-    <!-- The writing surface and its toolbar (a library, reusable by other apps). -->
-    <ProjectReference Include="..\InkPages\InkPages.csproj" />
+    <!-- The writing surface and its toolbar: the InkPages library (git submodule, its own repository). -->
+    <ProjectReference Include="..\external\InkPages\InkPages\InkPages.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!-- InkCanvas/InkToolbar for WinUI 3 are only in the experimental channel so far. The official package provides the
          XAML compiler, projection and metadata (the compiler of upstream main breaks ScrollView's template, see
-         CLAUDE.md); only the runtime is replaced by the fork's build (build\WinUIForkRuntime.targets). -->
+         CLAUDE.md); only the runtime is replaced by the fork's build (external\InkPages\build\WinUIForkRuntime.targets). -->
     <PackageReference Include="LibGit2Sharp" Version="0.32.0" />
     <PackageReference Include="Meziantou.Framework.Win32.CredentialManager" Version="3.0.11" />
     <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="2.6.6-experimental" />
@@ -49,5 +49,5 @@
     <PackageReference Include="Vortice.Direct3D11" Version="3.8.3" />
   </ItemGroup>
   <!-- The WinUI fork's runtime over the package's (see the file). -->
-  <Import Project="..\build\WinUIForkRuntime.targets" />
+  <Import Project="..\external\InkPages\build\WinUIForkRuntime.targets" />
 </Project>

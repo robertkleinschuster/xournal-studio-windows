@@ -4,13 +4,22 @@ Guidance for Claude Code in this repository. Keep it current: add what is learne
 
 ## Current WinUI ink state (2026-11-16 evening)
 
+- **InkPages is its own repository since 2026-11-18** (user: so the MatheTrainer can use it too):
+  https://github.com/robertkleinschuster/InkPages (public, history of the library's files kept), embedded here as the
+  git submodule `external/InkPages` (`git submodule update --init`; `install.ps1` does it, CI checks out with
+  `submodules: true`). The library, its demo, its UI tests and unit tests (`Model/`), the sandbox kit
+  (`UiTests/TestKit.ps1`, `Inj.cs`) and the WinUI fork runtime (targets, `Get-WinUIRuntime.ps1`,
+  `Build-WinUILocal.ps1`) live there; its CLAUDE.md and README document them. Library changes are made, committed and
+  pushed in `external/InkPages` (or D:\src\InkPages), then the submodule pointer is committed here. Paths below that
+  name `InkPages/`, `InkPages.Demo/`, `build/`, `tools/Get-WinUIRuntime.ps1` or `UiTests/TestKit.ps1` now mean the
+  submodule's files.
 - **Build:** the app compiles against the official `Microsoft.WindowsAppSDK.WinUI` + `.DWrite` **2.6.6-experimental**
   (XAML compiler, projection, metadata) and `XournalStudio.csproj` copies the **Release (fre) runtime** of the WinUI fork
   (robertkleinschuster/microsoft-ui-xaml, branch `fix/ink-runtime-highlighter` = upstream main of 2026-11-16 +
   microsoft-ui-xaml PR #12292 + the fork's InkToolbar custom tool states fix + its pointer-capture-across-routing fix +
-  its custom pen drawing attributes fix, see Facts) from `.local-build/winui-fre`
-  over the package's runtime after Build/Publish, for every configuration; the build fails if it is missing.
-  `tools/Get-WinUIRuntime.ps1` fetches it (pinned URL + SHA-256) from the fork's release `winui-ink-fix-d3b1bf22` (zip
+  its custom pen drawing attributes fix, see Facts) from `external/InkPages/.local-build/winui-fre`
+  over the package's runtime, for every configuration; the build fails if it is missing.
+  `external/InkPages/tools/Get-WinUIRuntime.ps1` fetches it (pinned URL + SHA-256) from the fork's release `winui-ink-fix-d3b1bf22` (zip
   of the fre payload of fork Actions run 44272379119, started by `gh workflow run winui-source-product.yml --ref
   <branch>`; the release zip holds `runtimes/win10-x64/native/**`); `install.ps1`
   and `.github/workflows/release.yml` call it. A tag `v*` builds a pre-release with the self-contained zip; a manual
@@ -157,6 +166,8 @@ arrows), math exercises long formulas in several colors.
 ## Build, test, install
 
 ```powershell
+git submodule update --init                # InkPages (external/InkPages)
+external\InkPages\tools\Get-WinUIRuntime.ps1   # the WinUI fork runtime the build needs
 dotnet build XournalStudio                 # debug build (no Visual Studio needed, .NET 10 SDK)
 dotnet test XournalStudio.Tests            # unit tests (file format)
 .\install.ps1                              # tests + publish + install to %LOCALAPPDATA%\Programs\Xournal Studio for Windows
@@ -166,7 +177,8 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 
 ## Architecture
 
-- `InkPages/` (library, namespace `InkPages`, no app dependencies; the writing area): `InkWorkspace` (the facade:
+- `external/InkPages/InkPages/` (library in its own repository, git submodule; namespace `InkPages`, no app
+  dependencies; the writing area): `InkWorkspace` (the facade:
   wires toolbar, tools, input, auto-scroll and undo; `Attach(page)`, `SetPages` (the pages that have a view now),
   `Holds(page)` (the page's view must stay: history, selection, running gesture or drag hand-over, shape recognition),
   `Reset`, `Removing/Removed`, `UndoStep`; the toolbar's controls hold the tools' choices), `InkPage` (abstract page:
@@ -434,10 +446,11 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 - Unit tests: `XournalStudio.Tests` compiles `Model/` and the non-UI services (`ProjectTree`, `GitSync`,
   `ProjectFiles`, `FolderWatcher`, `DebugLog`, `Recovery`, `AppSettings`, `TaskFile`) directly (no app, no XAML).
 - UI tests run in Windows Sandbox via `UiTests/Run-SandboxTest.ps1` (the sandbox window opens on the desktop – tell the
-  user first); in-sandbox scripts may dot-source `C:\sbx\TestKit.ps1` (`UiTests/TestKit.ps1`: start the app, find
-  controls, `ClickInOptions` for a tool's flyout, screenshots, `Invoke-Test` writes done.txt). **The library's tools are
-  tested in the demo app** (`dotnet publish InkPages.Demo -c Release -o .local-build\demo`, then `-App
-  .local-build\demo -Test InkPages.Demo\UiTests\ToolsTest.ps1`, no `-Document`): stroke eraser, eraser end, barrel
+  user first); in-sandbox scripts may dot-source `C:\sbx\TestKit.ps1` (`external/InkPages/UiTests/TestKit.ps1`: start
+  the app, find controls, `ClickInOptions` for a tool's flyout, screenshots, `Invoke-Test` writes done.txt). **The
+  library's tools are tested in the demo app, in the InkPages repository** (there: `dotnet publish InkPages.Demo -c
+  Release -o .local-build\demo`, then `UiTests\Run-SandboxTest.ps1 -App .local-build\demo -Test
+  InkPages.Demo\UiTests\ToolsTest.ps1`); its unit tests: `dotnet test InkPages.Tests` there: stroke eraser, eraser end, barrel
   lasso/move, selection (duplicate, scale, undo), erasing exactly (mode toggle), the eraser end following the mode,
   shapes and recognition, a barrel drag across pages with auto-scroll. `ToolbarStates.ps1` screenshots every toolbar
   state light and dark (design reviews: crop/contact-sheet them; Codex CLI `codex exec -i <png>` gave useful
@@ -487,7 +500,8 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
    along. Merged into main 2026-11-16 morning (user: "du kannst gerne mergen"). Reviews were still finding edge cases
    (mostly the eraser end, now a question for the user) – not a clean round.
 8. Not started, only if the user asks: inserting pages of another PDF, page reordering, a text tool.
-9. **Library `InkPages` (user, 2026-11-17; in this repo, a public repo later only with the user's approval):** the
+9. **Library `InkPages` (user, 2026-11-17; own public repository since 2026-11-18, user's choice, submodule
+   `external/InkPages`; the MatheTrainer is to embed it too – not switched yet):** the
    writing area becomes a reusable module other apps can embed, the toolbar a part of it (base functions in the
    library, app-specific buttons on top; Windows defaults, dense for the pen, few taps for frequent functions).
    **Stage 1 done 2026-11-17:** `InkPages/PenToolbar` (built in code, no XAML – nothing to merge into the app's .pri):
@@ -505,7 +519,8 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
    **Demo app `InkPages.Demo` (2026-11-17):** graph pages with in-memory content (`DemoPage` implements `InkPage`),
    the whole toolbar, its own small commands; the development and test app of the library (see Testing). Toolbar
    design reviewed in every state with screenshots (and Codex). The ruler "not shown" in the demo (2026-11-17) was the
-   demo targeting page 3 before the first layout (fixed); the app was never affected. Stage 3: README/API docs.
+   demo targeting page 3 before the first layout (fixed); the app was never affected. Stage 3: README with the
+   embedding guide done 2026-11-18 (in the InkPages repository); API docs beyond the XML comments not yet.
 
 ## Decided with the user (2026-11-16 morning)
 
