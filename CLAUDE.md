@@ -612,5 +612,13 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   - `/FreeText` → `<text font="Sans">`, placed and sized as its appearance stream draws it (PDFsharp's `ContentReader`:
     CTM × text matrix at the first show-text operator; Apple drew 11 pt for a /DA of 12 pt), y = baseline − 0.905 em.
   Checked visually against Apple's rendering (side-by-side renders of the imported document's PDF export).
+- **Start time (measured 2026-11-18, `App` logs "start:" steps; sandbox script `UiTests/StartupTest.ps1`):** a warm
+  start shows the window after ~0.4–0.6 s and the document after ~0.8 s. A cold start takes ~9–12 s on the device:
+  Microsoft Defender's real-time protection scans the app's 272 DLLs (self-contained, 237 MB) while they load – MsMpEng
+  used 1–1.7 cores during the whole start, the app far less. It happens after new files (every install) and again after
+  a while (Defender re-checks, e.g. after signature updates), not because of the app's code; most of it lies before the
+  app's code runs (WinUI's own start: the same with the official 2.6.6 runtime as with the fork's). Writing only changed
+  files on install did not help (still 11 s). Options not taken yet (the user's decision): a Defender exclusion
+  (security trade-off), fewer/ signed files (framework-dependent .NET).
 - **PDF export:** PDFsharp pinned to 6.2.4, the last MIT version (6.5.0 is AGPL-3.0 with license acceptance – a
   license change for this project is the user's decision).

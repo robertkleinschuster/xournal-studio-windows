@@ -7,9 +7,15 @@ public partial class App : Application
 {
     private MainWindow? window;
 
+    // The app's code begins (the module is loaded before Main runs).
+    [System.Runtime.CompilerServices.ModuleInitializer]
+    internal static void ModuleLoaded() => Startup("app module loaded");
+
     public App()
     {
+        Startup("app constructor");
         InitializeComponent();
+        Startup("app XAML loaded");
         // Exceptions must never vanish silently (a swallowed one once led to a wrong diagnosis).
         UnhandledException += (_, e) => Services.DebugLog.Write($"Unhandled: {e.Exception}");
         TaskScheduler.UnobservedTaskException += (_, e) => Services.DebugLog.Write($"Unobserved task: {e.Exception}");
@@ -17,6 +23,7 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
+        Startup("launched");
         // Windows' Application Restart: after a crash or a restart for updates Windows starts the app again, which then
         // offers the recovery copy of unsaved changes (see Services.Recovery). No arguments: it reopens the last file.
         int result = RegisterApplicationRestart("", 0);
@@ -29,8 +36,18 @@ public partial class App : Application
         var cmd = Environment.GetCommandLineArgs();
         string? file = cmd.Length > 1 ? cmd[1] : null;
         window = new MainWindow(file);
+        Startup("main window built");
+        if (window.Content is FrameworkElement content)
+        {
+            content.Loaded += (_, _) => Startup("content loaded");
+        }
         window.Activate();
+        Startup("activated");
     }
+
+    // How long after the process started (for measuring the start; the log's later lines carry their own time).
+    private static void Startup(string step) => Services.DebugLog.Write(
+        $"start: {step} {(DateTime.Now - System.Diagnostics.Process.GetCurrentProcess().StartTime).TotalMilliseconds:F0} ms after the process started");
 
     // https://learn.microsoft.com/windows/win32/api/winbase/nf-winbase-registerapplicationrestart (S_OK = 0)
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
