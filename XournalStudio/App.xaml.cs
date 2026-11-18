@@ -17,8 +17,11 @@ public partial class App : Application
         InitializeComponent();
         Startup("app XAML loaded");
         // Exceptions must never vanish silently (a swallowed one once led to a wrong diagnosis).
-        UnhandledException += (_, e) => Services.DebugLog.Write($"Unhandled: {e.Exception}");
-        TaskScheduler.UnobservedTaskException += (_, e) => Services.DebugLog.Write($"Unobserved task: {e.Exception}");
+        // Logged always (errors.log), so a crash on the device leaves its exception behind; unhandled stays unhandled.
+        UnhandledException += (_, e) => Services.DebugLog.Error(
+            $"Unhandled: {e.Exception?.GetType().FullName} 0x{e.Exception?.HResult:X8} {e.Message} {e.Exception}");
+        TaskScheduler.UnobservedTaskException += (_, e) => Services.DebugLog.Error($"Unobserved task: {e.Exception}");
+        AppDomain.CurrentDomain.UnhandledException += (_, e) => Services.DebugLog.Error($"Unhandled (thread): {e.ExceptionObject}");
     }
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)

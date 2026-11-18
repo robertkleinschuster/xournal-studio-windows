@@ -42,7 +42,7 @@ public sealed partial class MainWindow : Window
 
         messages = new Messages(Info);
         InkLog.Writer = DebugLog.Write;
-        InkLog.ErrorWriter = message => DebugLog.Write($"ink error: {message}");
+        InkLog.ErrorWriter = message => DebugLog.Error($"ink error: {message}");
         bar = AppToolbar.Create(settings);
         ToolbarHost.Content = bar;
         AddAppButtons();
