@@ -19,11 +19,15 @@ public sealed record AppleMarkup(string ClassName, byte[]? Drawing, double Drawi
         try
         {
             if (PropertyListParser.Parse(Convert.FromBase64String(base64)) is not NSDictionary archive ||
-                archive["$objects"] is not NSArray objects || objects.Count < 2 || objects[1] is not NSDictionary root)
+                archive["$objects"] is not NSArray objects || archive["$top"] is not NSDictionary top)
             {
                 throw new FormatException("not a keyed archive");
             }
-            NSObject? Resolve(NSObject? o) => o is UID uid ? objects[(int)uid.ToUInt64()] : o;
+            NSObject? Resolve(NSObject? o) => o is UID uid ? objects[checked((int)uid.ToUInt64())] : o;
+            if (Resolve(top.TryGetValue("root", out var r) ? r : null) is not NSDictionary root)
+            {
+                throw new FormatException("keyed archive without a root object");
+            }
             string className = Resolve(root["$class"]) is NSDictionary c && c["$classname"] is NSString name ? name.Content : "";
             byte[]? drawing = Resolve(root.TryGetValue("drawing", out var d) ? d : null) is NSData data ? data.Bytes : null;
             double width = 0, height = 0;
@@ -46,8 +50,11 @@ public sealed record AppleMarkup(string ClassName, byte[]? Drawing, double Drawi
             }
             return new AppleMarkup(className, drawing, width, height);
         }
+        // What plist-cil and the archive's references throw for data that is not such an archive (damaged, cut short, of
+        // another layout); a bug here would show as another exception.
         catch (Exception e) when (e is PropertyListFormatException or ArgumentException or IndexOutOfRangeException
-            or InvalidCastException or KeyNotFoundException or ArgumentOutOfRangeException)
+            or InvalidCastException or KeyNotFoundException or System.Xml.XmlException or IOException or NotSupportedException
+            or OverflowException)
         {
             throw new FormatException($"unreadable markup archive: {e.GetType().Name}: {e.Message}", e);
         }

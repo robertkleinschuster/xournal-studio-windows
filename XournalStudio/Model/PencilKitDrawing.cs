@@ -56,9 +56,10 @@ public static class PencilKitDrawing
         {
             throw new FormatException($"damaged PencilKit drawing: {e.Message}", e);
         }
-        catch (InvalidDataException e)
+        catch (Exception e) when (e is InvalidDataException or OverflowException or ArgumentException or IndexOutOfRangeException)
         {
-            throw new FormatException($"damaged PencilKit drawing: {e.Message}", e);
+            // gzip, a count beyond int, a record cut short: damaged data, not a bug here.
+            throw new FormatException($"damaged PencilKit drawing: {e.GetType().Name}: {e.Message}", e);
         }
     }
 
@@ -375,8 +376,10 @@ public static class PencilKitDrawing
 
         public float? Float(int number) => Varint(number) is { } v ? BitConverter.UInt32BitsToSingle((uint)v) : null;
 
-        public IEnumerable<float> Floats(int number) =>
-            fields.Where(f => f.Number == number && f.Bytes == null).Select(f => BitConverter.UInt32BitsToSingle((uint)f.Value));
+        // Repeated floats, each its own field or packed into one (protobuf's packed encoding).
+        public IEnumerable<float> Floats(int number) => fields.Where(f => f.Number == number).SelectMany(f => f.Bytes == null
+            ? [BitConverter.UInt32BitsToSingle((uint)f.Value)]
+            : Enumerable.Range(0, f.Bytes.Length / 4).Select(i => BinaryPrimitives.ReadSingleLittleEndian(f.Bytes.AsSpan(i * 4))));
 
         public byte[]? Bytes(int number) => fields.FirstOrDefault(f => f.Number == number && f.Bytes != null).Bytes;
 

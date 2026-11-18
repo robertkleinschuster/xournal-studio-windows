@@ -12,17 +12,19 @@ using XournalStudio.Model;
 namespace XournalStudio.Services;
 
 /// <summary>A picture the import takes from an annotation's appearance: rendered by the caller into <see cref="Element"/>.</summary>
-/// <param name="Page">The page in the pictures PDF (the same index as in the source).</param>
+/// <param name="Pdf">The pictures PDF to render it from: the source's pages with only picture annotations that do not
+/// overlap (overlapping ones go to further pictures PDFs, so no picture holds part of another).</param>
+/// <param name="Page">The page in that PDF (the same index as in the source).</param>
 /// <param name="Area">The annotation's area on its page (points, top left; as Windows.Data.Pdf measures pages).</param>
 /// <param name="Element">The &lt;image&gt; in place (its data still missing).</param>
-public sealed record MarkupPicture(int Page, Rect Area, XElement Element);
+public sealed record MarkupPicture(string Pdf, int Page, Rect Area, XElement Element);
 
 /// <summary>What <see cref="PdfMarkupImport.Prepare"/> found: per page the new elements in the annotations' order.</summary>
 public sealed record MarkupImport(
     IReadOnlyList<(double Width, double Height)> PageSizes,
     IReadOnlyList<IReadOnlyList<XElement>> Elements,
     IReadOnlyList<MarkupPicture> Pictures,
-    int Strokes, int Texts, int Kept);
+    int Drawings, int Texts, int Kept);
 
 /// <summary>
 /// Turns a PDF annotated on the iPad (Apple's markup) into a PDF without that markup and the .xopp elements for it, as
@@ -42,29 +44,35 @@ public static class PdfMarkupImport
     private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
     /// <summary>
-    /// Writes <paramref name="targetPdf"/> (the source without the taken annotations) and, when pictures are needed,
-    /// <paramref name="picturesPdf"/> (the source's pages with only those annotations, for rendering them alone).
+    /// Writes <paramref name="targetPdf"/> (the source without the taken annotations) and, when pictures are needed, the
+    /// pictures PDFs <paramref name="picturesPdf"/>(0), (1), ... (the source's pages with only those annotations, for
+    /// rendering them alone; a further one only where pictures overlap).
     /// </summary>
-    public static MarkupImport Prepare(string source, string targetPdf, string picturesPdf)
+    public static MarkupImport Prepare(string source, string targetPdf, Func<int, string> picturesPdf)
     {
         using var document = PdfReader.Open(source, PdfDocumentOpenMode.Modify);
         var sizes = new List<(double, double)>();
         var elements = new List<IReadOnlyList<XElement>>();
         var pictures = new List<MarkupPicture>();
-        var picturePositions = new List<HashSet<int>>(); // per page: positions in /Annots
-        int strokes = 0, texts = 0, kept = 0;
+        var rounds = new List<List<HashSet<int>>>(); // per pictures PDF, per page: positions in /Annots
+        int drawings = 0, texts = 0, kept = 0;
         for (int index = 0; index < document.PageCount; index++)
         {
             var page = document.Pages[index];
             var frame = PageFrame.Of(page);
             sizes.Add(frame.Size);
             var added = new List<XElement>();
-            var onPicturesPage = new HashSet<int>();
+            var pictureAreas = new List<(Rect Area, int Round)>();
             var keep = new List<PdfItem>();
             var items = page.Elements.GetArray("/Annots")?.Elements.ToList() ?? [];
-            var drawings = items.Select(i => (i is PdfReference r ? r.Value : i) as PdfDictionary)
-                .Where(a => a != null && Markup(a) is { ClassName: AppleMarkup.InkClass, Drawing: not null })
-                .Select(a => a!.Elements.GetRectangle("/Rect")).ToList();
+            // Apple's archive of each annotation, read once.
+            var markup = new Dictionary<PdfDictionary, AppleMarkup?>(ReferenceEqualityComparer.Instance);
+            foreach (var a in items.Select(i => (i is PdfReference r ? r.Value : i) as PdfDictionary).OfType<PdfDictionary>())
+            {
+                markup.TryAdd(a, Markup(a));
+            }
+            var drawingAreas = markup.Where(m => m.Value is { ClassName: AppleMarkup.InkClass, Drawing: not null })
+                .Select(m => m.Key.Elements.GetRectangle("/Rect")).ToList();
             for (int position = 0; position < items.Count; position++)
             {
                 var item = items[position];
@@ -73,14 +81,14 @@ public static class PdfMarkupImport
                     keep.Add(item);
                     continue;
                 }
-                if (IsOlderCopyOfDrawing(annotation, drawings))
+                if (IsOlderCopyOfDrawing(annotation, drawingAreas))
                 {
                     continue; // removed: the drawing comes with its strokes
                 }
-                switch (Take(annotation, frame, added, out bool picture))
+                switch (Take(annotation, markup[annotation], frame, added, out bool picture))
                 {
                     case Taken.Strokes:
-                        strokes++;
+                        drawings++;
                         break;
                     case Taken.Text:
                         texts++;
@@ -98,25 +106,45 @@ public static class PdfMarkupImport
                 if (picture)
                 {
                     var area = frame.Area(annotation.Elements.GetRectangle("/Rect"));
+                    // The first pictures PDF where it overlaps no other picture of this page.
+                    int round = 0;
+                    while (pictureAreas.Any(p => p.Round == round && Overlap(p.Area, area)))
+                    {
+                        round++;
+                    }
+                    pictureAreas.Add((area, round));
+                    while (rounds.Count <= round)
+                    {
+                        rounds.Add([]);
+                    }
+                    while (rounds[round].Count <= index)
+                    {
+                        rounds[round].Add([]);
+                    }
+                    rounds[round][index].Add(position);
                     var image = new XElement("image");
                     added.Add(image);
-                    pictures.Add(new MarkupPicture(index, area, image));
-                    onPicturesPage.Add(position);
+                    pictures.Add(new MarkupPicture(picturesPdf(round), index, area, image));
                 }
             }
             SetAnnotations(page, keep);
             elements.Add(added);
-            picturePositions.Add(onPicturesPage);
         }
         Save(document, targetPdf);
-        if (pictures.Count > 0)
+        for (int round = 0; round < rounds.Count; round++)
         {
-            WritePicturesPdf(source, picturePositions, picturesPdf);
+            WritePicturesPdf(source, rounds[round], picturesPdf(round));
         }
-        return new MarkupImport(sizes, elements, pictures, strokes, texts, kept);
+        return new MarkupImport(sizes, elements, pictures, drawings, texts, kept);
     }
 
-    /// <summary>The .xopp document: one page per PDF page on <paramref name="pdf"/>, the import's elements on them.</summary>
+    private static bool Overlap(Rect a, Rect b) =>
+        a.X < b.X + b.Width && b.X < a.X + a.Width && a.Y < b.Y + b.Height && b.Y < a.Y + a.Height;
+
+    /// <summary>
+    /// The .xopp document: one page per PDF page on <paramref name="pdf"/>, the import's elements on them (a picture that
+    /// was not rendered – no data – is left out).
+    /// </summary>
     public static XoppDocument CreateDocument(MarkupImport import, string pdf)
     {
         var doc = XoppDocument.FromPdf(pdf, import.PageSizes);
@@ -129,7 +157,7 @@ public static class PdfMarkupImport
 
     private enum Taken { Kept, Removed, Strokes, Text }
 
-    private static Taken Take(PdfDictionary annotation, PageFrame frame, List<XElement> added, out bool picture)
+    private static Taken Take(PdfDictionary annotation, AppleMarkup? apple, PageFrame frame, List<XElement> added, out bool picture)
     {
         picture = false;
         string subtype = annotation.Elements.GetName("/Subtype");
@@ -137,7 +165,7 @@ public static class PdfMarkupImport
         {
             return Taken.Kept;
         }
-        if (Markup(annotation) is { ClassName: AppleMarkup.InkClass, Drawing: { } drawing } markup)
+        if (apple is { ClassName: AppleMarkup.InkClass, Drawing: { } drawing } markup)
         {
             try
             {
@@ -298,8 +326,18 @@ public static class PdfMarkupImport
             (float)(Math.Min(rect.X1, rect.X2) - sx * Math.Min(box.X1, box.X2)), (float)(Math.Min(rect.Y1, rect.Y2) - sy * Math.Min(box.Y1, box.Y2)));
         var saved = new Stack<Matrix3x2>();
         var tm = Matrix3x2.Identity;
-        double fontSize = 0;
-        foreach (var op in ContentReader.ReadContent(stream.UnfilteredValue).OfType<COperator>())
+        double fontSize = 0, leading = 0;
+        CSequence content;
+        try
+        {
+            content = ContentReader.ReadContent(stream.UnfilteredValue);
+        }
+        catch (ContentReaderException e)
+        {
+            DebugLog.Write($"import: text box appearance: {e.GetType().Name} 0x{e.HResult:X8} {e.Message}; placed at its rectangle");
+            return null;
+        }
+        foreach (var op in content.OfType<COperator>())
         {
             var n = op.Operands.OfType<CNumber>().Select(c => c switch { CInteger i => (double)i.Value, CReal r => r.Value, _ => 0 }).ToList();
             switch (op.OpCode.Name)
@@ -313,16 +351,30 @@ public static class PdfMarkupImport
                 case "cm" when n.Count == 6:
                     ctm = Matrix(n) * ctm;
                     break;
+                case "BT":
+                    tm = Matrix3x2.Identity;
+                    break;
                 case "Tm" when n.Count == 6:
                     tm = Matrix(n);
                     break;
                 case "Td" or "TD" when n.Count == 2:
                     tm = Matrix3x2.CreateTranslation((float)n[0], (float)n[1]) * tm;
+                    leading = op.OpCode.Name == "TD" ? -n[1] : leading;
+                    break;
+                case "TL" when n.Count == 1:
+                    leading = n[0];
+                    break;
+                case "T*":
+                    tm = Matrix3x2.CreateTranslation(0, (float)-leading) * tm;
                     break;
                 case "Tf" when n.Count == 1:
                     fontSize = n[0];
                     break;
                 case "Tj" or "TJ" or "'" or "\"" when fontSize > 0:
+                    if (op.OpCode.Name is "'" or "\"")
+                    {
+                        tm = Matrix3x2.CreateTranslation(0, (float)-leading) * tm; // these move to the next line first
+                    }
                     var m = tm * ctm;
                     return (m.M31, m.M32, Math.Round(fontSize * Math.Sqrt(Math.Abs(m.GetDeterminant())), 1));
             }
@@ -338,7 +390,8 @@ public static class PdfMarkupImport
         var words = da.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         double size = 12;
         var color = Microsoft.UI.Colors.Black;
-        byte Byte(string s) => (byte)Math.Round(Math.Clamp(double.Parse(s, Inv), 0, 1) * 255);
+        // A component that is no number (another app's /DA) counts as 0.
+        byte Byte(string s) => double.TryParse(s, NumberStyles.Float, Inv, out double v) ? (byte)Math.Round(Math.Clamp(v, 0, 1) * 255) : (byte)0;
         for (int i = 0; i < words.Length; i++)
         {
             switch (words[i])
@@ -387,7 +440,9 @@ public static class PdfMarkupImport
             page.Contents.Elements.Clear();
             page.Contents.AppendContent().CreateStream([]);
             // The same annotations in this second reading of the file: by their position in /Annots.
-            var keep = page.Elements.GetArray("/Annots")?.Elements.Where((_, i) => positions[index].Contains(i)).ToList() ?? [];
+            var keep = index < positions.Count
+                ? page.Elements.GetArray("/Annots")?.Elements.Where((_, i) => positions[index].Contains(i)).ToList() ?? []
+                : [];
             SetAnnotations(page, keep);
         }
         Save(document, target);

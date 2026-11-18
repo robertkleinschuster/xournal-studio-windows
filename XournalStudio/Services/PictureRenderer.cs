@@ -39,7 +39,11 @@ public static class PictureRenderer
     {
         using var output = new InMemoryRandomAccessStream();
         var encoder = await BitmapEncoder.CreateAsync(BitmapEncoder.PngEncoderId, output);
-        encoder.SetSoftwareBitmap(bitmap);
+        // PNG stores straight alpha: a premultiplied bitmap (renders, decoded pictures) is converted by Windows first, so
+        // the translucent edges of a transparent render do not come out dark.
+        using var straight = bitmap.BitmapAlphaMode == BitmapAlphaMode.Straight
+            ? null : SoftwareBitmap.Convert(bitmap, BitmapPixelFormat.Bgra8, BitmapAlphaMode.Straight);
+        encoder.SetSoftwareBitmap(straight ?? bitmap);
         await encoder.FlushAsync();
         return await ReadAllAsync(output);
     }

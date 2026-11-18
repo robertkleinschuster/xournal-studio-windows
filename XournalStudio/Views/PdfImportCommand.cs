@@ -52,14 +52,19 @@ public sealed class PdfImportCommand(WindowId window, DocumentSession session, D
         {
             return;
         }
-        string pictures = Path.Combine(Path.GetTempPath(), $"xournal-studio-import-{Guid.NewGuid():N}.pdf");
+        // The new PDF is written beside its place first and takes it only when everything else worked: a failed import
+        // leaves an existing PDF of that name as it was.
+        string staged = pdf + "~import";
+        string temp = Path.Combine(Path.GetTempPath(), $"xournal-studio-import-{Guid.NewGuid():N}");
+        string PicturesPdf(int round) => $"{temp}-{round}.pdf";
+        MarkupImport? import = null;
         try
         {
-            var import = await Task.Run(() => PdfMarkupImport.Prepare(source, pdf, pictures));
-            if (import.Pictures.Count > 0)
+            import = await Task.Run(() => PdfMarkupImport.Prepare(source, staged, PicturesPdf));
+            foreach (var group in import.Pictures.GroupBy(p => p.Pdf))
             {
-                var rendered = await PdfBackground.LoadAsync(pictures);
-                foreach (var picture in import.Pictures)
+                var rendered = await PdfBackground.LoadAsync(group.Key);
+                foreach (var picture in group)
                 {
                     var (png, width, height) = await rendered.RenderAreaAsync(picture.Page, picture.Area, PicturePixelsPerPoint, transparent: true);
                     var image = Model.XoppImage.Create(picture.Area, png, width, height);
@@ -67,6 +72,7 @@ public sealed class PdfImportCommand(WindowId window, DocumentSession session, D
                 }
             }
             var document = PdfMarkupImport.CreateDocument(import, pdf);
+            File.Move(staged, pdf, overwrite: true);
             await document.SaveAsync(xopp);
             messages.Show(InfoBarSeverity.Success, "PDF importiert", Summary(import, xopp));
         }
@@ -77,7 +83,11 @@ public sealed class PdfImportCommand(WindowId window, DocumentSession session, D
         }
         finally
         {
-            Delete(pictures);
+            Delete(staged);
+            foreach (string file in import?.Pictures.Select(p => p.Pdf).Distinct() ?? [])
+            {
+                Delete(file);
+            }
         }
         if (await session.ConfirmLeaveAsync())
         {

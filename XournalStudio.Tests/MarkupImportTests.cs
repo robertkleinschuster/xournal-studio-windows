@@ -210,7 +210,7 @@ public sealed class MarkupImportTests : IDisposable
             new NSString("Height"),
             new NSNumber(595.276),
             new NSNumber(841.89));
-        var archive = new NSDictionary { { "$archiver", "NSKeyedArchiver" }, { "$objects", objects }, { "$version", 100000 } };
+        var archive = new NSDictionary { { "$archiver", "NSKeyedArchiver" }, { "$top", new NSDictionary { { "root", new UID((ulong)1) } } }, { "$objects", objects }, { "$version", 100000 } };
         return Convert.ToBase64String(BinaryPropertyListWriter.WriteToArray(archive));
 
         NSDictionary Root()
@@ -295,6 +295,10 @@ public sealed class MarkupImportTests : IDisposable
         text.Elements.SetString("/Contents", "Robert");
         text.Elements.SetString("/DA", "/Helvetica 12 Tf 0 g");
         Annotation(pdf, "/Stamp", 300, 300, 400, 350, Form(pdf, 100, 50, "0 0 0 rg 0 0 100 50 re f"));
+        // a screenshot over it, and a drawing that cannot be read: pictures as well, the overlapping one rendered alone
+        Annotation(pdf, "/Stamp", 350, 320, 450, 370, Form(pdf, 100, 50, "1 0 0 rg 0 0 100 50 re f"));
+        var damaged = Annotation(pdf, "/Stamp", 100, 100, 200, 150, Form(pdf, 100, 50, "0 0 0 RG 0 0 m 100 50 l S"));
+        damaged.Elements["/AAPL:AKExtras"] = Extras(pdf, ("/AAPL:AKAnnotationV2", Archive(AppleMarkup.InkClass, [(byte)'w', (byte)'r', (byte)'d', 0xf0, 1, 0, 0x2a, 0xff])));
         Annotation(pdf, "/Link", 50, 50, 100, 60, null);
         var annotations = new PdfArray(pdf);
         foreach (var o in pdf.Internals.GetAllObjects().OfType<PdfDictionary>().Where(d => d.Elements.GetName("/Type") == "/Annot"))
@@ -318,15 +322,17 @@ public sealed class MarkupImportTests : IDisposable
     {
         string source = MarkedUpPdf();
         byte[] before = File.ReadAllBytes(source);
-        string target = System.IO.Path.Combine(temp, "out.pdf"), pictures = System.IO.Path.Combine(temp, "pictures.pdf");
+        string target = System.IO.Path.Combine(temp, "out.pdf");
+        string Pictures(int round) => System.IO.Path.Combine(temp, $"pictures-{round}.pdf");
 
-        var import = PdfMarkupImport.Prepare(source, target, pictures);
+        var import = PdfMarkupImport.Prepare(source, target, Pictures);
 
         Assert.Equal(before, File.ReadAllBytes(source)); // the source stays as it is
         Assert.Equal(["/Link"], Subtypes(target)); // the markup is gone, the link stays
-        Assert.Equal(["/Stamp"], Subtypes(pictures)); // only what becomes a picture, to be rendered alone
+        Assert.Equal(["/Stamp", "/Stamp"], Subtypes(Pictures(0))); // only what becomes a picture, to be rendered alone
+        Assert.Equal(["/Stamp"], Subtypes(Pictures(1))); // the one overlapping another, in a pass of its own
         Assert.Equal((595.276, 841.89), (import.PageSizes[0].Width, import.PageSizes[0].Height));
-        Assert.Equal(1, import.Strokes);
+        Assert.Equal(1, import.Drawings);
         Assert.Equal(1, import.Texts);
         Assert.Equal(0, import.Kept);
 
@@ -347,8 +353,12 @@ public sealed class MarkupImportTests : IDisposable
         Assert.Equal(256.5, double.Parse((string)text.Attribute("x")!, System.Globalization.CultureInfo.InvariantCulture), 1);
         Assert.Equal(841.89 - 410.65 - 0.905 * 11, double.Parse((string)text.Attribute("y")!, System.Globalization.CultureInfo.InvariantCulture), 1);
 
-        var picture = Assert.Single(import.Pictures);
+        Assert.Equal(3, import.Pictures.Count);
+        var picture = import.Pictures[0];
         Assert.Equal(new Windows.Foundation.Rect(300, 841.89 - 350, 100, 50), picture.Area);
+        Assert.Equal(Pictures(0), picture.Pdf);
+        Assert.Equal(Pictures(1), import.Pictures[1].Pdf);
+        Assert.Equal(Pictures(0), import.Pictures[2].Pdf); // the unreadable drawing overlaps nothing
         Assert.Contains(picture.Element, elements); // in the annotations' order
 
         // The document: the PDF as background, the elements on its page (a picture without data is left out).
