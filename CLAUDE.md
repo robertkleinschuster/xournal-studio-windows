@@ -618,7 +618,8 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   used 1–1.7 cores during the whole start, the app far less. It happens after new files (every install) and again after
   a while (Defender re-checks, e.g. after signature updates), not because of the app's code; most of it lies before the
   app's code runs (WinUI's own start: the same with the official 2.6.6 runtime as with the fork's). Writing only changed
-  files on install did not help (still 11 s). Options not taken yet (the user's decision): a Defender exclusion
-  (security trade-off), fewer/ signed files (framework-dependent .NET).
+  files on install did not help (still 11 s), nor did framework-dependent .NET (85 instead of 272 DLLs: cold 9–10 s,
+  warm a little slower) – both reverted. Likely the large unsigned native DLLs (the fork's WinUI) cost the scan; not
+  measured further. Decided with the user: left as it is (the first start does not matter much); no Defender exclusion.
 - **PDF export:** PDFsharp pinned to 6.2.4, the last MIT version (6.5.0 is AGPL-3.0 with license acceptance – a
   license change for this project is the user's decision).
