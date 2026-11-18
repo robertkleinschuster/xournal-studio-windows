@@ -61,6 +61,12 @@ public sealed class PageSlots(StackPanel panel, InkWorkspace ink, Action strokes
         ink.SetPages([]);
     }
 
+    /// <summary>
+    /// The document's PDF got more pages (another PDF's pages appended) or the document has one now: views created from
+    /// now on render from <paramref name="background"/> (existing views keep theirs – their pages did not change).
+    /// </summary>
+    public void UseBackground(PdfBackground background) => pdf = background;
+
     public void Insert(int index, XoppPage page)
     {
         pages.Insert(index, page);

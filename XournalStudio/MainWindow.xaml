@@ -113,6 +113,9 @@
             </MenuBarItem>
             <MenuBarItem Title="Seite">
                 <MenuFlyoutItem x:Name="InsertPageMenuItem" Text="Seite einfügen" Click="OnInsertPage" />
+                <MenuFlyoutItem Text="Seiten aus PDF einfügen…" Click="OnInsertPdfPages">
+                    <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8A5;" /></MenuFlyoutItem.Icon>
+                </MenuFlyoutItem>
                 <MenuFlyoutItem x:Name="DeletePageMenuItem" Text="Seite löschen" Click="OnDeletePage" />
             </MenuBarItem>
             <MenuBarItem Title="Ansicht">

@@ -35,6 +35,8 @@
     <Compile Include="..\XournalStudio\Services\PdfAnnotationFlattener.cs" Link="Services\PdfAnnotationFlattener.cs" />
     <!-- iPad markup import (without rendering pictures). -->
     <Compile Include="..\XournalStudio\Services\PdfMarkupImport.cs" Link="Services\PdfMarkupImport.cs" />
+    <!-- Pages of another PDF appended to the document's PDF. -->
+    <Compile Include="..\XournalStudio\Services\PdfPageAppender.cs" Link="Services\PdfPageAppender.cs" />
   </ItemGroup>
   <ItemGroup>
     <Using Include="InkPages" />

@@ -25,6 +25,7 @@ public sealed partial class MainWindow : Window
     private readonly EditCommands edit;
     private readonly PdfExportCommand export;
     private readonly PdfImportCommand import;
+    private readonly InsertPdfPagesCommand insertPdfPages;
     private readonly PenToolbar bar;
     private bool closeConfirmed;
 
@@ -63,6 +64,7 @@ public sealed partial class MainWindow : Window
         ink.TransferToPage = edit.TransferToPage;
         export = new PdfExportCommand(AppWindow.Id, session, messages);
         import = new PdfImportCommand(AppWindow.Id, session, dialogs, messages);
+        insertPdfPages = new InsertPdfPagesCommand(AppWindow.Id, session, pages, dialogs, messages);
         ink.Undo.Changed += (_, _) =>
         {
             UndoMenuItem.IsEnabled = ink.Undo.CanUndo;
@@ -277,6 +279,8 @@ public sealed partial class MainWindow : Window
     // ---------------------------------------------------------------- pages and view
 
     private void OnInsertPage(object sender, RoutedEventArgs e) => pages.InsertAfterCurrent();
+
+    private async void OnInsertPdfPages(object sender, RoutedEventArgs e) => await insertPdfPages.InsertAsync();
 
     private async void OnDeletePage(object sender, RoutedEventArgs e)
     {

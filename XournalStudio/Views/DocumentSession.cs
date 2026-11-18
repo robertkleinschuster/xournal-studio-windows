@@ -42,6 +42,19 @@ public sealed class DocumentSession
 
     public PdfBackground? Pdf { get; private set; }
 
+    /// <summary>
+    /// The document's PDF is <paramref name="path"/> (loaded as <paramref name="pdf"/>): pages of another PDF were
+    /// appended to it, or a document without PDF uses the inserted PDF from now on.
+    /// </summary>
+    public void UsePdf(string path, PdfBackground pdf)
+    {
+        if (!ProjectFiles.SamePath(Document.PdfPath, path))
+        {
+            Document.MovePdf(path);
+        }
+        Pdf = pdf;
+    }
+
     public bool IsDirty { get; private set; }
 
     /// <summary>The file the explorer marks as open: the document, or the PDF of one never saved.</summary>

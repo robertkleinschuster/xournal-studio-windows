@@ -157,6 +157,32 @@ public sealed class PagesController
         ScrollIntoView(index + 1);
     }
 
+    /// <summary>
+    /// Pages with the document's PDF pages <paramref name="pdfPages"/> (0-based) as background after the page in view,
+    /// the first scrolled into view; <paramref name="background"/> is the document's PDF with them (loaded again after
+    /// pages were appended to it).
+    /// </summary>
+    public void InsertPdfPagesAfterCurrent(IReadOnlyList<int> pdfPages, PdfBackground background)
+    {
+        var doc = document!;
+        slots.UseBackground(background);
+        var sizes = background.GetPageSizes();
+        int index = doc.Pages.Count == 0 ? -1 : CurrentIndex;
+        foreach (int pdfPage in pdfPages)
+        {
+            var page = XoppPage.CreatePdf(sizes[pdfPage].Width, sizes[pdfPage].Height, pdfPage);
+            index++;
+            doc.Pages.Insert(index, page);
+            slots.Insert(index, page);
+        }
+        int first = index - pdfPages.Count + 1;
+        slots.Realize(first);
+        viewTimer.Start();
+        MarkCurrentPage();
+        PagesChanged?.Invoke(this, EventArgs.Empty);
+        ScrollIntoView(first);
+    }
+
     /// <summary>Removes this page (taken by the page, not an index: the document may have changed meanwhile).</summary>
     public void Remove(XoppPage page)
     {
