@@ -47,8 +47,14 @@ public sealed class AppSettings
 
     public double EraserRadius { get; set; } = 4;
 
-    /// <summary>The toolbar's choices kept here (the library's <see cref="InkPages.ToolChoices"/>, stored flat as before).</summary>
-    public InkPages.ToolChoices ToolChoices() => new()
+    /// <summary>
+    /// The toolbar's choices (the library's type as it is: a field it adds is kept without a change here). Null in a
+    /// settings file of before 2026-11-18: then they come from the flat fields below once (<see cref="ToolChoices"/>).
+    /// </summary>
+    public InkPages.ToolChoices? Tools { get; set; }
+
+    /// <summary>The toolbar's choices: <see cref="Tools"/>, or what the settings of before 2026-11-18 kept field by field.</summary>
+    public InkPages.ToolChoices ToolChoices() => Tools ?? new()
     {
         Pens = Pens.Count > 0
             ? Pens.Select(p => new InkPages.PenPreset(p.ColorIndex, p.Width)).ToList()
@@ -64,16 +70,7 @@ public sealed class AppSettings
     };
 
     /// <summary>Keeps the toolbar's choices (saved by the caller).</summary>
-    public void Keep(InkPages.ToolChoices choices)
-    {
-        Pens = choices.Pens.Select(p => new PenSetting { ColorIndex = p.ColorIndex, Width = p.Width }).ToList();
-        Highlighters = choices.Highlighters.Select(p => new PenSetting { ColorIndex = p.ColorIndex, Width = p.Width }).ToList();
-        Shape = choices.Shape;
-        SelectMode = choices.SelectMode;
-        EraserRadius = choices.EraserRadius;
-        WholeStrokeErasing = choices.WholeStrokeErasing;
-        RecognizeShapes = choices.RecognizeShapes;
-    }
+    public void Keep(InkPages.ToolChoices choices) => Tools = choices;
 
     private static string LocalAppData => Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
 

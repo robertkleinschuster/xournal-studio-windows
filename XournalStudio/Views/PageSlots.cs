@@ -92,8 +92,8 @@ public sealed class PageSlots(StackPanel panel, InkWorkspace ink, Action strokes
         reading.Remove(page);
         if (views.Remove(page, out var view))
         {
+            ink.SetPages(Views); // its handlers come off first, then it closes
             view.Close(keepInk: false);
-            ink.SetPages(Views);
             ink.Removed(view);
         }
     }
@@ -124,6 +124,7 @@ public sealed class PageSlots(StackPanel panel, InkWorkspace ink, Action strokes
     {
         panel.UpdateLayout(); // offsets of pages just inserted or removed (nothing to do when the layout is current)
         bool changed = false, waiting = false;
+        var released = new List<(int Index, PageView View)>();
         int? nearest = null;
         double nearestDistance = double.MaxValue;
         double middle = inView.Y + inView.Height / 2;
@@ -135,7 +136,9 @@ public sealed class PageSlots(StackPanel panel, InkWorkspace ink, Action strokes
             {
                 if (!Overlaps(top, bottom, keep) && !ink.Holds(view))
                 {
-                    Release(i, view);
+                    released.Add((i, view));
+                    views.Remove(page);
+                    panel.Children[i] = Placeholder(page);
                     changed = true;
                 }
                 continue;
@@ -176,7 +179,11 @@ public sealed class PageSlots(StackPanel panel, InkWorkspace ink, Action strokes
         }
         if (changed)
         {
-            ink.SetPages(Views);
+            ink.SetPages(Views); // the released views' handlers come off first (the workspace forgets them) ...
+        }
+        foreach (var (index, view) in released)
+        {
+            Close(index, view); // ... then their ink is written back and their bitmaps go
         }
         return waiting;
     }
@@ -224,11 +231,9 @@ public sealed class PageSlots(StackPanel panel, InkWorkspace ink, Action strokes
         return view;
     }
 
-    private void Release(int index, PageView view)
+    private static void Close(int index, PageView view)
     {
         var started = System.Diagnostics.Stopwatch.StartNew();
-        views.Remove(view.Page);
-        panel.Children[index] = Placeholder(view.Page);
         view.Close(keepInk: true);
         DebugLog.Write($"page {index + 1}: view released ({started.ElapsedMilliseconds} ms)");
     }
