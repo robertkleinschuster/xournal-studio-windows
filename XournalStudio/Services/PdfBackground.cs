@@ -24,8 +24,18 @@ public sealed class PdfBackground
     /// (it has no Close), so the open document's PDF could not be deleted (sandbox 2026-11-18: 0x80070005 even after the
     /// document was left). From memory the file is free for deleting, renaming and syncing.
     /// </summary>
-    public static async Task<PdfBackground> LoadAsync(string path) =>
-        await LoadAsync(await File.ReadAllBytesAsync(Path.GetFullPath(path)));
+    public static async Task<PdfBackground> LoadAsync(string path)
+    {
+        // Copied into a native in-memory stream (no managed array of the PDF's size on the large-object heap).
+        var file = await StorageFile.GetFileFromPathAsync(Path.GetFullPath(path));
+        var memory = new Windows.Storage.Streams.InMemoryRandomAccessStream();
+        using (var input = await file.OpenReadAsync())
+        {
+            await Windows.Storage.Streams.RandomAccessStream.CopyAsync(input, memory);
+        }
+        memory.Seek(0);
+        return new PdfBackground(await PdfDocument.LoadFromStreamAsync(memory), memory);
+    }
 
     /// <summary>A PDF in memory (written by <see cref="PdfExport"/> into a stream).</summary>
     public static async Task<PdfBackground> LoadAsync(byte[] data)
@@ -80,11 +90,21 @@ public sealed class PdfBackground
         uint pixelHeight = (uint)Math.Max(1, Math.Round(pixelWidth * page.Size.Height / page.Size.Width));
         // Not disposed: the SoftwareBitmapSource keeps the bitmap and copies it again whenever its surfaces were released
         // (out of view, recycled, device lost) – on a worker thread, where a closed bitmap fails fast (RO_E_CLOSED, the
-        // 0xc000027b crashes of 2026-11-18). The source closes it when it is closed or released.
+        // 0xc000027b crashes of 2026-11-18). Closing the source closes it: the caller releases a source it does not show
+        // any more (PictureRenderer.Release) – the bitmap is native memory the GC does not see.
         var bitmap = await PdfRenderer.Shared.RenderAsync(page, null, pixelWidth, pixelHeight, cancellation, transparent);
         var rendered = time.Elapsed;
         var source = new SoftwareBitmapSource();
-        await source.SetBitmapAsync(bitmap);
+        try
+        {
+            await source.SetBitmapAsync(bitmap);
+        }
+        catch
+        {
+            source.Dispose();
+            bitmap.Dispose();
+            throw;
+        }
         DebugLog.Write($"pdf page {pageIndex} {pixelWidth}px: rendered {rendered.TotalMilliseconds:F0} ms (incl. waiting), " +
             $"bitmap source {(time.Elapsed - rendered).TotalMilliseconds:F0} ms");
         return source;

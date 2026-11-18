@@ -398,13 +398,13 @@ public sealed partial class PageView : InkPage
     {
         if (!nearViewport)
         {
-            pdfImage.Source = null;
+            ShowBackground(null);
             CancelPendingRender();
             renderedPixelWidth = requestedPixelWidth = 0;
             backgroundFailed = false; // looked for again when the page comes back (a sync may have brought it)
             backgroundRequested = backgroundShown = 0;
             backgroundRelease++; // a load still running is not shown
-            imagesLayer.Children.Clear();
+            ClearPictures();
             picturesShown = false;
             return;
         }
@@ -445,9 +445,13 @@ public sealed partial class PageView : InkPage
             var bitmap = await PictureRenderer.LoadAsync(data, wanted, $"picture background {path}");
             if (release == backgroundRelease && wanted > backgroundShown)
             {
-                pdfImage.Source = bitmap;
+                ShowBackground(bitmap);
                 backgroundShown = wanted;
                 backgroundRequested = Math.Max(backgroundRequested, wanted); // requested ≥ shown (a failure lowers it)
+            }
+            else
+            {
+                PictureRenderer.Release(bitmap);
             }
         }
         catch (Exception e) // any failure of reading or decoding (async void: nothing may escape); logged
@@ -498,11 +502,12 @@ public sealed partial class PageView : InkPage
             var bitmap = await pdf.RenderAsync(Page.PdfPageIndex, wanted, request.Token);
             if (requestedPixelWidth == wanted && bitmap != null)
             {
-                pdfImage.Source = bitmap;
+                ShowBackground(bitmap);
                 renderedPixelWidth = wanted;
             }
             else
             {
+                PictureRenderer.Release(bitmap);
                 DebugLog.Write($"pdf page {Page.PdfPageIndex} {wanted}px: not shown (no longer wanted)");
             }
         }
@@ -528,11 +533,32 @@ public sealed partial class PageView : InkPage
         }
     }
 
+    // The page's background bitmap (PDF page or picture background); the one shown before is freed.
+    private void ShowBackground(ImageSource? bitmap)
+    {
+        var shown = pdfImage.Source;
+        pdfImage.Source = bitmap;
+        if (shown != bitmap)
+        {
+            PictureRenderer.Release(shown);
+        }
+    }
+
+    // The pictures leave the page; their bitmaps are freed.
+    private void ClearPictures()
+    {
+        foreach (var image in imagesLayer.Children.OfType<Image>())
+        {
+            PictureRenderer.Release(image.Source);
+        }
+        imagesLayer.Children.Clear();
+    }
+
     private void ShowPictures(double pixelsPerPoint)
     {
         picturesShown = true;
         picturePixelsPerPoint = pixelsPerPoint;
-        imagesLayer.Children.Clear();
+        ClearPictures();
         foreach (var element in Page.Images)
         {
             imagesLayer.Children.Add(CreatePicture(element));
@@ -552,6 +578,7 @@ public sealed partial class PageView : InkPage
             if (FindPicture(element) is { } image)
             {
                 imagesLayer.Children.Remove(image);
+                PictureRenderer.Release(image.Source);
             }
         }
         var wanted = changed.ToHashSet();
@@ -598,7 +625,15 @@ public sealed partial class PageView : InkPage
         {
             string content = element.Value; // read here (the element belongs to this thread), decoded on the thread pool
             var data = await Task.Run(() => XoppImage.GetData(content));
-            image.Source = await PictureRenderer.LoadAsync(data, pixelWidth, "picture on a page");
+            var source = await PictureRenderer.LoadAsync(data, pixelWidth, "picture on a page");
+            if (image.Parent == null)
+            {
+                PictureRenderer.Release(source); // the picture left the page while it was decoded
+            }
+            else
+            {
+                image.Source = source;
+            }
         }
         catch (Exception e)
         {

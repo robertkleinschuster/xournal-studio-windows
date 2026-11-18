@@ -269,7 +269,7 @@ public sealed partial class ExplorerView : UserControl
         // Only a modified file has a committed state to go back to (a new one has none; a folder: file by file).
         foreach (var entry in menu.Items.Where(i => (string?)i.Tag == "modified"))
         {
-            entry.Visibility = menuItem is { IsFolder: false, IsModified: true } ? Visibility.Visible : Visibility.Collapsed;
+            entry.Visibility = menuItem is { CanDiscard: true } ? Visibility.Visible : Visibility.Collapsed;
         }
     }
 

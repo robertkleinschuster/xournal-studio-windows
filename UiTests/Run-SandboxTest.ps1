@@ -25,7 +25,10 @@ if ($Document) {
     Copy-Item $Document "$Work\data\test.xopp"
     Get-ChildItem (Split-Path $Document) -File | Where-Object { $_.Extension -in '.pdf', '.png', '.jpg' } | Copy-Item -Destination "$Work\data"
 }
-if ($Extra) { robocopy $Extra "$Work\extra" /E /NFL /NDL /NJH /NJS | Out-Null }
+if ($Extra) {
+    robocopy $Extra "$Work\extra" /E /NFL /NDL /NJH /NJS | Out-Null
+    if ($LASTEXITCODE -ge 8) { throw "copying $Extra failed (robocopy exit code $LASTEXITCODE)" }
+}
 $kit = Join-Path $PSScriptRoot '..\external\InkPages\UiTests'
 Copy-Item "$kit\Inj.cs", "$kit\TestKit.ps1" $Work
 Copy-Item $Test "$Work\test.ps1"

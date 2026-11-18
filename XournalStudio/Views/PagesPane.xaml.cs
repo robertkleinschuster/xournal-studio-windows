@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -43,13 +43,24 @@ public sealed partial class PageThumb(XoppPage page, double width, double height
 
     private ImageSource? background, content;
 
+    // Setting a layer frees the image it replaces (see PictureRenderer.Release).
     public ImageSource? Background
     {
         get => background;
         set
         {
+            if (gone)
+            {
+                Services.PictureRenderer.Release(value); // finished after the page left the list
+                return;
+            }
+            var old = background;
             background = value;
             Changed(nameof(Background));
+            if (old != value)
+            {
+                Services.PictureRenderer.Release(old);
+            }
         }
     }
 
@@ -58,10 +69,30 @@ public sealed partial class PageThumb(XoppPage page, double width, double height
         get => content;
         set
         {
+            if (gone)
+            {
+                Services.PictureRenderer.Release(value);
+                return;
+            }
+            var old = content;
             content = value;
             Changed(nameof(Content));
+            if (old != value)
+            {
+                Services.PictureRenderer.Release(old);
+            }
         }
     }
+
+    /// <summary>The page is not shown any more: its images are freed.</summary>
+    public void Release()
+    {
+        Background = null;
+        Content = null;
+        gone = true;
+    }
+
+    private bool gone;
 
     private void Changed(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 
@@ -116,6 +147,7 @@ public sealed partial class PagesPane : UserControl
         var shown = pages.ToList();
         DispatcherQueue.TryEnqueue(() =>
         {
+            var before = items;
             if (newDocument)
             {
                 byPage.Clear();
@@ -138,6 +170,10 @@ public sealed partial class PagesPane : UserControl
             // reorder it while the user drags.
             items = new ObservableCollection<PageThumb>(thumbs);
             List.ItemsSource = items;
+            foreach (var gone in before.Except(thumbs))
+            {
+                gone.Release(); // a deleted page's or the previous document's thumbnails (no longer in the list)
+            }
             Select(current());
             Shown?.Invoke(this, EventArgs.Empty);
         });

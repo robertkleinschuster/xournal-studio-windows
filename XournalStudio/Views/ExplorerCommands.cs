@@ -206,8 +206,10 @@ public sealed class ExplorerCommands(
     }
 
     /// <summary>
-    /// Gives exactly this file its committed content back (git), after asking. If it is the open document (or its PDF),
-    /// the document is left first (save question) and opened again from the restored file.
+    /// Gives exactly this file its committed content back (git), after asking. If the open document shows it (the
+    /// document itself, its PDF or one of its attachments <c>&lt;doc&gt;.xopp.*</c>), the question says that the
+    /// document's unsaved changes go too – no save question (saving would only be overwritten) – and the document is
+    /// opened again from the restored files.
     /// </summary>
     private async Task DiscardAsync(string path)
     {
@@ -216,27 +218,25 @@ public sealed class ExplorerCommands(
         {
             return; // only modified files offer it, and those lie in a repository
         }
+        await session.WhenSaved(); // a save running must not write after the checkout
+        string? open = session.OpenPath;
+        string? file = session.Document.FilePath;
+        bool affected = ProjectFiles.SamePath(file, path) || ProjectFiles.SamePath(session.Document.PdfPath, path) ||
+            (file != null && Path.GetFullPath(path).StartsWith(Path.GetFullPath(file) + ".", StringComparison.OrdinalIgnoreCase));
         string name = Path.GetFileName(path);
         if (!await dialogs.ConfirmAsync($"Änderungen an „{name}“ verwerfen?",
                 "Die Datei bekommt wieder den Stand des letzten Commits (der letzten Synchronisierung). Was seitdem an ihr " +
-                "geändert wurde, geht verloren.", "Verwerfen"))
+                "geändert wurde, geht verloren." + (affected && session.IsDirty
+                    ? " Auch die ungespeicherten Änderungen im offenen Dokument gehen verloren."
+                    : ""), "Verwerfen"))
         {
             return;
         }
-        string? open = session.OpenPath;
-        bool affected = ProjectFiles.SamePath(session.Document.FilePath, path) || ProjectFiles.SamePath(session.Document.PdfPath, path);
-        if (affected && !await session.ConfirmLeaveAsync())
-        {
-            return;
-        }
+        await session.WhenSaved();
         await Task.Run(() => GitSync.Discard(root, path));
-        if (affected && open != null && File.Exists(open))
+        if (affected && open != null)
         {
-            await session.OpenAsync(open);
-        }
-        else if (affected)
-        {
-            session.ShowNew();
+            await session.OpenAsync(open); // shows the restored state; the unsaved one and its recovery copy go
         }
     }
 

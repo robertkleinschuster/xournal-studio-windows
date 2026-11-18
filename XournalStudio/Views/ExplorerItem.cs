@@ -55,7 +55,10 @@ public sealed partial class ExplorerItem(ProjectEntry entry) : INotifyPropertyCh
     // The template shows the name in the theme color of the state (theme resources follow light/dark changes).
     public bool IsNew => State == GitFileState.New;
 
-    public bool IsModified => State == GitFileState.Modified;
+    public bool IsModified => State is GitFileState.Modified or GitFileState.Renamed;
+
+    /// <summary>A modified file whose committed content can be restored (not a new or renamed one).</summary>
+    public bool CanDiscard => !IsFolder && State == GitFileState.Modified;
 
     public bool IsUnchanged => State == GitFileState.Unchanged;
 }

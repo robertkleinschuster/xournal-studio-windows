@@ -8,6 +8,8 @@ public enum GitFileState
     Unchanged,
     New,
     Modified,
+    /// <summary>Shown as modified, but its path is new (a rename): there is no committed content to go back to.</summary>
+    Renamed,
 }
 
 /// <summary>Outcome of a sync: documents the pull changed (full paths) and whether commits were pushed.</summary>
@@ -46,8 +48,9 @@ public static class GitSync
         {
             var state =
                 entry.State.HasFlag(FileStatus.NewInWorkdir) || entry.State.HasFlag(FileStatus.NewInIndex) ? GitFileState.New :
+                entry.State.HasFlag(FileStatus.RenamedInWorkdir) || entry.State.HasFlag(FileStatus.RenamedInIndex)
+                    ? GitFileState.Renamed :
                 entry.State.HasFlag(FileStatus.ModifiedInWorkdir) || entry.State.HasFlag(FileStatus.ModifiedInIndex) ||
-                entry.State.HasFlag(FileStatus.RenamedInWorkdir) || entry.State.HasFlag(FileStatus.RenamedInIndex) ||
                 entry.State.HasFlag(FileStatus.TypeChangeInWorkdir) || entry.State.HasFlag(FileStatus.TypeChangeInIndex) ||
                 entry.State.HasFlag(FileStatus.DeletedFromWorkdir) || entry.State.HasFlag(FileStatus.DeletedFromIndex)
                     ? GitFileState.Modified : GitFileState.Unchanged;
@@ -175,11 +178,41 @@ public static class GitSync
         using var repo = new Repository(root);
         string relative = Path.GetRelativePath(repo.Info.WorkingDirectory, Path.GetFullPath(path)).Replace('\\', '/');
         var head = repo.Head.Tip ?? throw new InvalidOperationException("Das Repository hat noch keinen Commit.");
-        if (head[relative] == null)
-        {
+        string committed = CommittedPath(head.Tree, relative) ??
             throw new InvalidOperationException($"„{relative}“ ist im letzten Commit nicht enthalten.");
+        repo.CheckoutPaths(head.Sha, [committed], new CheckoutOptions { CheckoutModifiers = CheckoutModifiers.Force });
+    }
+
+    // The file's path in the commit: as given, or with other letter case (the file system and the status ignore case,
+    // git's trees do not).
+    private static string? CommittedPath(Tree tree, string relative)
+    {
+        if (tree[relative] is { TargetType: TreeEntryTargetType.Blob })
+        {
+            return relative;
         }
-        repo.CheckoutPaths(head.Sha, [relative], new CheckoutOptions { CheckoutModifiers = CheckoutModifiers.Force });
+        var parts = relative.Split('/');
+        var names = new List<string>();
+        var current = tree;
+        for (int i = 0; i < parts.Length; i++)
+        {
+            var entry = current.FirstOrDefault(e => string.Equals(e.Name, parts[i], StringComparison.OrdinalIgnoreCase));
+            if (entry == null)
+            {
+                return null;
+            }
+            names.Add(entry.Name);
+            if (i == parts.Length - 1)
+            {
+                return entry.TargetType == TreeEntryTargetType.Blob ? string.Join('/', names) : null;
+            }
+            if (entry.Target is not Tree child)
+            {
+                return null;
+            }
+            current = child;
+        }
+        return null;
     }
 
     private static string FullPath(Repository repo, string relative) =>

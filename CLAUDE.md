@@ -61,7 +61,10 @@ Guidance for Claude Code in this repository. Keep it current: add what is learne
   (out of view while scrolling, recycled thumbnails, device lost – WinUI `SoftwareBitmapSource.cpp`,
   `EnsureAndUpdateHardwareResources` → `ReloadSource`); a closed bitmap fails there with RO_E_CLOSED (0x80000013) and
   WinUI fails fast (`RoFailFastWithErrorContext` on a thread-pool thread, stowed exception in Microsoft.UI.Xaml.dll).
-  `PdfBackground.RenderAsync` and `PictureRenderer` used `using var bitmap`. (`BitmapImage.SetSourceAsync` copies its
+  `PdfBackground.RenderAsync` and `PictureRenderer` used `using var bitmap`. Instead a source that is not shown any
+  more is closed (`PictureRenderer.Release` = `SoftwareBitmapSource.Dispose`, which closes the bitmap the WinUI way):
+  replaced or dropped page backgrounds and pictures (`PageView`), thumbnails (`PageThumb`), the insert dialog's – the
+  bitmaps are native memory the GC does not see. (`BitmapImage.SetSourceAsync` copies its
   stream at once – disposing that stream is fine.) The fork's release artifact has no PDBs: the XAML frames are only
   offsets.
 - **Windows.Data.Pdf keeps a file open:** a `PdfDocument` from `LoadFromFileAsync` holds its file as long as it lives

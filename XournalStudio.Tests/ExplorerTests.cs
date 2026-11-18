@@ -264,6 +264,10 @@ public sealed class ExplorerTests : IDisposable
         Assert.Equal("new", File.ReadAllText(Path.Combine(a, "other.xopp"))); // nothing else touched
         var status = GitSync.GetStatus(a);
         Assert.False(status.ContainsKey(Path.Combine(a, "start.xopp")));
+        // Letter case on disk differs from the commit (Windows ignores it, git trees do not).
+        File.WriteAllText(Path.Combine(a, "start.xopp"), "changed again");
+        GitSync.Discard(a, Path.Combine(a, "START.xopp"));
+        Assert.Equal("start", File.ReadAllText(Path.Combine(a, "start.xopp")));
         // A file the last commit does not have cannot go back.
         Assert.Throws<InvalidOperationException>(() => GitSync.Discard(a, Path.Combine(a, "other.xopp")));
         Assert.True(File.Exists(Path.Combine(a, "other.xopp")));

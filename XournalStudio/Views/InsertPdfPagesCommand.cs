@@ -109,6 +109,12 @@ public sealed class InsertPdfPagesCommand(WindowId window, DocumentSession sessi
         var result = await dialogs.ShowAsync(dialog);
         closed.Cancel(); // the rest of the thumbnails is not needed any more (also renders still waiting)
         await rendering;
+        foreach (var item in (List<FrameworkElement>)thumbnails.ItemsSource)
+        {
+            var image = (Image)((Border)((StackPanel)item).Children[0]).Child;
+            Services.PictureRenderer.Release(image.Source); // the dialog is closed: its thumbnails are freed
+            image.Source = null;
+        }
         if (result != ContentDialogResult.Primary)
         {
             return null;

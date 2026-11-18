@@ -22,7 +22,16 @@ public static class PictureRenderer
             // Not disposed: the source keeps it and copies it again later (see PdfBackground.RenderAsync).
             var rendered = await PdfRenderer.Shared.RenderAsync(page, null, pixelWidth, pixelHeight);
             var source = new SoftwareBitmapSource();
-            await source.SetBitmapAsync(rendered);
+            try
+            {
+                await source.SetBitmapAsync(rendered);
+            }
+            catch
+            {
+                source.Dispose(); // closes the bitmap too (the exception goes on to the caller)
+                rendered.Dispose();
+                throw;
+            }
             return source;
         }
         var bitmap = new BitmapImage();
@@ -33,6 +42,20 @@ public static class PictureRenderer
         bitmap.DecodePixelType = DecodePixelType.Physical;
         await bitmap.SetSourceAsync(stream);
         return bitmap;
+    }
+
+    /// <summary>
+    /// Frees an image made by <see cref="LoadAsync"/> or <c>PdfBackground.RenderAsync</c> that is not shown any more: a
+    /// <see cref="SoftwareBitmapSource"/> holds its rendered bitmap (native memory the GC does not see) until it is closed;
+    /// closing it is WinUI's own way to let the bitmap go (it waits for a copy still running). Other sources are left to
+    /// the GC. Never call it for an image still shown.
+    /// </summary>
+    public static void Release(ImageSource? source)
+    {
+        if (source is SoftwareBitmapSource bitmapSource)
+        {
+            bitmapSource.Dispose();
+        }
     }
 
     /// <summary>Encodes a bitmap as PNG.</summary>
