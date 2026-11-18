@@ -291,8 +291,8 @@ public sealed class MarkupImportTests : IDisposable
         var copy = Annotation(pdf, "/Stamp", 0, 700, 100, 841.89, Form(pdf, 100, 141.89, "0 0 1 RG 10 131 m 30 131 l S"));
         copy.Elements["/AAPL:AKExtras"] = Extras(pdf, ("/PPKID", "AkHO"));
         var text = Annotation(pdf, "/FreeText", 248, 405, 378, 424,
-            Form(pdf, 130, 19, "BT /F1 1 Tf 11 0 0 11 8.5 5.65 Tm (Robert) Tj ET"));
-        text.Elements.SetString("/Contents", "Robert");
+            Form(pdf, 130, 19, "BT /F1 1 Tf 11 0 0 11 8.5 5.65 Tm (Name) Tj ET"));
+        text.Elements.SetString("/Contents", "Name");
         text.Elements.SetString("/DA", "/Helvetica 12 Tf 0 g");
         Annotation(pdf, "/Stamp", 300, 300, 400, 350, Form(pdf, 100, 50, "0 0 0 rg 0 0 100 50 re f"));
         // a screenshot over it, and a drawing that cannot be read: pictures as well, the overlapping one rendered alone
@@ -348,7 +348,7 @@ public sealed class MarkupImportTests : IDisposable
         Assert.Equal("6", (string?)strokes[1].Attribute("width"));
 
         var text = Assert.Single(elements, e => e.Name == "text");
-        Assert.Equal("Robert", text.Value);
+        Assert.Equal("Name", text.Value);
         Assert.Equal("11", (string?)text.Attribute("size")); // as drawn, not the /DA's 12
         Assert.Equal(256.5, double.Parse((string)text.Attribute("x")!, System.Globalization.CultureInfo.InvariantCulture), 1);
         Assert.Equal(841.89 - 410.65 - 0.905 * 11, double.Parse((string)text.Attribute("y")!, System.Globalization.CultureInfo.InvariantCulture), 1);
