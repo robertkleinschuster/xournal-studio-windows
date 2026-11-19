@@ -9,6 +9,7 @@ add_library(XournalPdf STATIC
     src/ContentStream.cpp
     src/FontTables.cpp
     src/Fonts.cpp
+    src/TextBoxLayout.cpp
     src/TextLayout.cpp
     src/TextDrawing.cpp
     src/Images.cpp

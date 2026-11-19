@@ -37,6 +37,7 @@ add_subdirectory(model)
 add_subdirectory(io)
 add_subdirectory(pdf)
 add_subdirectory(pdftext)
+add_subdirectory(search)
 add_subdirectory(import)
 add_subdirectory(services)
 
