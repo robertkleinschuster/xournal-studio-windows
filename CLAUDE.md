@@ -143,7 +143,10 @@ arrows), math exercises long formulas in several colors.
   (D:\src\win32-ink-demo) shows pen ink + finger pan/zoom working like today, InkPages, this app and MatheTrainer move to
   raw C++/Win32: comctl32 v6 with visual styles (Windows 11 look), PerMonitorV2, DirectComposition/Direct2D/DirectWrite,
   the Win32 ink presenter, DirectManipulation, C++/WinRT for WinRT APIs (Windows.Data.Pdf, InkAnalyzer); few
-  dependencies, fast start. Not started; the current apps stay usable until replaced.
+  dependencies, fast start. Plan: `docs/CPP-UMZUG.md`. **Phase 0 done 2026-11-19:** InkPages `main` is now the C++
+  library (1817e3f); its WinUI version is the tag `winui-final`. **This app's submodule `external/InkPages` stays on its
+  WinUI commit (0fdf2d7) while the C# app lives – never bump it to C++ commits**; the current app stays usable until the
+  C++ app replaces it.
 - **Simple, flat and honest – no magic** (user, 2026-11-15). The GTK fork grew so much hidden behavior that it
   became confusing. Show things as they are and do exactly what the user asked: the explorer shows every file
   and folder (only what Windows itself marks hidden/system is left out), nothing is paired, filtered, renamed or

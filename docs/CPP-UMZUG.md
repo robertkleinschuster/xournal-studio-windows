@@ -34,9 +34,13 @@ Der Mathe Trainer zieht **später** um; sein InkPages-Submodul bleibt bis dahin 
 
 ## Phasen
 
-### 0. Vorbereitung
-- `winui-final` in InkPages taggen, Mathe Trainer informieren.
-- C++-Projektgerüst für InkPages (Bibliothek, Demo, Unit-Tests, Sandbox-Runner), Logging-/Fehler-Konventionen.
+### 0. Vorbereitung – erledigt 2026-11-19
+- `winui-final` in InkPages getaggt (c0c2e57), Mathe Trainer darauf gepinnt.
+- C++-Projektgerüst für InkPages (1817e3f): CMake, statische Bibliothek mit `inkpages::Log`, Demo-Fenster (comctl32 v6,
+  PerMonitorV2), Unit-Tests mit GoogleTest/CTest (Microsofts CppUnitTest fand im CMake-Build keine Tests), `build.ps1`,
+  CI; Sandbox-Starttest grün.
+- Xournals Submodul `external/InkPages` bleibt auf dem WinUI-Stand, solange die C#-App lebt (nicht auf C++-Stände
+  anheben); die C++-App in `native/` bindet InkPages später direkt ein.
 
 ### 1. Schreibfläche (InkPages-Kern)
 - Seiten in einem DirectManipulation-Viewport: Finger-Pan mit Schwung, Pinch-Zoom, **Präzisions-Touchpad**
