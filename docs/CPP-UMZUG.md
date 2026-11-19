@@ -101,6 +101,18 @@ ist seine Eingabe aktiv). 29 Unit-Tests, Sandbox `ToolsTest.ps1` grün. Offen: 2
 - PDF-Export: zu klären (siehe offene Fragen).
 - iPad-Import zuletzt (plist + PencilKit-Protobuf).
 
+### 4b. Neue Funktionen nach der Parität (Nutzer, 2026-11-19 – nach unseren Bedienkonzepten, nicht wie Xournal++)
+- **Text-Werkzeug:** Werkzeug „Text“; Stift-Tipp öffnet ein Textfeld, Tastatur tippt, Tipp daneben beendet; Tipp auf
+  einen Text bearbeitet ihn; mit Auswählen wie Striche/Bilder auswählen, verschieben, skalieren; Schrift/Größe/Farbe im
+  Menü am Werkzeug; gespeichert als upstream-`<text>`.
+- **Suche (Strg+F):** Suchfeld oben in der Leiste; PDF-Text, Texte der Datei und Handschrift (`InkAnalyzer` im
+  Hintergrund, wie OneNote); Treffer auf den Seiten markiert, Enter/F3 weiter; Trefferliste im Seitenleisten-Reiter „Suche“.
+- **PDF-Sprungmarken:** Inhaltsverzeichnis des PDFs als Baum im Reiter „Gliederung“, Tipp springt; Links im PDF per
+  **Fingertipp** (der Finger zeichnet nie), Webadressen öffnen den Browser.
+- **Platz einfügen:** vorerst nicht (Nutzer, 2026-11-19).
+- Vorab gemessen (Probe-Agent, D:\srceature-probes): PDF-Text mit Positionen (Windows.Data.Pdf hat keinen Text),
+  Texteingabe auf der Tintenfläche (fensterloses RichEdit vs. Kind-Fenster).
+
 ### 5. Umstieg
 - Paritätsliste erfüllt, Sandbox-Tests grün, Gerätetest durch den Nutzer → Installer der C++-App, C#-App entfernen.
 
