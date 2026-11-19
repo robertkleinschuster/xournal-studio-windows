@@ -10,7 +10,10 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <memory>
+#include <span>
+#include <string>
 #include <vector>
 
 namespace xournal::pdf
@@ -26,6 +29,8 @@ namespace xournal::pdf
     public:
         /// Loads the PDF (Windows.Data.Pdf) and creates the device. Throws xournal::Error.
         explicit PdfAreaRenderer(std::filesystem::path const& pdf);
+        /// The same for a PDF in memory (e.g. one the export wrote only to be rendered).
+        explicit PdfAreaRenderer(std::span<std::uint8_t const> pdf);
         ~PdfAreaRenderer();
         PdfAreaRenderer(PdfAreaRenderer const&) = delete;
         PdfAreaRenderer& operator=(PdfAreaRenderer const&) = delete;
@@ -36,6 +41,7 @@ namespace xournal::pdf
 
     private:
         struct Impl;
+        void Open(std::function<void(Impl&)> const& load, std::string const& what); // `load` sets the document
         std::unique_ptr<Impl> impl;
     };
 }

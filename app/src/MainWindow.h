@@ -17,6 +17,7 @@
 #include "DocumentSearch.h"
 #include "PdfLinks.h"
 #include "SearchPane.h"
+#include "SelectionClipboard.h"
 #include "PdfOutline.h"
 #include "ProjectExplorer.h"
 #include "RecoveryCopies.h"
@@ -82,6 +83,7 @@ namespace xournal::app
         std::unique_ptr<SidePane> pane;
         std::unique_ptr<Toast> toast;
         std::unique_ptr<DocumentView> view;
+        std::unique_ptr<SelectionClipboard> clipboard;
         std::unique_ptr<DocumentSession> session;
         std::unique_ptr<PdfExportCommand> exportCommand;
         std::unique_ptr<PageCommands> pageCommands;

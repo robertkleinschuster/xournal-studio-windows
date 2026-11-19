@@ -22,6 +22,8 @@ namespace xournal::app
         /// A PNG/JPEG/... decoded by WIC (premultiplied BGRA). Throws when it is not a picture WIC can read.
         std::shared_ptr<CpuBitmap> Decode(std::span<std::uint8_t const> data);
         std::shared_ptr<CpuBitmap> DecodeFile(std::filesystem::path const& file);
+        /// A memory bitmap (premultiplied BGRA) as PNG with straight alpha (WIC).
+        std::vector<std::uint8_t> EncodePng(CpuBitmap const& bitmap);
 
         /// A PDF read into memory and opened by Windows.Data.Pdf (blocking: not on the UI thread).
         winrt::Windows::Data::Pdf::PdfDocument LoadPdf(std::span<std::uint8_t const> data);

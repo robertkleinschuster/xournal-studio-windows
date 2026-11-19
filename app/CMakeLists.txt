@@ -54,6 +54,7 @@ add_executable(XournalStudio WIN32
     src/TextDrawing.cpp
     src/FilePictures.cpp
     src/FileTexts.cpp
+    src/SelectionClipboard.cpp
     app.rc
 )
 target_compile_options(XournalStudio PRIVATE ${XOURNAL_COMPILE_OPTIONS})

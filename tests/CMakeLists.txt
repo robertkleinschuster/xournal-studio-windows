@@ -18,6 +18,7 @@ add_executable(XournalTests
     PdfExportTests.cpp
     PdfDocumentExportTests.cpp
     PdfPageAppenderTests.cpp
+    ClipTests.cpp
     PdfNavigationTests.cpp
     PdfPlacesTests.cpp
 )

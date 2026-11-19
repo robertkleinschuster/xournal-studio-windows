@@ -65,6 +65,8 @@ namespace xournal::app
         /// The shown document's background PDF on screen (nothing without one).
         std::shared_ptr<PdfBackground> Pdf() const;
         RenderQueue& Queue() { return renderQueue; }
+        /// The shown document's pictures and texts (nothing before the first document).
+        FilePictures* Pictures() { return pictures.get(); }
         /// The document's PDF was written or newly chosen: the screen loads it anew and draws its pages again.
         void ReloadPdf();
 

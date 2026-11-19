@@ -285,6 +285,53 @@ namespace xournal::app
         for (auto const& [page, _] : places) invalidate(page);
     }
 
+    std::vector<XmlElementPtr> FilePictures::CopiesOf(std::vector<inkpages::PictureId> const& ids, Point corner)
+    {
+        std::vector<XmlElementPtr> copies;
+        std::scoped_lock guard(documentLock);
+        for (auto id : ids)
+        {
+            auto const& element = pictures.at(id);
+            int page = PageOf(element.get());
+            if (page < 0)
+            {
+                LogError(std::format("pictures: picture {} to copy is on no page - left out", id));
+                continue;
+            }
+            Point o = Origin(page);
+            auto copy = element->Clone();
+            TransformInPlace(*copy, Matrix::Translation(o.x - corner.x, o.y - corner.y));
+            copies.push_back(copy);
+        }
+        return copies;
+    }
+
+    std::vector<inkpages::PictureId> FilePictures::Add(std::vector<XmlElementPtr> const& elements)
+    {
+        std::vector<inkpages::PictureId> ids;
+        std::set<int> pages;
+        {
+            std::scoped_lock guard(documentLock);
+            for (auto const& element : elements)
+            {
+                Rect r = BoundsOf(*element);
+                int page = PageAtPoint({ r.x + r.width / 2, r.y + r.height / 2 });
+                if (page < 0)
+                {
+                    LogError("pictures: no page to add a pasted picture or text to - left out");
+                    continue;
+                }
+                Point o = Origin(page);
+                TransformInPlace(*element, Matrix::Translation(-o.x, -o.y));
+                doc->Pages()[page]->Images().Add({ element }); // the top layer, like strokes
+                ids.push_back(IdOf(element));
+                pages.insert(page);
+            }
+        }
+        for (int page : pages) invalidate(page);
+        return ids;
+    }
+
     std::vector<inkpages::PictureId> FilePictures::Duplicate(std::vector<inkpages::PictureId> const& ids, inkpages::Affine const& m)
     {
         std::vector<inkpages::PictureId> copies;

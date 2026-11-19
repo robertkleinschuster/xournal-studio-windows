@@ -13,6 +13,7 @@
 #include <winrt/Windows.Data.Pdf.h>
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Storage.h>
+#include <winrt/Windows.Storage.Streams.h>
 
 #include <algorithm>
 #include <cmath>
@@ -44,6 +45,27 @@ namespace xournal::pdf
 
     PdfAreaRenderer::PdfAreaRenderer(std::filesystem::path const& pdf) : impl(std::make_unique<Impl>())
     {
+        Open([&](Impl& m) {
+            auto file = winrt::Windows::Storage::StorageFile::GetFileFromPathAsync(Paths::Full(pdf).wstring()).get();
+            m.document = winrt::Windows::Data::Pdf::PdfDocument::LoadFromFileAsync(file).get();
+        }, ToUtf8(pdf.wstring()));
+    }
+
+    PdfAreaRenderer::PdfAreaRenderer(std::span<std::uint8_t const> pdf) : impl(std::make_unique<Impl>())
+    {
+        Open([&](Impl& m) {
+            winrt::Windows::Storage::Streams::InMemoryRandomAccessStream stream;
+            winrt::Windows::Storage::Streams::DataWriter writer(stream);
+            writer.WriteBytes({ pdf.data(), pdf.data() + pdf.size() });
+            writer.StoreAsync().get();
+            writer.DetachStream();
+            stream.Seek(0);
+            m.document = winrt::Windows::Data::Pdf::PdfDocument::LoadFromStreamAsync(stream).get();
+        }, std::format("a PDF of {} bytes in memory", pdf.size()));
+    }
+
+    void PdfAreaRenderer::Open(std::function<void(Impl&)> const& load, std::string const& what)
+    {
         HRESULT com = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
         if (com != RPC_E_CHANGED_MODE)
         {
@@ -52,12 +74,11 @@ namespace xournal::pdf
         }
         try
         {
-            auto file = winrt::Windows::Storage::StorageFile::GetFileFromPathAsync(Paths::Full(pdf).wstring()).get();
-            impl->document = winrt::Windows::Data::Pdf::PdfDocument::LoadFromFileAsync(file).get();
+            load(*impl);
         }
         catch (winrt::hresult_error const& e)
         {
-            ThrowHr(std::format("load {} for rendering", ToUtf8(pdf.wstring())), e.code());
+            ThrowHr(std::format("load {} for rendering", what), e.code());
         }
         UINT const flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
         HRESULT hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, flags, nullptr, 0, D3D11_SDK_VERSION,

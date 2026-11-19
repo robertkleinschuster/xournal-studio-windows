@@ -4,6 +4,7 @@
 #include "AppToolbar.h"
 #include "Commands.h"
 #include "Dialogs.h"
+#include "ErrorText.h"
 #include "Resources.h"
 #include "UiQueue.h"
 
@@ -111,6 +112,34 @@ namespace xournal::app
         // Set before the toolbar: it chains these handlers.
         surface->historyChanged = [this] { if (session) session->NoteEdit(); UpdateTitle(); UpdateCommands(); };
         surface->selectionChanged = [] {};
+        clipboard = std::make_unique<SelectionClipboard>(window, *surface, *view);
+        surface->copyToClipboard = [this](inkpages::Clip const& clip)
+        {
+            try
+            {
+                clipboard->Copy(clip);
+                return true;
+            }
+            catch (...)
+            {
+                LogException("clipboard: copy");
+                Message(std::format(L"Kopieren fehlgeschlagen: {}", ErrorText()), ToastKind::Error);
+                return false; // Ausschneiden keeps the selection
+            }
+        };
+        surface->pasteFromClipboard = [this](inkpages::PointF at) -> std::optional<inkpages::Clip>
+        {
+            try
+            {
+                return clipboard->Paste(at);
+            }
+            catch (...)
+            {
+                LogException("clipboard: paste");
+                Message(std::format(L"Einfügen fehlgeschlagen: {}", ErrorText()), ToastKind::Error);
+                return inkpages::Clip{}; // nothing pasted (not Windows ink instead)
+            }
+        };
 
         toolbar = CreateAppToolbar(window, *surface, inkpages::ToolChoices::Parse(settings.toolChoices), {
             [this] { OnCommand(CmdSave); },

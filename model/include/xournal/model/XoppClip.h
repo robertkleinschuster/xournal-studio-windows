@@ -1,7 +1,8 @@
 #pragma once
 
-// A group of .xopp elements (<stroke>, <image>, <teximage>) relative to its top-left corner: what is copied to the
-// clipboard and pasted or duplicated. Lives only on the clipboard, never in a file; the elements in it are upstream's.
+// A group of .xopp elements (<stroke>, <image>, <teximage>, <text>) relative to its top-left corner: what is copied to
+// the clipboard and pasted (the app's clipboard format: the <clip> as XML). Lives only on the clipboard, never in a file;
+// the elements in it are upstream's.
 
 #include "xournal/model/Geometry.h"
 #include "xournal/model/Xml.h"
@@ -18,6 +19,6 @@ namespace xournal::XoppClip
     /// Copies of the elements, placed and scaled by `m`.
     std::vector<XmlElementPtr> Place(XmlElement const& clip, Matrix const& m);
 
-    /// A copy of a stroke or picture element moved/scaled by `m`.
+    /// A copy of a stroke, picture or text element moved/scaled by `m` (a text: its corner and size).
     XmlElementPtr Transformed(XmlElement const& e, Matrix const& m);
 }

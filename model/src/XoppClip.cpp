@@ -3,6 +3,7 @@
 #include "xournal/model/Strokes.h"
 #include "xournal/model/XoppFormat.h"
 #include "xournal/model/XoppImage.h"
+#include "xournal/model/XoppText.h"
 
 namespace xournal::XoppClip
 {
@@ -46,6 +47,10 @@ namespace xournal::XoppClip
         else if (XoppImage::IsImage(*copy))
         {
             XoppImage::SetBounds(*copy, XoppImage::Transform(XoppImage::GetBounds(*copy), m));
+        }
+        else if (XoppText::IsText(*copy))
+        {
+            XoppText::Transform(*copy, m);
         }
         return copy;
     }

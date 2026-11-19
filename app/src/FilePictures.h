@@ -50,6 +50,12 @@ namespace xournal::app
         /// The page's top left in document units.
         Point Origin(int page) const;
 
+        /// Copies of pictures and texts in document units moved so that `corner` is at 0,0 (the clipboard's clip).
+        std::vector<XmlElementPtr> CopiesOf(std::vector<inkpages::PictureId> const& pictures, Point corner);
+        /// Adds pictures and texts given in document units (pasted) to the pages under their centers (top layer) and
+        /// returns their ids.
+        std::vector<inkpages::PictureId> Add(std::vector<XmlElementPtr> const& elements);
+
         std::vector<inkpages::PictureId> PicturesIn(int page, std::vector<inkpages::PointF> const& polygon) override;
         std::vector<inkpages::PictureId> PicturesOn(int page) override;
         inkpages::RectF Bounds(inkpages::PictureId picture) override;

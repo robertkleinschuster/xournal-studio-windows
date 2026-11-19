@@ -184,6 +184,15 @@ code). In short: `base ← model ← io ← pdf, pdftext, search, import, servic
   commit all, fetch, rebase or fast-forward, push; a conflict is aborted.
 - Tasks: only `<project folder>/todo.txt`; no reminders, no date words in quick add.
 - The page in view is outlined in documents with more than one page.
+- **XmlLite writes LF as CR LF** in `WriteString`/`WriteWhitespace` (measured 2026-11-19): `XmlText` writes the pieces
+  between line feeds through the writer and each LF with `WriteRaw` – texts and formatting keep LF as upstream writes.
+- **comctl32: `LVM_INSERTMARKHITTEST` answers -1 for every point of an `LVS_OWNERDATA` list** (measured with a probe
+  2026-11-19); the pages pane has one ordinary item per page (text/image by callback). In icon view with
+  `LVS_ALIGNTOP` the insert mark is a vertical bar and before/after follow the horizontal position; `LVS_ALIGNLEFT`
+  gives a horizontal mark but wraps items into columns.
+- **Clipboard** (`SelectionClipboard`): own format "Xournal Studio Clip" = a `<clip>` of upstream elements as XML (app
+  internal, never in a file); PNG + CF_DIB for other apps; pictures of other apps paste as `<image>`; otherwise Windows
+  ink's clipboard (InkPages).
 
 ## Testing
 
@@ -196,7 +205,7 @@ code). In short: `base ← model ← io ← pdf, pdftext, search, import, servic
   refuses while `wsb list` is not empty or `.local-build\sandbox.lock` exists. Results per test in
   `%TEMP%\xournal-native-sandbox-<Test>\out` (screenshots, transcript, logs). In-sandbox scripts dot-source
   `C:\sbx\TestKit.ps1`; comctl32 controls and menus are found with InkPages' `uiaprobe.exe` (pass it with `-Extra`).
-  Tests: `InkRoundTripTest`, `DocumentFlowsTest`, `PagesFlowTest`, `PagesPaneTest`, `TextToolTest`, `TasksTest`,
+  Tests: `InkRoundTripTest`, `DocumentFlowsTest`, `PagesFlowTest`, `PagesPaneTest`, `TextToolTest`, `ClipboardTest`, `TasksTest`,
   `RecoveryTest`, `ExplorerTest` (+ `New-TestRepository.ps1`), `MsiTest` (the installer). Inside the sandbox:
   PowerShell 5.1 (Add-Type = C# 5), 1514x900 at 144 DPI; synthetic pen input must hover ~100 ms before a press on the
   selection, as a real pen does. Never name a function `Erase` in a test (PowerShell alias); write scripts with the
@@ -213,7 +222,7 @@ code). In short: `base ← model ← io ← pdf, pdftext, search, import, servic
 
 ## Open work
 
-- The parity list and the remaining features are in `docs/CPP-UMZUG.md` (clipboard images/ink of other apps, file
-  associations, device test by the user).
+- The parity list and the remaining features are in `docs/CPP-UMZUG.md` (file associations, device test by
+  the user).
 - Questions for the user: an attached copy `<name>.xopp.bg.pdf` instead of appending to the original PDF (offered, not
   chosen); WiX 7 (EULA) vs. staying on WiX 6; a code-signing certificate.
