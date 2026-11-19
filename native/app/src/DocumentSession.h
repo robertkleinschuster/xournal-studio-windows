@@ -40,8 +40,10 @@ namespace xournal::app
         void Load(std::filesystem::path const& file);
         /// Shows a restored recovery copy: it counts as changed (unsaved) until it is saved.
         void ShowRecovered(std::shared_ptr<XoppDocument> restored);
-        /// The background PDF was renamed: the document refers to it there (written on the next save).
-        void MovePdf(std::filesystem::path const& pdf);
+        /// `item` (a file or folder the document uses: its PDF, a picture background, a folder holding them) was renamed
+        /// to `renamed`: the document refers to them there and counts as changed, so the next save writes the new
+        /// references (and leaving it asks).
+        void MoveFiles(std::filesystem::path const& item, std::filesystem::path const& renamed);
         /// "Meine als Kopie speichern…": a copy with its own attachments; the document stays as it is.
         bool SaveCopy();
         /// While a sync runs: says so for "<what>" ("Öffnen", "Speichern") and returns true; nothing is opened or
@@ -71,7 +73,7 @@ namespace xournal::app
         DocumentView& view;
         std::shared_ptr<XoppDocument> doc;
         bool loading = false;
-        bool recovered = false; // a restored recovery copy, not saved yet
+        bool changedOutsideInk = false; // a restored recovery copy or moved references, not saved yet
         bool pagesChanged = false; // pages inserted or removed since the last save
     };
 }

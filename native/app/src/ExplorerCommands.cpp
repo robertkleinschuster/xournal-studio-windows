@@ -208,7 +208,8 @@ namespace xournal::app
 
     // Exactly this file (only the name before the extension is edited) or folder - nothing else is renamed with it. The
     // open document, if it is renamed (or lies in the folder), is left (leave question) and opened again from its new
-    // place; if its background PDF is renamed, the document refers to the new name.
+    // place; if a file it shows is renamed (its PDF, a picture background, a folder holding them), the document refers
+    // to the new name and counts as changed (saved by choice, as always).
     void ExplorerCommands::Rename(std::filesystem::path const& item, bool isFolder, std::wstring const& edited)
     {
         std::wstring newName = project::ProjectFiles::NewName(item, isFolder, std::wstring(Trim(edited)));
@@ -235,9 +236,9 @@ namespace xournal::app
         {
             session.Load(project::ProjectFiles::MapRenamed(*openFile, item, renamed));
         }
-        else if (doc && IsAtOrBelow(doc->PdfPath(), item))
+        else if (doc && doc->Uses(item))
         {
-            session.MovePdf(project::ProjectFiles::MapRenamed(*doc->PdfPath(), item, renamed));
+            session.MoveFiles(item, renamed); // its PDF or a picture background (or a folder holding them)
         }
     }
 

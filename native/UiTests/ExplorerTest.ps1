@@ -93,25 +93,39 @@ Invoke-Test {
     if (Test-Path "$work\test.xopp") { throw 'the old name is still there' }
     Shot '06-renamed'
 
-    # 3. Delete the open document's PDF: asked, the document is left (it uses the PDF), the PDF goes to the recycle bin.
-    MenuOnRow 'Schaltungen.pdf' 'schen'
-    Shot '07-delete-question'
+    # 3. Rename the open document's PDF (F2): the document refers to the new name and counts as changed (saved by choice).
+    ClickAt 'XournalStudioWindow' 'Schaltungen.pdf' | Out-Null
+    [Inj]::Key(0x71); Start-Sleep -Milliseconds 800   # F2
+    [System.Windows.Forms.SendKeys]::SendWait('Skript'); Start-Sleep -Milliseconds 300
+    [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+    WaitFor 'pdf rename' { Test-Path "$work\Skript.pdf" }
+    Start-Sleep 1
+    "after pdf rename: files $(Files), title: $(Title)"
+    if ((Title) -notlike '•*') { throw "renaming the document's PDF must mark it changed (title: $(Title))" }
+    Shot '07-pdf-renamed'
+
+    # 4. Delete the open document's PDF: asked, the document is left (it uses the PDF; changed: the leave question,
+    # Nicht speichern), the PDF goes to the recycle bin.
+    MenuOnRow 'Skript.pdf' 'schen'
+    Shot '08-delete-question'
     ClickAnywhere 'Löschen'
-    WaitFor 'delete' { -not (Test-Path "$work\Schaltungen.pdf") }
+    Start-Sleep 1
+    ClickAnywhere 'Nicht speichern'
+    WaitFor 'delete' { -not (Test-Path "$work\Skript.pdf") }
     Start-Sleep 1
     "after delete: files $(Files), title: $(Title)"
     if ((Title) -notlike '*Notiz*') { throw "the document using the PDF must be left (title: $(Title))" }
-    Shot '08-pdf-deleted'
+    Shot '09-pdf-deleted'
 
-    # 4. A new folder, named in place (label edit).
+    # 5. A new folder, named in place (label edit).
     MenuOnRow 'todo.txt' 'Neuer Ordner'
     [System.Windows.Forms.SendKeys]::SendWait('Übung 1'); Start-Sleep -Milliseconds 300
     [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
     WaitFor 'new folder' { Test-Path "$work\Übung 1" }
     "after new folder: files $(Files)"
-    Shot '09-new-folder'
+    Shot '10-new-folder'
 
-    # 5. Als Pfad kopieren: the path in quotes, as File Explorer gives it.
+    # 6. Als Pfad kopieren: the path in quotes, as File Explorer gives it.
     MenuOnRow 'todo.txt' 'Als Pfad'
     $clip = Get-Clipboard
     "clipboard: $clip"

@@ -5,6 +5,8 @@
 #include "PdfPages.h"
 #include "UiQueue.h"
 
+#include "xournal/project/ProjectFiles.h"
+
 #include "xournal/base/Log.h"
 #include "xournal/base/Text.h"
 #include "xournal/io/DocumentFile.h"
@@ -27,7 +29,7 @@ namespace xournal::app
     void DocumentSession::Show(std::shared_ptr<XoppDocument> next)
     {
         doc = std::move(next);
-        recovered = false;
+        changedOutsideInk = false;
         pagesChanged = false;
         view.Show(doc);
         if (changed) changed();
@@ -61,13 +63,26 @@ namespace xournal::app
     void DocumentSession::ShowRecovered(std::shared_ptr<XoppDocument> restored)
     {
         Show(std::move(restored));
-        recovered = true; // unsaved until the user saves it
+        changedOutsideInk = true; // unsaved until the user saves it
         if (changed) changed();
     }
 
-    void DocumentSession::MovePdf(std::filesystem::path const& pdf)
+    void DocumentSession::MoveFiles(std::filesystem::path const& item, std::filesystem::path const& renamed)
     {
-        if (doc) doc->MovePdf(pdf);
+        if (!doc) return;
+        if (project::ProjectFiles::IsAtOrBelow(doc->PdfPath(), item))
+        {
+            doc->MovePdf(project::ProjectFiles::MapRenamed(*doc->PdfPath(), item, renamed));
+        }
+        for (auto const& page : doc->Pages())
+        {
+            if (project::ProjectFiles::IsAtOrBelow(page->BackgroundImagePath(), item))
+            {
+                page->SetBackgroundImagePath(project::ProjectFiles::MapRenamed(*page->BackgroundImagePath(), item, renamed));
+            }
+        }
+        changedOutsideInk = true;
+        if (changed) changed();
     }
 
     bool DocumentSession::SaveCopy()
@@ -152,7 +167,7 @@ namespace xournal::app
                 else io::DocumentFile::Save(*doc, file);
             });
             surface.MarkSaved();
-            recovered = false;
+            changedOutsideInk = false;
             pagesChanged = false;
         pagesChanged = false;
             if (message) message(std::format(L"Gespeichert: {}", file.filename().native()), ToastKind::Success);
@@ -192,7 +207,7 @@ namespace xournal::app
     bool DocumentSession::IsModified() const
     {
         // The ink's history knows whether anything changed since the last save (the model has no other edits yet).
-        return doc && (recovered || pagesChanged || !surface.AtSavePoint());
+        return doc && (changedOutsideInk || pagesChanged || !surface.AtSavePoint());
     }
 
     std::wstring DocumentSession::Title() const

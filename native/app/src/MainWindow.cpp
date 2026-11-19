@@ -379,6 +379,8 @@ namespace xournal::app
 
     bool MainWindow::Close()
     {
+        // Ending the process mid fetch/rebase/push could leave the repository mid-rebase or locked: the window waits.
+        if (sync->RefusedWhileSyncing(L"Schließen")) return false;
         if (!session->ConfirmLeave())
         {
             return false;
