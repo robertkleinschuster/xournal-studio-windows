@@ -108,7 +108,9 @@ ist seine Eingabe aktiv). 29 Unit-Tests, Sandbox `ToolsTest.ps1` grün. Offen: 2
 - **Suche (Strg+F):** Suchfeld oben in der Leiste; PDF-Text, Texte der Datei und Handschrift (`InkAnalyzer` im
   Hintergrund, wie OneNote); Treffer auf den Seiten markiert, Enter/F3 weiter; Trefferliste im Seitenleisten-Reiter „Suche“.
 - **PDF-Sprungmarken:** Inhaltsverzeichnis des PDFs als Baum im Reiter „Gliederung“, Tipp springt; Links im PDF per
-  **Fingertipp** (der Finger zeichnet nie), Webadressen öffnen den Browser.
+  **Fingertipp oder Mausklick** (Finger und Maus schreiben nie – Nutzer, 2026-11-19), Webadressen öffnen den Browser.
+- **Die Maus schreibt nie** (Nutzer, 2026-11-19): nur der Stift schreibt. Maus-Ziehen wählt aus (wie Auswählen),
+  verschiebt/skaliert die Auswahl, Klick daneben hebt sie auf, Klick auf einen Link folgt ihm.
 - **Platz einfügen:** vorerst nicht (Nutzer, 2026-11-19).
 - Vorab gemessen (Probe-Agent, D:\src\feature-probes): PDF-Text mit Positionen (Windows.Data.Pdf hat keinen Text),
   Texteingabe auf der Tintenfläche (fensterloses RichEdit vs. Kind-Fenster).
