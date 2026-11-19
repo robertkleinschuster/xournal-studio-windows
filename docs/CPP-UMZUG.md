@@ -42,7 +42,16 @@ Der Mathe Trainer zieht **später** um; sein InkPages-Submodul bleibt bis dahin 
 - Xournals Submodul `external/InkPages` bleibt auf dem WinUI-Stand, solange die C#-App lebt (nicht auf C++-Stände
   anheben); die C++-App in `native/` bindet InkPages später direkt ein.
 
-### 1. Schreibfläche (InkPages-Kern)
+### 1. Schreibfläche (InkPages-Kern) – erledigt 2026-11-19 (InkPages 5e933ec, aee6153, daae96a)
+- `WritingSurface` (Kindfenster): DirectManipulation-Pan mit Schwung, Pinch 0,2–6×, Präzisions-Touchpad
+  (`DM_POINTERHITTEST`), Mausrad/Strg+Rad; Papier mit Direct2D; lazy Seiten (`load`/`store`, `Hold`); Stift-Cursor
+  aus App-Ressourcen. **Ein Presenter für das ganze Dokument** (gemessen: ~5 ms, Speicher unabhängig von der
+  Seitenzahl; pro Seite: Absturz beim Setzen des Cursors während der Aktivierung eines weiteren Presenters). Striche
+  gehören zur Seite ihres ersten Punkts. Sandbox: Tinte nach Zoom/Pan/Seite 2 auf 0,3 DIP genau. Offen am Gerät:
+  Touchpad, Latenz, Handballen. Offen für Phase 2: Striche über die Seitengrenze (abschneiden/teilen), Auswahl vs.
+  `Selected`-Flag, der Cursor wird 300 ms nach dem Erzeugen gesetzt (Zeitpolster gegen den Absturz – Ursache klären).
+
+Ursprüngliche Planung:
 - Seiten in einem DirectManipulation-Viewport: Finger-Pan mit Schwung, Pinch-Zoom, **Präzisions-Touchpad**
   (`DM_POINTERHITTEST` → `SetContact`), Mausrad; Stift und Maus verschieben nie.
 - Ein Ink-Presenter pro Seite oder einer über alle Seiten – per Messung entscheiden (eigene Stroke-Container pro Seite
