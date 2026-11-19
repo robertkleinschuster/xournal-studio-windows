@@ -75,7 +75,9 @@ Invoke-Test {
     if ($texts.Count -ne $textsBefore + 1) { throw "after the new text: $($texts.Count) texts on page 1, expected $($textsBefore + 1)" }
     $new = $texts[$texts.Count - 1]
     "new text: font=$($new.GetAttribute('font')) size=$($new.GetAttribute('size')) x=$($new.GetAttribute('x')) y=$($new.GetAttribute('y')) color=$($new.GetAttribute('color'))"
-    if ($new.InnerText -ne "Gr$($ue)n und K$($ae)se`nZeile 2") { throw "content: '$($new.InnerText)'" }
+    $content = $new.InnerText
+    "content: " + (($content.ToCharArray() | ForEach-Object { '{0:X}' -f [int]$_ }) -join ' ')
+    if ($content -ne ("Gr" + $ue + "n und K" + $ae + "se`nZeile 2")) { throw "content: '$content'" }
     if ($new.GetAttribute('font') -ne 'Sans') { throw "font: $($new.GetAttribute('font'))" }
     $x = [double]::Parse($new.GetAttribute('x'), [Globalization.CultureInfo]::InvariantCulture)
     if ((StrokeCount $file) -ne $strokesBefore) { throw 'the strokes changed' }

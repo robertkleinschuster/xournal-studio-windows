@@ -259,8 +259,8 @@ namespace xournal::app
         case WM_LBUTTONUP:
             if (dragFrom >= 0)
             {
-                ReleaseCapture(); // WM_CAPTURECHANGED drops it
-                DragDrop();
+                DragDrop();       // first: releasing the capture ends the drag (WM_CAPTURECHANGED)
+                ReleaseCapture();
             }
             return 0;
         case WM_CAPTURECHANGED:
