@@ -17,19 +17,26 @@ namespace xournal
         std::wstring file;
         std::function<void(std::string_view)> errorSink;
 
+        // FILE_APPEND_DATA: Windows appends each write at the end atomically, also against other writers of the file
+        // (the CRT's "ab" seeks, then writes - two writers lost lines that way, 2026-11-19).
         void AppendToFile(std::string const& line)
         {
-            FILE* f = nullptr;
-            errno_t error = _wfopen_s(&f, file.c_str(), L"ab");
-            if (error != 0 || !f)
+            HANDLE f = CreateFileW(file.c_str(), FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+            if (f == INVALID_HANDLE_VALUE)
             {
                 // The log itself cannot fail loudly (it is where failures go): the debugger still sees both lines.
-                OutputDebugStringA(std::format("xournal log: cannot open the log file (errno {})\n", error).c_str());
+                OutputDebugStringA(std::format("xournal log: cannot open the log file ({})\n", GetLastError()).c_str());
                 OutputDebugStringA(line.c_str());
                 return;
             }
-            fwrite(line.data(), 1, line.size(), f);
-            fclose(f);
+            DWORD written = 0;
+            if (!WriteFile(f, line.data(), static_cast<DWORD>(line.size()), &written, nullptr))
+            {
+                OutputDebugStringA(std::format("xournal log: write failed ({})\n", GetLastError()).c_str());
+                OutputDebugStringA(line.c_str());
+            }
+            CloseHandle(f);
         }
 
         void Write(std::string_view text, bool error)

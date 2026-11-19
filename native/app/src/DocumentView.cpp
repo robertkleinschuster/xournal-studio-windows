@@ -4,6 +4,7 @@
 #include "xournal/base/Log.h"
 
 #include <format>
+#include <map>
 
 namespace xournal::app
 {
@@ -23,14 +24,17 @@ namespace xournal::app
 
     DocumentView::DocumentView(inkpages::WritingSurface& surface) : surface(surface)
     {
-        surface.load = [this](int page) { return Load(page); };
-        surface.store = [this](int page, std::vector<inkpages::KeyedStroke> strokes) { Store(page, std::move(strokes)); };
+        surface.load = [bridges = bridges](int page) { return bridges->Load(page); };
+        surface.store = [bridges = bridges](int page, std::vector<inkpages::KeyedStroke> strokes) { bridges->Store(page, strokes); };
         surface.drawUnderlay = [this](int page, ID2D1DeviceContext* dc, inkpages::RectF area) { DrawUnderlay(page, dc, area); };
         surface.viewChanged = [this] { OnViewChanged(); };
     }
 
     DocumentView::~DocumentView()
     {
+        // The surface outlives the view: it gets nothing back that points here (load/store hold the bridge set).
+        surface.drawUnderlay = nullptr;
+        surface.viewChanged = nullptr;
         surface.SetPictureHost(nullptr);
         renderQueue.Stop(); // the PDF device goes while the app still runs
     }
@@ -43,12 +47,6 @@ namespace xournal::app
         }
     }
 
-    std::shared_ptr<PageInkBridge> DocumentView::Current() const
-    {
-        std::scoped_lock guard(bridgesLock);
-        return bridges.empty() ? nullptr : bridges.back();
-    }
-
     void DocumentView::Show(std::shared_ptr<XoppDocument> doc)
     {
         std::vector<inkpages::PageSpec> specs;
@@ -57,10 +55,7 @@ namespace xournal::app
             specs.push_back(SpecOf(*page));
         }
         auto bridge = std::make_shared<PageInkBridge>(doc);
-        {
-            std::scoped_lock guard(bridgesLock);
-            bridges.push_back(bridge);
-        }
+        bridges->Add(bridge);
         // The old document's renders that have not started are not needed any more.
         std::uint64_t old = generation++;
         renderQueue.Drop([old](std::uint64_t key) { return (key >> 32) == old; });
@@ -73,43 +68,9 @@ namespace xournal::app
         surface.FitWidth();
     }
 
-    std::vector<inkpages::KeyedStroke> DocumentView::Load(int page)
-    {
-        auto bridge = Current();
-        return bridge ? bridge->Load(page) : std::vector<inkpages::KeyedStroke>{};
-    }
-
-    void DocumentView::Store(int page, std::vector<inkpages::KeyedStroke> strokes)
-    {
-        std::shared_ptr<PageInkBridge> target;
-        {
-            std::scoped_lock guard(bridgesLock);
-            for (auto const& bridge : bridges)
-            {
-                if (bridge->IsLive(page))
-                {
-                    target = bridge;
-                    break;
-                }
-            }
-        }
-        if (!target)
-        {
-            LogError(std::format("document view: page {} handed back but no document has it live", page));
-            return;
-        }
-        target->Store(page, strokes);
-        // Older documents whose pages are all back are done.
-        std::scoped_lock guard(bridgesLock);
-        while (bridges.size() > 1 && bridges.front()->LivePages().empty())
-        {
-            bridges.pop_front();
-        }
-    }
-
     void DocumentView::DrawUnderlay(int page, ID2D1DeviceContext* dc, inkpages::RectF area)
     {
-        auto bridge = Current();
+        auto bridge = bridges->Current();
         if (!bridge || !underlay)
         {
             return;
@@ -124,7 +85,7 @@ namespace xournal::app
 
     void DocumentView::CaptureInk(std::function<void()> const& work)
     {
-        auto bridge = Current();
+        auto bridge = bridges->Current();
         if (!bridge)
         {
             return;

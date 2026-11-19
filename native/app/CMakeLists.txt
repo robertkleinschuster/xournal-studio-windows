@@ -20,6 +20,7 @@ add_executable(XournalStudio WIN32
     src/DocumentView.cpp
     src/InkConvert.cpp
     src/PageInkBridge.cpp
+    src/PageInkBridges.cpp
     src/PageUnderlay.cpp
     src/PdfPageRenderer.cpp
     src/RenderQueue.cpp

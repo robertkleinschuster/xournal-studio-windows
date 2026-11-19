@@ -5,17 +5,17 @@
 // strokes), the file's pictures in the selection through FilePictures. Before saving, CaptureInk brings the live pages' strokes
 // into the document and runs the snapshot under the document's lock.
 //
-// Switching documents: SetPages makes InkPages hand the old pages back (store) on its ink thread, in order before the
-// new document's loads - so a store goes to the bridge that has that page live, a load to the newest bridge.
+// Lifetime: the view must go before the surface (the window releases it first). Its destructor takes its UI-thread
+// callbacks and the picture host back from the surface; the ink-thread callbacks (load/store) hold the shared bridge set,
+// never the view, so one that still runs while the window closes finds the documents, not freed memory.
 
 #include "FilePictures.h"
-#include "PageInkBridge.h"
+#include "PageInkBridges.h"
 #include "PageUnderlay.h"
 #include "RenderQueue.h"
 
 #include "inkpages/WritingSurface.h"
 
-#include <deque>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -37,15 +37,11 @@ namespace xournal::app
         void CaptureInk(std::function<void()> const& work);
 
     private:
-        std::shared_ptr<PageInkBridge> Current() const;
-        std::vector<inkpages::KeyedStroke> Load(int page);
-        void Store(int page, std::vector<inkpages::KeyedStroke> strokes);
         void DrawUnderlay(int page, ID2D1DeviceContext* dc, inkpages::RectF area);
         void OnViewChanged();
 
         inkpages::WritingSurface& surface;
-        mutable std::mutex bridgesLock;
-        std::deque<std::shared_ptr<PageInkBridge>> bridges; // oldest first; the last is the shown document's
+        std::shared_ptr<PageInkBridges> bridges = std::make_shared<PageInkBridges>(); // shared with load/store
         RenderQueue renderQueue;                             // one render thread and PDF device for the app
         std::uint64_t generation = 0;                        // the shown document's number (render keys)
         std::unique_ptr<FilePictures> pictures;              // the shown document's (UI thread)

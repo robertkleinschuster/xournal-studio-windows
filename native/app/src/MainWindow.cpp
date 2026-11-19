@@ -318,6 +318,10 @@ namespace xournal::app
             return 0;
         case WM_DESTROY:
             // The parts go before the window's children do (the surface's ink thread hands its last pages back).
+            // The feature classes that hold the surface go before it (the view takes its callbacks back).
+            exportCommand.reset();
+            session.reset();
+            view.reset();
             toolbar.reset();
             surface.reset();
             PostQuitMessage(0);

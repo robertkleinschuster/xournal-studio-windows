@@ -4,6 +4,7 @@
 #include "xournal/base/Log.h"
 #include "xournal/base/Text.h"
 
+#include <commctrl.h>
 #include <dwmapi.h>
 
 #include <format>
@@ -18,15 +19,31 @@ namespace xournal::app
 
         int Scaled(int dip, UINT dpi) { return MulDiv(dip, static_cast<int>(dpi), 96); }
 
+        // Windows 11's InfoBar colors (light theme): a tint per kind, dark text.
         COLORREF Background(ToastKind kind)
         {
             switch (kind)
             {
-            case ToastKind::Success: return RGB(0x0F, 0x7B, 0x0F);
-            case ToastKind::Error: return RGB(0xC4, 0x2B, 0x1C);
-            case ToastKind::Warning: return RGB(0x9D, 0x5D, 0x00);
-            default: return RGB(0x2B, 0x2B, 0x2B);
+            case ToastKind::Success: return RGB(0xDF, 0xF6, 0xDD);
+            case ToastKind::Error: return RGB(0xFD, 0xE7, 0xE9);
+            case ToastKind::Warning: return RGB(0xFF, 0xF4, 0xCE);
+            default: return RGB(0xF6, 0xF6, 0xF6);
             }
+        }
+
+        // The system's message icons (as TaskDialog shows them), at the window's DPI.
+        HICON IconFor(ToastKind kind, UINT dpi)
+        {
+            wchar_t const* id = kind == ToastKind::Error ? IDI_ERROR : kind == ToastKind::Warning ? IDI_WARNING : IDI_INFORMATION;
+            int size = GetSystemMetricsForDpi(SM_CXSMICON, dpi);
+            HICON icon = nullptr;
+            HRESULT hr = LoadIconWithScaleDown(nullptr, id, size, size, &icon);
+            if (FAILED(hr))
+            {
+                LogError(std::format("toast: system icon: {}", DescribeHr(hr)));
+                return nullptr;
+            }
+            return icon;
         }
     }
 
@@ -126,12 +143,13 @@ namespace xournal::app
         UINT dpi = GetDpiForWindow(owner);
         HDC dc = GetDC(window);
         HGDIOBJ old = SelectObject(dc, Font());
+        int iconSpace = GetSystemMetricsForDpi(SM_CXSMICON, dpi) + Scaled(12, dpi);
         int maxWidth = std::max(Scaled(200, dpi), static_cast<int>(area.right - area.left) - Scaled(48, dpi));
-        RECT measured{ 0, 0, maxWidth - Scaled(32, dpi), 0 };
+        RECT measured{ 0, 0, maxWidth - Scaled(32, dpi) - iconSpace, 0 };
         DrawTextW(dc, text.c_str(), static_cast<int>(text.size()), &measured, DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX);
         SelectObject(dc, old);
         ReleaseDC(window, dc);
-        int width = measured.right + Scaled(32, dpi);
+        int width = measured.right + Scaled(32, dpi) + iconSpace;
         int height = measured.bottom + Scaled(20, dpi);
         int x = (area.left + area.right - width) / 2;
         int y = area.bottom - height - Scaled(24, dpi);
@@ -149,9 +167,16 @@ namespace xournal::app
         DeleteObject(brush);
         UINT dpi = GetDpiForWindow(window);
         InflateRect(&rc, -Scaled(16, dpi), -Scaled(10, dpi));
+        int iconSize = GetSystemMetricsForDpi(SM_CXSMICON, dpi);
+        if (HICON icon = IconFor(kind, dpi))
+        {
+            DrawIconEx(dc, rc.left, rc.top + Scaled(1, dpi), icon, iconSize, iconSize, 0, nullptr, DI_NORMAL);
+            DestroyIcon(icon);
+        }
+        rc.left += iconSize + Scaled(12, dpi);
         HGDIOBJ old = SelectObject(dc, Font());
         SetBkMode(dc, TRANSPARENT);
-        SetTextColor(dc, RGB(0xFF, 0xFF, 0xFF));
+        SetTextColor(dc, RGB(0x1A, 0x1A, 0x1A));
         DrawTextW(dc, text.c_str(), static_cast<int>(text.size()), &rc, DT_WORDBREAK | DT_NOPREFIX);
         SelectObject(dc, old);
         EndPaint(window, &ps);

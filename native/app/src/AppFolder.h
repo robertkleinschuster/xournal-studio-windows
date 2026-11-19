@@ -3,7 +3,8 @@
 // Where the app keeps its files: %LOCALAPPDATA%\XournalStudioForWindows - the C# app's folder, so both find the same
 // recovery copies later. The native app writes only its own files there (settings-native.json, errors.log, the log),
 // never the C# app's settings.json.
-// Test hooks (as the C# app): XOURNAL_STUDIO_CONFIG_DIR (another folder), XOURNAL_STUDIO_LOG (a log file).
+// Test hooks (as the C# app): XOURNAL_STUDIO_CONFIG_DIR (another folder), XOURNAL_STUDIO_LOG (a log file; InkPages'
+// lines go to "<log>.inkpages.log" beside it).
 
 #include <filesystem>
 #include <optional>

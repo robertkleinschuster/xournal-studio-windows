@@ -70,7 +70,9 @@ Invoke-Test {
     Shot '02-leave-question'
     ClickAnywhere 'Abbrechen'
     Start-Sleep 1
-    if ($script:p.MainWindowTitle -notlike '• *') { throw "after Abbrechen the document must still be the changed one (title: $($script:p.MainWindowTitle))" }
+    $script:p.Refresh()
+    # The title's change mark is U+2022 (PS 5.1 reads this script as ANSI: compared by its code).
+    if (-not $script:p.MainWindowTitle.StartsWith([string][char]0x2022)) { throw "after Abbrechen the document must still be the changed one (title: $($script:p.MainWindowTitle))" }
     "title after Abbrechen: $($script:p.MainWindowTitle)"
     Ctrl 0x4E 'N'
     ClickAnywhere 'Nicht speichern'

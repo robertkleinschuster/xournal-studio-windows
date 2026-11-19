@@ -145,7 +145,7 @@ Invoke-Test {
     Start-TestApp 'XournalStudio.exe' "`"$file`""
     Start-Sleep 3
     Shot '07-reloaded'
-    $restored = Select-String -Path "$out\app.log" -Pattern 'ink: page 0 restored \((\d+) strokes\)' | Select-Object -Last 1
+    $restored = Select-String -Path "$out\app.log.inkpages.log" -Pattern 'ink: page 0 restored \((\d+) strokes\)' | Select-Object -Last 1
     "reload: $restored (saved page 1: $($afterErase[0].Count) strokes)"
     if (-not $restored -or [int]$restored.Matches[0].Groups[1].Value -ne $afterErase[0].Count) { throw 'the reloaded page 1 has not the saved strokes' }
     Get-Content "$out\config\errors.log" -ErrorAction SilentlyContinue | ForEach-Object { "errors.log: $_" }

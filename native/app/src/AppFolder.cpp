@@ -77,7 +77,8 @@ namespace xournal::app::AppFolder
         auto log = Environment(L"XOURNAL_STUDIO_LOG").value_or(L"");
         xournal::SetLogFile(log);
         xournal::SetErrorSink(AppendError);
-        inkpages::SetLogFile(log);
+        // InkPages writes its own file beside it: two writers appending to one file through the CRT lose lines.
+        inkpages::SetLogFile(log.empty() ? log : log + L".inkpages.log");
         inkpages::SetErrorSink(AppendError);
     }
 }
