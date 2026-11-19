@@ -92,9 +92,50 @@ ist seine Eingabe aktiv). 29 Unit-Tests, Sandbox `ToolsTest.ps1` grün. Offen: 2
 - Paritätsliste erfüllt, Sandbox-Tests grün, Gerätetest durch den Nutzer → Installer der C++-App, C#-App entfernen.
 
 ## Paritätsliste (Auszug, wird vor Phase 5 vervollständigt)
-Alle Punkte der heutigen CLAUDE.md „Open work“/„Decided“: Werkzeuge, Auswahl, Radierer, Formen, Lineal, Undo,
-Seitenverwaltung, PDF/Bilder/Texte, Speichern-Frage, Wiederherstellung, Explorer inkl. Verwerfen, Git-Sync, Aufgaben,
-PDF-Export, iPad-Import, Einfügen aus PDF/.xopp, Meldungen, Fehlerprotokoll.
+Die C++-App ersetzt die C#-App, wenn alles Folgende funktioniert (Sandbox-Tests + Gerätetest des Nutzers). Abgehakt
+wird hier, mit Commit.
+
+**Schreiben (InkPages)**
+- [ ] Stift-/Textmarker-Vorlagen mit Farbe (Xournal-Palette) und Breite (Xournal-Stufen), gespeichert; Stift-Cursor
+- [ ] Radierer ganz/exakt (Kreis, Radius), Radierer-Ende/-Taste mit jedem Werkzeug
+- [ ] Auswahl Lasso/Rechteck, Stifttaste = Lasso, Verschieben/Skalieren exakt, Antippen daneben hebt auf, über Seiten
+      verschieben mit Auto-Scroll, Ausschneiden/Kopieren/Duplizieren/Löschen/Alles auswählen
+- [ ] Rechteck auf PDF-Seite kopiert den sichtbaren Bereich (PDF + Tinte + Bilder) als Bild
+- [ ] Formen (Linie, Pfeil, Rechteck, Ellipse), Formerkennung, Lineal
+- [ ] Rückgängig/Wiederholen über alle Seiten (auch Bild-Änderungen, Seitenwechsel beim Verschieben)
+- [ ] Finger/Touchpad/Mausrad: Pan mit Schwung, Zoom; Seitenbreite; aktuelle Seite markiert
+
+**Dokument (.xopp, upstream-Format)**
+- [ ] Laden/Speichern ohne Verlust (unbekannte Elemente/Attribute bleiben), `<datei>~` dann ersetzen
+- [ ] Alle Hintergründe (Farbe, Lineaturen mit config, PDF, Bild absolut/attach/clone), Bilder, Texte/Links,
+      gefüllte/gestrichelte Striche angezeigt
+- [ ] Speichern nur auf Wunsch, Frage beim Verlassen (Speichern/Nicht speichern/Abbrechen), Speichern unter mit
+      Anhängen, Standardname `%F-Notiz-%H-%M` bzw. nach PDF
+- [ ] Wiederherstellungskopie (5 s nach Änderung, bei Fokusverlust; Angebot beim Start), Neustart nach Absturz
+- [ ] PDF öffnen als neues Dokument; PDF-Hintergrund aus dem Speicher (Datei frei)
+
+**Seiten**
+- [ ] Seiten einfügen (leer, aus PDF, aus .xopp – mit Miniaturen-Dialog, vor/nach), verschieben, löschen (mit Frage)
+- [ ] Seitenleiste mit Miniaturen (zwei Ebenen, nur geänderte neu), Tippen springt
+
+**Seitenleiste / Projekt**
+- [ ] Explorer-Baum (alle Dateien, natürliche Sortierung, Git-Farben inkl. Ordner), Kontextmenü: Öffnen, Neues
+      Dokument/Ordner, Umbenennen, Löschen (Papierkorb), Änderungen verwerfen, Im Explorer anzeigen, Als Pfad kopieren;
+      F2/Entf/Strg+Umschalt+C; folgt Änderungen auf der Platte
+- [ ] Git-Synchronisieren (libgit2, Anmeldedaten des Credential Managers), Sperre während Sync, Konfliktbehandlung
+- [ ] Aufgaben (todo.txt): anzeigen, hinzufügen, abhaken, Seitenlink
+
+**Import/Export**
+- [ ] PDF-Export (Hintergrund-PDF als Vektoren, Annotationen eingezeichnet, Tinte pro Segment)
+- [ ] iPad-Import (PencilKit-Striche, Bilder, Texte)
+- [ ] Zwischenablage: eigenes Format + Bild für andere Apps, Bilder/Tinte anderer Apps einfügen
+
+**App**
+- [ ] Menü (Datei, Bearbeiten, Seite, Ansicht) mit Tastenkürzeln, Werkzeugleiste mit App-Knöpfen (Einfügen, Seite
+      einfügen/löschen), Seitenleiste ein/aus (Strg+B), Toast-Meldungen, Fehlerprotokoll `errors.log`
+- [ ] Einstellungen (Werkzeugwahl, Projektordner, Fensterzustand, Positionen pro Dokument)
+- [ ] Installation per `install.ps1` (eine kleine Exe), Startmenü, Dateizuordnung wie heute
+- [ ] Sandbox-Tests für alle Bereiche; Gerätetest durch den Nutzer
 
 ## Offene Fragen (für den Nutzer bzw. per Messung)
 1. **PDF-Export ohne PDFsharp:** Kandidat ganz nativ: Direct2D-Druck (`ID2D1PrintControl`) auf „Microsoft Print to
