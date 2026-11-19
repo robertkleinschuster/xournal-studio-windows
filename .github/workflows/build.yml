@@ -1,0 +1,114 @@
+name: Build
+
+# Every push and pull request: build the C++/Win32 app (Release) and run its unit tests (build.ps1).
+# A tag v* builds the committed state as install.ps1 does (unit tests, Release build, staged with pdfium.dll and the
+# license texts), zips that layout and publishes it as a GitHub pre-release. Only the release job may write.
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 90
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Build and unit tests
+        if: github.ref_type != 'tag'
+        shell: pwsh
+        run: .\build.ps1
+
+      # install.ps1 -SkipInstall: HEAD built in its own worktree, unit tests, staged in .local-build\install-stage
+      # (XournalStudio.exe, pdfium.dll, licenses\ with THIRD-PARTY.md) - the same layout install.ps1 installs.
+      - name: Build, unit tests and stage
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        run: |
+          .\install.ps1 -SkipInstall
+          $version = $env:GITHUB_REF_NAME.TrimStart('v')
+          $stage = '.local-build\install-stage'
+          Copy-Item THIRD-PARTY.md $stage
+          @"
+          Xournal Studio (Win32) $version - Windows 11 x64
+
+          Installed with the MSI (XournalStudio-Win32-$version-x64.msi): start it from the Start menu entry
+          "Xournal Studio (Win32)"; uninstall in Apps & Features.
+          Portable (the zip): unzip this folder anywhere and start XournalStudio.exe. Nothing is registered and nothing
+          else is needed (static C++ runtime); delete the folder to remove it.
+          The files are unsigned: Windows SmartScreen warns on the first start ("Weitere Informationen" -> "Trotzdem
+          ausfuehren"). Settings, recovery copies and logs: %LOCALAPPDATA%\XournalStudioForWindows (kept on uninstall).
+          Third-party licenses: THIRD-PARTY.md and licenses\.
+          "@ | Set-Content -Encoding utf8 (Join-Path $stage 'README.txt')
+          $zip = "XournalStudio-Win32-$version-x64.zip"
+          Compress-Archive -Path "$stage\*" -DestinationPath $zip
+          .\installer\Build-Msi.ps1 -Version $version -Stage $stage -Out "XournalStudio-Win32-$version-x64.msi"
+          $hash = (Get-FileHash (Join-Path $stage 'XournalStudio.exe') -Algorithm SHA256).Hash
+          "XournalStudio.exe SHA-256: $hash"
+          $hash | Set-Content -Encoding ascii exe.sha256
+
+      - name: Keep the release files
+        if: github.ref_type == 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: |
+            XournalStudio-Win32-*-x64.msi
+            XournalStudio-Win32-*-x64.zip
+            exe.sha256
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: windows-2025
+    permissions:
+      contents: write
+    steps:
+      - name: Get the zip
+        uses: actions/download-artifact@v4
+        with:
+          name: release
+
+      - name: GitHub pre-release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = $env:GITHUB_REF_NAME.TrimStart('v')
+          $hash = (Get-Content exe.sha256).Trim()
+          $notes = @"
+          The first release of the native C++/Win32 Xournal Studio for Windows 11 (x64): a small pen note app that reads
+          and writes Xournal++ ``.xopp`` files in the upstream format (nothing it does not understand is lost).
+
+          - Windows ink with the pen (pressure, eraser end, barrel button = lasso); finger and touchpad pan and zoom, the
+            mouse selects - only the pen writes.
+          - Pen and highlighter presets, exact or whole-stroke eraser, selection (lasso/rectangle) to move, scale, copy
+            and delete across pages, shapes and shape recognition, the Windows ruler, a text tool, undo/redo.
+          - PDF backgrounds, all Xournal++ backgrounds, pictures and texts; open a PDF as a new document; PDF export;
+            pages inserted, moved and deleted, also from another PDF or document.
+          - Side pane: project folder explorer with git colors and sync, todo.txt tasks, page thumbnails.
+          - Saving only by choice, with recovery copies of unsaved changes; iPad (PencilKit) markup import.
+
+          **Install:** ``XournalStudio-Win32-$version-x64.msi`` - per user, no admin rights: installs to
+          ``%LOCALAPPDATA%\Programs\Xournal Studio (Win32)`` with a Start menu entry "Xournal Studio (Win32)" and an entry in
+          Apps & Features (uninstall there; settings, recovery copies and documents stay). A newer MSI replaces an older one.
+          Portable alternative: unzip ``XournalStudio-Win32-$version-x64.zip`` anywhere and start ``XournalStudio.exe``.
+
+          The files are not signed (no code-signing certificate yet): Windows SmartScreen warns on the first start - choose
+          "Weitere Informationen" -> "Trotzdem ausführen" ("More info" -> "Run anyway").
+
+          XournalStudio.exe SHA-256: ``$hash``
+
+          The earlier C#/WinUI version stays available at the tag ``csharp-final`` and the release v0.1.0.
+          "@
+          gh release create $env:GITHUB_REF_NAME "XournalStudio-Win32-$version-x64.msi" "XournalStudio-Win32-$version-x64.zip" --repo $env:GITHUB_REPOSITORY --title "Xournal Studio (Win32) $version" --notes $notes --prerelease

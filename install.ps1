@@ -11,11 +11,10 @@
 param([switch]$SkipTests, [switch]$SkipInstall, [string]$Config = 'Release')
 
 $ErrorActionPreference = 'Stop'
-$native = $PSScriptRoot
-$repo = Split-Path $native
-$source = Join-Path $native '.local-build\install-source'
-$build = Join-Path $source 'native\.local-build\cmake'
-$stage = Join-Path $native '.local-build\install-stage'
+$repo = $PSScriptRoot
+$source = Join-Path $repo '.local-build\install-source'
+$build = Join-Path $source '.local-build\cmake'
+$stage = Join-Path $repo '.local-build\install-stage'
 $target = Join-Path $env:LOCALAPPDATA 'Programs\Xournal Studio (Win32)'
 $programs = [Environment]::GetFolderPath('Programs')
 $exeName = 'XournalStudio.exe'
@@ -25,7 +24,19 @@ function Assert-NotRunning {
     $running = Get-Process XournalStudio -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$target\*" }
     if ($running) { throw 'Xournal Studio (Win32) is running; close it first or use -SkipInstall.' }
 }
-if (-not $SkipInstall) { Assert-NotRunning }
+# install.ps1 is for development, the MSI (installer\, GitHub releases) for releases; both use the same folder and
+# Start menu entry. While the MSI is installed this script refuses: replacing the folder under Windows Installer's feet
+# would leave the MSI's registration pointing at files it no longer owns (repair or uninstall would remove this build).
+# The MSI is found by its UpgradeCode (installer\XournalStudio.wxs).
+function Assert-NoMsi {
+    $installer = New-Object -ComObject WindowsInstaller.Installer
+    $products = @($installer.GetType().InvokeMember('RelatedProducts', 'GetProperty', $null, $installer,
+        @('{2ED20F25-015E-4F3B-9B2A-7572D4BBBB6A}')))
+    if ($products.Count -gt 0) {
+        throw "Xournal Studio (Win32) is installed from its MSI ($($products -join ', ')); uninstall it first (Apps & Features, or msiexec /x $($products[0])) or use -SkipInstall."
+    }
+}
+if (-not $SkipInstall) { Assert-NotRunning; Assert-NoMsi }
 
 # The committed state in its own worktree (kept between installs: its build folder makes the next build incremental).
 # (git reports progress on stderr: with its output redirected, Windows PowerShell would turn that into an error record
@@ -43,12 +54,12 @@ if (-not (Test-Path (Join-Path $source '.git'))) {
 else {
     Invoke-Git -C $source checkout --detach --force $commit
 }
-Invoke-Git -C $source submodule update --init native/external/InkPages
+Invoke-Git -C $source submodule update --init external/InkPages
 
 # Configure, build (all modules) and run the unit tests (CTest) - the worktree's build.ps1.
 $buildArgs = @{ Config = $Config }
 if ($SkipTests) { $buildArgs.NoTests = $true }
-& (Join-Path $source 'native\build.ps1') @buildArgs
+& (Join-Path $source 'build.ps1') @buildArgs
 
 # Stage: the exe, the DLLs the build put next to it (pdfium.dll), its licenses folder, and the license texts of the
 # statically linked third-party code (from the fetched sources in the build tree).
@@ -74,7 +85,7 @@ foreach ($license in $licenses) {
         Copy-Item $text $folder
     }
 }
-Copy-Item (Join-Path $source 'native\THIRD-PARTY.md') (Join-Path $stage 'licenses')
+Copy-Item (Join-Path $source 'THIRD-PARTY.md') (Join-Path $stage 'licenses')
 
 if ($SkipInstall) { "Staged in $stage"; return }
 
