@@ -118,7 +118,9 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   Uninstall removes exactly what it installed; settings, recovery copies and documents stay. Unsigned (no code-signing
   certificate): SmartScreen warns on first run. ICE38/64/91 are suppressed (roaming-profile rules; it installs into
   the local AppData); the sandbox test `UiTests/MsiTest.ps1` checks install (silent and with UI), start from the
-  shortcut, upgrade and a clean uninstall. WiX 7 needs an EULA (OSMF) acceptance – a decision for the user.
+  shortcut, upgrade and a clean uninstall (in the sandbox every install spent ~2 min in Windows Installer's software
+restriction check of the unsigned package - "is not digitally signed", then permitted; run it with
+`-TimeoutSeconds 1200`). WiX 7 needs an EULA (OSMF) acceptance – a decision for the user.
 - **CI** (`.github/workflows/build.yml`, `windows-2025-vs2026`): every push and PR builds and runs the unit tests. A tag
   `v*` runs `install.ps1 -SkipInstall`, builds the MSI and a portable zip of the staged folder (exe, pdfium.dll,
   licenses\, THIRD-PARTY.md, README.txt), and a separate job (the only one with `contents: write`) creates the GitHub

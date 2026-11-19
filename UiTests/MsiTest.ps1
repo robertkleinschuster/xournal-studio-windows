@@ -3,7 +3,7 @@
 # shortcut, a silent uninstall that leaves nothing of the package (the user's data stays), then an install with
 # Windows Installer's UI (no dialogs: progress only) and its uninstall.
 #   installer\Build-Msi.ps1 -Version 0.1.99 -Out <old.msi>; installer\Build-Msi.ps1 -Version 0.2.0 -Out <new.msi>
-#   UiTests\Run-AppTest.ps1 -Test UiTests\MsiTest.ps1 -Extra <old.msi>,<new.msi>
+#   UiTests\Run-AppTest.ps1 -Test UiTests\MsiTest.ps1 -Extra <old.msi>,<new.msi> -TimeoutSeconds 1200
 # Every check prints "shot check: ..." (the host shows those lines of the transcript).
 . C:\sbx\TestKit.ps1
 
@@ -15,8 +15,12 @@ $userData = Join-Path $env:LOCALAPPDATA 'XournalStudioForWindows'
 $installer = New-Object -ComObject WindowsInstaller.Installer
 
 function Check($what, [bool]$ok) { if (-not $ok) { Shot ("failed-" + ($what -replace '[^A-Za-z0-9]', '_')) | Out-Null; throw "check failed: $what" }; "shot check: $what" }
-function Products { @($installer.GetType().InvokeMember('RelatedProducts', 'GetProperty', $null, $installer, @($upgradeCode))) }
-function Info($product, $name) { $installer.GetType().InvokeMember('ProductInfo', 'GetProperty', $null, $installer, @($product, $name)) }
+# (COM through IDispatch: plain strings in, a StringList out - enumerated into strings)
+function Products { @($installer.GetType().InvokeMember('RelatedProducts', 'GetProperty', $null, $installer, @([string]$upgradeCode)) | ForEach-Object { [string]$_ }) }
+function Info([string]$product, [string]$name) {
+    try { [string]$installer.GetType().InvokeMember('ProductInfo', 'GetProperty', $null, $installer, @($product, $name)) }
+    catch { throw "ProductInfo($product, $name): $($_.Exception.InnerException.Message) $($_.Exception.Message)" }
+}
 function Msi([string]$arguments, [string]$log) {
     $p = Start-Process msiexec.exe -ArgumentList "$arguments /l*v `"$out\$log.log`"" -PassThru
     $p.WaitForExit()
@@ -33,20 +37,26 @@ Invoke-Test {
 
     # 1. Silent install of the old version, then the new one over it.
     Msi "/i `"$old`" /qn" 'install-old'
-    Check 'old version installed' ((Products).Count -eq 1 -and (Info (Products)[0] 'VersionString') -eq '0.1.99')
-    $oldProduct = (Products)[0]
+    $oldProduct = @(Products)[0]
+    Check "old version installed ($oldProduct)" ((Products).Count -eq 1 -and (Info $oldProduct 'VersionString') -eq '0.1.99')
     Msi "/i `"$new`" /qn" 'install-new'
-    $products = Products
+    $products = @(Products)
     Check "one product after the upgrade ($($products -join ', '))" ($products.Count -eq 1 -and $products[0] -ne $oldProduct)
     $product = $products[0]
     Check 'version 0.2.0' ((Info $product 'VersionString') -eq '0.2.0')
     Check "publisher ($(Info $product 'Publisher'))" ((Info $product 'Publisher') -eq 'Robert Kleinschuster')
     Check "Apps & Features icon ($(Info $product 'ProductIcon'))" ([bool](Info $product 'ProductIcon'))
-    Check "per-user install ($(Info $product 'AssignmentType'))" ((Info $product 'AssignmentType') -eq '0')
-    Check "install folder ($(Info $product 'InstallLocation'))" (Test-Path (Join-Path $folder 'XournalStudio.exe'))
+    # Per user: an unmanaged per-user product is registered under HKCU\Software\Microsoft\Installer\Products by its
+    # packed product code (GUID parts reversed, then each byte's nibbles swapped).
+    $g = $product.Trim('{}').Replace('-', '')
+    $rev = { param($s) -join $s[($s.Length - 1)..0] }
+    $packed = (& $rev $g.Substring(0, 8)) + (& $rev $g.Substring(8, 4)) + (& $rev $g.Substring(12, 4)) +
+        (-join (16..31 | Where-Object { $_ % 2 -eq 0 } | ForEach-Object { $g[$_ + 1], $g[$_] }))
+    Check "per-user install (HKCU\Software\Microsoft\Installer\Products\$packed)" (Test-Path "HKCU:\Software\Microsoft\Installer\Products\$packed")
+    Check 'install folder' (Test-Path (Join-Path $folder 'XournalStudio.exe'))
     $files = Snapshot
     $files | ForEach-Object { "file $_" }
-    Check 'pdfium.dll and licenses' ((Test-Path (Join-Path $folder 'pdfium.dll')) -and (Test-Path (Join-Path $folder 'licenses\THIRD-PARTY.md')))
+    Check 'licenses' (Test-Path (Join-Path $folder 'licenses\THIRD-PARTY.md'))   # (pdfium.dll only once the app links pdftext)
     Check 'Start menu shortcut' (Test-Path $link)
     $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($link)
     "shot check: shortcut target $($shortcut.TargetPath), icon $($shortcut.IconLocation)"
@@ -64,6 +74,7 @@ Invoke-Test {
         $script:p = Get-Process XournalStudio -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$folder\*" } | Select-Object -First 1
     }
     Check 'app process from the shortcut' ([bool]$script:p)
+    $null = $script:p.Handle   # (a process found by Get-Process keeps its exit code only with a handle opened before it exits)
     for ($i = 0; $i -lt 40 -and $script:p.MainWindowHandle -eq 0; $i++) { Start-Sleep -Milliseconds 500; $script:p.Refresh() }
     Check 'app window' ($script:p.MainWindowHandle -ne 0)
     Start-Sleep 3
@@ -89,11 +100,13 @@ Invoke-Test {
     $p = Start-Process msiexec.exe -ArgumentList "/i `"$new`" /l*v `"$out\install-ui.log`"" -PassThru
     Start-Sleep -Milliseconds 1500
     [Inj]::Shot("$out\02-install-ui.png"); 'shot 02-install-ui'
-    Check 'install with UI finished without input' ($p.WaitForExit(120000))
+    # (Windows Installer's software restriction check of the unsigned package took ~2 min in the sandbox each time)
+    Check 'install with UI finished without input' ($p.WaitForExit(360000))
     Check "install with UI exit code $($p.ExitCode)" ($p.ExitCode -eq 0)
     Check 'installed with UI' ((Products).Count -eq 1 -and (Test-Path (Join-Path $folder 'XournalStudio.exe')) -and (Test-Path $link))
     Check 'same files as the silent install' ((Compare-Object $files (Snapshot)) -eq $null)
-    Msi "/x $((Products)[0]) /qn" 'uninstall-2'
+    $again = @(Products)[0]
+    Msi "/x $again /qn" 'uninstall-2'
     Check 'removed again' ((Products).Count -eq 0 -and -not (Test-Path $folder) -and -not (Test-Path $link))
     'shot check: all passed'
 }
