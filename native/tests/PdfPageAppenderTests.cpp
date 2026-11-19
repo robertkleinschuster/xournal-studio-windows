@@ -4,7 +4,11 @@
 #include "TestSupport.h"
 
 #include "xournal/base/Error.h"
+#include "xournal/base/Text.h"
 #include "xournal/pdf/PdfPageAppender.h"
+
+#include <qpdf/QPDFPageDocumentHelper.hh>
+#include <qpdf/QPDFWriter.hh>
 
 #include <gtest/gtest.h>
 
@@ -43,6 +47,58 @@ namespace xournal::tests
         // The source stays as it is; no temporary file is left.
         EXPECT_EQ(ReadBytes(source), sourceBefore);
         EXPECT_FALSE(std::filesystem::exists(folder / L"Vorlesung.pdf~"));
+    }
+
+    TEST(PdfPageAppender, KeepsLinksToTheOutsideDropsInternalOnes)
+    {
+        TempFolder folder;
+        WriteSourcePdf(folder / L"a.pdf");
+        auto source = folder / L"b.pdf";
+        WriteSourcePdf(source);
+        {
+            // Page 2 of the source gets a web link and a link to its page 1.
+            QPDF pdf;
+            std::string path = ToUtf8(source.wstring());
+            pdf.processFile(path.c_str());
+            auto pages = QPDFPageDocumentHelper(pdf).getAllPages();
+            auto link = [&](QPDFObjectHandle action, bool dest) {
+                auto a = QPDFObjectHandle::newDictionary();
+                a.replaceKey("/Type", QPDFObjectHandle::newName("/Annot"));
+                a.replaceKey("/Subtype", QPDFObjectHandle::newName("/Link"));
+                a.replaceKey("/Rect", QPDFObjectHandle::newArray(QPDFObjectHandle::Rectangle(10, 10, 100, 30)));
+                a.replaceKey("/P", pages[1].getObjectHandle());
+                if (action.isInitialized()) a.replaceKey("/A", action);
+                if (dest)
+                {
+                    auto d = QPDFObjectHandle::newArray();
+                    d.appendItem(pages[0].getObjectHandle());
+                    d.appendItem(QPDFObjectHandle::newName("/Fit"));
+                    a.replaceKey("/Dest", d);
+                }
+                return pdf.makeIndirectObject(a);
+            };
+            auto uri = QPDFObjectHandle::newDictionary();
+            uri.replaceKey("/S", QPDFObjectHandle::newName("/URI"));
+            uri.replaceKey("/URI", QPDFObjectHandle::newString("https://example.org/"));
+            auto annots = QPDFObjectHandle::newArray();
+            annots.appendItem(link(uri, false));
+            annots.appendItem(link(QPDFObjectHandle(), true));
+            pages[1].getObjectHandle().replaceKey("/Annots", annots);
+            QPDFWriter writer(pdf, (path + ".new").c_str());
+            writer.write();
+        }
+        std::filesystem::rename(folder / L"b.pdf.new", source);
+
+        pdf::AppendPages(folder / L"a.pdf", source, { 1 });
+
+        auto pdf = Open(folder / L"a.pdf");
+        ASSERT_EQ(pdf.pages.size(), 3u);
+        auto annots = pdf.pages[2].getObjectHandle().getKey("/Annots");
+        ASSERT_TRUE(annots.isArray());
+        ASSERT_EQ(annots.getArrayNItems(), 1);
+        auto kept = annots.getArrayItem(0);
+        EXPECT_EQ(kept.getKey("/A").getKey("/URI").getStringValue(), "https://example.org/");
+        EXPECT_FALSE(kept.hasKey("/P"));
     }
 
     TEST(PdfPageAppender, TheSamePageTwice)

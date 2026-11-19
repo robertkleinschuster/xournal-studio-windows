@@ -12,8 +12,9 @@
 namespace xournal::pdf
 {
     /// Appends `pages` (0-based, in this order) of `source` to `target`; returns the index of the first appended page.
-    /// `source` stays as it is; `target` is written as "<target>~" and then replaced (io::Files). The appended pages
-    /// carry no annotations (what they showed is in their content now). Throws xournal::Error (e.g. a page index out of
+    /// `source` stays as it is; `target` is written as "<target>~" and then replaced (io::Files). What the
+    /// appended pages' annotations showed is in their content now; of the annotations only links to the outside (URI
+    /// actions) stay - internal links (GoTo, /Dest) would point into the source document. Throws xournal::Error (e.g. a page index out of
     /// range, a file qpdf cannot read).
     int AppendPages(std::filesystem::path const& target, std::filesystem::path const& source, std::vector<int> const& pages);
 }

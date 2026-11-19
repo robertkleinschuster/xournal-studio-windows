@@ -16,6 +16,48 @@
 
 namespace xournal::pdf
 {
+    namespace
+    {
+        bool IsExternalLink(QPDFObjectHandle annotation)
+        {
+            if (!annotation.isDictionary() || !annotation.getKey("/Subtype").isNameAndEquals("/Link") ||
+                annotation.hasKey("/Dest"))
+            {
+                return false;
+            }
+            auto action = annotation.getKey("/A");
+            return action.isDictionary() && action.getKey("/S").isNameAndEquals("/URI");
+        }
+
+        // What the other annotations showed is in the content now (flattened). Links to the outside (URI actions) stay;
+        // internal links (GoTo, /Dest) would point into the source document, the rest (hidden ones, popups) shows nothing.
+        // A kept link loses /P (its page in the source; optional) so the copy does not drag that page along.
+        void KeepExternalLinks(QPDF& source, QPDFPageObjectHelper& page)
+        {
+            auto handle = page.getObjectHandle();
+            auto annotations = handle.getKey("/Annots");
+            auto kept = QPDFObjectHandle::newArray();
+            if (annotations.isArray())
+            {
+                for (auto& annotation : annotations.aitems())
+                {
+                    if (!IsExternalLink(annotation)) continue;
+                    auto link = annotation.shallowCopy();
+                    link.removeKey("/P");
+                    kept.appendItem(source.makeIndirectObject(link));
+                }
+            }
+            if (kept.getArrayNItems() == 0)
+            {
+                handle.removeKey("/Annots");
+            }
+            else
+            {
+                handle.replaceKey("/Annots", kept);
+            }
+        }
+    }
+
     int AppendPages(std::filesystem::path const& target, std::filesystem::path const& source, std::vector<int> const& pages)
     {
         std::vector<std::uint8_t> bytes;
@@ -39,10 +81,9 @@ namespace xournal::pdf
                 {
                     ThrowInvalidData(std::format("pdf append: page {} of {} pages", index + 1, from.pages.size()));
                 }
-                // What the annotations showed is in the content now (flattened); the rest (links, hidden ones) would
-                // refer into the source document. The source is only read into memory here, never written.
+                // The source is only read into memory here, never written.
                 auto page = from.pages[static_cast<size_t>(index)];
-                page.getObjectHandle().removeKey("/Annots");
+                KeepExternalLinks(*from.pdf, page);
                 // addPage copies a page of another document (with its resources) into this one.
                 toPages.addPage(page, false);
             }
