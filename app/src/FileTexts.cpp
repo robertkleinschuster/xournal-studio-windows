@@ -25,8 +25,8 @@ namespace xournal::app
         auto const& element = objects.ElementOf(id);
         int page = objects.PageOf(element.get());
         auto edit = XoppText::Read(*element).ToEdit();
-        Point o = page >= 0 ? objects.Origin(page) : Point{};
-        return { page, { static_cast<float>(edit.at.x + o.x), static_cast<float>(edit.at.y + o.y) }, edit.content,
+        // Texts.h: the library's text places its top left in page coordinates, as the file does.
+        return { page, { static_cast<float>(edit.at.x), static_cast<float>(edit.at.y) }, edit.content,
             { edit.windowsFamily, static_cast<float>(edit.size), { edit.color.a, edit.color.r, edit.color.g, edit.color.b } } };
     }
 
@@ -45,9 +45,8 @@ namespace xournal::app
 
     TextEdit FileTexts::ToEdit(inkpages::Text const& text) const
     {
-        Point o = objects.Origin(text.page);
         auto const& c = text.style.color;
-        return { text.content, text.style.font, text.style.size, Color{ c.a, c.r, c.g, c.b }, { text.at.x - o.x, text.at.y - o.y } };
+        return { text.content, text.style.font, text.style.size, Color{ c.a, c.r, c.g, c.b }, { text.at.x, text.at.y } };
     }
 
     inkpages::TextId FileTexts::Add(inkpages::Text const& text)

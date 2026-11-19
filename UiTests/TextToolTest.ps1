@@ -78,13 +78,18 @@ Invoke-Test {
     $content = $new.InnerText
     "content: " + (($content.ToCharArray() | ForEach-Object { '{0:X}' -f [int]$_ }) -join ' ')
     if ($content -ne ("Gr" + $ue + "n und K" + $ae + "se`nZeile 2")) { throw "content: '$content'" }
+    # The file itself holds LF between the lines, as upstream writes (no CR LF, no &#xD;).
+    $stream = [IO.File]::OpenRead($file)
+    try { $raw = (New-Object IO.StreamReader((New-Object IO.Compression.GZipStream($stream, [IO.Compression.CompressionMode]::Decompress)), [Text.Encoding]::UTF8)).ReadToEnd() } finally { $stream.Dispose() }
+    if ($raw.Contains("`r") -or $raw.Contains('&#xD;')) { throw 'the saved file has CR line ends' }
+    if (-not $raw.Contains("se`nZeile 2</text>")) { throw 'the text is not written with LF' }
     if ($new.GetAttribute('font') -ne 'Sans') { throw "font: $($new.GetAttribute('font'))" }
     $x = [double]::Parse($new.GetAttribute('x'), [Globalization.CultureInfo]::InvariantCulture)
     if ((StrokeCount $file) -ne $strokesBefore) { throw 'the strokes changed' }
 
     # 2. edit it: a tap on it, End, typing, a tap beside; Ctrl+S - then undo the change, Ctrl+S
     PenTap 'on the text' 165 296
-    Key 0x23  # End
+    Ctrl 0x23 'End' # the text's end (End alone: the end of the tapped first line)
     Write-Typed ' neu'
     Shot '03-editing-again'
     PenTap 'beside again' 700 420
@@ -110,5 +115,18 @@ Invoke-Test {
     if ($x2 -le $x + 10) { throw "the text did not move: x $x -> $x2" }
     if (@(Texts $file).Count -ne $textsBefore + 1) { throw 'texts were added or lost by the move' }
     if ((StrokeCount $file) -ne $strokesBefore) { throw 'the strokes changed' }
+
+    # 4. leaving while a text is typed: closing the window asks (the typed text is a change), Speichern writes it
+    PenTap 'another new text' 150 450
+    Write-Typed 'Beim Schliessen'
+    Shot '07-typing-before-close'
+    $script:p.CloseMainWindow() | Out-Null
+    Start-Sleep 2
+    Shot '08-leave-question'
+    ClickAnywhere 'Speichern'
+    if (-not $script:p.WaitForExit(15000)) { throw 'the window did not close after Speichern' }
+    $last = @(Texts $file) | Where-Object { $_.InnerText -eq 'Beim Schliessen' }
+    if (-not $last) { throw "the text typed before closing is not in the file: $((@(Texts $file) | ForEach-Object { $_.InnerText }) -join ' | ')" }
+    'leave question with a typed text: saved'
     'text tool: passed'
 }
