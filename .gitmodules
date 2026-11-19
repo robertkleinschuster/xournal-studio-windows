@@ -1,3 +1,6 @@
 [submodule "external/InkPages"]
 	path = external/InkPages
 	url = https://github.com/robertkleinschuster/InkPages.git
+[submodule "native/external/InkPages"]
+	path = native/external/InkPages
+	url = https://github.com/robertkleinschuster/InkPages
