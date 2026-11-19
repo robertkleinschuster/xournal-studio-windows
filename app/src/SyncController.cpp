@@ -112,6 +112,7 @@ namespace xournal::app
             messages(L"Der Projektordner ist kein Git-Repository.", ToastKind::Info);
             return;
         }
+        session.EndTextEditing(); // a text being typed counts as a change
         if (session.IsModified())
         {
             int choice = Questions::Choose(owner, L"Vor dem Synchronisieren speichern?",
@@ -184,6 +185,7 @@ namespace xournal::app
     bool SyncController::ResolvePulledDocument()
     {
         saveRequested = false; // asked for before the document changed on disk: the user decides again
+        session.EndTextEditing(); // a text typed during the sync is one of the unsaved notes
         if (session.IsModified())
         {
             int choice = Questions::Choose(owner, L"Dokument wurde auf einem anderen Gerät geändert",

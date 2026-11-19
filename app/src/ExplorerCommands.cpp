@@ -280,6 +280,7 @@ namespace xournal::app
         auto open = doc ? (doc->FilePath() ? doc->FilePath() : doc->PdfPath()) : std::nullopt;
         std::wstring text = L"Die Datei bekommt wieder den Stand des letzten Commits (der letzten Synchronisierung). Was "
             L"seitdem an ihr geändert wurde, geht verloren.";
+        if (affected) session.EndTextEditing(); // a text being typed counts among the unsaved changes
         if (affected && session.IsModified())
         {
             text += L" Auch die ungespeicherten Änderungen im offenen Dokument gehen verloren.";

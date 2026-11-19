@@ -55,8 +55,11 @@ namespace xournal::app
         /// While a sync runs, Speichern (Strg+S) waits for it: returns true when the save was put off (said).
         std::function<bool()> saveDeferredWhileSyncing;
 
-        /// Asks about unsaved changes; true when the document may be left (saved, discarded or unchanged).
+        /// Ends the Text tool's editing first (the typed text is part of the document), then asks about unsaved changes;
+        /// true when the document may be left (saved, discarded or unchanged).
         bool ConfirmLeave();
+        /// Ends the Text tool's editing, so a text being typed is in the document before a question about changes.
+        void EndTextEditing();
 
         /// The document changed outside the ink's history (a page inserted or removed): unsaved until saved.
         void NotePagesChanged();

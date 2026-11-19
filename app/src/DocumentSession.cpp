@@ -149,7 +149,9 @@ namespace xournal::app
                         file.filename().native()), ToastKind::Warning);
                     return;
                 }
-                // Edits made while it loaded belong to the shown document: the question about them comes now.
+                // Edits made while it loaded belong to the shown document: the question about them comes now (a text
+                // still being typed is one of them).
+                EndTextEditing();
                 if (edits != editsBefore && !ConfirmLeave())
                 {
                     Log(std::format("session: {} loaded, kept the edited document (Abbrechen)", ToUtf8(file.native())));
@@ -211,8 +213,16 @@ namespace xournal::app
         if (message) message(what, ToastKind::Error);
     }
 
+    void DocumentSession::EndTextEditing()
+    {
+        if (!surface.EditingText()) return;
+        surface.EndTextEditing(); // returns with the text in the history (AtSavePoint counts it)
+        ++edits; // the history's notice comes later (posted): a load that ends now must ask about the text already
+    }
+
     bool DocumentSession::ConfirmLeave()
     {
+        EndTextEditing(); // the typed text counts as a change (and is saved with the rest)
         if (!IsModified()) return true;
         switch (Dialogs::AskLeave(owner, doc->SuggestedName()))
         {
