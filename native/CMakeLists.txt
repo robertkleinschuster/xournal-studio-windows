@@ -36,6 +36,7 @@ add_subdirectory(base)
 add_subdirectory(model)
 add_subdirectory(io)
 add_subdirectory(pdf)
+add_subdirectory(services)
 
 # InkPages: only its library is built for the app (its demo, test tool and tests are built in its own repository).
 set(INKPAGES_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external/InkPages)

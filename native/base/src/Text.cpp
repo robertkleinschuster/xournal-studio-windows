@@ -46,6 +46,12 @@ namespace xournal
             CSTR_EQUAL;
     }
 
+    int CompareIgnoreCase(std::wstring_view a, std::wstring_view b)
+    {
+        return CompareStringOrdinal(a.data(), static_cast<int>(a.size()), b.data(), static_cast<int>(b.size()), TRUE) -
+            CSTR_EQUAL;
+    }
+
     bool StartsWithIgnoreCase(std::wstring_view text, std::wstring_view prefix)
     {
         return text.size() >= prefix.size() && EqualsIgnoreCase(text.substr(0, prefix.size()), prefix);

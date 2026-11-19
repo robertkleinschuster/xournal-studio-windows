@@ -16,6 +16,16 @@ namespace xournal
     bool EqualsIgnoreCase(std::wstring_view a, std::wstring_view b);
     bool StartsWithIgnoreCase(std::wstring_view text, std::wstring_view prefix);
 
+    /// Ordinal, case-insensitive order (CompareStringOrdinal): <0, 0, >0.
+    int CompareIgnoreCase(std::wstring_view a, std::wstring_view b);
+
+    /// For maps keyed by file paths or names as Windows compares them.
+    struct LessIgnoreCase
+    {
+        using is_transparent = void;
+        bool operator()(std::wstring_view a, std::wstring_view b) const { return CompareIgnoreCase(a, b) < 0; }
+    };
+
     bool IsSpace(wchar_t c);
     std::wstring_view Trim(std::wstring_view text);
 

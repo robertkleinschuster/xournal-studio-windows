@@ -25,3 +25,4 @@ target_compile_definitions(XournalTests PRIVATE XOURNAL_EXAMPLES_DIR=L"${CMAKE_S
 target_link_libraries(XournalTests PRIVATE XournalIo XournalPdf libqpdf GTest::gtest_main ole32 crypt32 windowscodecs windowsapp)
 include(GoogleTest)
 gtest_discover_tests(XournalTests)
+add_subdirectory(services)
