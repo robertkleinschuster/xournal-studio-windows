@@ -95,7 +95,14 @@ Invoke-Test {
     [Inj]::Key(0x50); 'menu: Seiten aus &PDF oder Dokument einfuegen'
     TypePath 'C:\work\Grenzwerte.pdf'
     Shot '04-insert-dialog'
-    ClickAnywhere ('Alle ausw' + $ae + 'hlen')
+    # The SysLink by its control id (IDC_INSERT_ALL = 103; UI Automation's id of a Win32 control): its name is not the
+    # link's text.
+    $cond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::AutomationIdProperty, '103')
+    $link = [System.Windows.Automation.AutomationElement]::RootElement.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $cond)
+    if ($link -eq $null) { throw "'Alle auswaehlen' (id 103) not found" }
+    "link: name '$($link.Current.Name)'"
+    $r = $link.Current.BoundingRectangle
+    [Inj]::ClickPixel([int]($r.X + 20), [int]($r.Y + $r.Height / 2)); Start-Sleep -Milliseconds 500
     Start-Sleep 1
     ClickAnywhere ('Einf' + $ue + 'gen')
     Start-Sleep 4
