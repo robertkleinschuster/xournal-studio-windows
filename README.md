@@ -1,16 +1,56 @@
-# Xournal Studio for Windows – native (C++/Win32)
+# Xournal Studio for Windows
 
-The C# WinUI app rebuilt as a native C++20 app (plan: `docs/CPP-UMZUG.md`). Windows APIs first; third-party code only
-where Windows has nothing (zlib for gzip; qpdf for writing PDFs; PDFium for PDF text), fetched at a pinned release and
-linked statically - except PDFium, a delay-loaded DLL. Licenses: `THIRD-PARTY.md`.
+A small pen note app for Windows 11 convertibles that reads and writes [Xournal++](https://xournalpp.github.io/)
+`.xopp` files in the upstream format: nothing Xournal++ does not know is added, nothing the file contains is lost. It
+covers one workflow well: annotating lecture PDFs and solving exercises on graph paper with the pen, in a git-synced
+project folder.
+
+Native C++20 on Win32 (comctl32 v6, PerMonitorV2, Direct2D/DirectWrite, DirectComposition, DirectManipulation) with
+Windows ink through [InkPages](https://github.com/robertkleinschuster/InkPages) (git submodule `external/InkPages`).
+Windows APIs first; third-party code only where Windows has nothing (zlib for gzip, qpdf for writing PDFs, libgit2 for
+git, protozero for PencilKit, PDFium for PDF text), fetched at pinned releases and linked statically - except PDFium,
+a delay-loaded DLL. Licenses: [THIRD-PARTY.md](THIRD-PARTY.md). The earlier C#/WinUI app is at the tag `csharp-final`.
+
+- Pen: Windows ink (pressure, eraser end, barrel button = lasso), pen and highlighter presets, exact or whole-stroke
+  eraser, selection (lasso/rectangle: move, scale, copy, delete, across pages), shapes and shape recognition, the
+  Windows ruler, a text tool, undo/redo. Finger and touchpad pan and zoom; the mouse selects - only the pen writes.
+- Documents: PDF backgrounds (PDF opened as a new document), all Xournal++ backgrounds, pictures, texts, PDF export,
+  pages inserted (blank, from a PDF or another document), moved and deleted, iPad (PencilKit) markup import.
+- Side pane: the project folder (git colors, sync), todo.txt tasks, page thumbnails.
+- Saving only by choice (the leave question), recovery copies of unsaved changes.
+
+## Build, test, install
+
+Requires Windows 11 and Visual Studio 2026 with C++ (its CMake is used). Clone with `--recurse-submodules` (or run
+`git submodule update --init`).
 
 ```powershell
 .\build.ps1            # configure (Visual Studio's CMake), build Release, run the unit tests (CTest + GoogleTest)
 .\build.ps1 -NoTests
 .\install.ps1          # the committed state (HEAD, built in a clean worktree): tests, Release build, install to
-                       # %LOCALAPPDATA%\Programs\Xournal Studio (Win32) + Start menu entry "Xournal Studio (Win32)",
-                       # side by side with the C# app (untouched); then a start check
+                       # %LOCALAPPDATA%\Programs\Xournal Studio (Win32) + Start menu entry "Xournal Studio (Win32)";
+                       # then a start check. Refused while the installed app runs.
 .\install.ps1 -SkipInstall   # build and stage only (.local-build\install-stage)
+UiTests\Run-AppTest.ps1 -Test UiTests\TasksTest.ps1 -Extra <InkPages' uiaprobe.exe>   # a UI test in Windows Sandbox
+```
+
+CI (`.github/workflows/build.yml`) builds and runs the unit tests on every push; a tag `v*` publishes the app as an MSI
+(see Installer) and a portable zip in a GitHub pre-release.
+
+## Layout
+
+```
+base/ model/ io/ pdf/ pdftext/ search/ import/ services/   the modules (static libraries, below)
+app/                the exe: window, menu, toolbar, side pane, feature classes
+tests/              unit tests (GoogleTest, CTest)
+UiTests/            sandbox UI tests (Run-AppTest.ps1 + test scripts; InkPages' runner and TestKit)
+external/InkPages/  the writing surface and its tools (submodule; only its library is built here)
+examples/           sanitized example documents (unit tests round-trip them; UI tests use Schaltungen)
+docs/               the C++ migration plan (CPP-UMZUG.md)
+tools/              make_examples.py (derives examples/)
+installer/          the MSI (WiX source, Build-Msi.ps1, the pinned wix tool)
+.github/workflows/  CI: build + unit tests; releases on tags v*
+build.ps1 install.ps1 CMakeLists.txt
 ```
 
 ## Modules
@@ -68,7 +108,7 @@ Xournal's width is the width at full pressure; Windows ink's size the width at h
 `app/` builds `XournalStudio.exe` (WIN32, static CRT; manifest: comctl32 v6, PerMonitorV2, UTF-8). `MainWindow` only wires
 the window's parts to feature classes:
 
-- `MainMenu` (Datei/Bearbeiten/Seite/Ansicht with the C# app's shortcuts; features of later phases shown disabled),
+- `MainMenu` (Datei/Bearbeiten/Seite/Ansicht with the C# app's shortcuts (tag `csharp-final`); features of later phases shown disabled),
   `AppToolbar` (InkPages' toolbar in German with the exe's pen cursors and the app's buttons: Speichern, Als PDF
   exportieren | Seite einfügen, Seite löschen - the page buttons drawn from path data), `SidePane` (Dateien, Aufgaben,
   Seiten), `Toast` (a layered popup at the bottom of the surface; Windows 11 InfoBar colors with the system icons;
@@ -98,8 +138,17 @@ the window's parts to feature classes:
 - Logs: `XOURNAL_STUDIO_LOG` (InkPages' lines in `<log>.inkpages.log` beside it), errors always in
   `%LOCALAPPDATA%\XournalStudioForWindows\errors.log`; `XOURNAL_STUDIO_CONFIG_DIR` for tests.
 
-Sandbox tests (`UiTests/`, InkPages' runner and TestKit; `Run-AppTest.ps1` waits for a free sandbox and holds
+Sandbox tests (`UiTests/`, InkPages' runner and TestKit; `Run-AppTest.ps1` refuses while a sandbox runs and holds
 `.local-build\sandbox.lock`): `InkRoundTripTest` (write, move, undo, erase, save, reload: untouched strokes byte-identical,
 moved ones shifted exactly), `DocumentFlowsTest` (PDF as a new document, the leave question, Save As with an attachment,
 export), `PagesFlowTest` (a text, the pictures, insert and delete a page with undo on another page, the toolbar's
-buttons by `uiaprobe`).
+buttons by `uiaprobe`), `PagesPaneTest`, `TextToolTest`, `TasksTest`, `RecoveryTest`, `ExplorerTest`, `MsiTest` (the
+installer: silent and interactive install, start from the shortcut, upgrade, clean uninstall).
+
+## Installer
+
+`installer/` builds a per-user MSI with the WiX Toolset (pinned .NET tool): `installer\Build-Msi.ps1 -Version <x.y.z>`
+from the staged app (`install.ps1 -SkipInstall`). It installs to the same folder as `install.ps1` with the same Start
+menu entry, without admin rights, and registers in Apps & Features; a newer version replaces the old one. The MSI is
+for releases, `install.ps1` for development: `install.ps1` refuses while the MSI is installed. Unsigned: SmartScreen
+warns on the first start ("Weitere Informationen" -> "Trotzdem ausführen").

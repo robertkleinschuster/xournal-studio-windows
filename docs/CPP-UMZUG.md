@@ -36,6 +36,10 @@ Der Mathe Trainer zieht **später** um; sein InkPages-Submodul bleibt bis dahin 
   (über den Tag erreichbar). Name bleibt InkPages.
 - **Xournal Studio:** im selben Repository ein neuer Ordner `native/` mit der C++-App; die C#-App bleibt daneben, bis
   sie ersetzt ist, dann wird sie entfernt.
+  **Erledigt 2026-11-19 (Umbau):** die C#-App ist entfernt (Tag `csharp-final`, Release v0.1.0; sie bleibt beim
+  Nutzer installiert), die C++-App liegt im Wurzelverzeichnis (`git mv` aus `native/`), InkPages als Submodul
+  `external/InkPages`. CI baut und testet bei jedem Push; ein Tag `v*` erzeugt eine Vorabversion mit MSI (WiX,
+  pro Benutzer) und ZIP. Erste Version der C++-App: v0.2.0.
 - Build: CMake (mit Visual Studio 2026), `build.ps1`; Tests mit CTest; Sandbox-Tests weiter über TestKit/Inj.
 
 ## Phasen
@@ -124,6 +128,9 @@ ist seine Eingabe aktiv). 29 Unit-Tests, Sandbox `ToolsTest.ps1` grün. Offen: 2
 
 ### 5. Umstieg
 - Paritätsliste erfüllt, Sandbox-Tests grün, Gerätetest durch den Nutzer → Installer der C++-App, C#-App entfernen.
+- **Repository umgebaut 2026-11-19:** C#-Code entfernt (Tag `csharp-final`), `native/` → Wurzel, MSI-Installer
+  (`installer/`) und Release-Workflow; erste Vorabversion v0.2.0. Offen: Paritätsliste abhaken, Gerätetest,
+  Dateizuordnung.
 
 ## Paritätsliste (Auszug, wird vor Phase 5 vervollständigt)
 Die C++-App ersetzt die C#-App, wenn alles Folgende funktioniert (Sandbox-Tests + Gerätetest des Nutzers). Abgehakt
