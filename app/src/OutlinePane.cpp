@@ -34,7 +34,7 @@ namespace xournal::app
         }
         window = CreateWindowExW(0, ClassName, L"", WS_CHILD | WS_CLIPCHILDREN, 0, 0, 0, 0, parent, nullptr, instance, this);
         if (!window) ThrowLastError("CreateWindowEx(outline pane)");
-        tree = CreateWindowExW(0, WC_TREEVIEWW, L"Gliederung", WS_CHILD | WS_VISIBLE | WS_TABSTOP | TVS_HASBUTTONS |
+        tree = CreateWindowExW(0, WC_TREEVIEWW, L"Inhalt der PDF", WS_CHILD | WS_VISIBLE | WS_TABSTOP | TVS_HASBUTTONS |
             TVS_SHOWSELALWAYS | TVS_FULLROWSELECT | TVS_INFOTIP, 0, 0, 0, 0, window,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(TreeId)), instance, nullptr);
         if (!tree) ThrowLastError("CreateWindowEx(outline tree)");

@@ -27,6 +27,8 @@ try {
     if (Test-Path $app) { Remove-Item -Recurse -Force $app }
     New-Item -ItemType Directory -Force $app | Out-Null
     Copy-Item (Join-Path $repo ".local-build\$Build\app\$Config\XournalStudio.exe") $app
+    # The DLLs the build puts next to it (pdfium.dll: the PDF's text for search).
+    Get-ChildItem (Join-Path $repo ".local-build\$Build\app\$Config") -Filter *.dll | Copy-Item -Destination $app
     # One results folder per test: agents running different tests one after another keep each other's results.
     $work = Join-Path $env:TEMP ('xournal-native-sandbox-' + [IO.Path]::GetFileNameWithoutExtension($Test))
     $data = @((Join-Path $repo 'examples\Schaltungen.xopp'), (Join-Path $repo 'examples\Schaltungen.pdf')) + $Extra
