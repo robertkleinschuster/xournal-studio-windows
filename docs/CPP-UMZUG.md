@@ -61,6 +61,13 @@ Ursprüngliche Planung:
 - Messen am Gerät: Latenz, Handballen, Stift + Finger.
 
 ### 2. Werkzeuge (InkPages)
+**2b/2c erledigt 2026-11-19 (InkPages c88e462 … b68b242):** Bibliothek modular (`toolbar → surface → tools → ink →
+render → model`, `base`), Auswahl Lasso/Rechteck mit Stifttaste, Bild-Erweiterungspunkt (`PictureHost`), exaktes
+Verschieben/Skalieren, über Seiten mit Auto-Scroll, Befehle inkl. eigenem Zwischenablage-Format; Formen, Formerkennung
+(`InkAnalyzer`), Windows-Lineal/Winkelmesser; Striche an der Seitengrenze geteilt; Strich-Schlüssel (verlustfreies
+Speichern) und Seiten-Unterlage (`drawUnderlay`) für die App. 45 Unit-Tests, Sandbox `SelectionTest`/`ToolsTest` grün.
+Offen am Gerät: Touchpad, Lineal per Finger, Latenz, Handballen.
+
 **2a erledigt 2026-11-19 (InkPages feb8dda, cccb628, 040af1b):** comctl32-Werkzeugleiste (Rückgängig/Wiederholen,
 Stift- und Textmarker-Vorlagen mit Farb-/Breiten-Menü, Radierer + „Ganze Striche radieren“ mit Kreisgröße),
 Radierer ganz/exakt (StrokeEraser portiert), Radierer-Ende, eine Rückgängig-Historie über alle Seiten, Stift-Cursor je
