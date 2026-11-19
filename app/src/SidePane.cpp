@@ -14,7 +14,8 @@ namespace xournal::app
         constexpr wchar_t ClassName[] = L"XournalStudioSidePane";
         constexpr int TabsId = 1, TreeId = 2, SyncId = 3;
         constexpr int SyncButtonHeightDip = 32;
-        constexpr wchar_t const* TabTitles[] = { L"Dateien", L"Aufgaben", L"Seiten" };
+        constexpr wchar_t const* TabTitles[] = { L"Dateien", L"Aufgaben", L"Seiten", L"Suche", L"Gliederung" };
+        constexpr int OutlineTab = 4, FixedTabs = 4; // Suche is SidePane::SearchTab
 
         HWND Placeholder(HWND parent, wchar_t const* text)
         {
@@ -72,7 +73,7 @@ namespace xournal::app
             ThrowLastError("CreateWindowEx(tab control)");
         }
         UseMessageFont(tabs);
-        for (int i = 0; i < 3; ++i)
+        for (int i = 0; i < FixedTabs; ++i)
         {
             TCITEMW item{ TCIF_TEXT };
             item.pszText = const_cast<wchar_t*>(TabTitles[i]);
@@ -109,11 +110,47 @@ namespace xournal::app
         Layout();
     }
 
+    void SidePane::SetSearchContent(HWND content)
+    {
+        searchContent = content;
+        ShowPage(Tab());
+        Layout();
+    }
+
+    void SidePane::SetOutlineContent(HWND content)
+    {
+        outlineContent = content;
+        ShowPage(Tab());
+        Layout();
+    }
+
+    void SidePane::ShowOutlineTab(bool shown)
+    {
+        if (shown == outlineShown) return;
+        outlineShown = shown;
+        if (shown)
+        {
+            TCITEMW item{ TCIF_TEXT };
+            item.pszText = const_cast<wchar_t*>(TabTitles[OutlineTab]);
+            if (TabCtrl_InsertItem(tabs, OutlineTab, &item) < 0) ThrowLastError("TabCtrl_InsertItem (Gliederung)");
+            Layout(); // a new row of tabs may change the content's area
+            return;
+        }
+        bool wasShown = Tab() == OutlineTab;
+        TabCtrl_DeleteItem(tabs, OutlineTab);
+        if (wasShown)
+        {
+            SetTab(0);
+            if (tabChanged) tabChanged(0);
+        }
+        Layout();
+    }
+
     int SidePane::Tab() const { return TabCtrl_GetCurSel(tabs); }
 
     void SidePane::SetTab(int tab)
     {
-        if (tab < 0 || tab > 2) tab = 0;
+        if (tab < 0 || tab >= TabCtrl_GetItemCount(tabs)) tab = 0;
         TabCtrl_SetCurSel(tabs, tab);
         ShowPage(tab);
     }
@@ -124,6 +161,8 @@ namespace xournal::app
         ShowWindow(syncButton, tab == 0 ? SW_SHOW : SW_HIDE);
         ShowWindow(tasks->Window(), tab == 1 ? SW_SHOW : SW_HIDE);
         ShowWindow(pagesContent, tab == 2 ? SW_SHOW : SW_HIDE);
+        if (searchContent) ShowWindow(searchContent, tab == SidePane::SearchTab ? SW_SHOW : SW_HIDE);
+        if (outlineContent) ShowWindow(outlineContent, tab == OutlineTab ? SW_SHOW : SW_HIDE);
     }
 
     void SidePane::Layout()
@@ -133,8 +172,9 @@ namespace xournal::app
         MoveWindow(tabs, 0, 0, rc.right, rc.bottom, TRUE);
         RECT page = rc;
         TabCtrl_AdjustRect(tabs, FALSE, &page);
-        for (HWND child : { explorer->Window(), tasks->Window(), pagesContent })
+        for (HWND child : { explorer->Window(), tasks->Window(), pagesContent, searchContent, outlineContent })
         {
+            if (!child) continue;
             MoveWindow(child, page.left, page.top, page.right - page.left, page.bottom - page.top, TRUE);
             SetWindowPos(child, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE); // above the tab control
         }

@@ -105,6 +105,7 @@ namespace xournal::app
             UpdateCommands();
             if (thumbnails) thumbnails->PagesChanged();
             if (pagesPane) pagesPane->SetCount(view->PageCount());
+            if (search) search->PagesChanged();
         };
         // Set before the toolbar: it chains these handlers.
         surface->historyChanged = [this] { if (session) session->NoteEdit(); UpdateTitle(); UpdateCommands(); };
@@ -131,6 +132,12 @@ namespace xournal::app
             UpdatePagesPane();
         };
         CreatePagesPane();
+        // The background PDF's outline (Gliederung) and links: a mouse click or finger tap follows a link.
+        links = std::make_unique<PdfLinks>(window, *surface, *view);
+        outline = std::make_unique<PdfOutline>(*pane, *view, *links);
+        view->pdfLoaded = [this] { outline->Update(); };
+        surface->tapped = [this](int page, inkpages::PointF point, inkpages::PointerKind) { links->Tapped(page, point); };
+        CreateSearch();
         toast = std::make_unique<Toast>(window);
         CreateProjectParts();
 
@@ -224,6 +231,8 @@ namespace xournal::app
         thumbnails->updated = [this](int index) { pagesPane->Redraw(index); };
         view->shown = [this]
         {
+            if (outline) outline->Update(); // the new document's PDF is not loaded yet: the tab goes until it is
+            if (search) search->DocumentShown();
             thumbnails->Reset();
             pagesPane->SetCount(view->PageCount());
             pagesPane->Select(surface->PageInView().value_or(0));
@@ -237,9 +246,34 @@ namespace xournal::app
         pagesPane->remove = [this](int index) { pageCommands->DeleteAt(index); };
     }
 
+    void MainWindow::CreateSearch()
+    {
+        search = std::make_unique<DocumentSearch>(*view);
+        searchPane = std::make_unique<SearchPane>(pane->Window());
+        pane->SetSearchContent(searchPane->Window());
+        searchPane->searchRequested = [this](std::wstring const& query) { search->Start(query); };
+        searchPane->next = [this] { search->Next(); };
+        searchPane->previous = [this] { search->Previous(); };
+        searchPane->chosen = [this](size_t index) { search->Show(index); };
+        searchPane->leave = [this] { SetFocus(surface->Window()); };
+        search->changed = [this] { searchPane->Show(search->Hits(), search->Current(), search->Running(), search->Query()); };
+        // The hit's page into view (its place: InkPages' RevealRect once it is there).
+        search->shown = [this](search::SearchHit const& hit) { surface->ScrollToPage(hit.page); };
+    }
+
+    void MainWindow::ShowSearch()
+    {
+        if (!settings.paneOpen) SetPaneOpen(true);
+        pane->SetTab(SidePane::SearchTab);
+        settings.paneTab = SidePane::SearchTab;
+        SaveSettings();
+        UpdatePagesPane();
+        searchPane->FocusField();
+    }
+
     void MainWindow::UpdatePagesPane()
     {
-        if (thumbnails && pane) thumbnails->SetActive(settings.paneOpen && pane->Tab() == 2);
+        if (thumbnails && pane) thumbnails->SetActive(settings.paneOpen && pane->Tab() == SidePane::PagesTab);
     }
 
     void MainWindow::UpdateTitle()
@@ -359,6 +393,9 @@ namespace xournal::app
             break;
         case CmdSelectAll: surface->SelectAll(); break;
         case CmdTogglePane: SetPaneOpen(!settings.paneOpen); SaveSettings(); break;
+        case CmdFind: ShowSearch(); break;
+        case CmdFindNext: if (search->Hits().empty()) ShowSearch(); else search->Next(); break;
+        case CmdFindPrevious: if (search->Hits().empty()) ShowSearch(); else search->Previous(); break;
         case CmdFitWidth: surface->FitWidth(); break;
         case CmdZoomIn: surface->ZoomTo(surface->CurrentView().zoom * 1.25f); break;
         case CmdZoomOut: surface->ZoomTo(surface->CurrentView().zoom / 1.25f); break;
@@ -455,6 +492,12 @@ namespace xournal::app
             projectExplorer.reset();
             sync.reset();
             // The feature classes that hold the surface go before it (the view takes its callbacks back).
+            surface->tapped = nullptr;
+            view->pdfLoaded = nullptr;
+            search.reset();
+            searchPane.reset();
+            outline.reset();
+            links.reset();
             pagesPane.reset();
             thumbnails.reset();
             importCommand.reset();

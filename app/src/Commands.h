@@ -25,6 +25,9 @@ namespace xournal::app
         CmdDuplicate,
         CmdDelete,
         CmdSelectAll,
+        CmdFind,
+        CmdFindNext,
+        CmdFindPrevious,
         // Seite
         CmdInsertPage = 300,
         CmdInsertFromFile,

@@ -14,6 +14,10 @@
 #include "PagesPane.h"
 #include "PdfExportCommand.h"
 #include "PdfImportCommand.h"
+#include "DocumentSearch.h"
+#include "PdfLinks.h"
+#include "SearchPane.h"
+#include "PdfOutline.h"
 #include "ProjectExplorer.h"
 #include "RecoveryCopies.h"
 #include "SidePane.h"
@@ -56,6 +60,8 @@ namespace xournal::app
         void UpdateMenu();
         void UpdateCommands(); // commands that depend on the document (a page can be deleted while there are two)
         void CreatePagesPane();
+        void CreateSearch();      // Strg+F: the Suche tab and the document search
+        void ShowSearch();        // opens the pane on the Suche tab, the keyboard in its field
         void UpdatePagesPane(); // thumbnails only while the Seiten tab is shown
         void UpdateTitle();
         void SetPaneOpen(bool open);
@@ -83,6 +89,10 @@ namespace xournal::app
         std::unique_ptr<PdfImportCommand> importCommand;
         std::unique_ptr<PageThumbnails> thumbnails;
         std::unique_ptr<PagesPane> pagesPane;
+        std::unique_ptr<PdfLinks> links;
+        std::unique_ptr<PdfOutline> outline;
+        std::unique_ptr<DocumentSearch> search;
+        std::unique_ptr<SearchPane> searchPane;
         std::unique_ptr<SyncController> sync;
         std::unique_ptr<ProjectExplorer> projectExplorer;
         std::unique_ptr<ExplorerCommands> explorerCommands;

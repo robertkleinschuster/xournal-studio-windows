@@ -77,7 +77,8 @@ namespace xournal::app
         texts.reset();
         pictures = std::make_unique<FilePictures>(doc, surface, bridge->Lock(), invalidate);
         texts = std::make_unique<FileTexts>(doc, bridge->Lock(), *pictures, invalidate);
-        underlay = std::make_unique<PageUnderlay>(renderQueue, *doc, generation, invalidate, *pictures);
+        underlay = std::make_unique<PageUnderlay>(renderQueue, *doc, generation, invalidate, *pictures,
+            [this] { if (pdfLoaded) pdfLoaded(); });
         surface.SetPictureHost(pictures.get());
         surface.SetTextHost(texts.get());
         surface.SetPages(std::move(specs));
@@ -162,6 +163,15 @@ namespace xournal::app
     std::shared_ptr<PdfBackground> DocumentView::Pdf() const
     {
         return underlay ? underlay->Pdf() : nullptr;
+    }
+
+    void DocumentView::Highlight(int page, std::vector<Rect> rects)
+    {
+        if (!underlay) return;
+        int before = underlay->HighlightedPage();
+        underlay->SetHighlight(page, std::move(rects));
+        if (before >= 0) surface.InvalidatePage(before);
+        if (page >= 0 && page != before) surface.InvalidatePage(page);
     }
 
     void DocumentView::ReloadPdf()

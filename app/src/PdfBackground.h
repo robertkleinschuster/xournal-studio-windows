@@ -14,6 +14,7 @@
 #include "RenderQueue.h"
 
 #include "inkpages/model/PageMap.h"
+#include "xournal/model/Geometry.h"
 #include "xournal/pdf/PdfNavigation.h"
 
 #include <d2d1_1.h>
@@ -59,6 +60,12 @@ namespace xournal::app
 
         /// Whether the PDF is loaded (thumbnails asked before are asked again then).
         bool Loaded() const;
+        /// Runs on the UI thread once the PDF and its navigation are loaded (the outline can be shown then).
+        std::function<void()> loaded;
+
+        /// A PDF page's shown size in points (crop box turned by /Rotate, as rendered); nothing before the PDF is loaded
+        /// or for a page it does not have (UI thread).
+        std::optional<Size> ShownSize(int pdfPage);
 
         /// Whether the PDF could not be loaded (the pages stay white; the reason is in the log).
         bool Failed() const { return source->failed; }
@@ -91,5 +98,6 @@ namespace xournal::app
         std::function<void(int)> ready;
         std::shared_ptr<Source> source = std::make_shared<Source>();
         std::map<int, Rendered> rendered; // by PDF page (UI thread)
+        std::map<int, Size> shownSizes;   // by PDF page, read once (UI thread)
     };
 }

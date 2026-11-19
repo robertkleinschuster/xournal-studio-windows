@@ -57,6 +57,8 @@ namespace xournal::app
         std::function<void(std::set<int> const&)> pagesEdited;
         /// The view moved or zoomed (the page in view may be another).
         std::function<void()> viewMoved;
+        /// The background PDF and its navigation are loaded (the outline can be shown; UI thread).
+        std::function<void()> pdfLoaded;
 
         /// The shown document (nothing before the first).
         std::shared_ptr<XoppDocument> Document() const;
@@ -65,6 +67,9 @@ namespace xournal::app
         RenderQueue& Queue() { return renderQueue; }
         /// The document's PDF was written or newly chosen: the screen loads it anew and draws its pages again.
         void ReloadPdf();
+
+        /// Marks a search hit (page units of `page`) on its page; page -1 takes the mark away.
+        void Highlight(int page, std::vector<Rect> rects);
 
         /// The live pages' current strokes go into the document, then `work` runs with the document's lock held (UI
         /// thread; take the snapshot there). Throws when the ink cannot be read (InkPages' StrokesOf: timeout or ink-thread

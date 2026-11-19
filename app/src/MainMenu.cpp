@@ -98,6 +98,10 @@ namespace xournal::app
             { CmdDelete, L"&Löschen", L"Entf", 0, VK_DELETE },
             {},
             { CmdSelectAll, L"Alles a&uswählen", L"Strg+A", Ctrl, 'A' },
+            {},
+            { CmdFind, L"&Suchen…", L"Strg+F", Ctrl, 'F' },
+            { CmdFindNext, L"&Weitersuchen", L"F3", 0, VK_F3 },
+            { CmdFindPrevious, L"&Rückwärts suchen", L"Umschalt+F3", FSHIFT, VK_F3 },
         }, keys), L"&Bearbeiten");
         AddPopup(bar, Popup({
             { CmdInsertPage, L"Seite &einfügen" },

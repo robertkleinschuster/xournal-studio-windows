@@ -76,6 +76,7 @@ namespace xournal::app
                 {
                     for (auto const& [pdfPage, entry] : self->rendered)
                         for (int page : entry.pages) self->ready(page);
+                    if (self->loaded) self->loaded();
                 }
             });
         });
@@ -84,6 +85,17 @@ namespace xournal::app
     bool PdfBackground::Loaded() const
     {
         return source->Document() != nullptr;
+    }
+
+    std::optional<Size> PdfBackground::ShownSize(int pdfPage)
+    {
+        if (auto it = shownSizes.find(pdfPage); it != shownSizes.end()) return it->second;
+        auto document = source->Document();
+        if (!document || pdfPage < 0 || static_cast<UINT>(pdfPage) >= document.PageCount()) return std::nullopt;
+        auto dips = document.GetPage(static_cast<UINT>(pdfPage)).Size(); // DIPs: points x 96/72
+        Size shown{ dips.Width * 72.0 / 96.0, dips.Height * 72.0 / 96.0 };
+        shownSizes[pdfPage] = shown;
+        return shown;
     }
 
     std::shared_ptr<pdf::PdfNavigation const> PdfBackground::Navigation() const

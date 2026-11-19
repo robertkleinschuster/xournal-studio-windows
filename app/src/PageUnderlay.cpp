@@ -103,12 +103,13 @@ namespace xournal::app
     }
 
     PageUnderlay::PageUnderlay(RenderQueue& queue, XoppDocument const& doc, std::uint64_t generation,
-        std::function<void(int)> invalidate, FilePictures const& pictures)
-        : queue(queue), generation(generation), invalidate(invalidate),
+        std::function<void(int)> invalidate, FilePictures const& pictures, std::function<void()> pdfLoaded)
+        : queue(queue), generation(generation), invalidate(invalidate), pdfLoaded(std::move(pdfLoaded)),
           pdf(std::make_shared<PdfBackground>(queue, generation, invalidate)),
           bitmaps(std::make_shared<PictureBitmaps>(queue, generation, invalidate)),
           pictures(pictures)
     {
+        pdf->loaded = this->pdfLoaded;
         if (doc.PdfPath())
         {
             pdf->Load(*doc.PdfPath());
@@ -118,6 +119,7 @@ namespace xournal::app
     void PageUnderlay::LoadPdf(std::filesystem::path const& file)
     {
         pdf = std::make_shared<PdfBackground>(queue, generation, invalidate);
+        pdf->loaded = pdfLoaded;
         pdf->Load(file); // its pages are drawn again as their bitmaps arrive
     }
 
@@ -245,6 +247,30 @@ namespace xournal::app
                     guarded("a text", [&] { texts.Draw(dc, XoppText::Read(*element), pictures.PreviewOf(element.get()).value_or(Matrix{})); });
                 }
             }
+        }
+        if (page == highlightPage)
+        {
+            guarded("the search hit", [&] { DrawHighlight(dc); });
+        }
+    }
+
+    void PageUnderlay::SetHighlight(int page, std::vector<Rect> rects)
+    {
+        highlightPage = page;
+        highlightRects = std::move(rects);
+    }
+
+    void PageUnderlay::DrawHighlight(ID2D1DeviceContext* dc)
+    {
+        // The system's selection color, see-through so the text stays readable (as a text marker over the page).
+        COLORREF color = GetSysColor(COLOR_HIGHLIGHT);
+        ComPtr<ID2D1SolidColorBrush> brush;
+        Check("CreateSolidColorBrush (search hit)", dc->CreateSolidColorBrush(D2D1::ColorF(GetRValue(color) / 255.0f,
+            GetGValue(color) / 255.0f, GetBValue(color) / 255.0f, 0.35f), &brush));
+        for (auto const& r : highlightRects)
+        {
+            dc->FillRectangle(D2D1::RectF(static_cast<float>(r.Left()) - 1, static_cast<float>(r.Top()) - 1,
+                static_cast<float>(r.Right()) + 1, static_cast<float>(r.Bottom()) + 1), brush.Get());
         }
     }
 }

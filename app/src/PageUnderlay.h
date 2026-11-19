@@ -19,14 +19,16 @@
 
 #include <functional>
 #include <memory>
+#include <vector>
 
 namespace xournal::app
 {
     class PageUnderlay
     {
     public:
+        /// `pdfLoaded`: the background PDF (and its navigation) is loaded - also after LoadPdf (UI thread).
         PageUnderlay(RenderQueue& queue, XoppDocument const& doc, std::uint64_t generation, std::function<void(int)> invalidate,
-            FilePictures const& pictures);
+            FilePictures const& pictures, std::function<void()> pdfLoaded);
 
         void Draw(int page, XoppPage const& content, ID2D1DeviceContext* dc, inkpages::RectF area, float pixelsPerUnit);
 
@@ -42,16 +44,24 @@ namespace xournal::app
         /// The page in view changed: far pages give back their bitmaps, near ones render first.
         void Trim(int focus);
 
+        /// Marks a search hit on `page` (rectangles in page units) over everything else of the underlay; page -1: none.
+        void SetHighlight(int page, std::vector<Rect> rects);
+        int HighlightedPage() const { return highlightPage; }
+
     private:
         void DrawBackground(int page, XoppPage const& content, ID2D1DeviceContext* dc, float pixelsPerUnit);
         void DrawPicture(int page, XmlElementPtr const& picture, ID2D1DeviceContext* dc, float pixelsPerUnit);
+        void DrawHighlight(ID2D1DeviceContext* dc);
 
         RenderQueue& queue;
         std::uint64_t generation;
         std::function<void(int)> invalidate;
+        std::function<void()> pdfLoaded;
         std::shared_ptr<PdfBackground> pdf;
         std::shared_ptr<PictureBitmaps> bitmaps;
         TextDrawing texts;
         FilePictures const& pictures;
+        int highlightPage = -1;
+        std::vector<Rect> highlightRects;
     };
 }

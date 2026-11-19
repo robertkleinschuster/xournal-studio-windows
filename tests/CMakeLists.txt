@@ -19,6 +19,7 @@ add_executable(XournalTests
     PdfDocumentExportTests.cpp
     PdfPageAppenderTests.cpp
     PdfNavigationTests.cpp
+    PdfPlacesTests.cpp
 )
 target_compile_options(XournalTests PRIVATE ${XOURNAL_COMPILE_OPTIONS})
 target_compile_definitions(XournalTests PRIVATE XOURNAL_EXAMPLES_DIR=L"${CMAKE_SOURCE_DIR}/examples")
