@@ -61,6 +61,12 @@ Ursprüngliche Planung:
 - Messen am Gerät: Latenz, Handballen, Stift + Finger.
 
 ### 2. Werkzeuge (InkPages)
+**2a erledigt 2026-11-19 (InkPages feb8dda, cccb628, 040af1b):** comctl32-Werkzeugleiste (Rückgängig/Wiederholen,
+Stift- und Textmarker-Vorlagen mit Farb-/Breiten-Menü, Radierer + „Ganze Striche radieren“ mit Kreisgröße),
+Radierer ganz/exakt (StrokeEraser portiert), Radierer-Ende, eine Rückgängig-Historie über alle Seiten, Stift-Cursor je
+Vorlage. Das 300-ms-Zeitpolster ist weg: der Cursor wird beim ersten Zeiger-Ereignis des Presenters gesetzt (erst dann
+ist seine Eingabe aktiv). 29 Unit-Tests, Sandbox `ToolsTest.ps1` grün. Offen: 2b Auswahl, 2c Formen/Erkennung/Lineal.
+
 - Werkzeugleiste mit comctl32-Toolbar: Stift-/Textmarker-Presets mit Farb-/Breiten-Menü, Radierer (+ exakt/ganze
   Striche), Auswählen, Formen, Lineal (`InkPresenterRuler`), Rückgängig/Wiederholen, Auswahlbefehle.
 - Auswahl (Lasso/Rechteck über `UnprocessedInput`, Verschieben/Skalieren exakt, Stifttaste = Lasso, Antippen daneben
