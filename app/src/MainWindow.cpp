@@ -13,6 +13,7 @@
 
 #include <commctrl.h>
 
+#include <algorithm>
 #include <format>
 
 namespace xournal::app
@@ -257,8 +258,19 @@ namespace xournal::app
         searchPane->chosen = [this](size_t index) { search->Show(index); };
         searchPane->leave = [this] { SetFocus(surface->Window()); };
         search->changed = [this] { searchPane->Show(search->Hits(), search->Current(), search->Running(), search->Query()); };
-        // The hit's page into view (its place: InkPages' RevealRect once it is there).
-        search->shown = [this](search::SearchHit const& hit) { surface->ScrollToPage(hit.page); };
+        // The hit into view, scrolled only as far as needed (all its lines).
+        search->shown = [this](search::SearchHit const& hit)
+        {
+            if (hit.rects.empty()) { surface->ScrollToPage(hit.page); return; }
+            Rect all = hit.rects.front();
+            for (auto const& r : hit.rects)
+            {
+                double left = std::min(all.Left(), r.Left()), top = std::min(all.Top(), r.Top());
+                all = { left, top, std::max(all.Right(), r.Right()) - left, std::max(all.Bottom(), r.Bottom()) - top };
+            }
+            surface->RevealRect(hit.page, { static_cast<float>(all.Left()), static_cast<float>(all.Top()),
+                static_cast<float>(all.Right()), static_cast<float>(all.Bottom()) });
+        };
     }
 
     void MainWindow::ShowSearch()

@@ -48,7 +48,7 @@ namespace xournal::app
         }
         Log(std::format("pdf links: to page {} at {:.0f},{:.0f} (PDF page {})", place->page + 1, place->point.x,
             place->point.y, destination.page + 1));
-        surface.ScrollToPage(place->page); // the place on it: InkPages' ScrollTo(page, point) once it is there
+        surface.ScrollTo(place->page, { static_cast<float>(place->point.x), static_cast<float>(place->point.y) });
         return true;
     }
 
