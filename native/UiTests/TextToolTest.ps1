@@ -48,7 +48,7 @@ Invoke-Test {
     New-Item -ItemType Directory -Force C:\work | Out-Null
     Copy-Item C:\sbx\data\Schaltungen.xopp, C:\sbx\data\Schaltungen.pdf C:\work
     $file = 'C:\work\Schaltungen.xopp'
-    $textsBefore = (Texts $file).Count
+    $textsBefore = @(Texts $file).Count
     $strokesBefore = StrokeCount $file
     "original: $textsBefore texts on page 1, $strokesBefore strokes"
 
@@ -58,14 +58,20 @@ Invoke-Test {
     Start-Sleep 3
 
     # 1. a new text: the Text tool, a pen tap, typing, a tap beside; Ctrl+S
-    ToolbarButton 'Text'
+    # The Text button: uiaprobe finds a name by a part of it ("Text" is in "Textmarker"), so it is found between its
+    # neighbors (the icon left of the middle, the options arrow right of it).
+    $shapes = & C:\sbx\data\uiaprobe.exe XournalStudioWindow 'Formen'
+    $ruler = & C:\sbx\data\uiaprobe.exe XournalStudioWindow 'Lineal'
+    $sx, $sy = "$shapes".Trim() -split ' '; $rx, $ry = "$ruler".Trim() -split ' '
+    [Inj]::ClickPixel([int](([int]$sx + [int]$rx) / 2) - 8, [int]$sy); Start-Sleep -Milliseconds 800; [Inj]::MoveMouse(980, 500)
+    "toolbar: Text between $sx and $rx"
     PenTap 'new text' 150 290
     Write-Typed "Gr$($ue)n und K$($ae)se`nZeile 2"
     Shot '01-typing'
     PenTap 'beside' 700 420
     Shot '02-ended'
     Ctrl 0x53 'S'
-    $texts = Texts $file
+    $texts = @(Texts $file)
     if ($texts.Count -ne $textsBefore + 1) { throw "after the new text: $($texts.Count) texts on page 1, expected $($textsBefore + 1)" }
     $new = $texts[$texts.Count - 1]
     "new text: font=$($new.GetAttribute('font')) size=$($new.GetAttribute('size')) x=$($new.GetAttribute('x')) y=$($new.GetAttribute('y')) color=$($new.GetAttribute('color'))"
@@ -81,12 +87,12 @@ Invoke-Test {
     Shot '03-editing-again'
     PenTap 'beside again' 700 420
     Ctrl 0x53 'S'
-    $edited = (Texts $file)[$textsBefore]
+    $edited = @(Texts $file)[$textsBefore]
     "edited: '$($edited.InnerText)'"
     if ($edited.InnerText -notlike '*neu') { throw "the edit is not in the file: '$($edited.InnerText)'" }
     Ctrl 0x5A 'Z'
     Ctrl 0x53 'S'
-    $undone = (Texts $file)[$textsBefore]
+    $undone = @(Texts $file)[$textsBefore]
     if ($undone.InnerText -like '*neu') { throw "undo left the edit: '$($undone.InnerText)'" }
     Shot '04-undone'
 
@@ -96,11 +102,11 @@ Invoke-Test {
     [Inj]::MouseDrag(@(170, 300, 230, 300)); Start-Sleep -Milliseconds 800
     Shot '06-moved'
     Ctrl 0x53 'S'
-    $moved = (Texts $file)[$textsBefore]
+    $moved = @(Texts $file)[$textsBefore]
     $x2 = [double]::Parse($moved.GetAttribute('x'), [Globalization.CultureInfo]::InvariantCulture)
     "moved: x $x -> $x2"
     if ($x2 -le $x + 10) { throw "the text did not move: x $x -> $x2" }
-    if ((Texts $file).Count -ne $textsBefore + 1) { throw 'texts were added or lost by the move' }
+    if (@(Texts $file).Count -ne $textsBefore + 1) { throw 'texts were added or lost by the move' }
     if ((StrokeCount $file) -ne $strokesBefore) { throw 'the strokes changed' }
     'text tool: passed'
 }

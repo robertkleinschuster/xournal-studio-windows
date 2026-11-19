@@ -72,6 +72,7 @@ namespace xournal::app
         void CaptureInk(std::function<void()> const& work);
 
     private:
+        void MarkCurrentPage(); // after the page count changed
         void DrawUnderlay(int page, ID2D1DeviceContext* dc, inkpages::RectF area);
         void OnViewChanged();
         /// The document's page list and the UI-side data change with `map` (before InkPages is asked to rearrange).

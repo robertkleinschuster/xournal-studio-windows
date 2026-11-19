@@ -189,6 +189,7 @@ namespace xournal::app
         ListView_SetInsertMark(list, &none);
         int from = dragFrom;
         dragFrom = -1;
+        Log(std::format("pages pane: drop of page {} at mark {} ({})", from + 1, mark.iItem, (mark.dwFlags & LVIM_AFTER) ? "after" : "before"));
         if (mark.iItem < 0 || from < 0) return;
         // The mark is before or after an item; the page lands there (counted without itself).
         int target = mark.iItem + ((mark.dwFlags & LVIM_AFTER) ? 1 : 0);
@@ -230,6 +231,7 @@ namespace xournal::app
         }
         case LVN_BEGINDRAG:
             dragFrom = reinterpret_cast<NMLISTVIEW const&>(header).iItem;
+            Log(std::format("pages pane: dragging page {}", dragFrom + 1));
             SetCapture(window);
             return 0;
         case NM_CUSTOMDRAW:

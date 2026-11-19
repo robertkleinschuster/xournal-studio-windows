@@ -69,7 +69,8 @@ Invoke-Test {
     $p1 = Probe 'Seite 1'
     [Inj]::RightClickPixel($p1[0], $p1[1]); Start-Sleep 1
     Shot '03-page-menu'
-    ClickAnywhere ('Leere Seite danach einf' + $ue + 'gen')
+    # The item by its access key: the managed UI Automation client did not find the popup menu's items.
+    [Inj]::Key(0x43); 'menu: Leere Seite dana&ch einfuegen'
     Start-Sleep 2
     Ctrl 0x53 'S'
     $pages = Pages $file
@@ -90,8 +91,8 @@ Invoke-Test {
     # Pages of Grenzwerte.pdf, all, after the page in view: appended to Schaltungen.pdf.
     $p1 = Probe 'Seite 1'
     [Inj]::RightClickPixel($p1[0], $p1[1]); Start-Sleep 1
-    Shot '03-page-menu'
-    ClickAnywhere ('Seiten aus PDF oder Dokument einf' + $ue + 'gen' + [char]0x2026)
+    Shot '04-page-menu'
+    [Inj]::Key(0x50); 'menu: Seiten aus &PDF oder Dokument einfuegen'
     TypePath 'C:\work\Grenzwerte.pdf'
     Shot '04-insert-dialog'
     ClickAnywhere ('Alle ausw' + $ae + 'hlen')

@@ -44,6 +44,12 @@ namespace xournal::app
         renderQueue.Stop(); // the PDF device goes while the app still runs
     }
 
+    void DocumentView::MarkCurrentPage()
+    {
+        // The page in view is outlined only where there is a choice of pages (as the C# PagesController did).
+        surface.MarkCurrentPage(PageCount() > 1);
+    }
+
     void DocumentView::OnViewChanged()
     {
         if (underlay)
@@ -75,6 +81,7 @@ namespace xournal::app
         surface.SetPictureHost(pictures.get());
         surface.SetTextHost(texts.get());
         surface.SetPages(std::move(specs));
+        MarkCurrentPage();
         surface.FitWidth();
         if (shown) shown();
     }
@@ -104,6 +111,7 @@ namespace xournal::app
             pages.insert(pages.begin() + index, std::move(page));
         });
         surface.InsertPages(index, { spec });
+        MarkCurrentPage();
         surface.ScrollToPage(index);
         Log(std::format("document view: page inserted at {}", index));
         if (pagesChanged) pagesChanged();
@@ -123,6 +131,7 @@ namespace xournal::app
             list.insert(list.begin() + index, pages.begin(), pages.end());
         });
         surface.InsertPages(index, std::move(specs));
+        MarkCurrentPage();
         surface.ScrollToPage(index);
         Log(std::format("document view: {} pages inserted at {}", added, index));
         if (pagesChanged) pagesChanged();
@@ -176,6 +185,7 @@ namespace xournal::app
             pages.erase(pages.begin() + index);
         });
         surface.RemovePage(index);
+        MarkCurrentPage();
         Log(std::format("document view: page {} removed", index));
         if (pagesChanged) pagesChanged();
         return true;
