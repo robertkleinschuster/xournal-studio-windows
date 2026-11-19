@@ -26,3 +26,4 @@ target_link_libraries(XournalTests PRIVATE XournalIo XournalPdf libqpdf GTest::g
 include(GoogleTest)
 gtest_discover_tests(XournalTests)
 add_subdirectory(services)
+add_subdirectory(import)
