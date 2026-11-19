@@ -12,6 +12,10 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
+#include <cstdio>
+#include <format>
+
 namespace xournal::tests
 {
     namespace
@@ -33,10 +37,10 @@ namespace xournal::tests
             QPDF pdf;
             std::vector<QPDFObjectHandle> pages;
 
-            NavigationPdf()
+            explicit NavigationPdf(int count = 3)
             {
                 pdf.emptyPDF();
-                for (int i = 0; i < 3; ++i)
+                for (int i = 0; i < count; ++i)
                 {
                     auto page = QPDFObjectHandle::newDictionary();
                     page.replaceKey("/Type", Name("/Page"));
@@ -76,6 +80,7 @@ namespace xournal::tests
             {
                 QPDFWriter writer(pdf);
                 writer.setOutputMemory();
+                writer.setObjectStreamMode(qpdf_o_generate); // compressed objects, as most PDFs today
                 writer.write();
                 std::unique_ptr<Buffer> buffer(writer.getBuffer());
                 return { buffer->getBuffer(), buffer->getBuffer() + buffer->getSize() };
@@ -204,5 +209,89 @@ namespace xournal::tests
         EXPECT_TRUE(navigation.Outline().empty());
         std::vector<std::uint8_t> junk{ '%', 'P', 'D', 'F', '-', '1', '.', '7', '\n', 'x' };
         EXPECT_THROW(PdfNavigation{ junk }, Error);
+    }
+
+    // Speed on a large document (measured, printed): 500 pages, an outline of 10 x 10 x 5 entries with string-named
+    // destinations, 20 links per page (URI, explicit and named destinations).
+    TEST(PdfNavigation, LargeDocumentTimes)
+    {
+        constexpr int Pages = 500;
+        NavigationPdf doc(Pages);
+        auto& pdf = doc.pdf;
+        auto names = QPDFObjectHandle::newArray();
+        auto outlines = pdf.makeIndirectObject(QPDFObjectHandle::newDictionary());
+        std::vector<QPDFObjectHandle> chapters;
+        int n = 0;
+        for (int c = 0; c < 10; ++c)
+        {
+            auto chapter = doc.Item(std::format("Kapitel {}", c + 1), outlines);
+            chapter.replaceKey("/Dest", Array({ doc.pages[static_cast<size_t>(c * 50)], Name("/Fit") }));
+            std::vector<QPDFObjectHandle> sections;
+            for (int s = 0; s < 10; ++s)
+            {
+                auto section = doc.Item(std::format("{}.{}", c + 1, s + 1), chapter);
+                section.replaceKey("/Dest", Array({ doc.pages[static_cast<size_t>(c * 50 + s * 5)], Name("/XYZ"), Num(72), Num(800), Num(0) }));
+                std::vector<QPDFObjectHandle> subsections;
+                for (int u = 0; u < 5; ++u, ++n)
+                {
+                    auto name = std::format("d{:04}", n);
+                    names.appendItem(QPDFObjectHandle::newString(name));
+                    names.appendItem(Array({ doc.pages[static_cast<size_t>(n)], Name("/FitH"), Num(700) }));
+                    auto sub = doc.Item(std::format("{}.{}.{}", c + 1, s + 1, u + 1), section);
+                    sub.replaceKey("/Dest", QPDFObjectHandle::newString(name));
+                    subsections.push_back(sub);
+                }
+                NavigationPdf::Chain(section, subsections);
+                sections.push_back(section);
+            }
+            NavigationPdf::Chain(chapter, sections);
+            chapters.push_back(chapter);
+        }
+        NavigationPdf::Chain(outlines, chapters);
+        pdf.getRoot().replaceKey("/Outlines", outlines);
+        auto tree = QPDFObjectHandle::newDictionary();
+        tree.replaceKey("/Names", names);
+        auto nameRoot = QPDFObjectHandle::newDictionary();
+        nameRoot.replaceKey("/Dests", pdf.makeIndirectObject(tree));
+        pdf.getRoot().replaceKey("/Names", nameRoot);
+        for (int p = 0; p < Pages; ++p)
+        {
+            auto annots = QPDFObjectHandle::newArray();
+            for (int k = 0; k < 20; ++k)
+            {
+                auto link = Link(pdf, { 50.0 + k * 20, 100, 60.0 + k * 20, 110 });
+                if (k % 3 == 0) link.replaceKey("/A", Action("/URI", "/URI", QPDFObjectHandle::newString(std::format("https://example.org/{}/{}", p, k))));
+                else if (k % 3 == 1) link.replaceKey("/Dest", Array({ doc.pages[static_cast<size_t>((p + k) % Pages)], Name("/XYZ"), Num(0), Num(500), Num(0) }));
+                else link.replaceKey("/Dest", QPDFObjectHandle::newString(std::format("d{:04}", (p + k) % Pages)));
+                annots.appendItem(link);
+            }
+            doc.pages[static_cast<size_t>(p)].replaceKey("/Annots", annots);
+        }
+        auto bytes = doc.Bytes();
+
+        using Clock = std::chrono::steady_clock;
+        auto ms = [](Clock::time_point a, Clock::time_point b) { return std::chrono::duration<double, std::milli>(b - a).count(); };
+        auto t0 = Clock::now();
+        PdfNavigation navigation(bytes);
+        auto t1 = Clock::now();
+        auto outline = navigation.Outline();
+        auto t2 = Clock::now();
+        size_t links = 0;
+        double slowest = 0;
+        for (int p = 0; p < Pages; ++p)
+        {
+            auto a = Clock::now();
+            links += navigation.Links(p).size();
+            slowest = std::max(slowest, ms(a, Clock::now()));
+        }
+        auto t3 = Clock::now();
+        std::printf("[ timing ] %zu bytes, %d pages: open %.1f ms, Outline %.1f ms, Links %.3f ms/page (slowest %.2f ms)\n",
+                    bytes.size(), Pages, ms(t0, t1), ms(t1, t2), ms(t2, t3) / Pages, slowest);
+
+        ASSERT_EQ(outline.size(), 10u);
+        ASSERT_EQ(outline[9].children.size(), 10u);
+        ASSERT_EQ(outline[9].children[9].children.size(), 5u);
+        EXPECT_EQ(outline[9].children[9].children[4].destination->page, 499);
+        EXPECT_EQ(links, static_cast<size_t>(Pages) * 20);
     }
 }

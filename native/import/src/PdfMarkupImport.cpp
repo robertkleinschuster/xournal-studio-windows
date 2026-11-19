@@ -12,6 +12,7 @@
 #include "xournal/model/Color.h"
 #include "xournal/model/XoppFormat.h"
 #include "xournal/model/XoppImage.h"
+#include "xournal/pdf/PageFrame.h"
 #include "xournal/pdf/PdfAreaRenderer.h"
 
 #include <qpdf/Buffer.hh>
@@ -40,49 +41,24 @@ namespace xournal::import
 
         std::wstring Format(double v) { return XoppFormat::FormatNumber(v, 3); }
 
-        /// A page's visible box (crop box, else media box) and rotation, as Windows.Data.Pdf shows the page.
-        struct PageFrame
+        using pdf::PageFrame;
+        using pdf::PdfBox;
+
+        std::optional<PdfBox> BoxOf(QPDFObjectHandle o)
         {
-            double x1 = 0, y1 = 0, width = 0, height = 0;
-            int rotate = 0;
+            if (!o.isRectangle()) return std::nullopt;
+            auto r = o.getArrayAsRectangle();
+            return PdfBox{ r.llx, r.lly, r.urx, r.ury };
+        }
 
-            static PageFrame Of(QPDFPageObjectHelper& page)
-            {
-                auto crop = page.getAttribute("/CropBox", false);
-                auto box = crop.isRectangle() ? crop.getArrayAsRectangle() : QPDFObjectHandle::Rectangle();
-                if (!crop.isRectangle() || box.urx == box.llx || box.ury == box.lly)
-                {
-                    auto media = page.getAttribute("/MediaBox", false);
-                    if (!media.isRectangle()) ThrowInvalidData("import: a page without media box");
-                    box = media.getArrayAsRectangle();
-                }
-                auto rotation = page.getAttribute("/Rotate", false);
-                int rotate = rotation.isInteger() ? static_cast<int>(((rotation.getIntValue() % 360) + 360) % 360) : 0;
-                return { std::min(box.llx, box.urx), std::min(box.lly, box.ury), std::abs(box.urx - box.llx), std::abs(box.ury - box.lly), rotate };
-            }
-
-            Size Shown() const { return rotate % 180 == 0 ? Size{ width, height } : Size{ height, width }; }
-
-            /// A point of the unrotated box measured from its top left (y down) on the shown page.
-            Point FromTopLeft(double u, double v) const
-            {
-                switch (rotate)
-                {
-                case 90: return { height - v, u };
-                case 180: return { width - u, height - v };
-                case 270: return { v, width - u };
-                default: return { u, v };
-                }
-            }
-
-            /// A rectangle in PDF user space on the shown page.
-            Rect Area(QPDFObjectHandle::Rectangle r) const
-            {
-                auto a = FromTopLeft(std::min(r.llx, r.urx) - x1, y1 + height - std::min(r.lly, r.ury));
-                auto b = FromTopLeft(std::max(r.llx, r.urx) - x1, y1 + height - std::max(r.lly, r.ury));
-                return Rect::FromCorners(a, b);
-            }
-        };
+        /// The page as Windows.Data.Pdf shows it (crop box, else media box, turned by /Rotate): pdf::PageFrame.
+        PageFrame FrameOf(QPDFPageObjectHelper& page)
+        {
+            auto media = BoxOf(page.getAttribute("/MediaBox", false));
+            if (!media) ThrowInvalidData("import: a page without media box");
+            auto rotation = page.getAttribute("/Rotate", false);
+            return PageFrame::Of(BoxOf(page.getAttribute("/CropBox", false)), *media, rotation.isInteger() ? rotation.getIntValue() : 0);
+        }
 
         std::string Subtype(QPDFObjectHandle a)
         {
@@ -90,10 +66,9 @@ namespace xournal::import
             return s.isName() ? s.getName() : std::string();
         }
 
-        QPDFObjectHandle::Rectangle RectOf(QPDFObjectHandle a)
+        PdfBox RectOf(QPDFObjectHandle a)
         {
-            auto r = a.getKey("/Rect");
-            return r.isRectangle() ? r.getArrayAsRectangle() : QPDFObjectHandle::Rectangle();
+            return BoxOf(a.getKey("/Rect")).value_or(PdfBox{});
         }
 
         std::optional<AppleMarkup> Markup(QPDFObjectHandle annotation)
@@ -141,7 +116,7 @@ namespace xournal::import
         // iPadOS (PaperKit) leaves a drawing's earlier appearance as a stamp of its own beside the drawing: no markup
         // archive, only PaperKit ids (/PPKID), the drawing's exact rectangle; its picture is the drawing's (measured on the
         // user's PDFs: pixel for pixel the same). Taken with the drawing, it would lie under its strokes as a stale picture.
-        bool IsOlderCopyOfDrawing(QPDFObjectHandle annotation, std::vector<QPDFObjectHandle::Rectangle> const& drawings)
+        bool IsOlderCopyOfDrawing(QPDFObjectHandle annotation, std::vector<PdfBox> const& drawings)
         {
             auto extras = annotation.getKey("/AAPL:AKExtras");
             if (Subtype(annotation) != "/Stamp" || !extras.isDictionary() || extras.hasKey("/AAPL:AKAnnotationV2") ||
@@ -150,7 +125,7 @@ namespace xournal::import
                 return false;
             }
             auto r = RectOf(annotation);
-            return std::any_of(drawings.begin(), drawings.end(), [&](QPDFObjectHandle::Rectangle const& d) {
+            return std::any_of(drawings.begin(), drawings.end(), [&](PdfBox const& d) {
                 return std::abs(d.llx - r.llx) < 0.5 && std::abs(d.lly - r.lly) < 0.5 && std::abs(d.urx - r.urx) < 0.5 &&
                        std::abs(d.ury - r.ury) < 0.5;
             });
@@ -199,7 +174,7 @@ namespace xournal::import
             {
                 constexpr double Ascent = 0.905;
                 size = line->size;
-                auto start = frame.FromTopLeft(line->x - frame.x1, frame.y1 + frame.height - line->y);
+                auto start = frame.FromUserSpace(line->x, line->y);
                 x = start.x;
                 y = start.y - Ascent * size;
             }
@@ -352,7 +327,7 @@ namespace xournal::import
             auto pages = QPDFPageDocumentHelper(*document).getAllPages();
             for (size_t index = 0; index < pages.size(); ++index)
             {
-                auto frame = PageFrame::Of(pages[index]);
+                auto frame = FrameOf(pages[index]);
                 import.pageSizes.push_back(frame.Shown());
                 auto page = pages[index].getObjectHandle();
                 std::vector<XmlElementPtr> added;
@@ -362,7 +337,7 @@ namespace xournal::import
                 if (auto annotations = page.getKey("/Annots"); annotations.isArray()) items = annotations.getArrayAsVector();
                 // Apple's archive of each annotation, read once.
                 std::vector<std::optional<AppleMarkup>> markup;
-                std::vector<QPDFObjectHandle::Rectangle> drawingAreas;
+                std::vector<PdfBox> drawingAreas;
                 for (auto const& item : items)
                 {
                     markup.push_back(item.isDictionary() ? Markup(item) : std::nullopt);
