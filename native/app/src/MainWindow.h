@@ -6,6 +6,7 @@
 #include "DocumentSession.h"
 #include "DocumentView.h"
 #include "MainMenu.h"
+#include "PdfExportCommand.h"
 #include "Settings.h"
 #include "SidePane.h"
 #include "Toast.h"
@@ -58,5 +59,6 @@ namespace xournal::app
         std::unique_ptr<Toast> toast;
         std::unique_ptr<DocumentView> view;
         std::unique_ptr<DocumentSession> session;
+        std::unique_ptr<PdfExportCommand> exportCommand;
     };
 }

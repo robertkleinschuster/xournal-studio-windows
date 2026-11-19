@@ -1,7 +1,8 @@
 #pragma once
 
 // Messages as a toast: a small popup window at the bottom of the writing surface (its own layered window, so it lies
-// above the ink's composition). Success closes after 5 s; an error stays until it is clicked (it is in errors.log too).
+// above the ink's composition). Success and info close after 5 s; a warning (done, but not completely) and an error stay
+// until clicked (errors are in errors.log too).
 
 #include <windows.h>
 
@@ -9,7 +10,7 @@
 
 namespace xournal::app
 {
-    enum class ToastKind { Success, Info, Error };
+    enum class ToastKind { Success, Info, Warning, Error };
 
     class Toast
     {

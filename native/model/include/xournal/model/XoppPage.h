@@ -52,6 +52,9 @@ namespace xournal
         PageImages& Images() { return images; }
         PageImages const& Images() const { return images; }
 
+        /// The page's layers, bottom to top (their elements in drawing order, as upstream draws them).
+        std::vector<XmlElementPtr> Layers() const { return element->Elements(L"layer"); }
+
         /// Texts and links of all layers, bottom to top (shown, not edited).
         std::vector<XmlElementPtr> Texts() const;
         /// Strokes shown from the file, not edited (Strokes::NeedsOwnDrawing).

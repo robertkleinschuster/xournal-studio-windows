@@ -1,26 +1,26 @@
 #include "PageUnderlay.h"
 
+#include "Direct2D.h"
+
 #include "xournal/base/Error.h"
 #include "xournal/model/BackgroundRuling.h"
 #include "xournal/model/Strokes.h"
+#include "xournal/model/XoppImage.h"
+#include "xournal/model/XoppText.h"
 
 #include <wrl/client.h>
 
+#include <set>
 #include <variant>
 #include <vector>
 
 using Microsoft::WRL::ComPtr;
 
-namespace xournal::app::PageUnderlay
+namespace xournal::app
 {
     namespace
     {
-        D2D1_COLOR_F ColorOf(Color c)
-        {
-            return { c.r / 255.0f, c.g / 255.0f, c.b / 255.0f, c.a / 255.0f };
-        }
 
-        D2D1_POINT_2F P(Point p) { return { static_cast<float>(p.x), static_cast<float>(p.y) }; }
 
         ComPtr<ID2D1Factory> FactoryOf(ID2D1DeviceContext* dc)
         {
@@ -35,40 +35,14 @@ namespace xournal::app::PageUnderlay
             Check("ID2D1Factory::CreatePathGeometry", factory->CreatePathGeometry(&path));
             ComPtr<ID2D1GeometrySink> sink;
             Check("ID2D1PathGeometry::Open", path->Open(&sink));
-            sink->BeginFigure(P(points[0]), closedFilled ? D2D1_FIGURE_BEGIN_FILLED : D2D1_FIGURE_BEGIN_HOLLOW);
+            sink->BeginFigure(ToD2D(points[0]), closedFilled ? D2D1_FIGURE_BEGIN_FILLED : D2D1_FIGURE_BEGIN_HOLLOW);
             for (size_t i = 1; i < points.size(); ++i)
             {
-                sink->AddLine(P(points[i]));
+                sink->AddLine(ToD2D(points[i]));
             }
             sink->EndFigure(closedFilled ? D2D1_FIGURE_END_CLOSED : D2D1_FIGURE_END_OPEN);
             Check("ID2D1GeometrySink::Close", sink->Close());
             return path;
-        }
-
-        void DrawBackground(XoppPage const& page, ID2D1DeviceContext* dc)
-        {
-            ComPtr<ID2D1SolidColorBrush> brush;
-            // PDF and picture backgrounds show white until their renderers come (phase 4).
-            Color paper = page.IsPdf() || page.IsImageBackground() ? Colors::White : page.BackgroundColor();
-            Check("CreateSolidColorBrush", dc->CreateSolidColorBrush(ColorOf(paper), &brush));
-            dc->FillRectangle({ 0, 0, static_cast<float>(page.Width()), static_cast<float>(page.Height()) }, brush.Get());
-            if (page.IsPdf() || page.IsImageBackground())
-            {
-                return;
-            }
-            for (auto const& ruling : BackgroundRuling::For(page.Style(), page.BackgroundConfig(), paper, page.Width(), page.Height()))
-            {
-                brush->SetColor(ColorOf(ruling.color));
-                float width = static_cast<float>(ruling.width);
-                for (auto const& [from, to] : ruling.lines)
-                {
-                    dc->DrawLine(P(from), P(to), brush.Get(), width);
-                }
-                for (auto const& dot : ruling.dots)
-                {
-                    dc->FillEllipse({ P(dot), width / 2, width / 2 }, brush.Get());
-                }
-            }
         }
 
         // The stroke's ends and dashes; `drawnBefore`: the length drawn before this line (a pressure stroke's dashes run
@@ -94,25 +68,25 @@ namespace xournal::app::PageUnderlay
         void DrawShape(StrokeShape const& shape, ID2D1DeviceContext* dc, ID2D1Factory* factory)
         {
             ComPtr<ID2D1SolidColorBrush> brush;
-            Check("CreateSolidColorBrush", dc->CreateSolidColorBrush(ColorOf(shape.color), &brush));
+            Check("CreateSolidColorBrush", dc->CreateSolidColorBrush(ToD2D(shape.color), &brush));
             for (auto const& part : shape.Parts())
             {
                 if (auto fill = std::get_if<StrokeFill>(&part))
                 {
                     Color c = shape.color;
                     c.a = static_cast<std::uint8_t>(shape.fill * c.a / 255); // upstream: the fill's alpha over the color's
-                    brush->SetColor(ColorOf(c));
+                    brush->SetColor(ToD2D(c));
                     dc->FillGeometry(Polyline(factory, fill->points, true).Get(), brush.Get());
-                    brush->SetColor(ColorOf(shape.color));
+                    brush->SetColor(ToD2D(shape.color));
                 }
                 else if (auto dot = std::get_if<StrokeDot>(&part))
                 {
                     float half = static_cast<float>(dot->size / 2);
                     if (dot->square)
-                        dc->FillRectangle({ P(dot->center).x - half, P(dot->center).y - half, P(dot->center).x + half,
-                            P(dot->center).y + half }, brush.Get());
+                        dc->FillRectangle({ ToD2D(dot->center).x - half, ToD2D(dot->center).y - half, ToD2D(dot->center).x + half,
+                            ToD2D(dot->center).y + half }, brush.Get());
                     else
-                        dc->FillEllipse({ P(dot->center), half, half }, brush.Get());
+                        dc->FillEllipse({ ToD2D(dot->center), half, half }, brush.Get());
                 }
                 else if (auto line = std::get_if<StrokeLine>(&part))
                 {
@@ -121,18 +95,107 @@ namespace xournal::app::PageUnderlay
                 }
             }
         }
+
+
+        constexpr int KeepPages = 6; // bitmaps of pages this far from the page in view stay
     }
 
-    void Draw(XoppPage const& page, ID2D1DeviceContext* dc, inkpages::RectF area)
+    PageUnderlay::PageUnderlay(RenderQueue& queue, XoppDocument const& doc, std::uint64_t generation,
+        std::function<void(int)> invalidate, FilePictures const& pictures)
+        : pdf(std::make_shared<PdfBackground>(queue, generation, invalidate)),
+          bitmaps(std::make_shared<PictureBitmaps>(queue, generation, invalidate)),
+          pictures(pictures)
+    {
+        if (doc.PdfPath())
+        {
+            pdf->Load(*doc.PdfPath());
+        }
+    }
+
+    void PageUnderlay::Trim(int focus)
+    {
+        pdf->Trim(focus, KeepPages);
+    }
+
+    void PageUnderlay::DrawBackground(int page, XoppPage const& content, ID2D1DeviceContext* dc, float pixelsPerUnit)
+    {
+        D2D1_SIZE_F size{ static_cast<float>(content.Width()), static_cast<float>(content.Height()) };
+        bool pdfPage = content.IsPdf(), picture = content.IsImageBackground();
+        ComPtr<ID2D1SolidColorBrush> brush;
+        // Under a PDF or picture: white, as upstream shows a page whose background is missing.
+        Color paper = pdfPage || picture ? Colors::White : content.BackgroundColor();
+        Check("CreateSolidColorBrush", dc->CreateSolidColorBrush(ToD2D(paper), &brush));
+        dc->FillRectangle({ 0, 0, size.width, size.height }, brush.Get());
+        if (pdfPage)
+        {
+            pdf->Draw(dc, page, content.PdfPageIndex(), size, pixelsPerUnit);
+            return;
+        }
+        if (picture)
+        {
+            if (content.BackgroundImagePath())
+            {
+                bitmaps->DrawFile(dc, *content.BackgroundImagePath(), size);
+            }
+            return;
+        }
+        for (auto const& ruling : BackgroundRuling::For(content.Style(), content.BackgroundConfig(), paper, content.Width(), content.Height()))
+        {
+            brush->SetColor(ToD2D(ruling.color));
+            float width = static_cast<float>(ruling.width);
+            for (auto const& [from, to] : ruling.lines)
+            {
+                dc->DrawLine(ToD2D(from), ToD2D(to), brush.Get(), width);
+            }
+            for (auto const& dot : ruling.dots)
+            {
+                dc->FillEllipse({ ToD2D(dot), width / 2, width / 2 }, brush.Get());
+            }
+        }
+    }
+
+    void PageUnderlay::DrawPicture(int page, XmlElementPtr const& picture, ID2D1DeviceContext* dc, float pixelsPerUnit)
+    {
+        auto placement = XoppImage::GetPlacement(*picture);
+        Matrix transform = placement.transform;
+        if (auto preview = pictures.PreviewOf(picture.get()))
+        {
+            transform = transform * *preview; // placed, then moved by the drag (page units)
+        }
+        D2D1_MATRIX_3X2_F pageTransform;
+        dc->GetTransform(&pageTransform);
+        dc->SetTransform(ToD2D(transform) * pageTransform);
+        // Sharpness: the picture's pixels per unit of its own size (a scaled picture needs more).
+        double scale = std::sqrt(std::abs(transform.m11 * transform.m22 - transform.m12 * transform.m21));
+        bitmaps->DrawElement(dc, picture, page, { static_cast<float>(placement.size.width), static_cast<float>(placement.size.height) },
+            static_cast<float>(pixelsPerUnit * scale));
+        dc->SetTransform(pageTransform);
+    }
+
+    void PageUnderlay::Draw(int page, XoppPage const& content, ID2D1DeviceContext* dc, inkpages::RectF area, float pixelsPerUnit)
     {
         dc->PushAxisAlignedClip({ area.left, area.top, area.right, area.bottom }, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-        DrawBackground(page, dc);
+        DrawBackground(page, content, dc, pixelsPerUnit);
         auto factory = FactoryOf(dc);
-        for (auto const& element : page.DrawnStrokes())
+        auto const& drawn = content.DrawnStrokes();
+        std::set<XmlElement const*> drawnSet;
+        for (auto const& e : drawn) drawnSet.insert(e.get());
+        for (auto const& layer : content.Layers())
         {
-            if (auto shape = Strokes::ReadShape(*element))
+            for (auto const& element : layer->Elements())
             {
-                DrawShape(*shape, dc, factory.Get());
+                if (drawnSet.contains(element.get()))
+                {
+                    if (auto shape = Strokes::ReadShape(*element)) DrawShape(*shape, dc, factory.Get());
+                }
+                else if (XoppImage::IsImage(*element))
+                {
+                    DrawPicture(page, element, dc, pixelsPerUnit);
+                }
+                else if (XoppText::IsText(*element))
+                {
+                    texts.Draw(dc, XoppText::Read(*element));
+                }
             }
         }
         dc->PopAxisAlignedClip();

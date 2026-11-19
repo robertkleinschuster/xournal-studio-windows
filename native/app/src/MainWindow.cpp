@@ -24,7 +24,7 @@ namespace xournal::app
         bool IsDocument(std::filesystem::path const& file)
         {
             auto extension = file.extension().native();
-            return EqualsIgnoreCase(extension, L".xopp") || EqualsIgnoreCase(extension, L".pdf");
+            return EqualsIgnoreCase(extension, L".xopp") || EqualsIgnoreCase(extension, L".moj") || EqualsIgnoreCase(extension, L".pdf");
         }
     }
 
@@ -66,6 +66,8 @@ namespace xournal::app
         session = std::make_unique<DocumentSession>(window, *surface, *view);
         session->changed = [this] { UpdateTitle(); };
         session->message = [this](std::wstring const& text, ToastKind kind) { Message(text, kind); };
+        exportCommand = std::make_unique<PdfExportCommand>(window, *view,
+            [this](std::wstring const& text, ToastKind kind) { Message(text, kind); });
         // Set before the toolbar: it chains these handlers.
         surface->historyChanged = [this] { UpdateTitle(); };
         surface->selectionChanged = [] {};
@@ -227,6 +229,7 @@ namespace xournal::app
         case CmdOpen: session->Open(); break;
         case CmdSave: session->Save(); break;
         case CmdSaveAs: session->SaveAs(); break;
+        case CmdExportPdf: exportCommand->Export(session->Document()); break;
         case CmdOpenFolder: OpenFolder(); break;
         case CmdExit: PostMessageW(window, WM_CLOSE, 0, 0); break;
         case CmdUndo: surface->Undo(); break;

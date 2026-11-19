@@ -26,6 +26,21 @@ namespace xournal::app
         surface.load = [this](int page) { return Load(page); };
         surface.store = [this](int page, std::vector<inkpages::KeyedStroke> strokes) { Store(page, std::move(strokes)); };
         surface.drawUnderlay = [this](int page, ID2D1DeviceContext* dc, inkpages::RectF area) { DrawUnderlay(page, dc, area); };
+        surface.viewChanged = [this] { OnViewChanged(); };
+    }
+
+    DocumentView::~DocumentView()
+    {
+        surface.SetPictureHost(nullptr);
+        renderQueue.Stop(); // the PDF device goes while the app still runs
+    }
+
+    void DocumentView::OnViewChanged()
+    {
+        if (underlay)
+        {
+            underlay->Trim(surface.PageInView().value_or(0));
+        }
     }
 
     std::shared_ptr<PageInkBridge> DocumentView::Current() const
@@ -41,10 +56,19 @@ namespace xournal::app
         {
             specs.push_back(SpecOf(*page));
         }
+        auto bridge = std::make_shared<PageInkBridge>(doc);
         {
             std::scoped_lock guard(bridgesLock);
-            bridges.push_back(std::make_shared<PageInkBridge>(std::move(doc)));
+            bridges.push_back(bridge);
         }
+        // The old document's renders that have not started are not needed any more.
+        std::uint64_t old = generation++;
+        renderQueue.Drop([old](std::uint64_t key) { return (key >> 32) == old; });
+        auto invalidate = [this](int page) { surface.InvalidatePage(page); };
+        surface.SetPictureHost(nullptr);
+        pictures = std::make_unique<FilePictures>(doc, surface, bridge->Lock(), invalidate);
+        underlay = std::make_unique<PageUnderlay>(renderQueue, *doc, generation, invalidate, *pictures);
+        surface.SetPictureHost(pictures.get());
         surface.SetPages(std::move(specs));
         surface.FitWidth();
     }
@@ -86,7 +110,7 @@ namespace xournal::app
     void DocumentView::DrawUnderlay(int page, ID2D1DeviceContext* dc, inkpages::RectF area)
     {
         auto bridge = Current();
-        if (!bridge)
+        if (!bridge || !underlay)
         {
             return;
         }
@@ -94,7 +118,7 @@ namespace xournal::app
         auto const& pages = bridge->Document().Pages();
         if (page >= 0 && page < static_cast<int>(pages.size()))
         {
-            PageUnderlay::Draw(*pages[page], dc, area);
+            underlay->Draw(page, *pages[page], dc, area, surface.RenderScale());
         }
     }
 

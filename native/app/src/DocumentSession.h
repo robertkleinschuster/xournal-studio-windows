@@ -40,6 +40,7 @@ namespace xournal::app
         bool IsModified() const;
         std::wstring Title() const;                  // "Name – Xournal Studio" with a • when modified
         std::optional<std::filesystem::path> FilePath() const;
+        std::shared_ptr<XoppDocument> Document() const { return doc; }
 
     private:
         void Show(std::shared_ptr<XoppDocument> doc);

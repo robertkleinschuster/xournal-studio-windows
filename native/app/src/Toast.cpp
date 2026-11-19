@@ -24,6 +24,7 @@ namespace xournal::app
             {
             case ToastKind::Success: return RGB(0x0F, 0x7B, 0x0F);
             case ToastKind::Error: return RGB(0xC4, 0x2B, 0x1C);
+            case ToastKind::Warning: return RGB(0x9D, 0x5D, 0x00);
             default: return RGB(0x2B, 0x2B, 0x2B);
             }
         }
@@ -79,10 +80,10 @@ namespace xournal::app
     {
         text = std::move(message);
         kind = messageKind;
-        Log(std::format("toast ({}): {}", kind == ToastKind::Error ? "error" : kind == ToastKind::Success ? "success" : "info",
-            ToUtf8(text)));
+        char const* kinds[] = { "success", "info", "warning", "error" };
+        Log(std::format("toast ({}): {}", kinds[static_cast<int>(kind)], ToUtf8(text)));
         KillTimer(window, CloseTimer);
-        if (kind != ToastKind::Error)
+        if (kind == ToastKind::Success || kind == ToastKind::Info)
         {
             SetTimer(window, CloseTimer, SuccessMs, nullptr);
         }

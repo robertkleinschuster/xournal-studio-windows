@@ -55,8 +55,9 @@ namespace xournal::app::Dialogs
         ComPtr<IFileOpenDialog> dialog;
         Check("CoCreateInstance(FileOpenDialog)", CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog)));
         COMDLG_FILTERSPEC types[] = {
-            { L"Xournal++-Dokumente und PDF", L"*.xopp;*.pdf" },
+            { L"Dokumente und PDF", L"*.xopp;*.moj;*.pdf" },
             { L"Xournal++-Dokumente", L"*.xopp" },
+            { L"MrWriter-Dokumente", L"*.moj" },
             { L"PDF", L"*.pdf" },
         };
         Check("IFileDialog::SetFileTypes", dialog->SetFileTypes(ARRAYSIZE(types), types));
@@ -69,21 +70,35 @@ namespace xournal::app::Dialogs
         return ResultPath(dialog.Get());
     }
 
+    namespace
+    {
+        // Windows' save dialog for one file type.
+        std::optional<std::filesystem::path> SaveFile(HWND owner, std::filesystem::path const& folder, std::wstring const& name,
+            COMDLG_FILTERSPEC type, wchar_t const* extension, wchar_t const* title)
+        {
+            ComPtr<IFileSaveDialog> dialog;
+            Check("CoCreateInstance(FileSaveDialog)", CoCreateInstance(CLSID_FileSaveDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog)));
+            Check("IFileDialog::SetFileTypes", dialog->SetFileTypes(1, &type));
+            Check("IFileDialog::SetDefaultExtension", dialog->SetDefaultExtension(extension));
+            Check("IFileDialog::SetTitle", dialog->SetTitle(title));
+            Check("IFileDialog::SetFileName", dialog->SetFileName(name.c_str()));
+            SetFolder(dialog.Get(), folder);
+            if (!ShowDialog(dialog.Get(), owner))
+            {
+                return std::nullopt;
+            }
+            return ResultPath(dialog.Get());
+        }
+    }
+
     std::optional<std::filesystem::path> SaveDocument(HWND owner, std::filesystem::path const& folder, std::wstring const& name)
     {
-        ComPtr<IFileSaveDialog> dialog;
-        Check("CoCreateInstance(FileSaveDialog)", CoCreateInstance(CLSID_FileSaveDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog)));
-        COMDLG_FILTERSPEC types[] = { { L"Xournal++-Dokument", L"*.xopp" } };
-        Check("IFileDialog::SetFileTypes", dialog->SetFileTypes(ARRAYSIZE(types), types));
-        Check("IFileDialog::SetDefaultExtension", dialog->SetDefaultExtension(L"xopp"));
-        Check("IFileDialog::SetTitle", dialog->SetTitle(L"Speichern unter"));
-        Check("IFileDialog::SetFileName", dialog->SetFileName(name.c_str()));
-        SetFolder(dialog.Get(), folder);
-        if (!ShowDialog(dialog.Get(), owner))
-        {
-            return std::nullopt;
-        }
-        return ResultPath(dialog.Get());
+        return SaveFile(owner, folder, name, { L"Xournal++-Dokument", L"*.xopp" }, L"xopp", L"Speichern unter");
+    }
+
+    std::optional<std::filesystem::path> SavePdf(HWND owner, std::filesystem::path const& folder, std::wstring const& name)
+    {
+        return SaveFile(owner, folder, name, { L"PDF", L"*.pdf" }, L"pdf", L"Als PDF exportieren");
     }
 
     std::optional<std::filesystem::path> PickFolder(HWND owner, std::optional<std::filesystem::path> const& folder)

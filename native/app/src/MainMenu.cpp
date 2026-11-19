@@ -78,7 +78,7 @@ namespace xournal::app
             { CmdOpen, L"Ö&ffnen…", L"Strg+O", Ctrl, 'O' },
             { CmdSave, L"&Speichern", L"Strg+S", Ctrl, 'S' },
             { CmdSaveAs, L"Speichern &unter…", L"Strg+Umschalt+S", CtrlShift, 'S' },
-            { CmdExportPdf, L"Als PDF e&xportieren…", L"Strg+E", Ctrl, 'E', false },
+            { CmdExportPdf, L"Als PDF e&xportieren…", L"Strg+E", Ctrl, 'E' },
             { CmdImportPdf, L"PDF mit iPad-Anmerkungen &importieren…", L"", 0, 0, false },
             {},
             { CmdOpenFolder, L"O&rdner öffnen…" },

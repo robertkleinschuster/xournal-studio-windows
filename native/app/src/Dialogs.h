@@ -10,11 +10,14 @@
 
 namespace xournal::app::Dialogs
 {
-    /// Öffnen: a .xopp or a PDF; nothing when cancelled.
+    /// Öffnen: a .xopp, a MrWriter .moj or a PDF; nothing when cancelled.
     std::optional<std::filesystem::path> OpenDocument(HWND owner, std::optional<std::filesystem::path> const& folder);
 
     /// Speichern unter: a .xopp in `folder` named `name`; nothing when cancelled.
     std::optional<std::filesystem::path> SaveDocument(HWND owner, std::filesystem::path const& folder, std::wstring const& name);
+
+    /// Als PDF exportieren: a .pdf in `folder` named `name`; nothing when cancelled.
+    std::optional<std::filesystem::path> SavePdf(HWND owner, std::filesystem::path const& folder, std::wstring const& name);
 
     /// Ordner öffnen; nothing when cancelled.
     std::optional<std::filesystem::path> PickFolder(HWND owner, std::optional<std::filesystem::path> const& folder);
