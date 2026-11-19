@@ -69,9 +69,9 @@ foreach ($license in $licenses) {
     $folder = Join-Path $stage "licenses\$($license.Name)"
     New-Item -ItemType Directory -Force $folder | Out-Null
     foreach ($file in $license.Files) {
-        $source = Join-Path $build $file
-        if (-not (Test-Path $source)) { throw "license text missing: $source" }
-        Copy-Item $source $folder
+        $text = Join-Path $build $file
+        if (-not (Test-Path $text)) { throw "license text missing: $text" }
+        Copy-Item $text $folder
     }
 }
 Copy-Item (Join-Path $source 'native\THIRD-PARTY.md') (Join-Path $stage 'licenses')
