@@ -199,6 +199,11 @@ code). In short: `base ← model ← io ← pdf, pdftext, search, import, servic
   PowerShell 5.1 (Add-Type = C# 5), 1514x900 at 144 DPI; synthetic pen input must hover ~100 ms before a press on the
   selection, as a real pen does. Never name a function `Erase` in a test (PowerShell alias); write scripts with the
   Write tool (shell heredocs turned `\t` in paths into tabs).
+- **CI runner differences (2026-11-19):** the runner's `%TEMP%` is an 8.3 short path (`C:\Users\RUNNER~1\...`): the
+  git tests compared it with the long path libgit2 reports and failed – the workflow points TEMP/TMP at `RUNNER_TEMP`
+  (whether the app should compare paths independent of 8.3 names is open). The runner has only the en-US handwriting
+  recognizer ("Hallo Welt" → "Mo11@MelR"): `XOURNAL_TEST_EXCLUDE` (a CTest regex `build.ps1` passes to `ctest -E`)
+  leaves out `Search.HandwritingIsRecognisedAndCached` there.
 - A second `wsb start` right after `wsb stop` fails with CO_E_APPSINGLEUSE – wait for the old sandbox process.
 - Test hooks: `XOURNAL_STUDIO_CONFIG_DIR`, `XOURNAL_STUDIO_LOG`.
 - `examples/` holds sanitized real documents; never commit the user's own files (university material, personal data) –

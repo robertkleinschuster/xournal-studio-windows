@@ -17,6 +17,10 @@ if ($LASTEXITCODE) { throw "build failed ($LASTEXITCODE)" }
 if (-not $NoTests) {
     $ctest = Join-Path (Split-Path $cmake) 'ctest.exe'
     # Only this project's tests: InkPages' tests (excluded from the build here) run in its own repository.
-    & $ctest --test-dir (Join-Path $build 'tests') -C $Config --output-on-failure
+    # XOURNAL_TEST_EXCLUDE: a CTest regex of tests the machine cannot run (CI: the runner has only the en-US
+    # handwriting recognizer, the search test writes German).
+    $exclude = @()
+    if ($env:XOURNAL_TEST_EXCLUDE) { $exclude = @('-E', $env:XOURNAL_TEST_EXCLUDE); "excluded tests: $env:XOURNAL_TEST_EXCLUDE" }
+    & $ctest --test-dir (Join-Path $build 'tests') -C $Config --output-on-failure @exclude
     if ($LASTEXITCODE) { throw "unit tests failed ($LASTEXITCODE)" }
 }
