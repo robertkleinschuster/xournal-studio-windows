@@ -1,7 +1,8 @@
 # Xournal Studio for Windows – native (C++/Win32)
 
 The C# WinUI app rebuilt as a native C++20 app (plan: `docs/CPP-UMZUG.md`). Windows APIs first; third-party code only
-where Windows has nothing (zlib for gzip; qpdf for writing PDFs), fetched at a pinned release and linked statically.
+where Windows has nothing (zlib for gzip; qpdf for writing PDFs; PDFium for PDF text), fetched at a pinned release and
+linked statically - except PDFium, a delay-loaded DLL. Licenses: `THIRD-PARTY.md`.
 
 ```powershell
 .\build.ps1            # configure (Visual Studio's CMake), build Release, run the unit tests (CTest + GoogleTest)
@@ -14,7 +15,7 @@ Each module is a static library with its own folder, public headers in `<module>
 internals in `<module>/src/`. The CMake link dependencies are the only allowed direction:
 
 ```
-base  <-  model  <-  io  <-  services: pdf, import (later: git, clipboard, recovery, tasks)  <-  app (UI)
+base  <-  model  <-  io  <-  services: pdf, pdftext, import (later: git, clipboard, recovery, tasks)  <-  app (UI)
 ```
 
 | Module | Target | Job | Uses |
@@ -28,6 +29,7 @@ base  <-  model  <-  io  <-  services: pdf, import (later: git, clipboard, recov
 | `services/tasks` | `XournalTasks` | `TaskFile` (todo.txt line edits, re-read before each change, line endings/encoding/final newline kept, ANSI refused) | io |
 | `services/recovery` | `XournalRecovery` | `Recovery` (copy + info JSON with the writing process' id and start time in `<app folder>\Recovery-native` - apart from the C# app's `Recovery` folder, so neither app sees the other's copies; abandoned = that process is gone; recycle bin under a readable name), `Autosave` (ordered write/delete queue on a worker; the app's UI decides when) | io, project; Windows.Data.Json |
 | `services/settings` | `XournalSettings` | `Settings` (`settings-native.json` with Windows.Data.Json, unknown keys kept; never the C# app's settings.json): window, last file, project folder, pane, done tasks shown, tool choices (InkPages' serialized string), document positions per file | io; Windows.Data.Json |
+| `pdftext` | `XournalPdfText` | PDF text and search (`TextDocument` from the PDF's bytes: `Text(page)` = text + a box per character, `Find`/`FindAll` = hits with one rect per line and a context snippet, case/whole word, cancellable; places in `pdf::PageFrame`'s shown coordinates). PDFium is loaded on first use (`Available()`); a missing or broken `pdfium.dll` is logged and only disables search. Every PDFium call is serialized process-wide. An exe that links it calls `xournal_deploy_pdfium(<target>)` (DLL + `licenses/pdfium` next to it). Measured, 500 pages of text: open 0.4 ms, `Text` 1.3 ms/page, `FindAll` ~0.6 s (1.2 ms/page) - off the UI thread. | pdf; PDFium 158.0.8125.0 (DLL, bblanchon/pdfium-binaries, delay-loaded), delayimp |
 | `import` | `XournalImport` | The iPad import (Datei -> PDF mit iPad-Anmerkungen importieren; port of the C# `PdfMarkupImport`, `AppleMarkup`, `PencilKitDrawing`): `Prepare` splits an annotated PDF into the PDF without Apple's markup plus .xopp elements - PencilKit strokes (erased pieces with masks and ranges, transforms, width factors 0.4 pen / 1.2 marker), `/FreeText` as `<text>`, every other shown annotation as a picture; `RenderPictures` renders those with the pdf module's `PdfAreaRenderer` (Windows.Data.Pdf, transparent); `CreateDocument`. Annotations read with qpdf; the NSKeyedArchiver binary plist by `src/BinaryPlist` (no small permissive C++ library: libplist is LGPL, others need Boost). | pdf; protozero 1.8.2 (BSD-2, header-only protobuf decoder), qpdf, crypt32 (base64) |
 | `app` | `XournalStudio` (exe) | The window and its feature classes (see "The app" below): menu, InkPages' writing surface and toolbar, side pane, messages, document session, the ink bridge, the page underlay, PDF export, page commands; the services' panes and controllers | all modules above; InkPages (submodule `external/InkPages`, only its library is built here); comctl32 v6, Direct2D/DirectWrite, Direct3D 11, WIC, Windows.Data.Pdf |
 | `tests` | `XournalTests` | Unit tests of all modules, ported from `XournalStudio.Tests` with the same sample XML, plus a lossless round trip of `examples\*.xopp`; the pdf tests generate their PDFs and inspect the output with qpdf | io, pdf, GoogleTest; `tests/services` (`XournalServicesTests`): the services, in a single-threaded apartment |
