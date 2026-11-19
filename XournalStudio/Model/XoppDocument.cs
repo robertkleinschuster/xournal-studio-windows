@@ -97,10 +97,10 @@ public sealed class XoppDocument
             if (from.IsImageBackground && from.BackgroundImagePath == null && element.Element("background") is { } pixmap &&
                 (string?)pixmap.Attribute("domain") == "clone")
             {
-                // A clone of a page that could not be resolved would clone a page of the target: it names nothing then
-                // (shown white, as upstream shows a missing picture).
-                pixmap.SetAttributeValue("domain", null);
-                pixmap.SetAttributeValue("filename", null);
+                // A clone of a page that could not be resolved would clone a page of the target: the copy gets the white
+                // page the source shows for it, written as upstream writes a plain background.
+                pixmap.ReplaceWith(new XElement("background", new XAttribute("type", "solid"),
+                    new XAttribute("color", "#ffffffff"), new XAttribute("style", "plain")));
             }
             var page = XoppPage.FromXml(element);
             page.BackgroundImagePath = from.IsImageBackground ? from.BackgroundImagePath : null;

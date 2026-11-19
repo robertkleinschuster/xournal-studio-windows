@@ -62,7 +62,7 @@ public sealed class InsertPagesCommand(WindowId window, DocumentSession session,
     // Pages of a PDF. True: the PDF became the document's.
     private async Task<bool> InsertFromPdfAsync(XoppDocument doc, string source, PdfBackground pdf, int around)
     {
-        string where = WhereText(doc, source, null, "Die Seiten werden");
+        string where = WhereText(doc, source, null, null);
         var choice = await AskAsync(Path.GetFileName(source), pdf.PageCount,
             async (i, closed) => (await pdf.RenderAsync(i, ThumbnailWidth, closed), null), where, around);
         if (choice == null || await BringPdfPagesAsync(doc, source, pdf, choice.Value.Pages) is not { } brought)
@@ -83,14 +83,24 @@ public sealed class InsertPagesCommand(WindowId window, DocumentSession session,
             messages.Show(InfoBarSeverity.Warning, "Keine Seiten", $"{Path.GetFileName(source)} hat keine Seiten.");
             return false;
         }
-        string where = from.Pages.Any(p => p.IsPdf) && from.PdfPath != null
-            ? WhereText(doc, from.PdfPath, source, "Die Seiten werden mit allem, was darauf liegt, kopiert; ihre PDF-Seiten werden")
-            : "Die Seiten werden mit allem, was darauf liegt, kopiert.";
+        const string copied = "Die Seiten werden mit allem, was darauf liegt, kopiert.";
+        string where = !from.Pages.Any(p => p.IsPdf) ? copied
+            : fromPdf == null
+                ? copied + $" Das PDF der Seiten mit PDF-Hintergrund fehlt ({from.PdfPath ?? "nicht genannt"}): diese Seiten lassen sich nicht einfügen."
+                : WhereText(doc, from.PdfPath!, source, copied);
         var choice = await AskAsync(Path.GetFileName(source), from.Pages.Count, async (i, closed) =>
         {
             var page = from.Pages[i];
             var background = page.IsPdf && fromPdf != null ? await fromPdf.RenderAsync(page.PdfPageIndex, ThumbnailWidth, closed) : null;
-            return (background, await PageThumbnails.ContentAsync(page, ThumbnailWidth, closed));
+            try
+            {
+                return (background, await PageThumbnails.ContentAsync(page, ThumbnailWidth, closed));
+            }
+            catch
+            {
+                PictureRenderer.Release(background); // the content failed or the dialog closed: the background goes too
+                throw;
+            }
         }, where, around);
         if (choice == null)
         {
@@ -112,6 +122,10 @@ public sealed class InsertPagesCommand(WindowId window, DocumentSession session,
                 return false;
             }
             brought = pdf;
+        }
+        else if (!StillOpen(doc))
+        {
+            return false;
         }
         pages.InsertCopiedPagesAt(choice.Value.Before ? around : around + 1,
             XoppDocument.CopyPages(from, choice.Value.Pages, brought.PageOf), brought.Background);
@@ -135,6 +149,11 @@ public sealed class InsertPagesCommand(WindowId window, DocumentSession session,
         string? target = doc.PdfPath;
         if (target != null && ProjectFiles.SamePath(target, sourcePdf))
         {
+            if (session.Pdf == null)
+            {
+                session.UsePdf(target, loaded); // it could not be loaded when the document opened: now it is there
+                return (p => p, loaded, false, true);
+            }
             return (p => p, null, false, false);
         }
         if (target == null)
@@ -169,13 +188,15 @@ public sealed class InsertPagesCommand(WindowId window, DocumentSession session,
         return false;
     }
 
-    // What happens to the document's PDF, for the dialog. sourceDocument: the .xopp whose PDF it is (null: a PDF).
-    private static string WhereText(XoppDocument doc, string sourcePdf, string? sourceDocument, string start)
+    // What happens to the document's PDF, for the dialog. sourceDocument: the .xopp whose PDF it is (null: a PDF);
+    // copied: the sentence about copying (a document's pages), null for a PDF's pages.
+    private static string WhereText(XoppDocument doc, string sourcePdf, string? sourceDocument, string? copied)
     {
+        string first = copied == null ? "" : copied + " ";
         string? target = doc.PdfPath;
         if (target != null && ProjectFiles.SamePath(target, sourcePdf))
         {
-            return sourceDocument == null ? "Es ist das PDF des Dokuments: Die Seiten werden nur eingefügt." : start.Split(';')[0] + ".";
+            return copied ?? "Es ist das PDF des Dokuments: Die Seiten werden nur eingefügt.";
         }
         if (target == null)
         {
@@ -184,10 +205,11 @@ public sealed class InsertPagesCommand(WindowId window, DocumentSession session,
                 StringComparison.OrdinalIgnoreCase)
                 ? $" Es ist ein Anhang von „{Path.GetFileName(sourceDocument)}“: Wird das umbenannt oder gelöscht, fehlt der Hintergrund."
                 : "";
-            return (sourceDocument == null ? "" : start.Split(';')[0] + ". ") +
-                $"Das Dokument verwendet dann „{Path.GetFileName(sourcePdf)}“ als PDF-Hintergrund." + attached;
+            return first + $"Das Dokument verwendet dann „{Path.GetFileName(sourcePdf)}“ als PDF-Hintergrund" +
+                (copied == null ? "." : " (sobald eine gewählte Seite eine PDF-Seite zeigt).") + attached;
         }
-        return $"{start} ans Ende von „{Path.GetFileName(target)}“ angehängt – das PDF des Dokuments wird dabei sofort geändert " +
+        return first + (copied == null ? "Die Seiten werden" : "PDF-Seiten der gewählten Seiten werden") +
+            $" ans Ende von „{Path.GetFileName(target)}“ angehängt – das PDF des Dokuments wird dabei sofort geändert " +
             "(wie in Xournal++ hat ein Dokument ein PDF), seine bisherigen Seiten bleiben.";
     }
 

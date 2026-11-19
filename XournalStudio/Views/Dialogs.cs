@@ -31,6 +31,7 @@ public sealed class Dialogs(Func<XamlRoot> root, PagesController pages)
     {
         dialog.XamlRoot = root();
         pages.InkHidden = true; // also on page views created while the dialog is open
+        DialogOpen?.Invoke(this, true);
         try
         {
             return await dialog.ShowAsync();
@@ -38,8 +39,12 @@ public sealed class Dialogs(Func<XamlRoot> root, PagesController pages)
         finally
         {
             pages.InkHidden = false;
+            DialogOpen?.Invoke(this, false);
         }
     }
+
+    /// <summary>A dialog opens (true) or closed (false): windowed overlays (the message toast) step aside meanwhile.</summary>
+    public event EventHandler<bool>? DialogOpen;
 
     /// <summary>A question whose safe answer (Abbrechen) is the default. True: the user chose <paramref name="action"/>.</summary>
     public async Task<bool> ConfirmAsync(string title, string text, string action) =>

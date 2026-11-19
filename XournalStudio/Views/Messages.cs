@@ -48,7 +48,7 @@ public sealed class Messages
         info.Message = message;
         info.IsOpen = true;
         toast.XamlRoot ??= area.XamlRoot;
-        toast.IsOpen = true;
+        toast.IsOpen = !stepAside;
         Place();
         closeTimer.Stop();
         if (severity is InfoBarSeverity.Success or InfoBarSeverity.Informational)
@@ -65,11 +65,34 @@ public sealed class Messages
         Show(InfoBarSeverity.Error, title, subject != null ? $"{subject}: {DebugLog.Describe(e)}" : DebugLog.Describe(e));
     }
 
-    // Centered at the bottom of the window (popup offsets are relative to the window's content).
+    private bool stepAside;
+
+    /// <summary>
+    /// While a dialog is open the toast steps aside (a windowed popup would lie over the dialog); a message shown meanwhile
+    /// appears when it closes.
+    /// </summary>
+    public bool StepAside
+    {
+        get => stepAside;
+        set
+        {
+            stepAside = value;
+            toast.IsOpen = !value && info.IsOpen;
+            if (toast.IsOpen)
+            {
+                Place();
+            }
+        }
+    }
+
+    // Centered at the bottom of the window (popup offsets are relative to the window's content); as wide as it lays out
+    // (its MaxWidth fits the window, so the popup's own layout and this measure agree).
     private void Place()
     {
         var card = (FrameworkElement)toast.Child;
-        card.Measure(new Windows.Foundation.Size(Math.Min(720, Math.Max(0, area.ActualWidth - 2 * Gap)), double.PositiveInfinity));
+        double available = Math.Max(0, area.ActualWidth - 2 * Gap);
+        card.MaxWidth = Math.Min(720, available);
+        card.Measure(new Windows.Foundation.Size(card.MaxWidth, double.PositiveInfinity));
         var size = card.DesiredSize;
         toast.HorizontalOffset = Math.Max(Gap, (area.ActualWidth - size.Width) / 2);
         toast.VerticalOffset = Math.Max(0, area.ActualHeight - size.Height - Gap);

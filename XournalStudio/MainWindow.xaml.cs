@@ -54,6 +54,7 @@ public sealed partial class MainWindow : Window
         };
         pages = new PagesController(Scroller, PagesPanel, ink);
         dialogs = new Dialogs(() => Content.XamlRoot, pages);
+        dialogs.DialogOpen += (_, open) => messages.StepAside = open;
         session = new DocumentSession(AppWindow.Id, pages, dialogs, messages, settings);
         sync = new SyncController(session, dialogs, messages);
         var explorerCommands = new ExplorerCommands(Explorer, session, dialogs, messages, FocusDocument, Explorer.RefreshSoon, index =>
