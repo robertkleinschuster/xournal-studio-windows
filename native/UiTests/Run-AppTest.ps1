@@ -1,7 +1,8 @@
 # Runs a UI test of the native app in Windows Sandbox with InkPages' runner and TestKit (external/InkPages/UiTests):
 # the app from the build, examples\Schaltungen.xopp (+ its PDF) as data. The sandbox is shared with other agents: the
 # test only starts when no sandbox runs (`wsb list` empty), and holds .local-build\sandbox.lock (repository root) while
-# it runs. The sandbox window opens on the desktop.
+# it runs. The sandbox window opens on a desktop of its own (InkPages' runner), never on the user's; -Show opens it on the
+# user's desktop to watch or debug a test (tell the user first).
 #   native\UiTests\Run-AppTest.ps1 -Test native\UiTests\InkRoundTripTest.ps1
 #   -Build: the build folder below native\.local-build (default cmake); -Extra: more files for C:\sbx\data.
 param(
@@ -9,7 +10,8 @@ param(
     [string]$Config = 'Release',
     [string]$Build = 'cmake',
     [string[]]$Extra = @(),
-    [int]$TimeoutSeconds = 300
+    [int]$TimeoutSeconds = 300,
+    [switch]$Show
 )
 $ErrorActionPreference = 'Stop'
 $native = Split-Path $PSScriptRoot
@@ -30,7 +32,7 @@ try {
     $work = Join-Path $env:TEMP ('xournal-native-sandbox-' + [IO.Path]::GetFileNameWithoutExtension($Test))
     $data = @((Join-Path $repo 'examples\Schaltungen.xopp'), (Join-Path $repo 'examples\Schaltungen.pdf')) + $Extra
     & (Join-Path $native 'external\InkPages\UiTests\Run-SandboxTest.ps1') -App $app -Test $Test -Data $data `
-        -Work $work -TimeoutSeconds $TimeoutSeconds
+        -Work $work -TimeoutSeconds $TimeoutSeconds -Show:$Show
 }
 finally {
     Remove-Item $lock -Force

@@ -356,6 +356,15 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 - Unit tests: `XournalStudio.Tests` compiles `Model/` and the non-UI services (`ProjectTree`, `GitSync`,
   `ProjectFiles`, `FolderWatcher`, `DebugLog`, `Recovery`, `AppSettings`, `TaskFile`) directly (no app, no XAML).
 - UI tests run in Windows Sandbox via `UiTests/Run-SandboxTest.ps1` (the sandbox window opens on the desktop – tell the
+- **Native app UI tests run on a desktop of their own (user, 2026-11-19: "führe in zukunft die sandbox tests auf einem
+  eigenen desktop durch"):** `native\UiTests\Run-AppTest.ps1 -Test native\UiTests\<Test>.ps1` (shared sandbox: `wsb list`
+  empty, `.local-build\sandbox.lock`) uses InkPages' runner (`native/external/InkPages/UiTests/Run-SandboxTest.ps1`),
+  which starts `wsb connect` on a separate Win32 desktop (`HiddenDesktop.cs`: `CreateDesktop` + `STARTUPINFO.lpDesktop`):
+  the sandbox window never shows on the user's screen, and the runner prints whether `EnumWindows` saw one there.
+  `-Show` puts the window on the user's desktop to watch or debug (tell the user first). Why and what was measured
+  (exec needs the session `wsb connect` creates; inside the sandbox 1514x900 at 144 DPI, injection, screenshots and UI
+  Automation unchanged; virtual desktops not usable): InkPages' CLAUDE.md, "Build, test". Verified 2026-11-19 with
+  InkPages' PagesTest and the app's TasksTest. The WinUI app's runner below still shows the window.
   user first); in-sandbox scripts may dot-source `C:\sbx\TestKit.ps1` (`external/InkPages/UiTests/TestKit.ps1`: start
   the app, find controls, `ClickInOptions` for a tool's flyout, screenshots, `Invoke-Test` writes done.txt). **The
   library's tools are tested in the demo app, in the InkPages repository** (there: `dotnet publish InkPages.Demo -c
