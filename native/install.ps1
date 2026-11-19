@@ -28,7 +28,13 @@ function Assert-NotRunning {
 if (-not $SkipInstall) { Assert-NotRunning }
 
 # The committed state in its own worktree (kept between installs: its build folder makes the next build incremental).
-function Invoke-Git { & git.exe @args; if ($LASTEXITCODE -ne 0) { throw "git $args failed ($LASTEXITCODE)" } }
+# (git reports progress on stderr: with its output redirected, Windows PowerShell would turn that into an error record
+# and stop - the exit code decides instead.)
+function Invoke-Git {
+    $ErrorActionPreference = 'Continue'
+    & git.exe @args 2>&1 | ForEach-Object { "$_" }
+    if ($LASTEXITCODE -ne 0) { throw "git $args failed ($LASTEXITCODE)" }
+}
 $commit = (& git.exe -C $repo rev-parse HEAD).Trim()
 if (-not (Test-Path (Join-Path $source '.git'))) {
     Invoke-Git -C $repo worktree prune
