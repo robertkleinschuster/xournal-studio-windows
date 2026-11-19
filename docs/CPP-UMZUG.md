@@ -21,6 +21,12 @@ Der Mathe Trainer zieht **später** um; sein InkPages-Submodul bleibt bis dahin 
 - **Gleiches Verhalten wie heute**, OneNote als Vorlage für offene Fragen. Die Regeln der bisherigen CLAUDE.md gelten
   weiter: upstream-.xopp-Format, nie aus Dateien löschen, Speichern nur auf Wunsch + Wiederherstellungskopie, nie
   Ausnahmen bzw. Fehler verschlucken (HRESULT, Typ, Text loggen), kleine Klassen mit einer Aufgabe, getestet.
+- **Symbole und Farben (Nutzer, 2026-11-19):** Befehle mit Segoe Fluent Icons (Undo/Redo = die offiziellen E7A7/E7A6),
+  wo keine Glyphe passt eigene Pfad-Icons im selben Stil; Dateien und Ordner im Explorer-Baum mit der Systembildliste der
+  Shell; Meldungen mit den Info-/Warn-/Fehlersymbolen des Systems (`TaskDialog`, `SIID_*`). **Vorerst nur hell:** Win32
+  hat für comctl32-Steuerelemente keinen dokumentierten Dark Mode (Microsoft Learn „Support Dark and Light themes in
+  Win32 apps“ dokumentiert nur Erkennen und die dunkle Titelleiste); halb dunkel wäre Frankenstein, die undokumentierten
+  uxtheme-Wege ein Hack. Wieder anschauen, sobald Microsoft ihn dokumentiert.
 - **Die heutige C#/WinUI-App bleibt installiert und nutzbar**, bis die C++-App alles kann (Paritätsliste unten).
 
 ## Repositories
