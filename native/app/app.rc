@@ -1,4 +1,7 @@
+#pragma code_page(65001)
 #include <winres.h>
+#include <commctrl.h>
+#include "Resources.h"
 
 // The app manifest as a resource: comctl32 v6 (visual styles), PerMonitorV2 DPI awareness, UTF-8 code page.
 CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "app.manifest"
@@ -6,3 +9,20 @@ CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "app.manifest"
 // Pen cursors: a dot in each preset color and width, ids 1000 + color * 10 + width step (pens) and 2000 + ...
 // (highlighters) - InkPages' demo cursors (demo/tools/make_cursors.py).
 #include "cursors/cursors.rc"
+
+// Seiten aus PDF oder Dokument einfügen: the source's pages as thumbnails to tap, before or after the page, what happens
+// to the document's PDF (InsertPagesDialog fills the texts).
+IDD_INSERT_PAGES DIALOGEX 0, 0, 330, 286
+STYLE DS_MODALFRAME | DS_SHELLFONT | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Seiten einfügen"
+FONT 9, "Segoe UI", 400, 0, 0x1
+BEGIN
+    LTEXT           "", IDC_INSERT_COUNT, 7, 7, 316, 10
+    CONTROL         "", IDC_INSERT_LIST, WC_LISTVIEW, LVS_ICON | LVS_SHOWSELALWAYS | LVS_AUTOARRANGE | LVS_SHAREIMAGELISTS | WS_BORDER | WS_TABSTOP, 7, 20, 316, 170
+    CONTROL         "<a>Alle auswählen</a>", IDC_INSERT_ALL, "SysLink", WS_TABSTOP, 7, 194, 120, 10
+    AUTORADIOBUTTON "", IDC_INSERT_AFTER, 7, 210, 120, 10, WS_GROUP | WS_TABSTOP
+    AUTORADIOBUTTON "", IDC_INSERT_BEFORE, 135, 210, 120, 10
+    LTEXT           "", IDC_INSERT_WHERE, 7, 226, 316, 34
+    DEFPUSHBUTTON   "Einfügen", IDOK, 213, 265, 52, 14
+    PUSHBUTTON      "Abbrechen", IDCANCEL, 271, 265, 52, 14
+END

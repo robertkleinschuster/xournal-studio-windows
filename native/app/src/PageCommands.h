@@ -19,6 +19,10 @@ namespace xournal::app
 
         void InsertAfterCurrent();
         void DeleteCurrent();
+        /// A graph page at `index`, the size of the page before it (else after it).
+        void InsertBlankAt(int index);
+        /// Deletes page `page` after the question (the last page stays).
+        void DeleteAt(int page);
 
     private:
         int Current() const;

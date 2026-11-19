@@ -27,6 +27,16 @@ namespace xournal::app
         winrt::Windows::Data::Pdf::PdfDocument LoadPdf(std::span<std::uint8_t const> data);
     }
 
+    struct PixelSize
+    {
+        UINT width = 0, height = 0;
+    };
+
+    /// The pixel size to render something of `width` x `height` units at `pixelsPerUnit`: at most `maxWidth` wide and
+    /// within Direct2D's and Direct3D's limits on both sides (16384), keeping the proportion - a tall page is rendered
+    /// narrower instead of not at all. At least 1 x 1.
+    PixelSize FitPixels(double width, double height, double pixelsPerUnit, UINT maxWidth);
+
     /// A memory bitmap and its copy on the drawing device (made on first use; again when the device changes).
     class DrawableBitmap
     {

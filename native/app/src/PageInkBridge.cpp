@@ -72,14 +72,18 @@ namespace xournal::app
             }
             else
             {
-                // Moved here from another page: this page writes a moved copy of the element under a new id; the page it
-                // came from no longer has the key, so it leaves the original out.
-                auto copy = k.element->Clone();
-                copy->SetValue(k.loadedCoordinates);
-                Strokes::Transform(*copy, MatrixOf(s.transform));
-                StrokeId id = nextId++;
-                pageInk.Adopt(id, copy);
-                held.ids.push_back(id);
+                // Moved here from another page: this page writes a moved copy of the element; the page it came from no
+                // longer has the key, so it leaves the original out. The copy is made once and moved again later.
+                auto [copy, added] = held.movedIn.try_emplace(key);
+                if (added)
+                {
+                    copy->second = { nextId++, k.element->Clone() };
+                    pageInk.Adopt(copy->second.first, copy->second.second);
+                }
+                auto const& element = copy->second.second;
+                element->SetValue(k.loadedCoordinates);
+                Strokes::Transform(*element, MatrixOf(s.transform));
+                held.ids.push_back(copy->second.first);
             }
         }
     }
@@ -112,19 +116,35 @@ namespace xournal::app
         return pages;
     }
 
+    void PageInkBridge::ExpectRearrangementLocked(XoppDocument::PageList pages)
+    {
+        expected.push_back(std::move(pages));
+    }
+
     void PageInkBridge::Remapped(inkpages::PageMap const& map)
     {
         std::scoped_lock guard(mutex);
+        XoppDocument::PageList after;
+        if (!expected.empty())
+        {
+            after = std::move(expected.front());
+            expected.pop_front();
+        }
+        else
+        {
+            LogError("ink bridge: a rearrangement nobody announced - new pages taken from the document as it is now");
+            after = doc->Pages();
+        }
         auto oldIndex = map.OldIndex();
         XoppDocument::PageList pages;
         for (int to = 0; to < static_cast<int>(oldIndex.size()); ++to)
         {
             int from = oldIndex[to];
             if (from >= 0 && from < static_cast<int>(inkPages.size())) pages.push_back(inkPages[from]);
-            else if (to < static_cast<int>(doc->Pages().size())) pages.push_back(doc->Pages()[to]); // the inserted page
+            else if (to < static_cast<int>(after.size())) pages.push_back(after[to]); // the inserted page
             else
             {
-                LogError(std::format("ink bridge: page {} of a rearrangement is not in the document", to));
+                LogError(std::format("ink bridge: page {} of a rearrangement is not in its page list", to));
                 pages.push_back(nullptr);
             }
         }

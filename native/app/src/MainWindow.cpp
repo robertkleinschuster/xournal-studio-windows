@@ -77,7 +77,17 @@ namespace xournal::app
         exportCommand = std::make_unique<PdfExportCommand>(window, *view,
             [this](std::wstring const& text, ToastKind kind) { Message(text, kind); });
         pageCommands = std::make_unique<PageCommands>(window, *surface, *view);
-        view->pagesChanged = [this] { session->NotePagesChanged(); UpdateCommands(); };
+        insertCommand = std::make_unique<InsertPagesCommand>(window, *session, *view,
+            [this](std::wstring const& text, ToastKind kind) { Message(text, kind); });
+        importCommand = std::make_unique<PdfImportCommand>(window, *session,
+            [this](std::wstring const& text, ToastKind kind) { Message(text, kind); });
+        view->pagesChanged = [this]
+        {
+            session->NotePagesChanged();
+            UpdateCommands();
+            if (thumbnails) thumbnails->PagesChanged();
+            if (pagesPane) pagesPane->SetCount(view->PageCount());
+        };
         // Set before the toolbar: it chains these handlers.
         surface->historyChanged = [this] { UpdateTitle(); UpdateCommands(); };
         surface->selectionChanged = [] {};
@@ -100,7 +110,9 @@ namespace xournal::app
         {
             settings.paneTab = tab;
             SaveSettings();
+            UpdatePagesPane();
         };
+        CreatePagesPane();
         toast = std::make_unique<Toast>(window);
         CreateProjectParts();
 
@@ -179,6 +191,35 @@ namespace xournal::app
         ShowWindow(pane->Window(), open ? SW_SHOW : SW_HIDE);
         menu.Check(CmdTogglePane, open);
         Layout();
+        UpdatePagesPane();
+    }
+
+    void MainWindow::CreatePagesPane()
+    {
+        constexpr int ThumbWidthDip = 150; // as PagesPane draws them
+        thumbnails = std::make_unique<PageThumbnails>(*view, *surface,
+            static_cast<UINT>(MulDiv(ThumbWidthDip, static_cast<int>(GetDpiForWindow(window)), 96)));
+        pagesPane = std::make_unique<PagesPane>(pane->Window(), *thumbnails);
+        pane->SetPagesContent(pagesPane->Window());
+        thumbnails->updated = [this](int index) { pagesPane->Redraw(index); };
+        view->shown = [this]
+        {
+            thumbnails->Reset();
+            pagesPane->SetCount(view->PageCount());
+            pagesPane->Select(surface->PageInView().value_or(0));
+        };
+        view->pagesEdited = [this](std::set<int> const& pages) { thumbnails->Edited(pages); };
+        view->viewMoved = [this] { pagesPane->Select(surface->PageInView().value_or(0)); };
+        pagesPane->goTo = [this](int index) { surface->ScrollToPage(index); };
+        pagesPane->insertBlank = [this](int index) { pageCommands->InsertBlankAt(index); };
+        pagesPane->insertFromFile = [this](int index) { insertCommand->Insert(index); };
+        pagesPane->move = [this](int from, int to) { view->MovePage(from, to); };
+        pagesPane->remove = [this](int index) { pageCommands->DeleteAt(index); };
+    }
+
+    void MainWindow::UpdatePagesPane()
+    {
+        if (thumbnails && pane) thumbnails->SetActive(settings.paneOpen && pane->Tab() == 2);
     }
 
     void MainWindow::UpdateTitle()
@@ -278,6 +319,8 @@ namespace xournal::app
         case CmdSaveAs: session->SaveAs(); break;
         case CmdExportPdf: exportCommand->Export(session->Document()); break;
         case CmdInsertPage: pageCommands->InsertAfterCurrent(); break;
+        case CmdInsertFromFile: insertCommand->Insert(surface->PageInView().value_or(0)); break;
+        case CmdImportPdf: importCommand->Import(); break;
         case CmdDeletePage: pageCommands->DeleteCurrent(); break;
         case CmdOpenFolder: OpenFolder(); break;
         case CmdSync: sync->Sync(projectExplorer->Folder()); break;
@@ -387,6 +430,10 @@ namespace xournal::app
             projectExplorer.reset();
             sync.reset();
             // The feature classes that hold the surface go before it (the view takes its callbacks back).
+            pagesPane.reset();
+            thumbnails.reset();
+            importCommand.reset();
+            insertCommand.reset();
             pageCommands.reset();
             exportCommand.reset();
             session.reset();

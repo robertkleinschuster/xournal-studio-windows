@@ -79,7 +79,7 @@ namespace xournal::app
             { CmdSave, L"&Speichern", L"Strg+S", Ctrl, 'S' },
             { CmdSaveAs, L"Speichern &unter…", L"Strg+Umschalt+S", CtrlShift, 'S' },
             { CmdExportPdf, L"Als PDF e&xportieren…", L"Strg+E", Ctrl, 'E' },
-            { CmdImportPdf, L"PDF mit iPad-Anmerkungen &importieren…", L"", 0, 0, false },
+            { CmdImportPdf, L"PDF mit iPad-Anmerkungen &importieren…" },
             {},
             { CmdOpenFolder, L"O&rdner öffnen…" },
             { CmdSync, L"S&ynchronisieren" },
@@ -101,7 +101,7 @@ namespace xournal::app
         }, keys), L"&Bearbeiten");
         AddPopup(bar, Popup({
             { CmdInsertPage, L"Seite &einfügen" },
-            { CmdInsertFromFile, L"Seiten aus &PDF oder Dokument einfügen…", L"", 0, 0, false },
+            { CmdInsertFromFile, L"Seiten aus &PDF oder Dokument einfügen…" },
             {},
             { CmdDeletePage, L"Seite &löschen" },
         }, keys), L"&Seite");

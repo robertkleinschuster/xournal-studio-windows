@@ -3,6 +3,7 @@
 #include "Direct2D.h"
 
 #include "xournal/base/Error.h"
+#include "xournal/base/Log.h"
 #include "xournal/model/BackgroundRuling.h"
 #include "xournal/model/Strokes.h"
 #include "xournal/model/XoppImage.h"
@@ -10,6 +11,7 @@
 
 #include <wrl/client.h>
 
+#include <format>
 #include <set>
 #include <variant>
 #include <vector>
@@ -102,7 +104,8 @@ namespace xournal::app
 
     PageUnderlay::PageUnderlay(RenderQueue& queue, XoppDocument const& doc, std::uint64_t generation,
         std::function<void(int)> invalidate, FilePictures const& pictures)
-        : pdf(std::make_shared<PdfBackground>(queue, generation, invalidate)),
+        : queue(queue), generation(generation), invalidate(invalidate),
+          pdf(std::make_shared<PdfBackground>(queue, generation, invalidate)),
           bitmaps(std::make_shared<PictureBitmaps>(queue, generation, invalidate)),
           pictures(pictures)
     {
@@ -110,6 +113,12 @@ namespace xournal::app
         {
             pdf->Load(*doc.PdfPath());
         }
+    }
+
+    void PageUnderlay::LoadPdf(std::filesystem::path const& file)
+    {
+        pdf = std::make_shared<PdfBackground>(queue, generation, invalidate);
+        pdf->Load(file); // its pages are drawn again as their bitmaps arrive
     }
 
     void PageUnderlay::Remap(inkpages::PageMap const& map)
@@ -177,32 +186,64 @@ namespace xournal::app
         dc->SetTransform(pageTransform);
     }
 
+    namespace
+    {
+        // The page's clip for the drawing, popped whatever happens while drawing.
+        class ClipGuard
+        {
+        public:
+            ClipGuard(ID2D1DeviceContext* dc, inkpages::RectF area) : dc(dc)
+            {
+                dc->PushAxisAlignedClip({ area.left, area.top, area.right, area.bottom }, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+            }
+            ~ClipGuard() { dc->PopAxisAlignedClip(); }
+            ClipGuard(ClipGuard const&) = delete;
+            ClipGuard& operator=(ClipGuard const&) = delete;
+
+        private:
+            ID2D1DeviceContext* dc;
+        };
+    }
+
     void PageUnderlay::Draw(int page, XoppPage const& content, ID2D1DeviceContext* dc, inkpages::RectF area, float pixelsPerUnit)
     {
-        dc->PushAxisAlignedClip({ area.left, area.top, area.right, area.bottom }, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-        DrawBackground(page, content, dc, pixelsPerUnit);
+        ClipGuard clip(dc, area);
+        D2D1_MATRIX_3X2_F pageTransform;
+        dc->GetTransform(&pageTransform);
+        // One element that cannot be drawn (a damaged picture, a font) is logged and left out; the others are drawn.
+        auto guarded = [&](char const* what, auto&& draw)
+        {
+            try
+            {
+                draw();
+            }
+            catch (...)
+            {
+                LogException(std::format("underlay: page {}: {}", page + 1, what));
+            }
+            dc->SetTransform(pageTransform); // an element that threw while placed by its own transform
+        };
+        guarded("background", [&] { DrawBackground(page, content, dc, pixelsPerUnit); });
         auto factory = FactoryOf(dc);
-        auto const& drawn = content.DrawnStrokes();
         std::set<XmlElement const*> drawnSet;
-        for (auto const& e : drawn) drawnSet.insert(e.get());
+        for (auto const& e : content.DrawnStrokes()) drawnSet.insert(e.get());
         for (auto const& layer : content.Layers())
         {
             for (auto const& element : layer->Elements())
             {
                 if (drawnSet.contains(element.get()))
                 {
-                    if (auto shape = Strokes::ReadShape(*element)) DrawShape(*shape, dc, factory.Get());
+                    guarded("a stroke", [&] { if (auto shape = Strokes::ReadShape(*element)) DrawShape(*shape, dc, factory.Get()); });
                 }
                 else if (XoppImage::IsImage(*element))
                 {
-                    DrawPicture(page, element, dc, pixelsPerUnit);
+                    guarded("a picture", [&] { DrawPicture(page, element, dc, pixelsPerUnit); });
                 }
                 else if (XoppText::IsText(*element))
                 {
-                    texts.Draw(dc, XoppText::Read(*element));
+                    guarded("a text", [&] { texts.Draw(dc, XoppText::Read(*element)); });
                 }
             }
         }
-        dc->PopAxisAlignedClip();
     }
 }

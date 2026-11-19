@@ -6,6 +6,9 @@
 #include <shlwapi.h>
 #include <wincodec.h>
 
+#include <algorithm>
+#include <cmath>
+
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Storage.Streams.h>
 
@@ -69,6 +72,20 @@ namespace xournal::app
             stream.Seek(0);
             return winrt::Windows::Data::Pdf::PdfDocument::LoadFromStreamAsync(stream).get();
         }
+    }
+
+    PixelSize FitPixels(double width, double height, double pixelsPerUnit, UINT maxWidth)
+    {
+        constexpr double MaxSide = 16384; // D3D11 textures and Direct2D bitmaps
+        if (!(width > 0) || !(height > 0) || !(pixelsPerUnit > 0)) return { 1, 1 };
+        double w = std::min({ width * pixelsPerUnit, static_cast<double>(maxWidth), MaxSide });
+        double h = w * height / width;
+        if (h > MaxSide)
+        {
+            h = MaxSide;
+            w = h * width / height;
+        }
+        return { std::max<UINT>(1, static_cast<UINT>(std::ceil(w))), std::max<UINT>(1, static_cast<UINT>(std::ceil(h))) };
     }
 
     ID2D1Bitmap* DrawableBitmap::On(ID2D1DeviceContext* dc)

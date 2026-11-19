@@ -8,8 +8,12 @@
 #include "DocumentView.h"
 #include "ExplorerCommands.h"
 #include "MainMenu.h"
+#include "InsertPagesCommand.h"
 #include "PageCommands.h"
+#include "PageThumbnails.h"
+#include "PagesPane.h"
 #include "PdfExportCommand.h"
+#include "PdfImportCommand.h"
 #include "ProjectExplorer.h"
 #include "RecoveryCopies.h"
 #include "SidePane.h"
@@ -51,6 +55,8 @@ namespace xournal::app
         void OnCommand(int command);
         void UpdateMenu();
         void UpdateCommands(); // commands that depend on the document (a page can be deleted while there are two)
+        void CreatePagesPane();
+        void UpdatePagesPane(); // thumbnails only while the Seiten tab is shown
         void UpdateTitle();
         void SetPaneOpen(bool open);
         void OpenFolder();
@@ -73,6 +79,10 @@ namespace xournal::app
         std::unique_ptr<DocumentSession> session;
         std::unique_ptr<PdfExportCommand> exportCommand;
         std::unique_ptr<PageCommands> pageCommands;
+        std::unique_ptr<InsertPagesCommand> insertCommand;
+        std::unique_ptr<PdfImportCommand> importCommand;
+        std::unique_ptr<PageThumbnails> thumbnails;
+        std::unique_ptr<PagesPane> pagesPane;
         std::unique_ptr<SyncController> sync;
         std::unique_ptr<ProjectExplorer> projectExplorer;
         std::unique_ptr<ExplorerCommands> explorerCommands;

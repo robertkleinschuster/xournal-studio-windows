@@ -88,8 +88,8 @@ namespace xournal::app
         }
         UseMessageFont(syncButton);
         tasks = std::make_unique<TasksPane>(window, std::move(messages));
-        pagesPlaceholder = Placeholder(window, L"Seitenübersicht folgt.");
-        UseMessageFont(pagesPlaceholder);
+        pagesContent = Placeholder(window, L"Seitenübersicht folgt.");
+        UseMessageFont(pagesContent);
         ShowPage(0);
     }
 
@@ -99,6 +99,14 @@ namespace xournal::app
         {
             SetWindowLongPtrW(window, GWLP_USERDATA, 0);
         }
+    }
+
+    void SidePane::SetPagesContent(HWND content)
+    {
+        DestroyWindow(pagesContent);
+        pagesContent = content;
+        ShowPage(Tab());
+        Layout();
     }
 
     int SidePane::Tab() const { return TabCtrl_GetCurSel(tabs); }
@@ -115,7 +123,7 @@ namespace xournal::app
         ShowWindow(explorer->Window(), tab == 0 ? SW_SHOW : SW_HIDE);
         ShowWindow(syncButton, tab == 0 ? SW_SHOW : SW_HIDE);
         ShowWindow(tasks->Window(), tab == 1 ? SW_SHOW : SW_HIDE);
-        ShowWindow(pagesPlaceholder, tab == 2 ? SW_SHOW : SW_HIDE);
+        ShowWindow(pagesContent, tab == 2 ? SW_SHOW : SW_HIDE);
     }
 
     void SidePane::Layout()
@@ -125,7 +133,7 @@ namespace xournal::app
         MoveWindow(tabs, 0, 0, rc.right, rc.bottom, TRUE);
         RECT page = rc;
         TabCtrl_AdjustRect(tabs, FALSE, &page);
-        for (HWND child : { explorer->Window(), tasks->Window(), pagesPlaceholder })
+        for (HWND child : { explorer->Window(), tasks->Window(), pagesContent })
         {
             MoveWindow(child, page.left, page.top, page.right - page.left, page.bottom - page.top, TRUE);
             SetWindowPos(child, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE); // above the tab control

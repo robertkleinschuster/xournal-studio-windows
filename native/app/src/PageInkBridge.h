@@ -14,6 +14,7 @@
 #include "inkpages/WritingSurface.h"
 #include "inkpages/model/PageMap.h"
 
+#include <deque>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -40,13 +41,18 @@ namespace xournal::app
         std::set<int> LivePages() const;
         bool IsLive(int page) const;
         XoppDocument& Document() const { return *doc; }
+        std::shared_ptr<XoppDocument> Shared() const { return doc; }
 
         /// UI thread, before a snapshot: a live page's current strokes (from StrokesOf). Call with Lock() held.
         void Refresh(int page, std::vector<inkpages::KeyedStroke> const& strokes);
 
+        /// UI thread, with Lock() held, right before asking InkPages to rearrange: the document's page list as it is after
+        /// that rearrangement (Remapped takes its new pages from it - in order, so two quick inserts get their own pages).
+        void ExpectRearrangementLocked(XoppDocument::PageList pages);
+
         /// Ink thread (InkPages' pagesRemapped, in order with load/store): pages were inserted, removed or moved. The ink
-        /// side's page list, live pages and keys follow `map`; a new page is taken from the document's list (the window
-        /// changed it before it asked InkPages); a removed page's ink is dropped (InkPages drops it too).
+        /// side's page list, live pages and keys follow `map`; new pages come from the list the matching
+        /// ExpectRearrangementLocked gave; a removed page's ink is dropped (InkPages drops it too).
         void Remapped(inkpages::PageMap const& map);
 
         /// Held while the document's pages are read or written (snapshot, load, store, underlay).
@@ -59,6 +65,9 @@ namespace xournal::app
         public:
             std::vector<StrokeId> ids;
             std::map<StrokeId, StrokeInk> inks; // new ink only (keyed strokes are written from their elements)
+            // Strokes moved here from another page: key -> the id and element of this page's copy (one copy per key,
+            // updated on every snapshot - not a new clone each time).
+            std::map<StrokeId, std::pair<StrokeId, XmlElementPtr>> movedIn;
             std::vector<StrokeId> Strokes() const override { return ids; }
             Matrix TransformOf(StrokeId) const override { return {}; } // samples are where the ink shows them
             StrokeInk InkOf(StrokeId id) const override { return inks.at(id); }
@@ -78,6 +87,7 @@ namespace xournal::app
         // The pages by InkPages' index as the ink thread sees them: load/store use it (the window changes the document's
         // own list at once, InkPages follows on its thread - pagesRemapped brings this list along in order).
         XoppDocument::PageList inkPages;
+        std::deque<XoppDocument::PageList> expected; // page lists of rearrangements on their way to the ink thread
         mutable std::mutex mutex;
         std::map<int, std::unique_ptr<HeldInk>> live; // stable addresses: PageInk keeps a pointer to the view
         std::map<StrokeId, Keyed> keyed;              // every key handed out for this document

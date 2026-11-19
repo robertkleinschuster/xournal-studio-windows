@@ -33,6 +33,12 @@ namespace xournal::app
         /// Pages were inserted, removed or moved: the caches follow.
         void Remap(inkpages::PageMap const& map);
 
+        /// The document's PDF changed (pages appended to it, or it has a PDF now): loaded anew from memory.
+        void LoadPdf(std::filesystem::path const& file);
+
+        /// The background PDF on screen (thumbnails render its pages too).
+        std::shared_ptr<PdfBackground> Pdf() const { return pdf; }
+
         /// The page in view changed: far pages give back their bitmaps, near ones render first.
         void Trim(int focus);
 
@@ -40,6 +46,9 @@ namespace xournal::app
         void DrawBackground(int page, XoppPage const& content, ID2D1DeviceContext* dc, float pixelsPerUnit);
         void DrawPicture(int page, XmlElementPtr const& picture, ID2D1DeviceContext* dc, float pixelsPerUnit);
 
+        RenderQueue& queue;
+        std::uint64_t generation;
+        std::function<void(int)> invalidate;
         std::shared_ptr<PdfBackground> pdf;
         std::shared_ptr<PictureBitmaps> bitmaps;
         TextDrawing texts;

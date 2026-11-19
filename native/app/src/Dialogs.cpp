@@ -8,6 +8,7 @@
 #include <wrl/client.h>
 
 #include <format>
+#include <span>
 
 using Microsoft::WRL::ComPtr;
 
@@ -50,24 +51,68 @@ namespace xournal::app::Dialogs
         }
     }
 
+    namespace
+    {
+        // Windows' open dialog for these file types.
+        std::optional<std::filesystem::path> OpenFile(HWND owner, std::optional<std::filesystem::path> const& folder,
+            std::span<COMDLG_FILTERSPEC const> types, wchar_t const* title)
+        {
+            ComPtr<IFileOpenDialog> dialog;
+            Check("CoCreateInstance(FileOpenDialog)", CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog)));
+            Check("IFileDialog::SetFileTypes", dialog->SetFileTypes(static_cast<UINT>(types.size()), types.data()));
+            Check("IFileDialog::SetTitle", dialog->SetTitle(title));
+            SetFolder(dialog.Get(), folder);
+            if (!ShowDialog(dialog.Get(), owner))
+            {
+                return std::nullopt;
+            }
+            return ResultPath(dialog.Get());
+        }
+    }
+
     std::optional<std::filesystem::path> OpenDocument(HWND owner, std::optional<std::filesystem::path> const& folder)
     {
-        ComPtr<IFileOpenDialog> dialog;
-        Check("CoCreateInstance(FileOpenDialog)", CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog)));
         COMDLG_FILTERSPEC types[] = {
             { L"Dokumente und PDF", L"*.xopp;*.moj;*.pdf" },
             { L"Xournal++-Dokumente", L"*.xopp" },
             { L"MrWriter-Dokumente", L"*.moj" },
             { L"PDF", L"*.pdf" },
         };
-        Check("IFileDialog::SetFileTypes", dialog->SetFileTypes(ARRAYSIZE(types), types));
-        Check("IFileDialog::SetTitle", dialog->SetTitle(L"Öffnen"));
-        SetFolder(dialog.Get(), folder);
-        if (!ShowDialog(dialog.Get(), owner))
-        {
-            return std::nullopt;
-        }
-        return ResultPath(dialog.Get());
+        return OpenFile(owner, folder, types, L"Öffnen");
+    }
+
+    std::optional<std::filesystem::path> OpenPdf(HWND owner, std::optional<std::filesystem::path> const& folder, wchar_t const* title)
+    {
+        COMDLG_FILTERSPEC types[] = { { L"PDF", L"*.pdf" } };
+        return OpenFile(owner, folder, types, title);
+    }
+
+    std::optional<std::filesystem::path> OpenPagesSource(HWND owner, std::optional<std::filesystem::path> const& folder)
+    {
+        COMDLG_FILTERSPEC types[] = {
+            { L"PDF und Xournal++-Dokumente", L"*.pdf;*.xopp" },
+            { L"PDF", L"*.pdf" },
+            { L"Xournal++-Dokumente", L"*.xopp" },
+        };
+        return OpenFile(owner, folder, types, L"Seiten einfügen aus");
+    }
+
+    bool Confirm(HWND owner, std::wstring const& instruction, std::wstring const& detail, wchar_t const* action)
+    {
+        TASKDIALOG_BUTTON buttons[] = { { IDYES, action }, { IDCANCEL, L"Abbrechen" } };
+        TASKDIALOGCONFIG config{ sizeof(config) };
+        config.hwndParent = owner;
+        config.dwFlags = TDF_ALLOW_DIALOG_CANCELLATION | TDF_POSITION_RELATIVE_TO_WINDOW;
+        config.pszWindowTitle = L"Xournal Studio";
+        config.pszMainIcon = TD_WARNING_ICON;
+        config.pszMainInstruction = instruction.c_str();
+        config.pszContent = detail.c_str();
+        config.cButtons = ARRAYSIZE(buttons);
+        config.pButtons = buttons;
+        config.nDefaultButton = IDCANCEL;
+        int pressed = 0;
+        Check("TaskDialogIndirect (confirm)", TaskDialogIndirect(&config, &pressed, nullptr, nullptr));
+        return pressed == IDYES;
     }
 
     namespace

@@ -36,8 +36,12 @@ namespace xournal::app
         {
             entry.element = element;
             auto data = XoppImage::GetData(*element);
-            entry.pdf = XoppImage::IsPdf(data);
-            if (!entry.pdf)
+            if (XoppImage::IsPdf(data))
+            {
+                entry.pdf = std::make_shared<PdfSource>();
+                entry.pdf->data = std::move(data);
+            }
+            else
             {
                 try
                 {
@@ -60,39 +64,55 @@ namespace xournal::app
         }
         if (entry.pdf)
         {
-            UINT width = std::clamp<UINT>(static_cast<UINT>(std::ceil(size.width * pixelsPerUnit)), 1, MaxWidth);
-            UINT height = std::max<UINT>(1, static_cast<UINT>(std::ceil(width * size.height / std::max(size.width, 0.01f))));
-            if ((entry.width < width * 0.95 || entry.width > width * 1.5) && entry.requested != width)
+            PixelSize wanted = FitPixels(size.width, size.height, pixelsPerUnit, MaxWidth);
+            if ((entry.width < wanted.width * 0.95 || entry.width > wanted.width * 1.5) && entry.requested != wanted.width)
             {
-                RequestPdf(entry, page, width, height);
+                RequestPdf(entry, page, wanted);
             }
         }
     }
 
-    void PictureBitmaps::RequestPdf(Entry& entry, int page, UINT width, UINT height)
+    void PictureBitmaps::RequestPdf(Entry& entry, int page, PixelSize size)
     {
-        entry.requested = width;
-        auto [keyIt, added] = keys.try_emplace(entry.element.get(), nextKey);
+        entry.requested = size.width;
+        XmlElement const* id = entry.element.get();
+        auto [keyIt, added] = keys.try_emplace(id, nextKey);
         if (added) ++nextKey;
         // Picture keys live beside the background's PDF pages: bit 31 set.
         std::uint64_t key = (generation << 32) | 0x80000000u | keyIt->second;
-        std::weak_ptr<PictureBitmaps> weak = weak_from_this();
-        XmlElementPtr element = entry.element;
-        auto data = std::make_shared<std::vector<std::uint8_t>>(XoppImage::GetData(*element));
+        std::weak_ptr<PictureBitmaps> weak = weak_from_this(); // locked only on the UI thread
         queue.Submit(key, page, std::format("render PDF picture on page {}", page + 1),
-            [weak, element, data, page, width, height](PdfPageRenderer& renderer)
+            [weak, source = entry.pdf, id, page, size](PdfPageRenderer& renderer)
         {
-            auto document = Bitmaps::LoadPdf(*data);
-            auto bitmap = renderer.Render(document.GetPage(0), width, height, true);
-            UiQueue::Post("pdf picture rendered", [weak, element, page, width, bitmap]
+            std::shared_ptr<CpuBitmap> bitmap;
+            try
+            {
+                if (!source->document && !source->failed)
+                {
+                    source->document = Bitmaps::LoadPdf(source->data); // once per picture, not per zoom step
+                }
+                if (source->document)
+                {
+                    bitmap = renderer.Render(source->document.GetPage(0), size.width, size.height, true);
+                }
+            }
+            catch (...)
+            {
+                source->failed = true;
+                LogException(std::format("PDF picture on page {} cannot be shown (not tried again)", page + 1));
+            }
+            bool failed = source->failed;
+            UiQueue::Post("pdf picture rendered", [weak, id, page, size, bitmap, failed]
             {
                 auto self = weak.lock();
                 if (!self) return;
-                auto it = self->elements.find(element.get());
+                auto it = self->elements.find(id);
                 if (it == self->elements.end()) return;
+                if (it->second.requested == size.width) it->second.requested = 0;
+                it->second.failed = failed;
+                if (!bitmap) return;
                 it->second.bitmap = std::make_unique<DrawableBitmap>(bitmap);
-                it->second.width = width;
-                it->second.requested = 0;
+                it->second.width = size.width;
                 self->ready(page);
             });
         });

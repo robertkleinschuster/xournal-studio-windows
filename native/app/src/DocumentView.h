@@ -19,6 +19,8 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <set>
+#include <vector>
 
 namespace xournal::app
 {
@@ -35,13 +37,32 @@ namespace xournal::app
         /// Inserts a page at `index` (InkPages keeps the history; the app's per-page data follows the same PageMap) and
         /// scrolls to it.
         void InsertPage(int index, std::shared_ptr<XoppPage> page);
+        /// Inserts pages at `index` (pages of another PDF or document) and scrolls to the first.
+        void InsertPages(int index, std::vector<std::shared_ptr<XoppPage>> pages);
+        /// Moves a page (the pages pane; keeps the history as inserting does).
+        void MovePage(int from, int to);
         /// Removes a page (cannot be undone: the caller asks first; the last page stays). False: nothing removed.
         bool RemovePage(int index);
         int PageCount() const;
         /// The page's size and paper, for a new page like it.
         std::shared_ptr<XoppPage> PageAt(int index) const;
-        /// The page list changed (a page inserted or removed): the document has changes the ink history does not know.
+        /// The page list changed (a page inserted, removed or moved): the document has changes the ink history does not
+        /// know.
         std::function<void()> pagesChanged;
+        /// A document is shown (thumbnails start over).
+        std::function<void()> shown;
+        /// An edit (or its undo/redo) changed these pages' content (InkPages' contentChanged).
+        std::function<void(std::set<int> const&)> pagesEdited;
+        /// The view moved or zoomed (the page in view may be another).
+        std::function<void()> viewMoved;
+
+        /// The shown document (nothing before the first).
+        std::shared_ptr<XoppDocument> Document() const;
+        /// The shown document's background PDF on screen (nothing without one).
+        std::shared_ptr<PdfBackground> Pdf() const;
+        RenderQueue& Queue() { return renderQueue; }
+        /// The document's PDF was written or newly chosen: the screen loads it anew and draws its pages again.
+        void ReloadPdf();
 
         /// The live pages' current strokes go into the document, then `work` runs with the document's lock held (UI
         /// thread; take the snapshot there).

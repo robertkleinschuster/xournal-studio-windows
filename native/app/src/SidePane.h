@@ -1,7 +1,7 @@
 #pragma once
 
 // The left side pane: a tab control with Dateien (the project folder's tree and the sync button), Aufgaben (todo.txt)
-// and Seiten (to come).
+// and Seiten (the pages pane, put in by the window).
 
 #include "ExplorerTree.h"
 #include "TasksPane.h"
@@ -30,6 +30,9 @@ namespace xournal::app
         /// While a sync runs the button says so and waits.
         void SetSyncing(bool syncing);
 
+        /// The Seiten tab's content (a child window of this pane), in place of its placeholder.
+        void SetPagesContent(HWND content);
+
         int Tab() const;
         void SetTab(int tab);
         /// The user chose another tab.
@@ -44,7 +47,7 @@ namespace xournal::app
         HWND window = nullptr;
         HWND tabs = nullptr;
         HWND syncButton = nullptr;
-        HWND pagesPlaceholder = nullptr;
+        HWND pagesContent = nullptr; // a placeholder until the window puts the pages pane in
         std::unique_ptr<ExplorerTree> explorer;
         std::unique_ptr<TasksPane> tasks;
     };

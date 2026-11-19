@@ -30,6 +30,7 @@ namespace xournal::app
         surface.pagesRemapped = [bridges = bridges](inkpages::PageMap const& map) { bridges->Remapped(map); };
         surface.drawUnderlay = [this](int page, ID2D1DeviceContext* dc, inkpages::RectF area) { DrawUnderlay(page, dc, area); };
         surface.viewChanged = [this] { OnViewChanged(); };
+        surface.contentChanged = [this](std::set<int> const& pages) { if (pagesEdited) pagesEdited(pages); };
     }
 
     DocumentView::~DocumentView()
@@ -37,6 +38,7 @@ namespace xournal::app
         // The surface outlives the view: it gets nothing back that points here (load/store hold the bridge set).
         surface.drawUnderlay = nullptr;
         surface.viewChanged = nullptr;
+        surface.contentChanged = nullptr;
         surface.SetPictureHost(nullptr);
         renderQueue.Stop(); // the PDF device goes while the app still runs
     }
@@ -47,6 +49,7 @@ namespace xournal::app
         {
             underlay->Trim(surface.PageInView().value_or(0));
         }
+        if (viewMoved) viewMoved();
     }
 
     void DocumentView::Show(std::shared_ptr<XoppDocument> doc)
@@ -68,6 +71,7 @@ namespace xournal::app
         surface.SetPictureHost(pictures.get());
         surface.SetPages(std::move(specs));
         surface.FitWidth();
+        if (shown) shown();
     }
 
     void DocumentView::Remap(inkpages::PageMap const& map, std::function<void(XoppDocument::PageList&)> const& change)
@@ -77,6 +81,7 @@ namespace xournal::app
         {
             std::scoped_lock guard(bridge->Lock());
             change(bridge->Document().Pages());
+            bridge->ExpectRearrangementLocked(bridge->Document().Pages());
         }
         pictures->Remap(map);
         underlay->Remap(map);
@@ -97,6 +102,63 @@ namespace xournal::app
         surface.ScrollToPage(index);
         Log(std::format("document view: page inserted at {}", index));
         if (pagesChanged) pagesChanged();
+    }
+
+    void DocumentView::InsertPages(int index, std::vector<std::shared_ptr<XoppPage>> pages)
+    {
+        auto bridge = bridges->Current();
+        if (!bridge || pages.empty()) return;
+        int count = PageCount();
+        index = std::clamp(index, 0, count);
+        std::vector<inkpages::PageSpec> specs;
+        for (auto const& page : pages) specs.push_back(SpecOf(*page));
+        int added = static_cast<int>(pages.size());
+        Remap(inkpages::PageMap::Insert(count, index, added), [&](XoppDocument::PageList& list)
+        {
+            list.insert(list.begin() + index, pages.begin(), pages.end());
+        });
+        surface.InsertPages(index, std::move(specs));
+        surface.ScrollToPage(index);
+        Log(std::format("document view: {} pages inserted at {}", added, index));
+        if (pagesChanged) pagesChanged();
+    }
+
+    void DocumentView::MovePage(int from, int to)
+    {
+        auto bridge = bridges->Current();
+        int count = PageCount();
+        if (!bridge || from == to || from < 0 || to < 0 || from >= count || to >= count) return;
+        Remap(inkpages::PageMap::Move(count, from, to), [&](XoppDocument::PageList& list)
+        {
+            auto page = list[from];
+            list.erase(list.begin() + from);
+            list.insert(list.begin() + to, page);
+        });
+        surface.MovePage(from, to);
+        Log(std::format("document view: page {} moved to {}", from, to));
+        if (pagesChanged) pagesChanged();
+    }
+
+    std::shared_ptr<XoppDocument> DocumentView::Document() const
+    {
+        auto bridge = bridges->Current();
+        return bridge ? bridge->Shared() : nullptr;
+    }
+
+    std::shared_ptr<PdfBackground> DocumentView::Pdf() const
+    {
+        return underlay ? underlay->Pdf() : nullptr;
+    }
+
+    void DocumentView::ReloadPdf()
+    {
+        auto doc = Document();
+        if (!doc || !doc->PdfPath() || !underlay) return;
+        underlay->LoadPdf(*doc->PdfPath());
+        for (int page = 0; page < PageCount(); ++page)
+        {
+            surface.InvalidatePage(page);
+        }
     }
 
     bool DocumentView::RemovePage(int index)

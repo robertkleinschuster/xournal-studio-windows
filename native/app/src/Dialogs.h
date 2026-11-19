@@ -13,6 +13,15 @@ namespace xournal::app::Dialogs
     /// Öffnen: a .xopp, a MrWriter .moj or a PDF; nothing when cancelled.
     std::optional<std::filesystem::path> OpenDocument(HWND owner, std::optional<std::filesystem::path> const& folder);
 
+    /// A PDF (e.g. the iPad import's source); nothing when cancelled.
+    std::optional<std::filesystem::path> OpenPdf(HWND owner, std::optional<std::filesystem::path> const& folder, wchar_t const* title);
+
+    /// A PDF or a .xopp whose pages are inserted; nothing when cancelled.
+    std::optional<std::filesystem::path> OpenPagesSource(HWND owner, std::optional<std::filesystem::path> const& folder);
+
+    /// A question with a warning icon: `action` (e.g. "Ersetzen", "Löschen") or Abbrechen (the default). True: action.
+    bool Confirm(HWND owner, std::wstring const& instruction, std::wstring const& detail, wchar_t const* action);
+
     /// Speichern unter: a .xopp in `folder` named `name`; nothing when cancelled.
     std::optional<std::filesystem::path> SaveDocument(HWND owner, std::filesystem::path const& folder, std::wstring const& name);
 

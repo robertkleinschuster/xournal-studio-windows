@@ -2,8 +2,18 @@
 # content (select all + pen drag), undo the move, erase across the page, saving after each step - and check the saved
 # file each time: strokes the user did not touch are byte-identical elements of the original, moved ones are the original
 # elements with all coordinates shifted by one offset (attributes and widths unchanged), new ink is added. Then reload.
-#   native\UiTests\Run-AppTest.ps1 -Test native\UiTests\InkRoundTripTest.ps1
+#   native\UiTests\Run-AppTest.ps1 -Test native\UiTests\InkRoundTripTest.ps1 -Extra <uiaprobe.exe>
+# Toolbar buttons are found by name with InkPages' uiaprobe (PS 5.1's managed UI Automation sees comctl32 toolbars only
+# as an empty pane).
 . C:\sbx\TestKit.ps1
+
+function ToolbarButton($name) {
+    $at = & C:\sbx\data\uiaprobe.exe XournalStudioWindow $name
+    if ($LASTEXITCODE -ne 0 -or -not $at) { throw "toolbar button '$name' not found by uiaprobe" }
+    $x, $y = "$at".Trim() -split ' '
+    [Inj]::ClickPixel([int]$x, [int]$y); Start-Sleep -Milliseconds 800; [Inj]::MoveMouse(980, 500)
+    "toolbar: $name at $x,$y"
+}
 
 $INRANGE = 0x2; $INCONTACT = 0x4; $FIRST = 0x10; $PRIMARY = 0x2000; $DOWN = 0x10000; $UPDATE = 0x20000; $UP = 0x40000
 
@@ -129,8 +139,7 @@ Invoke-Test {
     if ($r.missing -ne 0 -or $r.new -ne 0) { throw 'undoing the move must give back the elements as written before' }
 
     # 4. erase (the eraser tool, exact) across the page: touched strokes are cut, all others stay identical
-    # The InkPages toolbar's buttons have no UI Automation names yet: the eraser by its place (screen pixels at 150 %).
-    [Inj]::ClickPixel(380, 81); Start-Sleep -Milliseconds 500; [Inj]::MoveMouse(980, 500)
+    ToolbarButton 'Radierer'
     Stroke 'erase' 300 120 300 560
     Ctrl 0x53 'S'
     Shot '06-erased-saved'
