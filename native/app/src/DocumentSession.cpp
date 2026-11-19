@@ -28,6 +28,7 @@ namespace xournal::app
     {
         doc = std::move(next);
         recovered = false;
+        pagesChanged = false;
         view.Show(doc);
         if (changed) changed();
     }
@@ -150,6 +151,8 @@ namespace xournal::app
             });
             surface.MarkSaved();
             recovered = false;
+            pagesChanged = false;
+        pagesChanged = false;
             if (message) message(std::format(L"Gespeichert: {}", file.filename().native()), ToastKind::Success);
             if (changed) changed();
             return true;
@@ -178,10 +181,16 @@ namespace xournal::app
         }
     }
 
+    void DocumentSession::NotePagesChanged()
+    {
+        pagesChanged = true;
+        if (changed) changed();
+    }
+
     bool DocumentSession::IsModified() const
     {
         // The ink's history knows whether anything changed since the last save (the model has no other edits yet).
-        return doc && (recovered || !surface.AtSavePoint());
+        return doc && (recovered || pagesChanged || !surface.AtSavePoint());
     }
 
     std::wstring DocumentSession::Title() const

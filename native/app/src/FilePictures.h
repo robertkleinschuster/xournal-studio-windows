@@ -9,6 +9,7 @@
 #include "xournal/model/XoppDocument.h"
 
 #include "inkpages/WritingSurface.h"
+#include "inkpages/model/PageMap.h"
 
 #include <functional>
 #include <map>
@@ -24,6 +25,9 @@ namespace xournal::app
     public:
         FilePictures(std::shared_ptr<XoppDocument> doc, inkpages::WritingSurface& surface, std::mutex& documentLock,
             std::function<void(int page)> invalidate);
+
+        /// Pages were inserted, removed or moved: pictures removed from a page that is gone cannot come back there.
+        void Remap(inkpages::PageMap const& map);
 
         /// The transform a drag shows a picture with (page units of its page), if it is being dragged.
         std::optional<Matrix> PreviewOf(XmlElement const* picture) const;

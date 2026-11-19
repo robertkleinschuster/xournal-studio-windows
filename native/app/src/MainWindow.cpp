@@ -69,23 +69,25 @@ namespace xournal::app
         session->changed = [this]
         {
             UpdateTitle();
+            UpdateCommands();
             if (explorerCommands) explorerCommands->DocumentShown();
             if (projectExplorer) projectExplorer->Refresh(); // a save changes the git colors
         };
         session->message = [this](std::wstring const& text, ToastKind kind) { Message(text, kind); };
         exportCommand = std::make_unique<PdfExportCommand>(window, *view,
             [this](std::wstring const& text, ToastKind kind) { Message(text, kind); });
+        pageCommands = std::make_unique<PageCommands>(window, *surface, *view);
+        view->pagesChanged = [this] { session->NotePagesChanged(); UpdateCommands(); };
         // Set before the toolbar: it chains these handlers.
-        surface->historyChanged = [this] { UpdateTitle(); };
+        surface->historyChanged = [this] { UpdateTitle(); UpdateCommands(); };
         surface->selectionChanged = [] {};
 
         toolbar = CreateAppToolbar(window, *surface, inkpages::ToolChoices::Parse(settings.toolChoices), {
+            [this] { OnCommand(CmdSave); },
+            [this] { OnCommand(CmdExportPdf); },
             [this] { OnCommand(CmdInsertPage); },
             [this] { OnCommand(CmdDeletePage); },
         });
-        // Inserting and deleting pages wait for InkPages to insert pages without clearing the undo history.
-        toolbar->EnableButton(CmdInsertPage, false);
-        toolbar->EnableButton(CmdDeletePage, false);
         toolbar->choicesChanged = [this](inkpages::ToolChoices const& choices)
         {
             settings.toolChoices = choices.Serialize();
@@ -187,6 +189,14 @@ namespace xournal::app
         if (recovery) recovery->Update();
     }
 
+    void MainWindow::UpdateCommands()
+    {
+        if (!toolbar || !view) return;
+        bool deletable = view->PageCount() > 1;
+        toolbar->EnableButton(CmdDeletePage, deletable);
+        menu.Enable(CmdDeletePage, deletable);
+    }
+
     void MainWindow::UpdateMenu()
     {
         bool selection = surface->HasSelection();
@@ -266,6 +276,8 @@ namespace xournal::app
         case CmdSave: session->Save(); break;
         case CmdSaveAs: session->SaveAs(); break;
         case CmdExportPdf: exportCommand->Export(session->Document()); break;
+        case CmdInsertPage: pageCommands->InsertAfterCurrent(); break;
+        case CmdDeletePage: pageCommands->DeleteCurrent(); break;
         case CmdOpenFolder: OpenFolder(); break;
         case CmdSync: sync->Sync(projectExplorer->Folder()); break;
         case CmdExit: PostMessageW(window, WM_CLOSE, 0, 0); break;
@@ -374,6 +386,7 @@ namespace xournal::app
             projectExplorer.reset();
             sync.reset();
             // The feature classes that hold the surface go before it (the view takes its callbacks back).
+            pageCommands.reset();
             exportCommand.reset();
             session.reset();
             view.reset();

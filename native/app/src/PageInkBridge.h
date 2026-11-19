@@ -12,6 +12,7 @@
 #include "xournal/model/XoppDocument.h"
 
 #include "inkpages/WritingSurface.h"
+#include "inkpages/model/PageMap.h"
 
 #include <map>
 #include <memory>
@@ -26,7 +27,7 @@ namespace xournal::app
     {
     public:
         /// Shares the document: a page released after another document is shown still has its strokes written back.
-        explicit PageInkBridge(std::shared_ptr<XoppDocument> doc) : doc(std::move(doc)) {}
+        explicit PageInkBridge(std::shared_ptr<XoppDocument> doc) : doc(std::move(doc)), inkPages(this->doc->Pages()) {}
         PageInkBridge(PageInkBridge const&) = delete;
         PageInkBridge& operator=(PageInkBridge const&) = delete;
 
@@ -42,6 +43,11 @@ namespace xournal::app
 
         /// UI thread, before a snapshot: a live page's current strokes (from StrokesOf). Call with Lock() held.
         void Refresh(int page, std::vector<inkpages::KeyedStroke> const& strokes);
+
+        /// Ink thread (InkPages' pagesRemapped, in order with load/store): pages were inserted, removed or moved. The ink
+        /// side's page list, live pages and keys follow `map`; a new page is taken from the document's list (the window
+        /// changed it before it asked InkPages); a removed page's ink is dropped (InkPages drops it too).
+        void Remapped(inkpages::PageMap const& map);
 
         /// Held while the document's pages are read or written (snapshot, load, store, underlay).
         std::mutex& Lock() const { return mutex; }
@@ -69,6 +75,9 @@ namespace xournal::app
         void Hold(int page, HeldInk& held, std::vector<inkpages::KeyedStroke> const& strokes);
 
         std::shared_ptr<XoppDocument> doc;
+        // The pages by InkPages' index as the ink thread sees them: load/store use it (the window changes the document's
+        // own list at once, InkPages follows on its thread - pagesRemapped brings this list along in order).
+        XoppDocument::PageList inkPages;
         mutable std::mutex mutex;
         std::map<int, std::unique_ptr<HeldInk>> live; // stable addresses: PageInk keeps a pointer to the view
         std::map<StrokeId, Keyed> keyed;              // every key handed out for this document

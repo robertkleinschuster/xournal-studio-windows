@@ -30,6 +30,9 @@ namespace xournal::app
 
         void Draw(int page, XoppPage const& content, ID2D1DeviceContext* dc, inkpages::RectF area, float pixelsPerUnit);
 
+        /// Pages were inserted, removed or moved: the caches follow.
+        void Remap(inkpages::PageMap const& map);
+
         /// The page in view changed: far pages give back their bitmaps, near ones render first.
         void Trim(int focus);
 

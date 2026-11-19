@@ -3,6 +3,7 @@
 #include "PageUnderlay.h"
 #include "xournal/base/Log.h"
 
+#include <algorithm>
 #include <format>
 #include <map>
 
@@ -26,6 +27,7 @@ namespace xournal::app
     {
         surface.load = [bridges = bridges](int page) { return bridges->Load(page); };
         surface.store = [bridges = bridges](int page, std::vector<inkpages::KeyedStroke> strokes) { bridges->Store(page, strokes); };
+        surface.pagesRemapped = [bridges = bridges](inkpages::PageMap const& map) { bridges->Remapped(map); };
         surface.drawUnderlay = [this](int page, ID2D1DeviceContext* dc, inkpages::RectF area) { DrawUnderlay(page, dc, area); };
         surface.viewChanged = [this] { OnViewChanged(); };
     }
@@ -66,6 +68,67 @@ namespace xournal::app
         surface.SetPictureHost(pictures.get());
         surface.SetPages(std::move(specs));
         surface.FitWidth();
+    }
+
+    void DocumentView::Remap(inkpages::PageMap const& map, std::function<void(XoppDocument::PageList&)> const& change)
+    {
+        // The UI side follows here; the ink side (live pages, stroke keys) follows on the ink thread in pagesRemapped.
+        auto bridge = bridges->Current();
+        {
+            std::scoped_lock guard(bridge->Lock());
+            change(bridge->Document().Pages());
+        }
+        pictures->Remap(map);
+        underlay->Remap(map);
+    }
+
+    void DocumentView::InsertPage(int index, std::shared_ptr<XoppPage> page)
+    {
+        auto bridge = bridges->Current();
+        if (!bridge) return;
+        int count = PageCount();
+        index = std::clamp(index, 0, count);
+        inkpages::PageSpec spec = SpecOf(*page);
+        Remap(inkpages::PageMap::Insert(count, index, 1), [&](XoppDocument::PageList& pages)
+        {
+            pages.insert(pages.begin() + index, std::move(page));
+        });
+        surface.InsertPages(index, { spec });
+        surface.ScrollToPage(index);
+        Log(std::format("document view: page inserted at {}", index));
+        if (pagesChanged) pagesChanged();
+    }
+
+    bool DocumentView::RemovePage(int index)
+    {
+        auto bridge = bridges->Current();
+        int count = PageCount();
+        if (!bridge || count <= 1 || index < 0 || index >= count) return false;
+        Remap(inkpages::PageMap::Remove(count, index), [&](XoppDocument::PageList& pages)
+        {
+            pages.erase(pages.begin() + index);
+        });
+        surface.RemovePage(index);
+        Log(std::format("document view: page {} removed", index));
+        if (pagesChanged) pagesChanged();
+        return true;
+    }
+
+    int DocumentView::PageCount() const
+    {
+        auto bridge = bridges->Current();
+        if (!bridge) return 0;
+        std::scoped_lock guard(bridge->Lock());
+        return static_cast<int>(bridge->Document().Pages().size());
+    }
+
+    std::shared_ptr<XoppPage> DocumentView::PageAt(int index) const
+    {
+        auto bridge = bridges->Current();
+        if (!bridge) return nullptr;
+        std::scoped_lock guard(bridge->Lock());
+        auto const& pages = bridge->Document().Pages();
+        return index >= 0 && index < static_cast<int>(pages.size()) ? pages[index] : nullptr;
     }
 
     void DocumentView::DrawUnderlay(int page, ID2D1DeviceContext* dc, inkpages::RectF area)

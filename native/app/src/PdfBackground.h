@@ -8,6 +8,8 @@
 #include "Bitmaps.h"
 #include "RenderQueue.h"
 
+#include "inkpages/model/PageMap.h"
+
 #include <d2d1_1.h>
 
 #include <atomic>
@@ -33,6 +35,9 @@ namespace xournal::app
         /// Draws PDF page `pdfPage` over `size` (page units) for document page `page`; asks for a sharper bitmap when
         /// `pixelsPerUnit` needs one (UI thread).
         void Draw(ID2D1DeviceContext* dc, int page, int pdfPage, D2D1_SIZE_F size, float pixelsPerUnit);
+
+        /// Pages were inserted, removed or moved: the document pages showing each PDF page follow.
+        void Remap(inkpages::PageMap const& map);
 
         /// Lets go of bitmaps of document pages farther than `keep` from `focus` (UI thread).
         void Trim(int focus, int keep);

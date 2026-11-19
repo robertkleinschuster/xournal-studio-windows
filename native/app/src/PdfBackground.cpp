@@ -118,6 +118,14 @@ namespace xournal::app
         });
     }
 
+    void PdfBackground::Remap(inkpages::PageMap const& map)
+    {
+        for (auto& [pdfPage, entry] : rendered)
+        {
+            entry.pages = map.Apply(entry.pages);
+        }
+    }
+
     void PdfBackground::Trim(int focus, int keep)
     {
         queue.SetFocus(focus);

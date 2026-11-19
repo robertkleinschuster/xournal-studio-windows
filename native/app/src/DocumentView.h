@@ -32,6 +32,17 @@ namespace xournal::app
 
         void Show(std::shared_ptr<XoppDocument> doc);
 
+        /// Inserts a page at `index` (InkPages keeps the history; the app's per-page data follows the same PageMap) and
+        /// scrolls to it.
+        void InsertPage(int index, std::shared_ptr<XoppPage> page);
+        /// Removes a page (cannot be undone: the caller asks first; the last page stays). False: nothing removed.
+        bool RemovePage(int index);
+        int PageCount() const;
+        /// The page's size and paper, for a new page like it.
+        std::shared_ptr<XoppPage> PageAt(int index) const;
+        /// The page list changed (a page inserted or removed): the document has changes the ink history does not know.
+        std::function<void()> pagesChanged;
+
         /// The live pages' current strokes go into the document, then `work` runs with the document's lock held (UI
         /// thread; take the snapshot there).
         void CaptureInk(std::function<void()> const& work);
@@ -39,6 +50,8 @@ namespace xournal::app
     private:
         void DrawUnderlay(int page, ID2D1DeviceContext* dc, inkpages::RectF area);
         void OnViewChanged();
+        /// The document's page list and the UI-side data change with `map` (before InkPages is asked to rearrange).
+        void Remap(inkpages::PageMap const& map, std::function<void(XoppDocument::PageList&)> const& change);
 
         inkpages::WritingSurface& surface;
         std::shared_ptr<PageInkBridges> bridges = std::make_shared<PageInkBridges>(); // shared with load/store

@@ -29,6 +29,7 @@ base  <-  model  <-  io  <-  services: pdf, import (later: git, clipboard, recov
 | `services/recovery` | `XournalRecovery` | `Recovery` (copy + info JSON with the writing process' id and start time in `<app folder>\Recovery-native` - apart from the C# app's `Recovery` folder, so neither app sees the other's copies; abandoned = that process is gone; recycle bin under a readable name), `Autosave` (ordered write/delete queue on a worker; the app's UI decides when) | io, project; Windows.Data.Json |
 | `services/settings` | `XournalSettings` | `Settings` (`settings-native.json` with Windows.Data.Json, unknown keys kept; never the C# app's settings.json): window, last file, project folder, pane, done tasks shown, tool choices (InkPages' serialized string), document positions per file | io; Windows.Data.Json |
 | `import` | `XournalImport` | The iPad import (Datei -> PDF mit iPad-Anmerkungen importieren; port of the C# `PdfMarkupImport`, `AppleMarkup`, `PencilKitDrawing`): `Prepare` splits an annotated PDF into the PDF without Apple's markup plus .xopp elements - PencilKit strokes (erased pieces with masks and ranges, transforms, width factors 0.4 pen / 1.2 marker), `/FreeText` as `<text>`, every other shown annotation as a picture; `RenderPictures` renders those with the pdf module's `PdfAreaRenderer` (Windows.Data.Pdf, transparent); `CreateDocument`. Annotations read with qpdf; the NSKeyedArchiver binary plist by `src/BinaryPlist` (no small permissive C++ library: libplist is LGPL, others need Boost). | pdf; protozero 1.8.2 (BSD-2, header-only protobuf decoder), qpdf, crypt32 (base64) |
+| `app` | `XournalStudio` (exe) | The window and its feature classes (see "The app" below): menu, InkPages' writing surface and toolbar, side pane, messages, document session, the ink bridge, the page underlay, PDF export, page commands; the services' panes and controllers | all modules above; InkPages (submodule `external/InkPages`, only its library is built here); comctl32 v6, Direct2D/DirectWrite, Direct3D 11, WIC, Windows.Data.Pdf |
 | `tests` | `XournalTests` | Unit tests of all modules, ported from `XournalStudio.Tests` with the same sample XML, plus a lossless round trip of `examples\*.xopp`; the pdf tests generate their PDFs and inspect the output with qpdf | io, pdf, GoogleTest; `tests/services` (`XournalServicesTests`): the services, in a single-threaded apartment |
 
 ## Rules (from the repository's CLAUDE.md)
@@ -54,3 +55,44 @@ pressure, color, size, highlighter) through `PageInk`:
 4. `Detach()` writes the ink into the page's element; the page holds no ink again.
 
 Xournal's width is the width at full pressure; Windows ink's size the width at half pressure (`InkWidth`, factor 1.75).
+
+## The app
+
+`app/` builds `XournalStudio.exe` (WIN32, static CRT; manifest: comctl32 v6, PerMonitorV2, UTF-8). `MainWindow` only wires
+the window's parts to feature classes:
+
+- `MainMenu` (Datei/Bearbeiten/Seite/Ansicht with the C# app's shortcuts; features of later phases shown disabled),
+  `AppToolbar` (InkPages' toolbar in German with the exe's pen cursors and the app's buttons: Speichern, Als PDF
+  exportieren | Seite einfügen, Seite löschen - the page buttons drawn from path data), `SidePane` (Dateien, Aufgaben,
+  Seiten), `Toast` (a layered popup at the bottom of the surface; Windows 11 InfoBar colors with the system icons;
+  success/info close after 5 s, warnings and errors stay), `Dialogs` (file dialogs, the leave question).
+- `DocumentSession`: new, open (.xopp, .moj, or a PDF as a new document; loaded on the thread pool), save, Save As with
+  attachments, the leave question (Speichern / Nicht speichern / Abbrechen); saving only by choice.
+- `DocumentView`: the shown document on InkPages' `WritingSurface` - page sizes from the model, plain paper in the page's
+  color (the underlay draws the real background), the ink through the bridges, the underlay, the file's pictures.
+  It must go before the surface: its destructor takes its callbacks back; `load`/`store`/`pagesRemapped` hold the
+  shared `PageInkBridges`, never the view.
+- `PageInkBridge` (one per shown document, `PageInkBridges` the set): lazy pages between InkPages and `PageInk`. `load`
+  hands out a page's strokes with keys (`KeyedStroke`); `store` and, before a snapshot, `StrokesOf` bring them back: a
+  keyed stroke is written as its original element (moved or scaled by the key's transform with
+  `Strokes::Transform`, widths unchanged), key 0 is new ink (converted). load/store/pagesRemapped run on InkPages' ink
+  thread, in order; the bridge keeps the ink side's own page list for them.
+- `PageUnderlay` (Direct2D into InkPages' page underlay, upstream's order: background - paper color and
+  `BackgroundRuling`, the PDF page, a picture - then each layer's drawn strokes, pictures and texts) with
+  `PdfBackground` (the background PDF loaded from memory, pages rendered on `RenderQueue`'s thread by
+  `PdfPageRenderer` - `IPdfRendererNative` on the app's own D3D11 device, released while the app runs - at the settled
+  zoom, nearest page first, cancellable), `PictureBitmaps` (WIC; `<teximage>` PDFs rendered), `TextDrawing`
+  (DirectWrite).
+- `FilePictures`: InkPages' `PictureHost` for the file's pictures; moves write the picture's attributes in place, a
+  picture moved onto another page goes to its top layer.
+- `PdfExportCommand` (Datei -> Als PDF exportieren with the pdf module), `PageCommands` (Seite einfügen: a graph page of
+  the size of the page in view after it; Seite löschen: asked, cannot be undone, the last page stays). Page operations
+  keep the ink's undo history (InkPages' `InsertPages`/`RemovePage`); the app's per-page data follows the same `PageMap`.
+- Logs: `XOURNAL_STUDIO_LOG` (InkPages' lines in `<log>.inkpages.log` beside it), errors always in
+  `%LOCALAPPDATA%\XournalStudioForWindows\errors.log`; `XOURNAL_STUDIO_CONFIG_DIR` for tests.
+
+Sandbox tests (`UiTests/`, InkPages' runner and TestKit; `Run-AppTest.ps1` waits for a free sandbox and holds
+`.local-build\sandbox.lock`): `InkRoundTripTest` (write, move, undo, erase, save, reload: untouched strokes byte-identical,
+moved ones shifted exactly), `DocumentFlowsTest` (PDF as a new document, the leave question, Save As with an attachment,
+export), `PagesFlowTest` (a text, the pictures, insert and delete a page with undo on another page, the toolbar's
+buttons by `uiaprobe`).

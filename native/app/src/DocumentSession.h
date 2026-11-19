@@ -51,6 +51,9 @@ namespace xournal::app
         /// Asks about unsaved changes; true when the document may be left (saved, discarded or unchanged).
         bool ConfirmLeave();
 
+        /// The document changed outside the ink's history (a page inserted or removed): unsaved until saved.
+        void NotePagesChanged();
+
         bool IsModified() const;
         std::wstring Title() const;                  // "Name – Xournal Studio" with a • when modified
         std::optional<std::filesystem::path> FilePath() const;
@@ -67,5 +70,6 @@ namespace xournal::app
         std::shared_ptr<XoppDocument> doc;
         bool loading = false;
         bool recovered = false; // a restored recovery copy, not saved yet
+        bool pagesChanged = false; // pages inserted or removed since the last save
     };
 }

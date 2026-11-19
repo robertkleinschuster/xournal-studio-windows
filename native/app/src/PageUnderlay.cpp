@@ -112,6 +112,11 @@ namespace xournal::app
         }
     }
 
+    void PageUnderlay::Remap(inkpages::PageMap const& map)
+    {
+        pdf->Remap(map);
+    }
+
     void PageUnderlay::Trim(int focus)
     {
         pdf->Trim(focus, KeepPages);

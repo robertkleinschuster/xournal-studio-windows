@@ -23,6 +23,7 @@ add_executable(XournalStudio WIN32
     src/Dialogs.cpp
     src/ErrorText.cpp
     src/PdfExportCommand.cpp
+    src/PageCommands.cpp
     src/PdfPages.cpp
     src/DocumentSession.cpp
     src/DocumentView.cpp

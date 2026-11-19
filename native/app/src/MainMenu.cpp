@@ -100,10 +100,10 @@ namespace xournal::app
             { CmdSelectAll, L"Alles a&uswählen", L"Strg+A", Ctrl, 'A' },
         }, keys), L"&Bearbeiten");
         AddPopup(bar, Popup({
-            { CmdInsertPage, L"Seite &einfügen", L"", 0, 0, false },
+            { CmdInsertPage, L"Seite &einfügen" },
             { CmdInsertFromFile, L"Seiten aus &PDF oder Dokument einfügen…", L"", 0, 0, false },
             {},
-            { CmdDeletePage, L"Seite &löschen", L"", 0, 0, false },
+            { CmdDeletePage, L"Seite &löschen" },
         }, keys), L"&Seite");
         AddPopup(bar, Popup({
             { CmdTogglePane, L"&Dateien und Aufgaben", L"Strg+B", Ctrl, 'B' },

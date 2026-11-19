@@ -16,8 +16,8 @@ namespace xournal::app
     std::vector<inkpages::KeyedStroke> PageInkBridge::Load(int page)
     {
         std::scoped_lock guard(mutex);
-        auto const& pages = doc->Pages();
-        if (page < 0 || page >= static_cast<int>(pages.size()) || live.contains(page))
+        auto const& pages = inkPages;
+        if (page < 0 || page >= static_cast<int>(pages.size()) || !pages[page] || live.contains(page))
         {
             LogError(std::format("ink bridge: load of page {} ignored (unknown or already live)", page));
             return {};
@@ -40,7 +40,7 @@ namespace xournal::app
 
     void PageInkBridge::Hold(int page, HeldInk& held, std::vector<inkpages::KeyedStroke> const& strokes)
     {
-        PageInk& pageInk = doc->Pages()[page]->Ink();
+        PageInk& pageInk = inkPages[page]->Ink();
         held.ids.clear();
         held.inks.clear();
         for (auto const& s : strokes)
@@ -94,7 +94,7 @@ namespace xournal::app
             return;
         }
         Hold(page, *it->second, strokes);
-        doc->Pages()[page]->Ink().Detach();
+        inkPages[page]->Ink().Detach();
         live.erase(it);
         // The page's elements are written as they are now: their keys start over at the next load. (A key whose element
         // left the page stays known: another live page holds that stroke and writes its moved copy from it.)
@@ -110,6 +110,42 @@ namespace xournal::app
             pages.insert(page);
         }
         return pages;
+    }
+
+    void PageInkBridge::Remapped(inkpages::PageMap const& map)
+    {
+        std::scoped_lock guard(mutex);
+        auto oldIndex = map.OldIndex();
+        XoppDocument::PageList pages;
+        for (int to = 0; to < static_cast<int>(oldIndex.size()); ++to)
+        {
+            int from = oldIndex[to];
+            if (from >= 0 && from < static_cast<int>(inkPages.size())) pages.push_back(inkPages[from]);
+            else if (to < static_cast<int>(doc->Pages().size())) pages.push_back(doc->Pages()[to]); // the inserted page
+            else
+            {
+                LogError(std::format("ink bridge: page {} of a rearrangement is not in the document", to));
+                pages.push_back(nullptr);
+            }
+        }
+        inkPages = std::move(pages);
+        std::map<int, std::unique_ptr<HeldInk>> moved;
+        for (auto& [page, held] : live)
+        {
+            if (int to = map(page); to >= 0) moved[to] = std::move(held);
+        }
+        live = std::move(moved);
+        for (auto it = keyed.begin(); it != keyed.end();)
+        {
+            int to = map(it->second.page);
+            if (to < 0)
+            {
+                it = keyed.erase(it); // the page and its strokes are gone
+                continue;
+            }
+            it->second.page = to;
+            ++it;
+        }
     }
 
     bool PageInkBridge::IsLive(int page) const

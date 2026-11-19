@@ -26,6 +26,8 @@ namespace xournal::app
         std::vector<inkpages::KeyedStroke> Load(int page);
         /// Ink thread.
         void Store(int page, std::vector<inkpages::KeyedStroke> const& strokes);
+        /// Ink thread (InkPages' pagesRemapped): the shown document's pages were rearranged.
+        void Remapped(inkpages::PageMap const& map);
 
     private:
         mutable std::mutex lock;

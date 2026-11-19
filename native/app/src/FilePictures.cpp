@@ -76,6 +76,15 @@ namespace xournal::app
         return page ? *page : -1;
     }
 
+    void FilePictures::Remap(inkpages::PageMap const& map)
+    {
+        for (auto& [token, places] : removed)
+        {
+            std::erase_if(places, [&](auto const& place) { return map.Removes(place.first); });
+            for (auto& place : places) place.first = map(place.first);
+        }
+    }
+
     std::optional<Matrix> FilePictures::PreviewOf(XmlElement const* picture) const
     {
         auto it = previews.find(picture);

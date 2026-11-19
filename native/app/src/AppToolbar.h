@@ -1,7 +1,8 @@
 #pragma once
 
 // The InkPages toolbar as this app shows it: German texts, the pen cursors of the exe's resources, and the app's own
-// buttons at the end (Seite einfügen, Seite löschen; Einfügen is the library's own selection command).
+// buttons at the end: Speichern, Als PDF exportieren | Seite einfügen, Seite löschen (Einfügen is the library's own
+// selection command).
 
 #include "inkpages/Toolbar.h"
 
@@ -12,6 +13,8 @@ namespace xournal::app
 {
     struct AppToolbarActions
     {
+        std::function<void()> save;
+        std::function<void()> exportPdf;
         std::function<void()> insertPage;
         std::function<void()> deletePage;
     };

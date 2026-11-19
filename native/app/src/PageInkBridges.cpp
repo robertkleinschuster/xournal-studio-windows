@@ -24,6 +24,14 @@ namespace xournal::app
         return bridge ? bridge->Load(page) : std::vector<inkpages::KeyedStroke>{};
     }
 
+    void PageInkBridges::Remapped(inkpages::PageMap const& map)
+    {
+        if (auto bridge = Current())
+        {
+            bridge->Remapped(map);
+        }
+    }
+
     void PageInkBridges::Store(int page, std::vector<inkpages::KeyedStroke> const& strokes)
     {
         std::shared_ptr<PageInkBridge> target;
