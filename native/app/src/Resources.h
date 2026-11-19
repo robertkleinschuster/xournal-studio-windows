@@ -1,6 +1,8 @@
 #pragma once
 
-// Resource ids of app.rc (dialogs; the pen cursors use 1000+ and 2000+).
+// Resource ids of app.rc (the app icon, dialogs; the pen cursors use 1000+ and 2000+).
+
+#define IDI_APP 1 // the first icon: Explorer, Start menu shortcut and taskbar show it
 
 #define IDD_INSERT_PAGES 100
 #define IDC_INSERT_COUNT 101

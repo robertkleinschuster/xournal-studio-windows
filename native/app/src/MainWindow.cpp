@@ -4,11 +4,14 @@
 #include "AppToolbar.h"
 #include "Commands.h"
 #include "Dialogs.h"
+#include "Resources.h"
 #include "UiQueue.h"
 
 #include "xournal/base/Error.h"
 #include "xournal/base/Log.h"
 #include "xournal/base/Text.h"
+
+#include <commctrl.h>
 
 #include <format>
 
@@ -22,6 +25,19 @@ namespace xournal::app
 
         // Keys typed into an edit box (the explorer's rename, a new task) are the box's, not the menu's shortcuts
         // (Entf, Strg+C/V/X/A would otherwise act on the document).
+        // The app's icon at a size the system asks for (LoadIconMetric scales the best image of app.ico for the DPI).
+        HICON AppIcon(HINSTANCE instance, _LI_METRIC size)
+        {
+            HICON icon = nullptr;
+            HRESULT hr = LoadIconMetric(instance, MAKEINTRESOURCEW(IDI_APP), size, &icon);
+            if (FAILED(hr))
+            {
+                LogError(std::format("LoadIconMetric (app icon): {}", DescribeHr(hr))); // the window shows the default icon
+                return nullptr;
+            }
+            return icon;
+        }
+
         bool TypingInEdit()
         {
             wchar_t name[16]{};
@@ -37,6 +53,8 @@ namespace xournal::app
         wc.lpfnWndProc = Proc;
         wc.hInstance = instance;
         wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+        wc.hIcon = AppIcon(instance, LIM_LARGE);
+        wc.hIconSm = AppIcon(instance, LIM_SMALL);
         wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
         wc.lpszClassName = ClassName;
         if (!RegisterClassExW(&wc))

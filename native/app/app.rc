@@ -3,6 +3,10 @@
 #include <commctrl.h>
 #include "Resources.h"
 
+// The app's icon (the C# app's: 16/32/48/256 px, 32 bpp) - the first icon resource, so Explorer, the Start menu
+// shortcut and the taskbar use it.
+IDI_APP ICON "app.ico"
+
 // The app manifest as a resource: comctl32 v6 (visual styles), PerMonitorV2 DPI awareness, UTF-8 code page.
 CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "app.manifest"
 
