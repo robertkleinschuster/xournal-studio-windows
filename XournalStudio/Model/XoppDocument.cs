@@ -74,6 +74,38 @@ public sealed class XoppDocument
     }
 
     /// <summary>
+    /// Copies of pages of <paramref name="source"/> (indices in its order) to insert into a document – each page's element
+    /// with everything on it, also what this app does not understand. A PDF background refers to page
+    /// <paramref name="pdfPageOf"/>(its page in the source's PDF) of the target's PDF (the caller appended those pages or the
+    /// PDF is the same; only the target's first PDF page names the file, as upstream writes it); a picture background names
+    /// the source's picture file (written as its path on save; a clone names the picture itself).
+    /// </summary>
+    public static List<XoppPage> CopyPages(XoppDocument source, IReadOnlyList<int> indices, Func<int, int> pdfPageOf)
+    {
+        var copies = new List<XoppPage>();
+        foreach (int index in indices)
+        {
+            var from = source.Pages[index];
+            var element = from.Snapshot();
+            if (from.IsPdf && element.Element("background") is { } background)
+            {
+                background.SetAttributeValue("domain", null);
+                background.SetAttributeValue("filename", null);
+                background.SetAttributeValue("pageno",
+                    (pdfPageOf(from.PdfPageIndex) + 1).ToString(System.Globalization.CultureInfo.InvariantCulture));
+            }
+            var page = XoppPage.FromXml(element);
+            page.BackgroundImagePath = from.IsImageBackground ? from.BackgroundImagePath : null;
+            copies.Add(page);
+        }
+        return copies;
+    }
+
+    /// <summary>The pages of the background PDF that these pages show (0-based, ascending, each once).</summary>
+    public List<int> PdfPagesOf(IEnumerable<int> indices) =>
+        indices.Select(i => Pages[i]).Where(p => p.IsPdf).Select(p => p.PdfPageIndex).Distinct().Order().ToList();
+
+    /// <summary>
     /// The background PDF was renamed or moved: the document refers to it at <paramref name="newPath"/> from now on
     /// (written on the next save, as the old reference no longer names it).
     /// </summary>

@@ -40,7 +40,7 @@ public sealed partial class MainWindow : Window
         }
         AppWindow.TitleBar.PreferredTheme = TitleBarTheme.UseDefaultAppMode; // a dark title bar in dark mode (default: Legacy = light)
 
-        messages = new Messages(Info);
+        messages = new Messages(Info, Menu);
         InkLog.Writer = DebugLog.Write;
         InkLog.ErrorWriter = message => DebugLog.Error($"ink error: {message}");
         bar = AppToolbar.Create(settings);
@@ -68,7 +68,7 @@ public sealed partial class MainWindow : Window
         import = new PdfImportCommand(AppWindow.Id, session, dialogs, messages);
         thumbnails = new PageThumbnails(session, PagesList, pages);
         pageCommands = new PageCommands(pages, session, ink, PagesList, thumbnails,
-            new InsertPdfPagesCommand(AppWindow.Id, session, pages, dialogs, messages), dialogs, messages);
+            new InsertPagesCommand(AppWindow.Id, session, pages, dialogs, messages), dialogs, messages);
         ink.Undo.Changed += (_, _) =>
         {
             UndoMenuItem.IsEnabled = ink.Undo.CanUndo;

@@ -84,4 +84,25 @@ public sealed class InsertPdfPagesTests : IDisposable
             .Where(d => d.Stream != null).Select(d => System.Text.Encoding.ASCII.GetString(d.Stream.UnfilteredValue)));
         Assert.Contains("7.89 6.54 l S", streams); // the signature's appearance is in the PDF
     }
+
+    [Fact]
+    public async Task PagesOfAnotherDocumentAreCopiedWithEverythingAndReferToTheTargetsPdfPages()
+    {
+        string pdf = Pdf("skript.pdf", [500, 510, 520]);
+        var source = XoppDocument.FromPdf(pdf, [(500, 842), (510, 842), (520, 842)]);
+        source.Pages[2].AddToTopLayer([new System.Xml.Linq.XElement("text", new System.Xml.Linq.XAttribute("unknown", "kept"), "Hallo")]);
+        string sourcePath = Path.Combine(temp, "quelle.xopp");
+        await source.SaveAsync(sourcePath);
+        var loaded = XoppDocument.Load(sourcePath);
+
+        Assert.Equal([0, 2], loaded.PdfPagesOf([2, 0]));
+        var copies = XoppDocument.CopyPages(loaded, [2, 0], p => p + 10); // appended at page 11 of the target's PDF
+
+        Assert.Equal([12, 10], copies.Select(c => c.PdfPageIndex));
+        Assert.All(copies, c => Assert.Null(c.Background.Attribute("filename"))); // only the target's first PDF page names it
+        Assert.Equal("Hallo", copies[0].Texts.Single().Value);
+        Assert.Equal("kept", (string?)copies[0].Texts.Single().Attribute("unknown")); // nothing is lost on the way
+        Assert.Equal(2, loaded.Pages[2].PdfPageIndex); // the source is untouched
+        Assert.NotNull(loaded.Pages[0].Background.Attribute("filename"));
+    }
 }

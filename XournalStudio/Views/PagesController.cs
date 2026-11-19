@@ -180,6 +180,19 @@ public sealed class PagesController
         InsertPages(index, pdfPages.Select(p => XoppPage.CreatePdf(sizes[p].Width, sizes[p].Height, p)).ToList());
     }
 
+    /// <summary>
+    /// Pages copied from another document at <paramref name="index"/>, the first scrolled into view;
+    /// <paramref name="background"/>: the document's PDF when it changed for them (loaded again after pages were appended).
+    /// </summary>
+    public void InsertCopiedPagesAt(int index, IReadOnlyList<XoppPage> copies, PdfBackground? background)
+    {
+        if (background != null)
+        {
+            slots.UseBackground(background);
+        }
+        InsertPages(index, copies);
+    }
+
     private void InsertPages(int index, IReadOnlyList<XoppPage> added)
     {
         var doc = document!;

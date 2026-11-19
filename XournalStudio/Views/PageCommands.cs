@@ -13,18 +13,18 @@ public sealed class PageCommands
     private readonly DocumentSession session;
     private readonly InkWorkspace ink;
     private readonly PagesPane pane;
-    private readonly InsertPdfPagesCommand insertPdf;
+    private readonly InsertPagesCommand insert;
     private readonly Dialogs dialogs;
     private readonly Messages messages;
 
     public PageCommands(PagesController pages, DocumentSession session, InkWorkspace ink, PagesPane pane,
-        PageThumbnails thumbnails, InsertPdfPagesCommand insertPdf, Dialogs dialogs, Messages messages)
+        PageThumbnails thumbnails, InsertPagesCommand insert, Dialogs dialogs, Messages messages)
     {
         this.pages = pages;
         this.session = session;
         this.ink = ink;
         this.pane = pane;
-        this.insertPdf = insertPdf;
+        this.insert = insert;
         this.dialogs = dialogs;
         this.messages = messages;
 
@@ -34,7 +34,7 @@ public sealed class PageCommands
         ink.Undo.ContentEdited += (_, edited) => thumbnails.Edited(edited); // the pages an edit touched are drawn again
         pane.GoToRequested += (_, index) => pages.ScrollToPage(index);
         pane.InsertBlankRequested += (_, index) => pages.InsertBlankAt(index);
-        pane.InsertPdfRequested += async (_, index) => await insertPdf.InsertAsync(index);
+        pane.InsertPdfRequested += async (_, index) => await insert.InsertAsync(index);
         pane.MoveRequested += (_, move) => Move(move.From, move.To);
         pane.DeleteRequested += async (_, index) => await DeleteAsync(index);
     }
@@ -42,8 +42,8 @@ public sealed class PageCommands
     /// <summary>A blank page after the page in view.</summary>
     public void InsertAfterCurrent() => pages.InsertAfterCurrent();
 
-    /// <summary>Pages of a PDF around the page in view (the dialog asks before or after).</summary>
-    public Task InsertPdfPagesAsync() => insertPdf.InsertAsync(pages.CurrentIndex);
+    /// <summary>Pages of a PDF or document around the page in view (the dialog asks before or after).</summary>
+    public Task InsertPdfPagesAsync() => insert.InsertAsync(pages.CurrentIndex);
 
     /// <summary>Deletes the page in view after asking.</summary>
     public Task DeleteCurrentAsync() => DeleteAsync(pages.CurrentIndex);

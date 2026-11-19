@@ -266,7 +266,7 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
 ## Facts learned (keep)
 
 - **The tools' facts are in InkPages (moved 2026-11-18):** everything learned about the writing area – presenter input
-  and hover takeovers, the selection drag on XAML input, ink above XAML and dialogs (the app: InfoBar in its own row,
+  and hover takeovers, the selection drag on XAML input, ink above XAML and dialogs (the app: messages over the top bar, not over the pages,
   `Dialogs` sets `InkHidden`), cross-page drags, lazy views' memory, pressure/width, the fork's fixes (highlighter,
   capture, custom tool states), the toolbar and ruler – is in `external/InkPages/CLAUDE.md` ("Facts learned"); platform
   facts in the user's global CLAUDE.md. Below only what is this app's own.
@@ -363,7 +363,7 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   undo), shapes, rectangle on the PDF page → copy → new page → paste (selected) → scale → duplicate → tap-select →
   delete → undo, bitmap paste, tasks (add, keys in the text box, check), the save question on close, crash →
   recovery offered → restored → "Nicht speichern" removes the copy (the tools themselves: the demo's tests above). Coordinates are client DIPs: pixel = 34 + 1.5 *
-  DIP (y), 1.5 * DIP (x); an InfoBar above the pages shifts them. Clicking the already active pen button opens its
+  DIP (y), 1.5 * DIP (x) (messages float over the top bar: they no longer shift the pages). Clicking the already active pen button opens its
   flyout (the next stroke only closes it). In a test script never name a function `Erase` (PowerShell alias of
   Remove-Item); write scripts with the Write tool (shell heredocs turned `\t` in paths into tabs).
 - Test hooks: `XOURNAL_STUDIO_CONFIG_DIR`, `XOURNAL_STUDIO_LOG`, `XOURNAL_STUDIO_TEST_PAGE`.
@@ -521,14 +521,26 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   files on install did not help (still 11 s), nor did framework-dependent .NET (85 instead of 272 DLLs: cold 9–10 s,
   warm a little slower) – both reverted. Likely the large unsigned native DLLs (the fork's WinUI) cost the scan; not
   measured further. Decided with the user: left as it is (the first start does not matter much); no Defender exclusion.
-- **Pages of another PDF (user, 2026-11-18; Seite → Seiten aus PDF einfügen, `InsertPdfPagesCommand`):** upstream
+- **Pages of another PDF or document (user, 2026-11-18/19; Seite → Seiten aus PDF oder Dokument einfügen,
+  `InsertPagesCommand`):** upstream
   Xournal++ has one background PDF per document (`LoadHandler::loadBgPdf`, only the first PDF background names the
   file; its own "insert PDF page" features – "With PDF background", "Append New PDF Pages" – use that PDF only). So
   the chosen pages are appended to the **end** of the document's PDF (`PdfPageAppender`; the user agreed the original
   PDF may change; appending keeps the numbers of its pages, another .xopp using the same PDF stays right) and the new
   pages refer to them; annotations of the inserted pages are drawn into them first. A document without PDF takes the
   chosen PDF as its PDF. PDF has no hidden pages: the appended pages show in other viewers (the alternative – an
-  attached copy `<name>.xopp.bg.pdf` – was offered to the user, not chosen yet).
+  attached copy `<name>.xopp.bg.pdf` – was offered to the user, not chosen yet). Pages of another .xopp (2026-11-19):
+  thumbnails = the source drawn by `PdfExport` into memory; the chosen pages are copied with everything on them
+  (`XoppDocument.CopyPages`, unknown elements too); the PDF pages they show are appended as above (or the source's PDF
+  becomes the document's, or the same PDF is just referred to) and the copies' `pageno` point to them, without
+  `domain`/`filename` (only the first PDF background names the file); a picture background names the source's picture
+  file (written as its path). Page inserts are not undoable (as PDF pages). Sandbox: `UiTests/InsertDocumentPagesTest.ps1`
+  (the real file picker, a typed path).
+- **Messages (user, 2026-11-19: the InfoBar pushed the pages down, not aligned):** the InfoBar floats over the window's
+  top bar right of the menus (`Messages` places it by the MenuBar's width; `Grid.RowSpan` over menu and toolbar rows,
+  max 96 high) – never over the pages (ink is composed above XAML laid on the InkCanvas) and the pages never move.
+  Success/information close after 5 s, warnings after 12 s, errors stay. While shown it covers the toolbar's right part
+  (the user asked for toast-like messages; a windowed popup over the page was not used: it can swallow a barrel release).
 - **Pages pane (user, 2026-11-18; side pane tab "Seiten", `Views/PagesPane` + `PageThumbnails`):** thumbnails of all
   pages (tap = go to the page; the page in view is selected), insert a blank page before/after, insert pages of a PDF
   (dialog with the PDF's pages as thumbnails to tap and "vor/nach Seite N" – `InsertPdfPagesCommand`), move up/down

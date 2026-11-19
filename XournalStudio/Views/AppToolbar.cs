@@ -18,10 +18,12 @@ public static class AppToolbar
 
     public static PenToolbar Create(AppSettings settings) => new(Texts, settings.ToolChoices());
 
-    // A page with a plus and a page with a minus (user, 2026-11-17: both in the row; deleting always asks first).
-    public const string InsertPageIcon = "F0 M1,1 H11 V19 H1 Z M2.5,2.5 V17.5 H9.5 V2.5 Z " +
+    // A sheet (folded top corner, so it reads as paper – user, 2026-11-19) with a plus and with a minus (user, 2026-11-17:
+    // both in the row; deleting always asks first). Even-odd: the sheet is an outline, its fold filled.
+    private const string Sheet = "F0 M1,1 H7.5 L11,4.5 V19 H1 Z M2.5,2.5 V17.5 H9.5 V5 H7 V2.5 Z ";
+    public const string InsertPageIcon = Sheet +
         "M15.25,9.5 H16.75 V13.25 H19.5 V14.75 H16.75 V18.5 H15.25 V14.75 H12.5 V13.25 H15.25 Z";
-    public const string DeletePageIcon = "F0 M1,1 H11 V19 H1 Z M2.5,2.5 V17.5 H9.5 V2.5 Z M12.5,13.25 H19.5 V14.75 H12.5 Z";
+    public const string DeletePageIcon = Sheet + "M12.5,13.25 H19.5 V14.75 H12.5 Z";
 
     /// <summary>The app's page buttons at the end of the row (insert page, delete page); the window wires their clicks.</summary>
     public static (Microsoft.UI.Xaml.Controls.AppBarButton InsertPage, Microsoft.UI.Xaml.Controls.AppBarButton DeletePage)
