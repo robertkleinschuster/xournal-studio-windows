@@ -35,6 +35,7 @@ target_compile_definitions(zlib PRIVATE _CRT_SECURE_NO_DEPRECATE _CRT_NONSTDC_NO
 add_subdirectory(base)
 add_subdirectory(model)
 add_subdirectory(io)
+add_subdirectory(pdf)
 
 # InkPages: only its library is built for the app (its demo, test tool and tests are built in its own repository).
 set(INKPAGES_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external/InkPages)
