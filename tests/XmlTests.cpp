@@ -24,6 +24,24 @@ namespace xournal::tests
         EXPECT_NE(std::string::npos, written.find("<b />")) << written; // empty elements stay empty
     }
 
+    TEST(Xml, TextLineEndsAreWrittenAsLineFeeds)
+    {
+        // Upstream writes a <text>'s lines with LF; XmlLite must not turn them into CR LF or &#xD;.
+        auto root = Xml("<text>x</text>");
+        root->SetValue(L"a\nb");
+        auto text = io::SerializeXml(*root);
+        std::string written(text.begin(), text.end());
+        EXPECT_NE(std::string::npos, written.find("<text>a\nb</text>")) << written;
+        EXPECT_EQ(L"a\nb", io::ParseXml(text)->Value());
+        EXPECT_EQ(std::string::npos, written.find('\r')) << written;
+
+        auto layered = Xml("<page>\n  <layer>x &amp; y\nz</layer>\n</page>");
+        auto bytes = io::SerializeXml(*layered);
+        std::string again(bytes.begin(), bytes.end());
+        EXPECT_NE(std::string::npos, again.find("<page>\n  <layer>x &amp; y\nz</layer>\n</page>")) << again;
+        EXPECT_TRUE(layered->DeepEquals(*io::ParseXml(bytes)));
+    }
+
     TEST(Xml, DocumentTypesAreRefused)
     {
         EXPECT_ANY_THROW(Xml(R"(<!DOCTYPE a [<!ENTITY e "x">]><a>&e;</a>)"));

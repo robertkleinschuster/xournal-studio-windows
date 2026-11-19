@@ -85,6 +85,27 @@ namespace xournal::io
 
         wchar_t const* OrNull(std::wstring const& s) { return s.empty() ? nullptr : s.c_str(); }
 
+        // XmlLite's WriteString and WriteWhitespace write a line feed as CR LF (measured); upstream's files, and the tree
+        // (the parser turns CR LF into LF), have LF. The pieces between line feeds go through the writer's own call
+        // (escaped), each line feed as raw "\n".
+        void WriteLines(IXmlWriter& writer, std::wstring const& text, bool whitespace)
+        {
+            size_t start = 0;
+            while (true)
+            {
+                size_t end = text.find(L'\n', start);
+                std::wstring piece = text.substr(start, end == std::wstring::npos ? std::wstring::npos : end - start);
+                if (!piece.empty())
+                {
+                    if (whitespace) Check("IXmlWriter::WriteWhitespace", writer.WriteWhitespace(piece.c_str()));
+                    else Check("IXmlWriter::WriteString", writer.WriteString(piece.c_str()));
+                }
+                if (end == std::wstring::npos) break;
+                Check("IXmlWriter::WriteRaw", writer.WriteRaw(L"\n"));
+                start = end + 1;
+            }
+        }
+
         void WriteElement(IXmlWriter& writer, XmlElement const& element)
         {
             auto [prefix, local] = SplitName(element.Name());
@@ -103,8 +124,8 @@ namespace xournal::io
                 switch (node.kind)
                 {
                 case XmlNodeKind::Element: WriteElement(writer, *node.element); break;
-                case XmlNodeKind::Text: Check("IXmlWriter::WriteString", writer.WriteString(node.text.c_str())); break;
-                case XmlNodeKind::Whitespace: Check("IXmlWriter::WriteWhitespace", writer.WriteWhitespace(node.text.c_str())); break;
+                case XmlNodeKind::Text: WriteLines(writer, node.text, false); break;
+                case XmlNodeKind::Whitespace: WriteLines(writer, node.text, true); break;
                 case XmlNodeKind::CData: Check("IXmlWriter::WriteCData", writer.WriteCData(node.text.c_str())); break;
                 case XmlNodeKind::Comment: Check("IXmlWriter::WriteComment", writer.WriteComment(node.text.c_str())); break;
                 case XmlNodeKind::ProcessingInstruction:
