@@ -131,5 +131,24 @@ Invoke-Test {
     "clipboard: $clip"
     if ($clip -ne '"C:\work\todo.txt"') { throw "the clipboard holds $clip" }
 
+    # 7. New document and folder inside a subfolder: from the folder's menu (right-clicked beside its name - the whole
+    # row is the folder) the document goes into the folder; from a file's menu the folder goes into the file's folder.
+    $at = At 'XournalStudioWindow' 'UE'
+    [Inj]::RightClickPixel($at[0] + 150, $at[1]); Start-Sleep -Milliseconds 700
+    ClickAt '#32768' 'Neues Dokument' | Out-Null
+    Start-Sleep 1
+    [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')   # keep the suggested name
+    WaitFor 'new document in UE' { @(Get-ChildItem "$work\UE" -Filter *.xopp).Count -eq 1 }
+    if (@(Get-ChildItem $work -Filter '*-Notiz-*.xopp').Count -ne 0) { throw 'the new document landed in the project folder' }
+    "after new document in UE: $((Get-ChildItem "$work\UE" | ForEach-Object Name) -join ', ')"
+    Shot '11-document-in-subfolder'
+    MenuOnRow 'blatt.txt' 'Neuer Ordner'
+    [System.Windows.Forms.SendKeys]::SendWait('Teil 2'); Start-Sleep -Milliseconds 300
+    [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+    WaitFor 'new folder in UE' { Test-Path "$work\UE\Teil 2" }
+    if (Test-Path "$work\Teil 2") { throw 'the new folder landed in the project folder' }
+    "after new folder in UE: $((Get-ChildItem "$work\UE" | ForEach-Object Name) -join ', ')"
+    Shot '12-folder-in-subfolder'
+
     Get-Content "$out\config\errors.log" -ErrorAction SilentlyContinue | ForEach-Object { "errors.log: $_" }
 }

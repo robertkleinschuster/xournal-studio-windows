@@ -60,13 +60,15 @@ namespace xournal::app
 
     ExplorerTree::ExplorerTree(HWND parent, int id)
     {
-        tree = CreateWindowExW(0, WC_TREEVIEWW, L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | TVS_HASBUTTONS | TVS_SHOWSELALWAYS |
+        tree = CreateWindowExW(0, WC_TREEVIEWW, L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | TVS_HASBUTTONS | TVS_LINESATROOT | TVS_SHOWSELALWAYS |
             TVS_FULLROWSELECT | TVS_TRACKSELECT | TVS_EDITLABELS, 0, 0, 0, 0, parent,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), GetModuleHandleW(nullptr), nullptr);
         if (!tree)
         {
             ThrowLastError("CreateWindowEx(TreeView)");
         }
+        // TVS_LINESATROOT: without it the top-level items get no expand button (documented for TVS_HASBUTTONS); with
+        // the Explorer theme the buttons are File Explorer's chevrons and no lines are drawn (no TVS_HASLINES).
         // File Explorer's look for the tree (hover, expand arrows).
         HRESULT hr = SetWindowTheme(tree, L"Explorer", nullptr);
         if (FAILED(hr))
@@ -348,8 +350,10 @@ namespace xournal::app
             TVHITTESTINFO hit{};
             hit.pt = screen;
             ScreenToClient(tree, &hit.pt);
+            // The whole row is the item (full-row selection): right of the label or on its indent counts as well, not
+            // only the label and icon (TVHT_ONITEM) - otherwise a click there meant the project folder.
             item = TreeView_HitTest(tree, &hit);
-            if (item && (hit.flags & TVHT_ONITEM))
+            if (item && (hit.flags & (TVHT_ONITEM | TVHT_ONITEMRIGHT | TVHT_ONITEMINDENT | TVHT_ONITEMBUTTON)))
             {
                 TreeView_SelectItem(tree, item);
             }

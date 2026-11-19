@@ -11,6 +11,8 @@ if (Test-Path $base) { Remove-Item -Recurse -Force $base }
 New-Item -ItemType Directory -Force $work | Out-Null
 Copy-Item (Join-Path $repo 'examples\Schaltungen.xopp') (Join-Path $work 'test.xopp')
 Copy-Item (Join-Path $repo 'examples\Schaltungen.pdf') $work
+New-Item -ItemType Directory -Force (Join-Path $work 'UE') | Out-Null
+Set-Content (Join-Path $work 'UE\blatt.txt') 'Aufgabenblatt' -Encoding ascii
 Set-Content (Join-Path $work 'todo.txt') "2026-11-15 Erste Aufgabe due:2026-11-20`n2026-11-15 Zweite Aufgabe" -NoNewline -Encoding ascii
 # (Not named "Git": PowerShell would call the function itself for "git".)
 function Invoke-Git { & git.exe -C $work @args; if ($LASTEXITCODE) { throw "git $args failed ($LASTEXITCODE)" } }
