@@ -2,6 +2,11 @@
 
 // Xournal's <stroke> elements: reading their points and look, turning them into ink and ink back into elements, moving
 // them. Page coordinates are Xournal points, used 1:1 as the ink's units.
+//
+// Per-segment widths are read as upstream reads them: from "width" after the stroke's width, or from MrWriter's
+// "pressures" attribute (taken as the widths). An element is never rewritten: moving one changes only its points (so
+// "pressures", audio "ts"/"fn" and every other attribute stay); ink converted back (ToXml) is written as upstream's
+// SaveHandler writes a pressure stroke - the widths in "width", no "pressures".
 
 #include "xournal/model/Ink.h"
 #include "xournal/model/StrokeShape.h"

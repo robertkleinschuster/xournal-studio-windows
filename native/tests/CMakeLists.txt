@@ -12,6 +12,7 @@ add_executable(XournalTests
     StrokeTests.cpp
     TodoTxtTests.cpp
     CopyPagesTests.cpp
+    FormatCompatibilityTests.cpp
     ExampleTests.cpp
     PdfTestSupport.cpp
     PdfExportTests.cpp

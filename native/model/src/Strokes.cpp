@@ -63,7 +63,21 @@ namespace xournal::Strokes
             return result;
         }
 
-        std::wstring WidthText(XmlElement const& e) { return e.AttributeOr(L"width", L"1"); }
+        // The stroke's widths as upstream's XmlParser reads them: the first number of "width" is the stroke's width, the
+        // per-segment widths follow it in "width" (Xournal, Xournal++) - or come from "pressures" (MrWriter writes them
+        // there, one per point; upstream takes them as the widths and drops the rest of "width").
+        std::wstring WidthText(XmlElement const& e)
+        {
+            std::wstring width = e.AttributeOr(L"width", L"1");
+            auto pressures = e.Attribute(L"pressures");
+            if (!pressures)
+            {
+                return width;
+            }
+            auto tokens = SplitWhitespace(width);
+            std::wstring text = tokens.empty() ? std::wstring(L"1") : std::wstring(tokens[0]);
+            return text + L" " + *pressures;
+        }
 
         // Any line style (also one nobody can draw dashed): such a stroke is never rewritten as ink, which would drop the
         // attribute. Solid strokes carry none ("plain" is upstream's name for solid).
@@ -116,11 +130,13 @@ namespace xournal::Strokes
             double width = !widths.empty() && widths[0] > 0 ? widths[0] : 1;
             bool hasPressure = widths.size() > 1;
             // Xournal's width is the width at full pressure; strokes written before 2026-11-18 have wider segments, so
-            // the widest of all is taken.
+            // the widest of all is taken - of the segments the stroke has (upstream drops widths beyond them, such as
+            // the last point's pressure MrWriter writes).
             double size = width;
             if (hasPressure)
             {
-                size = std::max(width, *std::max_element(widths.begin() + 1, widths.end())) / InkWidth::FullPressureFactor;
+                auto used = widths.begin() + static_cast<std::ptrdiff_t>(std::min(widths.size(), std::max<size_t>(coords.size(), 2)));
+                size = std::max(width, *std::max_element(widths.begin() + 1, used)) / InkWidth::FullPressureFactor;
             }
 
             StrokeInk ink;

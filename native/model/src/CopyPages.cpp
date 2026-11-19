@@ -22,7 +22,17 @@ namespace xournal
             {
                 // A clone of a page that could not be resolved would clone a page of the target: the copy gets the white
                 // page the source shows for it, written as upstream writes a plain background.
-                element->InsertBefore(background.get(), Background::Solid(L"plain"));
+                // The background's name stays (upstream writes it first).
+                auto plain = XmlElement::Make(L"background");
+                if (auto name = background->Attribute(L"name"))
+                {
+                    plain->SetAttribute(L"name", *name);
+                }
+                for (auto const& attribute : Background::Solid(L"plain")->Attributes())
+                {
+                    plain->AddAttribute(attribute);
+                }
+                element->InsertBefore(background.get(), std::move(plain));
                 background->Remove();
             }
             auto page = XoppPage::FromXml(element);

@@ -36,6 +36,30 @@ namespace xournal
             return std::wstring(buffer, length);
         }
 
+        // A MrWriter document (<MrWriter version>, read by upstream with the same structure) becomes a Xournal++ one, as
+        // upstream saves it: the root is named <xournal>; its attributes and everything in it stay.
+        XmlElementPtr AsXournal(XmlElement& mrWriter)
+        {
+            auto root = std::make_shared<XmlElement>(L"xournal");
+            for (auto const& attribute : mrWriter.Attributes())
+            {
+                root->AddAttribute(attribute);
+            }
+            std::vector<XmlNode> nodes = mrWriter.Nodes();
+            for (auto& node : nodes)
+            {
+                if (node.element)
+                {
+                    root->Append(node.element->Remove());
+                }
+                else
+                {
+                    root->AppendNode(std::move(node));
+                }
+            }
+            return root;
+        }
+
         std::optional<std::wstring> AttributeValue(XmlElement const& e, std::wstring_view name)
         {
             auto value = e.Attribute(name);
@@ -67,6 +91,10 @@ namespace xournal
 
     std::unique_ptr<XoppDocument> XoppDocument::FromXml(XmlElementPtr root, path const& referenceBase)
     {
+        if (root && root->Name() == L"MrWriter")
+        {
+            root = AsXournal(*root);
+        }
         if (!root || root->Name() != L"xournal")
         {
             ThrowInvalidData("not a Xournal++ document (no <xournal> element)");

@@ -45,7 +45,8 @@ namespace xournal
         static std::unique_ptr<XoppDocument> FromPdf(path pdf, std::vector<Size> const& pageSizes);
 
         /// A loaded <xournal> element: pages are taken out, references resolved as from `referenceBase` (the file's
-        /// path, or for a recovery copy the document's). Throws (invalid data) when it is not a Xournal++ document.
+        /// path, or for a recovery copy the document's). A MrWriter document is read as upstream reads it and becomes a
+        /// <xournal> one (as upstream saves it). Throws (invalid data) when it is neither.
         static std::unique_ptr<XoppDocument> FromXml(XmlElementPtr root, path const& referenceBase);
 
         explicit XoppDocument(XmlElementPtr root);

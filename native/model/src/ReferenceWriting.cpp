@@ -3,6 +3,8 @@
 #include "xournal/base/Paths.h"
 
 #include <algorithm>
+#include <optional>
+#include <vector>
 
 namespace xournal::References
 {
@@ -60,9 +62,21 @@ namespace xournal::References
     void WritePdfReference(XoppDocument const& doc, XmlElement& background, bool firstPdf, path const& target,
         AttachmentCopies const& copies)
     {
-        std::wstring const* pageNoValue = background.Attribute(L"pageno");
-        std::optional<std::wstring> pageNo = pageNoValue ? std::optional<std::wstring>(*pageNoValue) : std::nullopt;
+        // Rewritten in upstream's order (name, type, domain, filename, pageno); the background's name and attributes of
+        // other programs are kept, only the reference is the app's.
+        std::vector<XmlAttribute> loadedAttributes = background.Attributes();
+        auto loadedValue = [&](std::wstring_view name) -> std::optional<std::wstring>
+        {
+            auto it = std::find_if(loadedAttributes.begin(), loadedAttributes.end(), [&](XmlAttribute const& a) { return a.name == name; });
+            return it == loadedAttributes.end() ? std::nullopt : std::optional<std::wstring>(it->value);
+        };
+        std::optional<std::wstring> pageNo = loadedValue(L"pageno");
+        std::optional<std::wstring> name = loadedValue(L"name");
         background.ClearAttributes();
+        if (name)
+        {
+            background.SetAttribute(L"name", *name);
+        }
         background.SetAttribute(L"type", L"pdf");
         auto const& loaded = doc.LoadedPdfReference();
         if (firstPdf && KeepsLoadedPdfReference(doc, target, copies))
@@ -79,6 +93,15 @@ namespace xournal::References
         if (pageNo)
         {
             background.SetAttribute(L"pageno", *pageNo);
+        }
+        for (auto const& attribute : loadedAttributes)
+        {
+            bool reference = attribute.name == L"name" || attribute.name == L"type" || attribute.name == L"domain" ||
+                attribute.name == L"filename" || attribute.name == L"pageno";
+            if (!reference)
+            {
+                background.AddAttribute(attribute);
+            }
         }
     }
 

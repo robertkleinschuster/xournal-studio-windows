@@ -12,10 +12,15 @@
 
 namespace xournal::XoppFormat
 {
-    /// File version written for new documents (images with left/top/right/bottom need 4).
+    /// File version written for new documents and for files that have none (Xournal's): 4, what the released Xournal++
+    /// 1.2 writes (upstream's development line writes 5, which only adds the "matrix" of texts/pictures). Everything the
+    /// app writes itself is version 4 (pictures by left/top/right/bottom). A loaded file keeps its version: upstream
+    /// reads audio timestamps of versions below 4 as seconds, so raising it would misread them; elements with a
+    /// "matrix" copied into a version-4 file read the same in every Xournal++ whatever the number says. The C# app
+    /// does the same.
     inline constexpr std::wstring_view FileVersion = L"4";
 
-    /// The creator attribute; upstream only stores it.
+    /// The creator attribute; upstream only stores it (every save writes ours, as upstream writes its own).
     inline constexpr std::wstring_view Creator = L"Xournal Studio for Windows";
 
     inline constexpr std::wstring_view Title = L"Xournal++ document - see https://xournalpp.github.io/";
