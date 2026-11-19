@@ -44,7 +44,7 @@ namespace xournal::app
         }
         window = CreateWindowExW(0, ClassName, L"", WS_CHILD | WS_CLIPCHILDREN, 0, 0, 0, 0, parent, nullptr, instance, this);
         if (!window) ThrowLastError("CreateWindowEx(pages pane)");
-        list = CreateWindowExW(0, WC_LISTVIEWW, L"Seiten", WS_CHILD | WS_VISIBLE | WS_TABSTOP | LVS_ICON | LVS_OWNERDATA | LVS_SHAREIMAGELISTS |
+        list = CreateWindowExW(0, WC_LISTVIEWW, L"Seiten", WS_CHILD | WS_VISIBLE | WS_TABSTOP | LVS_ICON | LVS_SHAREIMAGELISTS |
             LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_AUTOARRANGE | LVS_ALIGNTOP, 0, 0, 0, 0, window,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(ListId)), instance, nullptr);
         if (!list) ThrowLastError("CreateWindowEx(pages list)");
@@ -90,8 +90,22 @@ namespace xournal::app
 
     void PagesPane::SetCount(int pages)
     {
-        count = pages;
-        ListView_SetItemCountEx(list, count, 0);
+        // Ordinary items whose text and image come from LVN_GETDISPINFO, not a virtual (LVS_OWNERDATA) list: comctl32's
+        // insert mark hit test (LVM_INSERTMARKHITTEST) answers -1 for every point of an owner-data list (measured).
+        selecting = true;
+        for (int n = ListView_GetItemCount(list); n > pages; --n)
+        {
+            if (!ListView_DeleteItem(list, n - 1)) LogError(std::format("pages pane: item {} not deleted", n));
+        }
+        for (int n = ListView_GetItemCount(list); n < pages; ++n)
+        {
+            LVITEMW item{ LVIF_TEXT | LVIF_IMAGE, n };
+            item.pszText = LPSTR_TEXTCALLBACKW;
+            item.iImage = I_IMAGECALLBACK;
+            if (ListView_InsertItem(list, &item) < 0) LogError(std::format("pages pane: item {} not inserted", n + 1));
+        }
+        selecting = false;
+        count = ListView_GetItemCount(list);
         InvalidateRect(list, nullptr, TRUE);
     }
 

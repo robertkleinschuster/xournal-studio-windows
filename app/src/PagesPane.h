@@ -1,8 +1,8 @@
 #pragma once
 
 // The side pane's "Seiten" tab (the C# PagesPane): the document's pages as thumbnails, one below the other, in a
-// comctl32 ListView (icon view, virtual: only the count is kept; the thumbnails are drawn in custom draw from
-// PageThumbnails). A tap goes to the page; the selected page follows the page in view. The context menu inserts a blank
+// comctl32 ListView (icon view; one item per page with text and image by callback - not LVS_OWNERDATA, whose insert
+// mark hit test finds nothing; the thumbnails are drawn in custom draw from PageThumbnails). A tap goes to the page; the selected page follows the page in view. The context menu inserts a blank
 // page before/after, pages of a PDF or document, moves up/down, deletes (asked by the window); a drag moves a page
 // (the ListView's insert mark shows where). The pane only asks: the window carries the actions out.
 
