@@ -130,10 +130,15 @@ arrows), math exercises long formulas in several colors.
   are plain `<image>` PNGs. Do not take format details from the GTK fork's source; check upstream.
 - **Never delete from files.** Everything read is written back, including elements/attributes the app does not
   understand or that other programs (the GTK fork) added. Only the content the user changed is rewritten.
-- **Native WinUI 3 controls, default theme.** InkCanvas/InkPresenter (Windows ink: low latency, pressure, pen
-  eraser), InkToolbar (incl. custom tool/toggle buttons), ScrollView (touch pan, pinch zoom, touchpad), MenuBar,
-  InfoBar, ContentDialog, TreeView, Windows App SDK pickers, Windows.Data.Pdf. Mica backdrop,
-  no custom theme or styling.
+- **Native elements of the framework in use – no Frankenstein** (user, 2026-11-19; was "native WinUI 3 controls"):
+  the app uses the controls of its main technology, in that technology's default look, and does not mix UI
+  frameworks or rebuild controls the framework has. Today that is WinUI 3: InkCanvas/InkPresenter (Windows ink: low
+  latency, pressure, pen eraser), InkToolbar (incl. custom tool/toggle buttons), ScrollView (touch pan, pinch zoom,
+  touchpad), MenuBar, InfoBar, ContentDialog, TreeView, Windows App SDK pickers, Windows.Data.Pdf; Mica backdrop, no
+  custom theme or styling. Should the main technology change (a Win32 demo is being evaluated, 2026-11-19 – the user
+  likes the classic gray common controls for pen use), the same rule applies to it: then its native controls
+  (comctl32 menus/tree/toolbar, DirectManipulation for finger pan/zoom, Windows ink via the Win32 ink presenter), not a
+  mix with XAML islands.
 - **Simple, flat and honest – no magic** (user, 2026-11-15). The GTK fork grew so much hidden behavior that it
   became confusing. Show things as they are and do exactly what the user asked: the explorer shows every file
   and folder (only what Windows itself marks hidden/system is left out), nothing is paired, filtered, renamed or
