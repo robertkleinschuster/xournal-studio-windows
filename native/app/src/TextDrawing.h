@@ -16,10 +16,17 @@ namespace xournal::app
     public:
         TextDrawing();
 
-        /// Draws the text (the dc's transform maps page units; it is restored afterwards).
-        void Draw(ID2D1DeviceContext* dc, XoppText const& text);
+        /// Draws the text (the dc's transform maps page units; it is restored afterwards). `extra`: a drag's preview
+        /// transform (page units) applied after the text's own placement.
+        void Draw(ID2D1DeviceContext* dc, XoppText const& text, Matrix const& extra = {});
+
+        /// The area the text covers on its page (axis-aligned, also for a turned matrix; at least a line high and a little
+        /// wide, so an empty or blank text can still be hit and selected).
+        Rect Bounds(XoppText const& text) const;
 
     private:
+        Microsoft::WRL::ComPtr<IDWriteTextLayout> Layout(XoppText const& text) const;
+
         Microsoft::WRL::ComPtr<IDWriteFactory> factory;
     };
 }

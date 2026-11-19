@@ -131,10 +131,20 @@ namespace xournal::app
         {
             // What lies on the pages as a snapshot would write it - live pages' ink brought in first.
             std::vector<XmlElementPtr> snapshots;
-            view.CaptureInk([&]
+            try
             {
-                for (int index : stale) snapshots.push_back(doc->Pages()[index]->Snapshot());
-            });
+                view.CaptureInk([&]
+                {
+                    for (int index : stale) snapshots.push_back(doc->Pages()[index]->Snapshot());
+                });
+            }
+            catch (...)
+            {
+                // The ink could not be read now: the pages stay stale and are tried again in the next round.
+                LogException("thumbnails: reading the pages' ink");
+                refresh.Restart();
+                return;
+            }
             for (size_t i = 0; i < stale.size(); ++i)
             {
                 RequestContent(stale[i], doc->Pages()[stale[i]], snapshots[i]);

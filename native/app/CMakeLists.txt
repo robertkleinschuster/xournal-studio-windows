@@ -48,6 +48,7 @@ add_executable(XournalStudio WIN32
     src/PictureBitmaps.cpp
     src/TextDrawing.cpp
     src/FilePictures.cpp
+    src/FileTexts.cpp
     app.rc
 )
 target_compile_options(XournalStudio PRIVATE ${XOURNAL_COMPILE_OPTIONS})

@@ -69,4 +69,46 @@ b</text>
         EXPECT_EQ(20, page->ContentBottom()); // the hostile matrix is ignored for placing pasted content
         EXPECT_EQ(12, XoppText::Read(*Xml(R"(<text size="900000" x="0" y="0">x</text>)")).size);
     }
+
+    TEST(Texts, TheTextToolWritesTextsAsUpstreamAndChangesOnlyWhatWasEdited)
+    {
+        auto created = XoppText::Create({ L"a\nb", L"Arial", 14, Color{ 0xFF, 0xFF, 0, 0 }, { 10.5, 20 } });
+        EXPECT_EQ(L"text", created->Name());
+        EXPECT_EQ(L"Sans", *created->Attribute(L"font")); // Xournal++'s default family
+        EXPECT_EQ(L"14", *created->Attribute(L"size"));
+        EXPECT_EQ(L"10.5", *created->Attribute(L"x"));
+        EXPECT_EQ(L"#ff0000ff", *created->Attribute(L"color"));
+        EXPECT_EQ(L"a\nb", created->Value());
+
+        auto text = Xml(R"(<text font="Sans Bold" size="12" x="10" y="20" color="#000000ff" wrap="100" ts="7">x</text>)");
+        auto edit = XoppText::Read(*text).ToEdit();
+        edit.content = L"y\nz";
+        XoppText::Apply(*text, edit);
+        EXPECT_EQ(L"Sans Bold", *text->Attribute(L"font")); // the family stayed: the description too
+        EXPECT_EQ(L"7", *text->Attribute(L"ts"));           // another program's attribute
+        EXPECT_EQ(L"y\nz", text->Value());
+        edit.windowsFamily = L"Consolas";
+        edit.at = { 15, 20 };
+        XoppText::Apply(*text, edit);
+        EXPECT_EQ(L"Consolas", *text->Attribute(L"font"));
+        EXPECT_EQ(L"15", *text->Attribute(L"x"));
+    }
+
+    TEST(Texts, MovingAndScalingATextMovesItsCornerAndScalesItsSize)
+    {
+        auto text = Xml(R"(<text font="Sans" size="10" x="10" y="20" wrap="100">x</text>)");
+        XoppText::Transform(*text, Matrix::Scale(2, Point{ 0, 0 }) * Matrix::Translation(5, 0));
+        auto moved = XoppText::Read(*text);
+        EXPECT_EQ((Point{ 25, 40 }), moved.transform.Translation());
+        EXPECT_EQ(20, moved.size);
+        EXPECT_EQ(200, moved.wrap.value_or(0));
+
+        auto placed = Xml(R"(<text size="12" matrix="0 1 -1 0 50 60">x</text>)");
+        XoppText::Transform(*placed, Matrix::Translation(1, 2));
+        EXPECT_EQ((Matrix{ 0, 1, -1, 0, 51, 62 }), XoppText::Read(*placed).transform);
+        EXPECT_EQ(12, XoppText::Read(*placed).size); // the matrix carries any scale
+
+        auto crlf = Xml("<text size=\"12\" x=\"0\" y=\"0\">a&#13;&#10;b&#13;c</text>");
+        EXPECT_EQ(L"a\nb\nc", XoppText::Read(*crlf).ToEdit().content);
+    }
 }

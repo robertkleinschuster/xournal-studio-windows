@@ -156,8 +156,10 @@ namespace xournal::app
         AppendMenuW(menu, MF_STRING | (index + 1 < count ? 0 : MF_GRAYED), MenuDown, L"Nach &unten");
         AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
         AppendMenuW(menu, MF_STRING | (count > 1 ? 0 : MF_GRAYED), MenuDelete, L"Seite &löschen…");
+        Log(std::format("pages pane: menu of page {}", index + 1));
         UINT chosen = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, screen.x, screen.y, 0, window, nullptr);
         DestroyMenu(menu);
+        Log(std::format("pages pane: menu of page {}: {}", index + 1, chosen));
         switch (chosen)
         {
         case MenuBefore: if (insertBlank) insertBlank(index); break;

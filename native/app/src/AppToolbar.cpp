@@ -52,6 +52,9 @@ namespace xournal::app
         t.shapesTip = L"Formen: Linie, Pfeil, Rechteck, Ellipse (der Pfeil); gezeichnete Formen können erkannt werden";
         t.shapeKinds = { L"Linie", L"Pfeil", L"Rechteck", L"Ellipse" };
         t.recognizeShapes = L"Gezeichnete Formen erkennen";
+        t.text = L"Text";
+        t.textTip = L"Text: auf die Seite tippen und schreiben (die Tastatur tippt), auf einen Text tippen, um ihn zu "
+            L"bearbeiten, daneben tippen, um fertig zu sein. Der Pfeil: Schrift, Größe und Farbe";
         t.ruler = L"Lineal";
         t.protractor = L"Winkelmesser";
         t.rulerTip = L"Lineal / Winkelmesser (der Pfeil): daran entlang gezogene Linien werden gerade";

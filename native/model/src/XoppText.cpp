@@ -7,6 +7,7 @@
 #include <icu.h>
 
 #include <array>
+#include <cmath>
 #include <format>
 #include <memory>
 
@@ -101,6 +102,86 @@ namespace xournal
         text.color = ParseColor(e.Attribute(L"color"), Colors::Black);
         text.content = e.Value();
         return text;
+    }
+
+    XmlElementPtr XoppText::Create(TextEdit const& edit)
+    {
+        auto e = XmlElement::Make(L"text", { { L"font", PangoFamily(edit.windowsFamily) },
+            { L"size", XoppFormat::FormatNumber(edit.size) }, { L"x", XoppFormat::FormatNumber(edit.at.x) },
+            { L"y", XoppFormat::FormatNumber(edit.at.y) }, { L"color", FormatColor(edit.color) } });
+        e->SetValue(edit.content);
+        return e;
+    }
+
+    TextEdit XoppText::ToEdit() const
+    {
+        // The Text tool's lines end with LF; CR LF and CR of other writers count as one line end too.
+        std::wstring lines;
+        for (size_t i = 0; i < content.size(); ++i)
+        {
+            if (content[i] != L'\r')
+            {
+                lines += content[i];
+            }
+            else if (i + 1 >= content.size() || content[i + 1] != L'\n')
+            {
+                lines += L'\n';
+            }
+        }
+        return { lines, WindowsFamily(), size, color, transform.Translation() };
+    }
+
+    void XoppText::Apply(XmlElement& e, TextEdit const& edit)
+    {
+        XoppText now = Read(e);
+        TextEdit before = now.ToEdit();
+        if (edit.content != before.content)
+        {
+            e.SetValue(edit.content);
+        }
+        if (edit.windowsFamily != before.windowsFamily)
+        {
+            e.SetAttribute(L"font", PangoFamily(edit.windowsFamily));
+        }
+        if (edit.size != before.size)
+        {
+            e.SetAttribute(L"size", XoppFormat::FormatNumber(edit.size));
+        }
+        if (edit.color != before.color)
+        {
+            e.SetAttribute(L"color", FormatColor(edit.color));
+        }
+        if (edit.at.x != before.at.x || edit.at.y != before.at.y)
+        {
+            Transform(e, Matrix::Translation(edit.at.x - before.at.x, edit.at.y - before.at.y));
+        }
+    }
+
+    void XoppText::Transform(XmlElement& e, Matrix const& m)
+    {
+        if (auto matrix = XoppFormat::ReadMatrix(e))
+        {
+            XoppFormat::WriteMatrix(e, *matrix * m);
+            return;
+        }
+        XoppText now = Read(e);
+        Point at = m.Apply(now.transform.Translation());
+        e.SetAttribute(L"x", XoppFormat::FormatNumber(at.x));
+        e.SetAttribute(L"y", XoppFormat::FormatNumber(at.y));
+        double scale = std::sqrt(std::abs(m.m11 * m.m22 - m.m12 * m.m21));
+        if (std::abs(scale - 1) > 1e-9)
+        {
+            e.SetAttribute(L"size", XoppFormat::FormatNumber(now.size * scale));
+            if (now.wrap)
+            {
+                e.SetAttribute(L"wrap", XoppFormat::FormatNumber(*now.wrap * scale));
+            }
+        }
+    }
+
+    std::wstring XoppText::PangoFamily(std::wstring const& windowsFamily)
+    {
+        return EqualsIgnoreCase(windowsFamily, L"Arial") ? L"Sans" : windowsFamily;
     }
 
     std::vector<std::wstring> XoppText::Paragraphs() const

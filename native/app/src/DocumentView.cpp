@@ -39,6 +39,7 @@ namespace xournal::app
         surface.drawUnderlay = nullptr;
         surface.viewChanged = nullptr;
         surface.contentChanged = nullptr;
+        surface.SetTextHost(nullptr); // ends an edit while its host is still here
         surface.SetPictureHost(nullptr);
         renderQueue.Stop(); // the PDF device goes while the app still runs
     }
@@ -65,10 +66,14 @@ namespace xournal::app
         std::uint64_t old = generation++;
         renderQueue.Drop([old](std::uint64_t key) { return (key >> 32) == old; });
         auto invalidate = [this](int page) { surface.InvalidatePage(page); };
+        surface.SetTextHost(nullptr); // an edit of the old document ends into it, while its host is still here
         surface.SetPictureHost(nullptr);
+        texts.reset();
         pictures = std::make_unique<FilePictures>(doc, surface, bridge->Lock(), invalidate);
+        texts = std::make_unique<FileTexts>(doc, bridge->Lock(), *pictures, invalidate);
         underlay = std::make_unique<PageUnderlay>(renderQueue, *doc, generation, invalidate, *pictures);
         surface.SetPictureHost(pictures.get());
+        surface.SetTextHost(texts.get());
         surface.SetPages(std::move(specs));
         surface.FitWidth();
         if (shown) shown();
@@ -216,10 +221,15 @@ namespace xournal::app
             return;
         }
         // StrokesOf waits for the ink thread, which takes the document's lock for load/store: collect first, lock after.
+        // A page that went far meanwhile answers with nothing - its `store` already brought its strokes in. A failed
+        // call throws: nothing is refreshed and `work` does not run (the caller reports it; no page is saved half).
         std::map<int, std::vector<inkpages::KeyedStroke>> current;
         for (int page : bridge->LivePages())
         {
-            current[page] = surface.StrokesOf(page);
+            if (auto strokes = surface.StrokesOf(page))
+            {
+                current[page] = std::move(*strokes);
+            }
         }
         std::scoped_lock guard(bridge->Lock());
         for (auto const& [page, strokes] : current)

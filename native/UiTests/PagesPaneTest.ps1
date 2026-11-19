@@ -68,6 +68,7 @@ Invoke-Test {
     # The context menu of page 1: a blank page after it.
     $p1 = Probe 'Seite 1'
     [Inj]::RightClickPixel($p1[0], $p1[1]); Start-Sleep 1
+    Shot '03-page-menu'
     ClickAnywhere ('Leere Seite danach einf' + $ue + 'gen')
     Start-Sleep 2
     Ctrl 0x53 'S'
@@ -89,6 +90,7 @@ Invoke-Test {
     # Pages of Grenzwerte.pdf, all, after the page in view: appended to Schaltungen.pdf.
     $p1 = Probe 'Seite 1'
     [Inj]::RightClickPixel($p1[0], $p1[1]); Start-Sleep 1
+    Shot '03-page-menu'
     ClickAnywhere ('Seiten aus PDF oder Dokument einf' + $ue + 'gen' + [char]0x2026)
     TypePath 'C:\work\Grenzwerte.pdf'
     Shot '04-insert-dialog'

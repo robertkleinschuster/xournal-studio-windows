@@ -2,7 +2,9 @@
 
 // The open document and what happens to it: new, open (.xopp, or a PDF as a new document on it), save, save as, and
 // the one question whenever a document with changes is left (Speichern / Nicht speichern / Abbrechen). Saving only by
-// choice: nothing is saved behind the user's back. Loading runs on the thread pool; saving on the UI thread.
+// choice: nothing is saved behind the user's back. Loading runs on the thread pool; saving on the UI thread. While a
+// document loads the shown one can still be edited: when the loaded one arrives after such an edit the leave question is
+// asked again (Abbrechen keeps the shown document), and a document shown meanwhile (a new one, a recovered copy) wins.
 
 #include "DocumentView.h"
 #include "Toast.h"
@@ -11,6 +13,7 @@
 
 #include "inkpages/WritingSurface.h"
 
+#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -57,6 +60,8 @@ namespace xournal::app
 
         /// The document changed outside the ink's history (a page inserted or removed): unsaved until saved.
         void NotePagesChanged();
+        /// The ink's history changed (an edit, undo, redo): counted, so a load that ends after it asks again.
+        void NoteEdit() { ++edits; }
 
         bool IsModified() const;
         std::wstring Title() const;                  // "Name – Xournal Studio" with a • when modified
@@ -73,6 +78,8 @@ namespace xournal::app
         DocumentView& view;
         std::shared_ptr<XoppDocument> doc;
         bool loading = false;
+        std::uint64_t edits = 0;     // changes of the shown document (ink history, pages, references)
+        std::uint64_t shownCount = 0; // documents shown so far: a load whose document was replaced meanwhile is dropped
         bool changedOutsideInk = false; // a restored recovery copy or moved references, not saved yet
         bool pagesChanged = false; // pages inserted or removed since the last save
     };

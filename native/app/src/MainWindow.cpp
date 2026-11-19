@@ -107,7 +107,7 @@ namespace xournal::app
             if (pagesPane) pagesPane->SetCount(view->PageCount());
         };
         // Set before the toolbar: it chains these handlers.
-        surface->historyChanged = [this] { UpdateTitle(); UpdateCommands(); };
+        surface->historyChanged = [this] { if (session) session->NoteEdit(); UpdateTitle(); UpdateCommands(); };
         surface->selectionChanged = [] {};
 
         toolbar = CreateAppToolbar(window, *surface, inkpages::ToolChoices::Parse(settings.toolChoices), {
@@ -172,7 +172,9 @@ namespace xournal::app
         BOOL result;
         while ((result = GetMessageW(&message, nullptr, 0, 0)) > 0)
         {
-            if (TypingInEdit() || !TranslateAcceleratorW(window, menu.Accelerators(), &message))
+            // Keys while typing (an edit box, a text on the page) are the typing's, not shortcuts.
+            bool typing = TypingInEdit() || (surface && surface->EditingText());
+            if (typing || !TranslateAcceleratorW(window, menu.Accelerators(), &message))
             {
                 TranslateMessage(&message);
                 DispatchMessageW(&message);
@@ -329,6 +331,8 @@ namespace xournal::app
 
     void MainWindow::OnCommand(int command)
     {
+        // A text being typed is part of the document before any command acts on it (save, export, leave, ...).
+        if (surface && surface->EditingText()) surface->EndTextEditing();
         switch (command)
         {
         case CmdNew: session->New(); break;
@@ -397,6 +401,7 @@ namespace xournal::app
 
     bool MainWindow::Close()
     {
+        if (surface && surface->EditingText()) surface->EndTextEditing(); // the leave question counts the typed text
         // Ending the process mid fetch/rebase/push could leave the repository mid-rebase or locked: the window waits.
         if (sync->RefusedWhileSyncing(L"Schließen")) return false;
         if (!session->ConfirmLeave())

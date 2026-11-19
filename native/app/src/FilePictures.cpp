@@ -2,6 +2,7 @@
 
 #include "xournal/base/Log.h"
 #include "xournal/model/XoppImage.h"
+#include "xournal/model/XoppText.h"
 
 #include <format>
 #include <set>
@@ -35,24 +36,56 @@ namespace xournal::app
     {
     }
 
-    inkpages::PictureId FilePictures::IdOf(XmlElementPtr const& picture)
+    inkpages::PictureId FilePictures::IdOf(XmlElementPtr const& element)
     {
-        auto [it, added] = idByElement.try_emplace(picture.get(), nextId);
+        auto [it, added] = idByElement.try_emplace(element.get(), nextId);
         if (added)
         {
-            pictures[nextId++] = picture;
+            pictures[nextId++] = element;
         }
         return it->second;
     }
 
-    int FilePictures::PageOf(XmlElement const* picture) const
+    bool FilePictures::IsObject(XmlElement const& e) { return XoppImage::IsImage(e) || XoppText::IsText(e); }
+
+    std::vector<XmlElementPtr> FilePictures::ObjectsOf(int page) const
+    {
+        std::vector<XmlElementPtr> objects;
+        for (auto const& layer : doc->Pages()[page]->Layers())
+        {
+            for (auto const& e : layer->Elements())
+            {
+                if (IsObject(*e)) objects.push_back(e);
+            }
+        }
+        return objects;
+    }
+
+    Rect FilePictures::BoundsOf(XmlElement const& element) const
+    {
+        return XoppImage::IsImage(element) ? XoppImage::GetBounds(element) : measure.Bounds(XoppText::Read(element));
+    }
+
+    void FilePictures::TransformInPlace(XmlElement& element, Matrix const& m)
+    {
+        if (XoppImage::IsImage(element))
+        {
+            XoppImage::SetBounds(element, XoppImage::Transform(XoppImage::GetBounds(element), m));
+        }
+        else
+        {
+            XoppText::Transform(element, m);
+        }
+    }
+
+    int FilePictures::PageOf(XmlElement const* element) const
     {
         auto const& pages = doc->Pages();
         for (int i = 0; i < static_cast<int>(pages.size()); ++i)
         {
-            for (auto const& image : pages[i]->Images().List())
+            for (auto const& object : ObjectsOf(i))
             {
-                if (image.get() == picture) return i;
+                if (object.get() == element) return i;
             }
         }
         return -1;
@@ -97,9 +130,9 @@ namespace xournal::app
         std::vector<inkpages::PictureId> found;
         if (page < 0 || page >= static_cast<int>(doc->Pages().size()) || polygon.size() < 3) return found;
         Point o = Origin(page);
-        for (auto const& image : doc->Pages()[page]->Images().List())
+        for (auto const& image : ObjectsOf(page))
         {
-            Rect b = XoppImage::GetBounds(*image);
+            Rect b = BoundsOf(*image);
             Point corners[] = { { b.Left(), b.Top() }, { b.Right(), b.Top() }, { b.Right(), b.Bottom() }, { b.Left(), b.Bottom() } };
             bool all = true;
             for (auto c : corners) all = all && Inside(polygon, { c.x + o.x, c.y + o.y });
@@ -113,7 +146,7 @@ namespace xournal::app
         std::scoped_lock guard(documentLock);
         std::vector<inkpages::PictureId> found;
         if (page < 0 || page >= static_cast<int>(doc->Pages().size())) return found;
-        for (auto const& image : doc->Pages()[page]->Images().List()) found.push_back(IdOf(image));
+        for (auto const& object : ObjectsOf(page)) found.push_back(IdOf(object));
         return found;
     }
 
@@ -123,7 +156,7 @@ namespace xournal::app
         auto const& element = pictures.at(picture);
         int page = PageOf(element.get());
         if (page < 0) return {};
-        Rect b = XoppImage::GetBounds(*element);
+        Rect b = BoundsOf(*element);
         Point o = Origin(page);
         return { static_cast<float>(b.Left() + o.x), static_cast<float>(b.Top() + o.y), static_cast<float>(b.Right() + o.x),
             static_cast<float>(b.Bottom() + o.y) };
@@ -132,13 +165,24 @@ namespace xournal::app
     std::optional<inkpages::PictureId> FilePictures::PictureAt(inkpages::PointF point)
     {
         std::scoped_lock guard(documentLock);
+        return TopmostAt(point, false);
+    }
+
+    std::optional<inkpages::PictureId> FilePictures::TextAtLocked(inkpages::PointF point)
+    {
+        return TopmostAt(point, true);
+    }
+
+    std::optional<inkpages::PictureId> FilePictures::TopmostAt(inkpages::PointF point, bool textsOnly)
+    {
         int page = PageAtPoint({ point.x, point.y });
         if (page < 0) return std::nullopt;
         Point o = Origin(page);
-        auto images = doc->Pages()[page]->Images().List();
-        for (auto it = images.rbegin(); it != images.rend(); ++it) // the topmost first
+        auto objects = ObjectsOf(page);
+        for (auto it = objects.rbegin(); it != objects.rend(); ++it) // the topmost first
         {
-            Rect b = XoppImage::GetBounds(**it);
+            if (textsOnly && !XoppText::IsText(**it)) continue;
+            Rect b = BoundsOf(**it);
             if (point.x >= b.Left() + o.x && point.x <= b.Right() + o.x && point.y >= b.Top() + o.y && point.y <= b.Bottom() + o.y)
             {
                 return IdOf(*it);
@@ -180,19 +224,21 @@ namespace xournal::app
                     LogError(std::format("pictures: transform of picture {} that is on no page", id));
                     continue;
                 }
-                Rect moved = XoppImage::Transform(XoppImage::GetBounds(*element), ToPage(m, page));
+                Matrix onPage = ToPage(m, page);
+                Rect moved = XoppImage::Transform(BoundsOf(*element), onPage);
                 Point o = Origin(page);
                 int target = PageAtPoint({ moved.x + moved.width / 2 + o.x, moved.y + moved.height / 2 + o.y });
                 pages.insert(page);
                 if (target < 0 || target == page)
                 {
-                    doc->Pages()[page]->Images().Transform({ element }, ToPage(m, page));
+                    if (XoppImage::IsImage(*element)) doc->Pages()[page]->Images().Transform({ element }, onPage);
+                    else XoppText::Transform(*element, onPage);
                     continue;
                 }
-                // Onto another page: its bounds in that page's units, then into that page's top layer.
+                // Onto another page: into that page's units, then into its top layer.
                 Point t = Origin(target);
-                doc->Pages()[page]->Images().Remove({ element });
-                XoppImage::SetBounds(*element, { moved.x + o.x - t.x, moved.y + o.y - t.y, moved.width, moved.height });
+                doc->Pages()[page]->Images().Remove({ element }); // any element: its layer and place
+                TransformInPlace(*element, onPage * Matrix::Translation(o.x - t.x, o.y - t.y));
                 doc->Pages()[target]->Images().Add({ element });
                 pages.insert(target);
             }
@@ -251,7 +297,7 @@ namespace xournal::app
                 int page = PageOf(element.get());
                 if (page < 0) continue;
                 auto copy = element->Clone();
-                XoppImage::SetBounds(*copy, XoppImage::Transform(XoppImage::GetBounds(*copy), ToPage(m, page)));
+                TransformInPlace(*copy, ToPage(m, page));
                 doc->Pages()[page]->Images().Add({ copy });
                 copies.push_back(IdOf(copy));
                 pages.insert(page);

@@ -239,9 +239,10 @@ namespace xournal::app
                 {
                     guarded("a picture", [&] { DrawPicture(page, element, dc, pixelsPerUnit); });
                 }
-                else if (XoppText::IsText(*element))
+                else if (XoppText::IsText(*element) && !pictures.IsEditing(element.get()))
                 {
-                    guarded("a text", [&] { texts.Draw(dc, XoppText::Read(*element)); });
+                    // The text the Text tool edits is the library's meanwhile; a dragged one shows its preview.
+                    guarded("a text", [&] { texts.Draw(dc, XoppText::Read(*element), pictures.PreviewOf(element.get()).value_or(Matrix{})); });
                 }
             }
         }

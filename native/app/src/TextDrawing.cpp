@@ -4,6 +4,8 @@
 
 #include "xournal/base/Error.h"
 
+#include <algorithm>
+
 using Microsoft::WRL::ComPtr;
 
 namespace xournal::app
@@ -19,7 +21,7 @@ namespace xournal::app
             reinterpret_cast<IUnknown**>(factory.GetAddressOf())));
     }
 
-    void TextDrawing::Draw(ID2D1DeviceContext* dc, XoppText const& text)
+    ComPtr<IDWriteTextLayout> TextDrawing::Layout(XoppText const& text) const
     {
         ComPtr<IDWriteTextFormat> format;
         Check("IDWriteFactory::CreateTextFormat", factory->CreateTextFormat(text.WindowsFamily().c_str(), nullptr,
@@ -43,13 +45,35 @@ namespace xournal::app
             : text.alignment == TextAlignment::Center ? DWRITE_TEXT_ALIGNMENT_CENTER
             : text.alignment == TextAlignment::Right ? DWRITE_TEXT_ALIGNMENT_TRAILING : DWRITE_TEXT_ALIGNMENT_LEADING;
         layout->SetTextAlignment(alignment);
+        return layout;
+    }
 
+    void TextDrawing::Draw(ID2D1DeviceContext* dc, XoppText const& text, Matrix const& extra)
+    {
+        auto layout = Layout(text);
         ComPtr<ID2D1SolidColorBrush> brush;
         Check("CreateSolidColorBrush (text)", dc->CreateSolidColorBrush(ToD2D(text.color), &brush));
         D2D1_MATRIX_3X2_F page;
         dc->GetTransform(&page);
-        dc->SetTransform(ToD2D(text.transform) * page);
+        dc->SetTransform(ToD2D(text.transform * extra) * page);
         dc->DrawTextLayout({ 0, 0 }, layout.Get(), brush.Get(), D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT);
         dc->SetTransform(page);
+    }
+
+    Rect TextDrawing::Bounds(XoppText const& text) const
+    {
+        DWRITE_TEXT_METRICS metrics{};
+        Check("IDWriteTextLayout::GetMetrics", Layout(text)->GetMetrics(&metrics));
+        double width = std::max<double>(metrics.widthIncludingTrailingWhitespace, text.size / 2);
+        double height = std::max<double>(metrics.height, text.size);
+        double left = text.wrap ? 0 : metrics.left;
+        Point corners[] = { text.transform.Apply({ left, 0 }), text.transform.Apply({ left + width, 0 }),
+            text.transform.Apply({ left, height }), text.transform.Apply({ left + width, height }) };
+        double x0 = corners[0].x, y0 = corners[0].y, x1 = x0, y1 = y0;
+        for (auto c : corners)
+        {
+            x0 = std::min(x0, c.x); y0 = std::min(y0, c.y); x1 = std::max(x1, c.x); y1 = std::max(y1, c.y);
+        }
+        return { x0, y0, x1 - x0, y1 - y0 };
     }
 }

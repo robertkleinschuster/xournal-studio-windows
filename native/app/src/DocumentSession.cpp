@@ -29,6 +29,7 @@ namespace xournal::app
     void DocumentSession::Show(std::shared_ptr<XoppDocument> next)
     {
         doc = std::move(next);
+        ++shownCount;
         changedOutsideInk = false;
         pagesChanged = false;
         view.Show(doc);
@@ -37,6 +38,11 @@ namespace xournal::app
 
     void DocumentSession::New()
     {
+        if (loading)
+        {
+            if (message) message(L"Ein Dokument wird gerade geöffnet; bitte einen Moment warten.", ToastKind::Info);
+            return;
+        }
         if (!ConfirmLeave()) return;
         Show(XoppDocument::CreateNew());
     }
@@ -82,6 +88,7 @@ namespace xournal::app
             }
         }
         changedOutsideInk = true;
+        ++edits;
         if (changed) changed();
     }
 
@@ -109,8 +116,9 @@ namespace xournal::app
     {
         if (loading || (refusedWhileSyncing && refusedWhileSyncing(L"Öffnen"))) return;
         loading = true;
+        std::uint64_t editsBefore = edits, shownBefore = shownCount;
         Log(std::format("session: opening {}", ToUtf8(file.native())));
-        UiQueue::RunInBackground("open document", [this, file]
+        UiQueue::RunInBackground("open document", [this, file, editsBefore, shownBefore]
         {
             std::shared_ptr<XoppDocument> loaded;
             std::exception_ptr error;
@@ -124,13 +132,29 @@ namespace xournal::app
                 LogException(std::format("session: opening {}", ToUtf8(file.native())));
                 error = std::current_exception();
             }
-            UiQueue::Post("show document", [this, loaded, error, file]
+            UiQueue::Post("show document", [this, loaded, error, file, editsBefore, shownBefore]
             {
                 loading = false;
                 if (error)
                 {
                     Dialogs::ShowError(owner, std::format(L"„{}“ kann nicht geöffnet werden.", file.filename().native()),
                         ErrorText(error));
+                    return;
+                }
+                if (shownCount != shownBefore)
+                {
+                    // Another document was shown while this one loaded (a new or recovered one): that one stays.
+                    Log(std::format("session: {} loaded after another document was shown - not shown", ToUtf8(file.native())));
+                    if (message) message(std::format(L"„{}“ wurde nicht geöffnet: inzwischen wird ein anderes Dokument gezeigt.",
+                        file.filename().native()), ToastKind::Warning);
+                    return;
+                }
+                // Edits made while it loaded belong to the shown document: the question about them comes now.
+                if (edits != editsBefore && !ConfirmLeave())
+                {
+                    Log(std::format("session: {} loaded, kept the edited document (Abbrechen)", ToUtf8(file.native())));
+                    if (message) message(std::format(L"„{}“ wurde nicht geöffnet; das geänderte Dokument bleibt offen.",
+                        file.filename().native()), ToastKind::Info);
                     return;
                 }
                 Show(loaded);
@@ -201,6 +225,7 @@ namespace xournal::app
     void DocumentSession::NotePagesChanged()
     {
         pagesChanged = true;
+        ++edits;
         if (changed) changed();
     }
 

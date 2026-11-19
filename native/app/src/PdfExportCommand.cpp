@@ -72,7 +72,16 @@ namespace xournal::app
 
         // The document as the ink shows it now, taken where its ink may be read; the PDF is written elsewhere.
         pdf::DocumentExportSource source;
-        view.CaptureInk([&] { source = pdf::PrepareExport(*doc); });
+        try
+        {
+            view.CaptureInk([&] { source = pdf::PrepareExport(*doc); });
+        }
+        catch (...)
+        {
+            LogException(std::format("export PDF to {}: reading the document", ToUtf8(target->native())));
+            message(std::format(L"Export fehlgeschlagen: {}", ErrorText()), ToastKind::Error);
+            return;
+        }
         running = true;
         UiQueue::RunInBackground("export PDF", [this, source = std::move(source), file = *target, background]
         {
