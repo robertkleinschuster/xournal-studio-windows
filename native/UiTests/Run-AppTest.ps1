@@ -26,9 +26,11 @@ try {
     if (Test-Path $app) { Remove-Item -Recurse -Force $app }
     New-Item -ItemType Directory -Force $app | Out-Null
     Copy-Item (Join-Path $native ".local-build\$Build\app\$Config\XournalStudio.exe") $app
+    # One results folder per test: agents running different tests one after another keep each other's results.
+    $work = Join-Path $env:TEMP ('xournal-native-sandbox-' + [IO.Path]::GetFileNameWithoutExtension($Test))
     $data = @((Join-Path $repo 'examples\Schaltungen.xopp'), (Join-Path $repo 'examples\Schaltungen.pdf')) + $Extra
     & (Join-Path $native 'external\InkPages\UiTests\Run-SandboxTest.ps1') -App $app -Test $Test -Data $data `
-        -Work (Join-Path $env:TEMP 'xournal-native-sandbox-test') -TimeoutSeconds $TimeoutSeconds
+        -Work $work -TimeoutSeconds $TimeoutSeconds
 }
 finally {
     Remove-Item $lock -Force

@@ -55,7 +55,7 @@ function Pages($file) {
 }
 function Expect-Pages($label, $file, $count, $page1Strokes) {
     $pages = Pages $file
-    "${label}: $($pages.Count) pages, page 1 has $($pages[0].strokes) strokes"
+    Write-Host "${label}: $($pages.Count) pages, page 1 has $($pages[0].strokes) strokes" # not output: the function returns the pages
     if ($pages.Count -ne $count) { throw "${label}: $($pages.Count) pages, expected $count" }
     if ($pages[0].strokes -ne $page1Strokes) { throw "${label}: page 1 has $($pages[0].strokes) strokes, expected $page1Strokes" }
     , $pages
