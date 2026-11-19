@@ -1,0 +1,8 @@
+#include <winres.h>
+
+// The app manifest as a resource: comctl32 v6 (visual styles), PerMonitorV2 DPI awareness, UTF-8 code page.
+CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "app.manifest"
+
+// Pen cursors: a dot in each preset color and width, ids 1000 + color * 10 + width step (pens) and 2000 + ...
+// (highlighters) - InkPages' demo cursors (demo/tools/make_cursors.py).
+#include "cursors/cursors.rc"

@@ -16,6 +16,7 @@ if ($LASTEXITCODE) { throw "build failed ($LASTEXITCODE)" }
 
 if (-not $NoTests) {
     $ctest = Join-Path (Split-Path $cmake) 'ctest.exe'
-    & $ctest --test-dir $build -C $Config --output-on-failure
+    # Only this project's tests: InkPages' tests (excluded from the build here) run in its own repository.
+    & $ctest --test-dir (Join-Path $build 'tests') -C $Config --output-on-failure
     if ($LASTEXITCODE) { throw "unit tests failed ($LASTEXITCODE)" }
 }

@@ -1,9 +1,10 @@
 cmake_minimum_required(VERSION 3.25)
-project(XournalStudio LANGUAGES C CXX)
+project(XournalStudio LANGUAGES C CXX RC)
 
 # Xournal Studio for Windows, native: C++20 on Win32 and Windows APIs. Modules are static libraries whose link
 # dependencies are the only allowed direction (see README.md):
-#   base  <-  model  <-  io  <-  (later: services, app)
+#   base  <-  model  <-  io  <-  (later: services)  <-  app
+# InkPages (the writing surface and its tools) is a git submodule in external/InkPages, used by the app only.
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -34,6 +35,11 @@ target_compile_definitions(zlib PRIVATE _CRT_SECURE_NO_DEPRECATE _CRT_NONSTDC_NO
 add_subdirectory(base)
 add_subdirectory(model)
 add_subdirectory(io)
+
+# InkPages: only its library is built for the app (its demo, test tool and tests are built in its own repository).
+set(INKPAGES_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external/InkPages)
+add_subdirectory(${INKPAGES_DIR} external/InkPages EXCLUDE_FROM_ALL)
+add_subdirectory(app)
 
 # Unit tests: GoogleTest (pinned release, only for the tests, never in the app), run by CTest - as in InkPages.
 FetchContent_Declare(googletest
