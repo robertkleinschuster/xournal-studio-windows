@@ -7,6 +7,10 @@ linked statically - except PDFium, a delay-loaded DLL. Licenses: `THIRD-PARTY.md
 ```powershell
 .\build.ps1            # configure (Visual Studio's CMake), build Release, run the unit tests (CTest + GoogleTest)
 .\build.ps1 -NoTests
+.\install.ps1          # the committed state (HEAD, built in a clean worktree): tests, Release build, install to
+                       # %LOCALAPPDATA%\Programs\Xournal Studio (Win32) + Start menu entry "Xournal Studio (Win32)",
+                       # side by side with the C# app (untouched); then a start check
+.\install.ps1 -SkipInstall   # build and stage only (.local-build\install-stage)
 ```
 
 ## Modules

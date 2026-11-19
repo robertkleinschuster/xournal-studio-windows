@@ -59,7 +59,7 @@ Invoke-Test {
     Start-Sleep -Milliseconds 800
     Shot '04-edit-dialog'
     [System.Windows.Forms.SendKeys]::SendWait('^a'); Start-Sleep -Milliseconds 200
-    [System.Windows.Forms.SendKeys]::SendWait('Bald erledigt +GET'); Start-Sleep -Milliseconds 300
+    [System.Windows.Forms.SendKeys]::SendWait('Bald erledigt {+}GET'); Start-Sleep -Milliseconds 300
     [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
     WaitFor 'edit' { (Lines) -match '(?m)^2026-11-15 Bald erledigt \+GET due:2026-01-01\r$' }
     "after edit: $(Lines)"

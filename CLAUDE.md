@@ -195,6 +195,7 @@ external\InkPages\tools\Get-WinUIRuntime.ps1   # the WinUI fork runtime the buil
 dotnet build XournalStudio                 # debug build (no Visual Studio needed, .NET 10 SDK)
 dotnet test XournalStudio.Tests            # unit tests (file format)
 .\install.ps1                              # tests + publish + install to %LOCALAPPDATA%\Programs\Xournal Studio for Windows
+native\install.ps1                         # native C++ app (HEAD): tests + Release build + install side by side to %LOCALAPPDATA%\Programs\Xournal Studio (Win32)
 ```
 
 Workflow: after a change commit atomically, push and install (`install.ps1` refuses while the installed app runs).
