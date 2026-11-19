@@ -45,7 +45,7 @@ namespace xournal::XoppFormat
             return std::nullopt;
         }
         std::string_view s = WithoutPlus(ascii);
-        if (s.empty() || s[0] == '+' || (s.size() > 1 && s[0] == '-' && s[1] == '+'))
+        if (s.empty() || s[0] == '+') // "++1": one sign only
         {
             return std::nullopt;
         }

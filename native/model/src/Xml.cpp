@@ -192,7 +192,20 @@ namespace xournal
         auto& siblings = parent->nodes;
         auto at = std::find_if(siblings.begin(), siblings.end(), [&](XmlNode const& n) { return n.element.get() == this; });
         XmlElementPtr self = at->element;
-        siblings.erase(at);
+        at = siblings.erase(at);
+        // The text before and after the element becomes one node, as a parser reads the tree without it - so a tree
+        // edited in place equals a copy built without the element.
+        auto isText = [](XmlNode const& n) { return n.kind == XmlNodeKind::Text || n.kind == XmlNodeKind::Whitespace; };
+        if (at != siblings.begin() && at != siblings.end() && isText(*(at - 1)) && isText(*at))
+        {
+            auto& before = *(at - 1);
+            before.text += at->text;
+            if (at->kind == XmlNodeKind::Text)
+            {
+                before.kind = XmlNodeKind::Text;
+            }
+            siblings.erase(at);
+        }
         parent = nullptr;
         return self;
     }

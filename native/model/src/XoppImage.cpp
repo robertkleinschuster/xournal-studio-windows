@@ -19,7 +19,8 @@ namespace xournal::XoppImage
     {
         std::optional<Size> NaturalSize(XmlElement const& e)
         {
-            auto parts = Split(e.AttributeOr(L"natural_size", L""), L' ');
+            std::wstring text = e.AttributeOr(L"natural_size", L""); // the parts are views into it
+            auto parts = Split(text, L' ');
             if (parts.size() != 2)
             {
                 return std::nullopt;
