@@ -139,6 +139,11 @@ arrows), math exercises long formulas in several colors.
   likes the classic gray common controls for pen use), the same rule applies to it: then its native controls
   (comctl32 menus/tree/toolbar, DirectManipulation for finger pan/zoom, Windows ink via the Win32 ink presenter), not a
   mix with XAML islands.
+- **Direction (user, 2026-11-19): "nativ, schlank, Win32 – aber die moderne Variante davon".** If the Win32 ink demo
+  (D:\src\win32-ink-demo) shows pen ink + finger pan/zoom working like today, InkPages, this app and MatheTrainer move to
+  raw C++/Win32: comctl32 v6 with visual styles (Windows 11 look), PerMonitorV2, DirectComposition/Direct2D/DirectWrite,
+  the Win32 ink presenter, DirectManipulation, C++/WinRT for WinRT APIs (Windows.Data.Pdf, InkAnalyzer); few
+  dependencies, fast start. Not started; the current apps stay usable until replaced.
 - **Simple, flat and honest – no magic** (user, 2026-11-15). The GTK fork grew so much hidden behavior that it
   became confusing. Show things as they are and do exactly what the user asked: the explorer shows every file
   and folder (only what Windows itself marks hidden/system is left out), nothing is paired, filtered, renamed or
