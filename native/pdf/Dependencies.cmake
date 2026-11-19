@@ -6,22 +6,22 @@
 # (e.g. lecture PDFs with a permissions password).
 include(ExternalProject)
 
-# --- libjpeg-turbo: its build refuses add_subdirectory, so ExternalProject (as its CMakeLists asks), once per
-# configuration (static CRT /MT or /MTd like the rest of the build).
+# --- libjpeg-turbo: its build refuses add_subdirectory, so ExternalProject (as its CMakeLists asks). Its configure
+# step runs once; each configuration is built and installed into its own folder <prefix>/<config> (static CRT /MT or
+# /MTd like the rest of the build), and qpdf links the one of the configuration being built.
 set(XOURNAL_JPEG_PREFIX ${CMAKE_CURRENT_BINARY_DIR}/libjpeg-turbo)
 ExternalProject_Add(libjpeg_turbo_build
     URL https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/3.2.1/libjpeg-turbo-3.2.1.tar.gz
     URL_HASH SHA256=C27AD72A68DA151177929AA969AE773A2DA5AC2AF9CE946079314FDAC8CECE7F
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE
     CMAKE_ARGS
-        -DCMAKE_INSTALL_PREFIX=${XOURNAL_JPEG_PREFIX}/$<CONFIG>
         -DCMAKE_BUILD_TYPE=$<CONFIG>
         -DENABLE_SHARED=OFF -DENABLE_STATIC=ON
         -DWITH_TURBOJPEG=OFF -DWITH_TOOLS=OFF -DWITH_TESTS=OFF
         -DWITH_SIMD=OFF          # no NASM needed; qpdf only uses it to decode DCT on request
         -DWITH_CRT_DLL=OFF       # static CRT
     BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --config $<CONFIG>
-    INSTALL_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --config $<CONFIG> --target install
+    INSTALL_COMMAND ${CMAKE_COMMAND} --install <BINARY_DIR> --config $<CONFIG> --prefix ${XOURNAL_JPEG_PREFIX}/$<CONFIG>
     BUILD_BYPRODUCTS ${XOURNAL_JPEG_PREFIX}/Release/lib/jpeg-static.lib ${XOURNAL_JPEG_PREFIX}/Debug/lib/jpeg-static.lib)
 
 # --- qpdf: only its static library is built (EXCLUDE_FROM_ALL; SYSTEM: its headers do not count for /W4 /WX).
