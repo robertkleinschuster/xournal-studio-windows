@@ -89,6 +89,7 @@ namespace xournal::app
         std::vector<Node> nodes;                                       // lParam of each item = its index
         std::set<std::wstring, LessIgnoreCase> expanded;               // open folders, by path
         std::optional<std::filesystem::path> pendingSelection;
+        std::optional<ProjectSnapshot> deferred;                       // arrived while a name was being edited
         std::map<std::wstring, int, LessIgnoreCase> icons;             // system image list index per type
     };
 }

@@ -195,14 +195,15 @@ namespace xournal::app
         io::DocumentFile::Save(*doc, file);
         session.Load(file);
         explorer.RefreshNow();
-        tree.BeginRename(file);
+        // After Run's own refresh (it rebuilds the tree, which would end the edit).
+        UiQueue::Post("explorer: name the new document", [this, file] { tree.BeginRename(file); });
     }
 
     void ExplorerCommands::NewFolder(std::filesystem::path const& folder)
     {
         auto created = project::ProjectFiles::CreateFolder(folder, project::ProjectFiles::UniqueName(folder, L"Neuer Ordner"));
         explorer.RefreshNow();
-        tree.BeginRename(created);
+        UiQueue::Post("explorer: name the new folder", [this, created] { tree.BeginRename(created); });
     }
 
     // Exactly this file (only the name before the extension is edited) or folder - nothing else is renamed with it. The

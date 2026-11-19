@@ -1,6 +1,6 @@
 ﻿# The Aufgaben tab in Windows Sandbox: the todo.txt shown (open by due date), a new task added with Enter, a task
 # completed with its check box (only its line changes, the file keeps CRLF), a task deleted from the context menu.
-#   native\UiTests\Run-AppTest.ps1 -Test native\UiTests\TasksTest.ps1
+#   native\UiTests\Run-AppTest.ps1 -Test native\UiTests\TasksTest.ps1 -Extra D:\src\InkPages\.local-build\tools\uiaprobe.exe
 . C:\sbx\TestKit.ps1
 
 function Lines { [IO.File]::ReadAllText('C:\work\todo.txt') }
@@ -8,12 +8,19 @@ function WaitFor($what, [scriptblock]$condition) {
     for ($i = 0; $i -lt 20 -and -not (& $condition); $i++) { Start-Sleep -Milliseconds 500 }
     if (-not (& $condition)) { Shot "failed-$what"; throw "timed out: $what" }
 }
-function ListItem($name) {
-    $cond = New-Object System.Windows.Automation.AndCondition(
-        (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, $name)),
-        (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::ListItem)))
-    $script:window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $cond)
+# comctl32 controls and Win32 menus through the native UI Automation client (InkPages' uiaprobe, in C:\sbx\data): the
+# managed client of Windows PowerShell does not see their items. ASCII parts of names (the probe matches substrings).
+function At($class, $text) {
+    for ($i = 0; $i -lt 10; $i++) {
+        $r = & C:\sbx\data\uiaprobe.exe $class $text
+        if ($LASTEXITCODE -eq 0) { $p = "$r".Trim() -split ' '; return @([int]$p[0], [int]$p[1]) }
+        Start-Sleep -Milliseconds 300
+    }
+    Shot ("missing-" + ($text -replace '[^A-Za-z0-9]', '_')) | Out-Null
+    throw "'$text' not found in a $class window"
 }
+function ClickAt($class, $text) { $a = At $class $text; [Inj]::ClickPixel($a[0], $a[1]); Start-Sleep -Milliseconds 700; "click $text" }
+function RightClickAt($class, $text) { $a = At $class $text; [Inj]::RightClickPixel($a[0], $a[1]); Start-Sleep -Milliseconds 700; "right-click $text" }
 
 Invoke-Test {
     New-Item -ItemType Directory -Force C:\work | Out-Null
@@ -26,18 +33,12 @@ Invoke-Test {
     Start-TestApp 'XournalStudio.exe'
     Start-Sleep 2
     Shot '01-tasks'
-    foreach ($title in 'Bald fällig', 'Später fällig', 'Ohne Datum') {
-        if ((ListItem $title) -eq $null) { throw "task '$title' not shown" }
-    }
+    foreach ($title in 'Bald f', 'ter f', 'Ohne Datum') { At 'XournalStudioWindow' $title | Out-Null }
 
     # 1. A new task: typed into the box, Enter adds it at the end of the file.
-    $box = Find 'Neue Aufgabe (Eingabe fügt hinzu)'
-    if ($box -eq $null) {
-        $cond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Edit)
-        $box = $script:window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $cond)
-    }
-    $r = $box.Current.BoundingRectangle
-    [Inj]::ClickPixel([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2)); Start-Sleep -Milliseconds 400
+    # The new task's box lies right below the header "todo.txt - n offen" (27 DIP below its center).
+    $header = At 'XournalStudioWindow' 'offen'
+    [Inj]::ClickPixel($header[0], $header[1] + [int](1.5 * 27)); Start-Sleep -Milliseconds 400
     [System.Windows.Forms.SendKeys]::SendWait('Neue Übung abgeben'); Start-Sleep -Milliseconds 300
     [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
     WaitFor 'add' { (Lines) -match 'Neue Übung abgeben' }
@@ -45,16 +46,16 @@ Invoke-Test {
     Shot '02-added'
 
     # 2. Complete a task with its check box: its line only, CRLF kept.
-    $item = ListItem 'Ohne Datum'
-    $item.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern).Toggle()
+    ClickAt 'XournalStudioWindow' 'Ohne Datum' | Out-Null
+    [Inj]::Key(0x20)   # Space toggles the selected row's check box
     WaitFor 'complete' { (Lines) -match '(?m)^x \d{4}-\d\d-\d\d 2026-11-15 Ohne Datum' }
     "after complete: $(Lines)"
     if ((Lines) -notmatch "Bald fällig due:2026-01-01`r`n") { throw 'the other lines changed' }
     Shot '03-completed'
 
     # 3. Delete a task from its context menu (asked first).
-    RightClick 'Später fällig' | Out-Null
-    ClickAnywhere 'Löschen' | Out-Null
+    RightClickAt 'XournalStudioWindow' 'ter f' | Out-Null
+    ClickAt '#32768' 'schen' | Out-Null
     Start-Sleep -Milliseconds 800
     Shot '04-delete-question'
     ClickAnywhere 'Löschen' | Out-Null

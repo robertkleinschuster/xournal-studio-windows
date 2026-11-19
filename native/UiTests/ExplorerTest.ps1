@@ -2,7 +2,8 @@
 # content back, opened again), rename the open document with F2 (the leave question, then opened from its new place),
 # delete the open document's PDF (to the recycle bin; the document is left), a new folder named in place, Als Pfad
 # kopieren. The repository comes from the host (New-TestRepository.ps1: the sandbox has no git).
-#   native\UiTests\Run-AppTest.ps1 -Test native\UiTests\ExplorerTest.ps1 -Extra (native\UiTests\New-TestRepository.ps1)
+#   native\UiTests\Run-AppTest.ps1 -Test native\UiTests\ExplorerTest.ps1 -Extra (native\UiTests\New-TestRepository.ps1),
+#       D:\src\InkPages\.local-build\tools\uiaprobe.exe
 . C:\sbx\TestKit.ps1
 
 $INRANGE = 0x2; $INCONTACT = 0x4; $FIRST = 0x10; $PRIMARY = 0x2000; $DOWN = 0x10000; $UPDATE = 0x20000; $UP = 0x40000
@@ -22,11 +23,24 @@ function Stroke($x0, $y0, $x1, $y1) {
 function Hash($file) { (Get-FileHash $file -Algorithm SHA256).Hash.Substring(0, 12) }
 function Title { $script:p.Refresh(); $script:p.MainWindowTitle }
 function Files { (Get-ChildItem 'C:\work' -Force | Where-Object Name -ne '.git' | ForEach-Object Name) -join ', ' }
-# A tree row's context menu, then one of its items (a Win32 popup menu: searched from the desktop).
+# comctl32 controls and Win32 menus through the native UI Automation client (InkPages' uiaprobe, in C:\sbx\data): the
+# managed client of Windows PowerShell does not see their items. ASCII parts of names (the probe matches substrings).
+function At($class, $text) {
+    for ($i = 0; $i -lt 10; $i++) {
+        $r = & C:\sbx\data\uiaprobe.exe $class $text
+        if ($LASTEXITCODE -eq 0) { $p = "$r".Trim() -split ' '; return @([int]$p[0], [int]$p[1]) }
+        Start-Sleep -Milliseconds 300
+    }
+    Shot ("missing-" + ($text -replace '[^A-Za-z0-9]', '_')) | Out-Null
+    throw "'$text' not found in a $class window"
+}
+function ClickAt($class, $text) { $a = At $class $text; [Inj]::ClickPixel($a[0], $a[1]); Start-Sleep -Milliseconds 700; "click $text" }
+function RightClickAt($class, $text) { $a = At $class $text; [Inj]::RightClickPixel($a[0], $a[1]); Start-Sleep -Milliseconds 700; "right-click $text" }
+# A tree row's context menu, then one of its items.
 function MenuOnRow($row, $item) {
-    RightClick $row | Out-Null
-    ClickAnywhere $item | Out-Null
-    Start-Sleep -Milliseconds 900
+    RightClickAt 'XournalStudioWindow' $row | Out-Null
+    ClickAt '#32768' $item | Out-Null
+    Start-Sleep -Milliseconds 600
     "menu $row -> $item"
 }
 function WaitFor($what, [scriptblock]$condition) {
@@ -47,7 +61,7 @@ Invoke-Test {
 
     Start-TestApp 'XournalStudio.exe' "`"$work\test.xopp`""
     Start-Sleep 3
-    if ((Find 'test.xopp') -eq $null) { Shot 'no-tree'; throw 'the explorer does not show test.xopp' }
+    At 'XournalStudioWindow' 'test.xopp' | Out-Null   # the tree shows the folder
     Shot '01-explorer'
 
     # 1. Discard: a stroke, saved (modified in git: blue), then Änderungen verwerfen -> the committed content, reopened.
@@ -55,7 +69,7 @@ Invoke-Test {
     [Inj]::Ctrl(0x53); Start-Sleep 3   # Strg+S
     "saved: $(Hash "$work\test.xopp")"
     Shot '02-modified-blue'
-    MenuOnRow 'test.xopp' 'Änderungen verwerfen'
+    MenuOnRow 'test.xopp' 'verwerfen'
     Shot '03-discard-question'
     ClickAnywhere 'Verwerfen'
     WaitFor 'discard' { (Hash "$work\test.xopp") -eq $committed }
@@ -66,7 +80,7 @@ Invoke-Test {
 
     # 2. Rename the open document (changed) with F2: the leave question, then it opens from its new place.
     Stroke 600 400 850 430
-    Button 'test.xopp' | Out-Null
+    ClickAt 'XournalStudioWindow' 'test.xopp' | Out-Null
     [Inj]::Key(0x71); Start-Sleep -Milliseconds 800   # F2
     [System.Windows.Forms.SendKeys]::SendWait('Umbenannt'); Start-Sleep -Milliseconds 300
     [System.Windows.Forms.SendKeys]::SendWait('{ENTER}'); Start-Sleep 1
@@ -80,7 +94,7 @@ Invoke-Test {
     Shot '06-renamed'
 
     # 3. Delete the open document's PDF: asked, the document is left (it uses the PDF), the PDF goes to the recycle bin.
-    MenuOnRow 'Schaltungen.pdf' 'Löschen'
+    MenuOnRow 'Schaltungen.pdf' 'schen'
     Shot '07-delete-question'
     ClickAnywhere 'Löschen'
     WaitFor 'delete' { -not (Test-Path "$work\Schaltungen.pdf") }
@@ -98,7 +112,7 @@ Invoke-Test {
     Shot '09-new-folder'
 
     # 5. Als Pfad kopieren: the path in quotes, as File Explorer gives it.
-    MenuOnRow 'todo.txt' 'Als Pfad kopieren'
+    MenuOnRow 'todo.txt' 'Als Pfad'
     $clip = Get-Clipboard
     "clipboard: $clip"
     if ($clip -ne '"C:\work\todo.txt"') { throw "the clipboard holds $clip" }

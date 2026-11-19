@@ -1,5 +1,7 @@
 #include "ExplorerTree.h"
 
+#include "UiQueue.h"
+
 #include "xournal/base/Error.h"
 #include "xournal/base/Log.h"
 #include "xournal/base/Paths.h"
@@ -93,6 +95,12 @@ namespace xournal::app
 
     void ExplorerTree::Show(ProjectSnapshot next)
     {
+        if (TreeView_GetEditControl(tree))
+        {
+            // A name is being edited: the tree is rebuilt when the edit ends (rebuilding would end it).
+            deferred = std::move(next);
+            return;
+        }
         if (!pendingSelection)
         {
             if (Node const* selected = NodeOf(TreeView_GetSelection(tree)))
@@ -434,6 +442,19 @@ namespace xournal::app
             {
                 // Carried out after the edit control is gone (the request rebuilds the tree).
                 Request(ExplorerCommand::Rename, *node, info.item.pszText);
+            }
+            if (deferred)
+            {
+                // After the edit control is gone (the request below may refresh again; this shows the newest until then).
+                UiQueue::Post("explorer: show deferred", [this]
+                {
+                    if (deferred && !TreeView_GetEditControl(tree))
+                    {
+                        auto next = std::move(*deferred);
+                        deferred.reset();
+                        Show(std::move(next));
+                    }
+                });
             }
             return FALSE; // the label changes with the refresh, not here
         }

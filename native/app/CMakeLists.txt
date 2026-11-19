@@ -15,7 +15,10 @@ add_executable(XournalStudio WIN32
     src/ExplorerCommands.cpp
     src/SyncController.cpp
     src/TaskRows.cpp
+    src/TaskListView.cpp
+    src/NewTaskForm.cpp
     src/TasksPane.cpp
+    src/ChildControls.cpp
     src/RecoveryCopies.cpp
     src/DelayedAction.cpp
     src/Questions.cpp

@@ -1,7 +1,7 @@
 #include "TasksPane.h"
 
+#include "ChildControls.h"
 #include "Questions.h"
-#include "UiQueue.h"
 
 #include "xournal/base/Error.h"
 #include "xournal/base/Log.h"
@@ -9,10 +9,8 @@
 #include "xournal/io/Files.h"
 
 #include <commctrl.h>
-#include <uxtheme.h>
 #include <windowsx.h>
 
-#include <algorithm>
 #include <format>
 
 namespace xournal::app
@@ -20,19 +18,8 @@ namespace xournal::app
     namespace
     {
         constexpr wchar_t ClassName[] = L"XournalStudioTasksPane";
-        enum ControlId : int { NewTaskId = 1, DueId, LinkId, AddId, ListId, ShowDoneId, CreateId };
+        enum ControlId : int { FormId = 1, ListId = 10, ShowDoneId, CreateId };
         enum MenuId : UINT { MenuOpenLink = 1, MenuDelete };
-
-        HWND Control(HWND parent, wchar_t const* type, wchar_t const* text, DWORD style, int id, DWORD exStyle = 0)
-        {
-            HWND control = CreateWindowExW(exStyle, type, text, WS_CHILD | WS_VISIBLE | style, 0, 0, 0, 0, parent,
-                reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), GetModuleHandleW(nullptr), nullptr);
-            if (!control)
-            {
-                ThrowLastError(std::format("CreateWindowEx(tasks pane control {})", id));
-            }
-            return control;
-        }
     }
 
     TasksPane::TasksPane(HWND parent, Messages show) : messages(std::move(show))
@@ -58,7 +45,16 @@ namespace xournal::app
         {
             ThrowLastError("CreateWindowEx(tasks pane)");
         }
-        CreateControls();
+        header = ChildControls::Create(window, WC_STATICW, L"Aufgaben", SS_LEFT | SS_ENDELLIPSIS, 0);
+        form = std::make_unique<NewTaskForm>(window, FormId);
+        form->submitted = [this] { Add(); };
+        list = std::make_unique<TaskListView>(window, ListId);
+        list->toggled = [this](TaskRow const& row) { Toggle(row); };
+        list->opened = [this](TaskRow const& row) { Open(row); };
+        list->menuRequested = [this](TaskRow const& row, POINT screen) { ShowMenu(row, screen); };
+        showDoneBox = ChildControls::Create(window, WC_BUTTONW, L"Erledigte anzeigen", WS_TABSTOP | BS_AUTOCHECKBOX, ShowDoneId);
+        noFile = ChildControls::Create(window, WC_STATICW, L"", SS_LEFT, 0);
+        createButton = ChildControls::Create(window, WC_BUTTONW, L"todo.txt anlegen", WS_TABSTOP | BS_PUSHBUTTON, CreateId);
         Reload();
     }
 
@@ -67,52 +63,6 @@ namespace xournal::app
         if (window && IsWindow(window))
         {
             SetWindowLongPtrW(window, GWLP_USERDATA, 0);
-            RemoveWindowSubclass(newTask, EditProc, 0);
-        }
-    }
-
-    void TasksPane::CreateControls()
-    {
-        header = Control(window, WC_STATICW, L"Aufgaben", SS_LEFT | SS_ENDELLIPSIS, 0);
-        newTask = Control(window, WC_EDITW, L"", WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, NewTaskId);
-        Edit_SetCueBannerTextFocused(newTask, L"Neue Aufgabe (Eingabe fügt hinzu)", TRUE);
-        if (!SetWindowSubclass(newTask, EditProc, 0, reinterpret_cast<DWORD_PTR>(this)))
-        {
-            ThrowLastError("SetWindowSubclass(new task)");
-        }
-        due = Control(window, DATETIMEPICK_CLASSW, L"", WS_TABSTOP | DTS_SHORTDATEFORMAT | DTS_SHOWNONE, DueId);
-        DateTime_SetSystemtime(due, GDT_NONE, nullptr); // no due date until one is chosen
-        linkPage = Control(window, WC_BUTTONW, L"Mit dieser Seite verknüpfen", WS_TABSTOP | BS_AUTOCHECKBOX, LinkId);
-        addButton = Control(window, WC_BUTTONW, L"Hinzufügen", WS_TABSTOP | BS_PUSHBUTTON, AddId);
-        list = Control(window, WC_LISTVIEWW, L"", WS_TABSTOP | LVS_REPORT | LVS_NOCOLUMNHEADER | LVS_SINGLESEL |
-            LVS_SHOWSELALWAYS, ListId);
-        ListView_SetExtendedListViewStyle(list, LVS_EX_CHECKBOXES | LVS_EX_FULLROWSELECT | LVS_EX_INFOTIP | LVS_EX_DOUBLEBUFFER);
-        HRESULT hr = SetWindowTheme(list, L"Explorer", nullptr);
-        if (FAILED(hr))
-        {
-            LogError(std::format("tasks: list theme not set: {}", DescribeHr(hr)));
-        }
-        LVCOLUMNW column{ LVCF_WIDTH };
-        column.cx = 160;
-        ListView_InsertColumn(list, 0, &column);
-        column.cx = 100;
-        ListView_InsertColumn(list, 1, &column);
-        showDoneBox = Control(window, WC_BUTTONW, L"Erledigte anzeigen", WS_TABSTOP | BS_AUTOCHECKBOX, ShowDoneId);
-        noFile = Control(window, WC_STATICW, L"", SS_LEFT, 0);
-        createButton = Control(window, WC_BUTTONW, L"todo.txt anlegen", WS_TABSTOP | BS_PUSHBUTTON, CreateId);
-
-        NONCLIENTMETRICSW metrics{ sizeof(metrics) };
-        if (SystemParametersInfoForDpi(SPI_GETNONCLIENTMETRICS, sizeof(metrics), &metrics, 0, GetDpiForWindow(window)))
-        {
-            static HFONT font = CreateFontIndirectW(&metrics.lfMessageFont); // one per process, kept until exit
-            for (HWND control : { header, newTask, due, linkPage, addButton, list, showDoneBox, noFile, createButton })
-            {
-                SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
-            }
-        }
-        else
-        {
-            LogError(std::format("tasks: message font: {}", DescribeHr(HRESULT_FROM_WIN32(GetLastError()))));
         }
     }
 
@@ -123,27 +73,17 @@ namespace xournal::app
         int dpi = static_cast<int>(GetDpiForWindow(window));
         auto px = [dpi](int dip) { return MulDiv(dip, dpi, 96); };
         int margin = px(8), width = rc.right - 2 * margin, y = margin;
-        bool exists = file && file->Exists();
         MoveWindow(header, margin, y, width, px(20), TRUE);
         y += px(24);
-        if (!exists)
+        if (!file || !file->Exists())
         {
             MoveWindow(noFile, margin, y, width, px(40), TRUE);
             MoveWindow(createButton, margin, y + px(44), px(140), px(28), TRUE);
             return;
         }
-        MoveWindow(newTask, margin, y, width, px(26), TRUE);
-        y += px(30);
-        int addWidth = px(90);
-        MoveWindow(due, margin, y, width - addWidth - margin, px(26), TRUE);
-        MoveWindow(addButton, rc.right - margin - addWidth, y, addWidth, px(26), TRUE);
-        y += px(30);
-        MoveWindow(linkPage, margin, y, width, px(22), TRUE);
-        y += px(28);
+        y = form->Layout(margin, y, width, dpi);
         int bottom = rc.bottom - margin - px(22);
-        MoveWindow(list, margin, y, width, std::max(0, bottom - y - px(4)), TRUE);
-        ListView_SetColumnWidth(list, 1, px(110));
-        ListView_SetColumnWidth(list, 0, std::max(px(60), width - px(110) - GetSystemMetricsForDpi(SM_CXVSCROLL, dpi) - px(4)));
+        list->Layout(margin, y, width, bottom - y - px(4), dpi);
         MoveWindow(showDoneBox, margin, bottom, width, px(22), TRUE);
     }
 
@@ -167,7 +107,7 @@ namespace xournal::app
     void TasksPane::Reload()
     {
         bool exists = false;
-        rows = {};
+        TaskRows rows;
         try
         {
             exists = file && file->Exists();
@@ -181,45 +121,18 @@ namespace xournal::app
             LogException(std::format("tasks: read {}", file ? ToUtf8(file->Path().native()) : ""));
             messages(L"todo.txt konnte nicht gelesen werden (Einzelheiten in errors.log).", ToastKind::Error);
         }
-        for (HWND control : { newTask, due, linkPage, addButton, list, showDoneBox })
-        {
-            ShowWindow(control, exists ? SW_SHOW : SW_HIDE);
-        }
+        form->Show(exists);
+        ShowWindow(list->Window(), exists ? SW_SHOW : SW_HIDE);
+        ShowWindow(showDoneBox, exists ? SW_SHOW : SW_HIDE);
         ShowWindow(noFile, exists ? SW_HIDE : SW_SHOW);
         ShowWindow(createButton, !exists && file ? SW_SHOW : SW_HIDE);
         SetWindowTextW(noFile, file ? L"Im Projektordner gibt es keine todo.txt." : L"Kein Ordner geöffnet (Datei → Ordner öffnen).");
-        SetWindowTextW(header, !exists ? L"Aufgaben"
-            : rows.openCount == 1 ? L"todo.txt – 1 offen" : std::format(L"todo.txt – {} offen", rows.openCount).c_str());
-        bool canLink = currentPage && currentPage().first.has_value();
-        EnableWindow(linkPage, canLink);
-        if (!canLink) Button_SetCheck(linkPage, BST_UNCHECKED);
-        Fill();
+        std::wstring title = !exists ? L"Aufgaben"
+            : rows.openCount == 1 ? L"todo.txt – 1 offen" : std::format(L"todo.txt – {} offen", rows.openCount);
+        SetWindowTextW(header, title.c_str());
+        form->EnableLink(currentPage && currentPage().first.has_value());
+        list->Show(rows);
         Layout();
-    }
-
-    void TasksPane::Fill()
-    {
-        filling = true;
-        SendMessageW(list, WM_SETREDRAW, FALSE, 0);
-        ListView_DeleteAllItems(list);
-        for (size_t i = 0; i < rows.rows.size(); i++)
-        {
-            TaskRow const& row = rows.rows[i];
-            std::wstring title = row.linkText.empty() ? row.title : row.title + L" · " + row.linkText;
-            LVITEMW item{ LVIF_TEXT | LVIF_PARAM };
-            item.iItem = static_cast<int>(i);
-            item.pszText = title.data();
-            item.lParam = static_cast<LPARAM>(i);
-            int index = ListView_InsertItem(list, &item);
-            if (index < 0)
-            {
-                ThrowLastError("ListView_InsertItem(task)");
-            }
-            ListView_SetItemText(list, index, 1, const_cast<wchar_t*>(row.dueText.c_str()));
-            ListView_SetCheckState(list, index, row.task.done);
-        }
-        SendMessageW(list, WM_SETREDRAW, TRUE, 0);
-        filling = false;
     }
 
     bool TasksPane::Change(char const* what, std::function<bool(tasks::TaskFile&)> const& change)
@@ -254,22 +167,13 @@ namespace xournal::app
 
     void TasksPane::Add()
     {
-        int length = GetWindowTextLengthW(newTask);
-        std::wstring text(static_cast<size_t>(length) + 1, L'\0');
-        GetWindowTextW(newTask, text.data(), length + 1);
-        text.resize(static_cast<size_t>(length));
-        if (!file || Trim(text).empty())
+        NewTaskForm::Entry entry = form->Read();
+        if (!file || Trim(entry.text).empty())
         {
             return;
         }
-        std::optional<Date> dueDate;
-        SYSTEMTIME chosen{};
-        if (DateTime_GetSystemtime(due, &chosen) == GDT_VALID)
-        {
-            dueDate = Date{ chosen.wYear, chosen.wMonth, chosen.wDay };
-        }
-        TodoTask task = TodoTxt::Create(Trim(text), Today(), dueDate);
-        if (Button_GetCheck(linkPage) == BST_CHECKED && currentPage)
+        TodoTask task = TodoTxt::Create(Trim(entry.text), Today(), entry.due);
+        if (entry.linkPage && currentPage)
         {
             auto [document, page] = currentPage();
             if (document)
@@ -278,13 +182,10 @@ namespace xournal::app
             }
         }
         std::wstring line = task.ToString();
-        if (!Change("add task", [&](tasks::TaskFile& f) { f.Append(line); return true; }))
+        if (Change("add task", [&](tasks::TaskFile& f) { f.Append(line); return true; }))
         {
-            return; // what was typed stays
+            form->Clear(); // otherwise what was typed stays
         }
-        SetWindowTextW(newTask, L"");
-        DateTime_SetSystemtime(due, GDT_NONE, nullptr);
-        Button_SetCheck(linkPage, BST_UNCHECKED);
     }
 
     void TasksPane::Toggle(TaskRow const& row)
@@ -293,13 +194,16 @@ namespace xournal::app
         Change("complete task", [&](tasks::TaskFile& f) { return f.Replace(row.line, changed.ToString()); });
     }
 
-    void TasksPane::ShowMenu(int index, POINT screen)
+    void TasksPane::Open(TaskRow const& row)
     {
-        if (index < 0 || static_cast<size_t>(index) >= rows.rows.size())
+        if (row.link && openRequested)
         {
-            return;
+            openRequested(row.link->first, row.link->second);
         }
-        TaskRow row = rows.rows[static_cast<size_t>(index)];
+    }
+
+    void TasksPane::ShowMenu(TaskRow const& row, POINT screen)
+    {
         HMENU menu = CreatePopupMenu();
         if (!menu)
         {
@@ -309,14 +213,15 @@ namespace xournal::app
         AppendMenuW(menu, MF_STRING, MenuDelete, L"&Löschen");
         UINT chosen = static_cast<UINT>(TrackPopupMenuEx(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, screen.x, screen.y, window, nullptr));
         DestroyMenu(menu);
-        if (chosen == MenuOpenLink && row.link && openRequested)
+        TaskRow target = row; // the menu ran a message loop: the list may have been refilled meanwhile
+        if (chosen == MenuOpenLink)
         {
-            openRequested(row.link->first, row.link->second);
+            Open(target);
         }
         else if (chosen == MenuDelete && Questions::Confirm(window, L"Aufgabe löschen?",
-            std::format(L"„{}“ wird aus der todo.txt entfernt.", row.title), L"Löschen"))
+            std::format(L"„{}“ wird aus der todo.txt entfernt.", target.title), L"Löschen"))
         {
-            Change("delete task", [&](tasks::TaskFile& f) { return f.Remove(row.line); });
+            Change("delete task", [&](tasks::TaskFile& f) { return f.Remove(target.line); });
         }
     }
 
@@ -324,82 +229,12 @@ namespace xournal::app
     {
         Change("create todo.txt", [](tasks::TaskFile& f)
         {
-            if (f.Exists())
+            if (!f.Exists()) // another app made one meanwhile: shown, never overwritten
             {
-                return true; // another app made one meanwhile: shown, never overwritten
+                io::Files::WriteReplacing(f.Path(), {});
             }
-            io::Files::WriteReplacing(f.Path(), {});
             return true;
         });
-    }
-
-    LRESULT TasksPane::OnNotify(NMHDR const& note)
-    {
-        if (note.hwndFrom != list)
-        {
-            return 0;
-        }
-        switch (note.code)
-        {
-        case LVN_ITEMCHANGED:
-        {
-            auto const& change = reinterpret_cast<NMLISTVIEW const&>(note);
-            bool checkChanged = (change.uChanged & LVIF_STATE) && ((change.uNewState ^ change.uOldState) & LVIS_STATEIMAGEMASK) &&
-                (change.uOldState & LVIS_STATEIMAGEMASK); // 0: the item was just inserted
-            if (!filling && checkChanged)
-            {
-                auto index = static_cast<size_t>(change.lParam);
-                if (index < rows.rows.size())
-                {
-                    // Not inside the list's own notification: the change refills the list.
-                    UiQueue::Post("tasks: complete", [this, row = rows.rows[index]] { Toggle(row); });
-                }
-            }
-            return 0;
-        }
-        case NM_DBLCLK:
-        {
-            auto const& activate = reinterpret_cast<NMITEMACTIVATE const&>(note);
-            if (activate.iItem >= 0 && static_cast<size_t>(activate.iItem) < rows.rows.size())
-            {
-                auto const& row = rows.rows[static_cast<size_t>(activate.iItem)];
-                if (row.link && openRequested)
-                {
-                    openRequested(row.link->first, row.link->second);
-                }
-            }
-            return 0;
-        }
-        case NM_RCLICK:
-        {
-            auto const& activate = reinterpret_cast<NMITEMACTIVATE const&>(note);
-            POINT screen = activate.ptAction;
-            ClientToScreen(list, &screen);
-            ShowMenu(activate.iItem, screen);
-            return TRUE;
-        }
-        case NM_CUSTOMDRAW:
-        {
-            auto& draw = const_cast<NMLVCUSTOMDRAW&>(reinterpret_cast<NMLVCUSTOMDRAW const&>(note));
-            if (draw.nmcd.dwDrawStage == CDDS_PREPAINT) return CDRF_NOTIFYITEMDRAW;
-            if (draw.nmcd.dwDrawStage == CDDS_ITEMPREPAINT) return CDRF_NOTIFYSUBITEMDRAW;
-            if (draw.nmcd.dwDrawStage == (CDDS_ITEMPREPAINT | CDDS_SUBITEM))
-            {
-                auto index = static_cast<size_t>(draw.nmcd.lItemlParam);
-                if (index < rows.rows.size())
-                {
-                    TaskRow const& row = rows.rows[index];
-                    draw.clrText = row.task.done ? GetSysColor(COLOR_GRAYTEXT)
-                        : draw.iSubItem == 1 && row.overdue ? RGB(0xC4, 0x2B, 0x1C)
-                        : draw.iSubItem == 1 && row.dueSoon ? GetSysColor(COLOR_HOTLIGHT)
-                        : draw.iSubItem == 1 ? GetSysColor(COLOR_GRAYTEXT) : GetSysColor(COLOR_WINDOWTEXT);
-                }
-                return CDRF_DODEFAULT;
-            }
-            return CDRF_DODEFAULT;
-        }
-        }
-        return 0;
     }
 
     LRESULT TasksPane::Handle(UINT message, WPARAM wp, LPARAM lp)
@@ -410,11 +245,14 @@ namespace xournal::app
             Layout();
             return 0;
         case WM_COMMAND:
-            switch (LOWORD(wp))
+            if (form->OnCommand(LOWORD(wp))) return 0;
+            if (LOWORD(wp) == CreateId)
             {
-            case AddId: Add(); return 0;
-            case CreateId: CreateTaskFile(); return 0;
-            case ShowDoneId:
+                CreateTaskFile();
+                return 0;
+            }
+            if (LOWORD(wp) == ShowDoneId)
+            {
                 showDone = Button_GetCheck(showDoneBox) == BST_CHECKED;
                 Reload();
                 if (showsDoneChanged) showsDoneChanged(showDone);
@@ -422,36 +260,21 @@ namespace xournal::app
             }
             break;
         case WM_NOTIFY:
-            return OnNotify(*reinterpret_cast<NMHDR const*>(lp));
+        {
+            auto const& note = *reinterpret_cast<NMHDR const*>(lp);
+            if (note.hwndFrom == list->Window())
+            {
+                return list->OnNotify(note);
+            }
+            break;
+        }
         case WM_CTLCOLORSTATIC:
-            // The labels on the pane's window background (not the dialog color).
+            // The labels and check boxes on the pane's window background (not the dialog color).
             SetBkColor(reinterpret_cast<HDC>(wp), GetSysColor(COLOR_WINDOW));
             SetTextColor(reinterpret_cast<HDC>(wp), GetSysColor(COLOR_WINDOWTEXT));
             return reinterpret_cast<LRESULT>(GetSysColorBrush(COLOR_WINDOW));
         }
         return DefWindowProcW(window, message, wp, lp);
-    }
-
-    LRESULT CALLBACK TasksPane::EditProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp, UINT_PTR, DWORD_PTR data)
-    {
-        // Enter in the new task's box adds it (a single-line edit would only beep).
-        if (message == WM_KEYDOWN && wp == VK_RETURN)
-        {
-            try
-            {
-                reinterpret_cast<TasksPane*>(data)->Add();
-            }
-            catch (...)
-            {
-                LogException("tasks: add");
-            }
-            return 0;
-        }
-        if (message == WM_CHAR && wp == L'\r')
-        {
-            return 0;
-        }
-        return DefSubclassProc(hwnd, message, wp, lp);
     }
 
     LRESULT CALLBACK TasksPane::Proc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp)

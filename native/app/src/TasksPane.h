@@ -1,10 +1,13 @@
 #pragma once
 
-// The Aufgaben tab: the project folder's todo.txt (services' TaskFile) - open tasks by due date (overdue in red), done
-// ones optionally; a new task with an optional due date and a link to the page in view (doc: tag, as the GTK Xournal
-// Studio wrote); the check box completes or reopens a task, the context menu deletes it, a double-click opens its linked
-// page. Every change rewrites only its own line; nothing is written while a sync runs.
+// The Aufgaben tab: the project folder's todo.txt (services' TaskFile) shown in a TaskListView with a NewTaskForm above
+// it and "Erledigte anzeigen" below. The pane makes the changes: a new task (with an optional due date and a link to the
+// page in view, doc: tag as the GTK Xournal Studio wrote), completing or reopening a task with its check box, deleting it
+// from the context menu (asked), opening its linked page. Every change rewrites only its own line; nothing is written
+// while a sync runs.
 
+#include "NewTaskForm.h"
+#include "TaskListView.h"
 #include "TaskRows.h"
 #include "Toast.h"
 
@@ -51,25 +54,21 @@ namespace xournal::app
 
     private:
         static LRESULT CALLBACK Proc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp);
-        static LRESULT CALLBACK EditProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp, UINT_PTR id, DWORD_PTR data);
         LRESULT Handle(UINT message, WPARAM wp, LPARAM lp);
-        LRESULT OnNotify(NMHDR const& header);
-        void CreateControls();
         void Layout();
-        void Fill();
         bool Change(char const* what, std::function<bool(tasks::TaskFile&)> const& change);
         void Add();
         void Toggle(TaskRow const& row);
-        void ShowMenu(int index, POINT screen);
+        void Open(TaskRow const& row);
+        void ShowMenu(TaskRow const& row, POINT screen);
         void CreateTaskFile();
 
         HWND window = nullptr;
-        HWND header = nullptr, newTask = nullptr, due = nullptr, linkPage = nullptr, addButton = nullptr;
-        HWND list = nullptr, showDoneBox = nullptr, noFile = nullptr, createButton = nullptr;
+        HWND header = nullptr, showDoneBox = nullptr, noFile = nullptr, createButton = nullptr;
+        std::unique_ptr<NewTaskForm> form;
+        std::unique_ptr<TaskListView> list;
         Messages messages;
         std::optional<tasks::TaskFile> file;
-        TaskRows rows;
         bool showDone = false;
-        bool filling = false; // the list's check boxes change while it is filled: not the user's
     };
 }
