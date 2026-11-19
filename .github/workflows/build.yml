@@ -106,7 +106,8 @@ jobs:
           - Pen and highlighter presets, exact or whole-stroke eraser, selection (lasso/rectangle) to move, scale, copy
             and delete across pages, shapes and shape recognition, the Windows ruler, a text tool, undo/redo.
           - PDF backgrounds, all Xournal++ backgrounds, pictures and texts; open a PDF as a new document; PDF export;
-            pages inserted, moved and deleted, also from another PDF or document.
+            pages inserted, moved and deleted, also from another PDF or document; the PDF's outline and links.
+          - Search (Ctrl+F) over the PDF's text, the file's texts and handwriting.
           - Side pane: project folder explorer with git colors and sync, todo.txt tasks, page thumbnails.
           - Saving only by choice, with recovery copies of unsaved changes; iPad (PencilKit) markup import.
 

@@ -213,7 +213,7 @@ code). In short: `base ← model ← io ← pdf, pdftext, search, import, servic
 
 ## Open work
 
-- The parity list and the remaining features are in `docs/CPP-UMZUG.md` (search UI with Strg+F, PDF outline and
-  links in the app, clipboard images/ink of other apps, file associations, device test by the user).
+- The parity list and the remaining features are in `docs/CPP-UMZUG.md` (clipboard images/ink of other apps, file
+  associations, device test by the user).
 - Questions for the user: an attached copy `<name>.xopp.bg.pdf` instead of appending to the original PDF (offered, not
   chosen); WiX 7 (EULA) vs. staying on WiX 6; a code-signing certificate.

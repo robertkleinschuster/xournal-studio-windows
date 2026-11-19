@@ -16,7 +16,8 @@ a delay-loaded DLL. Licenses: [THIRD-PARTY.md](THIRD-PARTY.md). The earlier C#/W
   Windows ruler, a text tool, undo/redo. Finger and touchpad pan and zoom; the mouse selects - only the pen writes.
 - Documents: PDF backgrounds (PDF opened as a new document), all Xournal++ backgrounds, pictures, texts, PDF export,
   pages inserted (blank, from a PDF or another document), moved and deleted, iPad (PencilKit) markup import.
-- Side pane: the project folder (git colors, sync), todo.txt tasks, page thumbnails.
+- Side pane: the project folder (git colors, sync), todo.txt tasks, page thumbnails, the PDF's outline, search
+  (Strg+F: PDF text, texts and handwriting); PDF links follow a mouse click or finger tap.
 - Saving only by choice (the leave question), recovery copies of unsaved changes.
 
 ## Build, test, install

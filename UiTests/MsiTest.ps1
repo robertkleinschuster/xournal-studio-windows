@@ -56,7 +56,7 @@ Invoke-Test {
     Check 'install folder' (Test-Path (Join-Path $folder 'XournalStudio.exe'))
     $files = Snapshot
     $files | ForEach-Object { "file $_" }
-    Check 'licenses' (Test-Path (Join-Path $folder 'licenses\THIRD-PARTY.md'))   # (pdfium.dll only once the app links pdftext)
+    Check 'pdfium.dll and licenses' ((Test-Path (Join-Path $folder 'pdfium.dll')) -and (Test-Path (Join-Path $folder 'licenses\THIRD-PARTY.md')) -and (Test-Path (Join-Path $folder 'licenses\pdfium')))
     Check 'Start menu shortcut' (Test-Path $link)
     $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($link)
     "shot check: shortcut target $($shortcut.TargetPath), icon $($shortcut.IconLocation)"
