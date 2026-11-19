@@ -1,7 +1,7 @@
 ﻿# Crash recovery in Windows Sandbox: a change, the copy written 5 s later (Recovery-native), the process killed; the next
 # start offers the copy (Wiederherstellen), the restored document is changed (unsaved); closing it with "Nicht speichern"
 # removes the copy. A second crash's copy is discarded with Verwerfen (to the recycle bin).
-#   native\UiTests\Run-AppTest.ps1 -Test native\UiTests\RecoveryTest.ps1
+#   UiTests\Run-AppTest.ps1 -Test UiTests\RecoveryTest.ps1
 . C:\sbx\TestKit.ps1
 
 $INRANGE = 0x2; $INCONTACT = 0x4; $FIRST = 0x10; $PRIMARY = 0x2000; $DOWN = 0x10000; $UPDATE = 0x20000; $UP = 0x40000

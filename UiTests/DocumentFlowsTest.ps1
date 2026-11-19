@@ -2,7 +2,7 @@
 # pictures and PDF background on screen, the leave question with unsaved changes (Abbrechen keeps the document, Nicht
 # speichern leaves it), Save As of a document with an attached PDF (the attachment goes along, the file keeps "attach"),
 # and Datei → Als PDF exportieren.
-#   native\UiTests\Run-AppTest.ps1 -Test native\UiTests\DocumentFlowsTest.ps1
+#   UiTests\Run-AppTest.ps1 -Test UiTests\DocumentFlowsTest.ps1
 . C:\sbx\TestKit.ps1
 
 $INRANGE = 0x2; $INCONTACT = 0x4; $FIRST = 0x10; $PRIMARY = 0x2000; $DOWN = 0x10000; $UPDATE = 0x20000; $UP = 0x40000

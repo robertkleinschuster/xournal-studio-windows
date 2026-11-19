@@ -1,10 +1,9 @@
 ﻿# Builds the git repository the explorer's sandbox test works in (the sandbox has no git): test.xopp + its PDF
 # (examples\Schaltungen.*) and a todo.txt, committed, zipped. Returns the zip's path. Uses Git for Windows on the host.
-#   native\UiTests\Run-AppTest.ps1 -Test native\UiTests\ExplorerTest.ps1 -Extra (native\UiTests\New-TestRepository.ps1)
+#   UiTests\Run-AppTest.ps1 -Test UiTests\ExplorerTest.ps1 -Extra (UiTests\New-TestRepository.ps1)
 $ErrorActionPreference = 'Stop'
-$native = Split-Path $PSScriptRoot
-$repo = Split-Path $native
-$base = Join-Path $native '.local-build\test-repository'
+$repo = Split-Path $PSScriptRoot
+$base = Join-Path $repo '.local-build\test-repository'
 $work = Join-Path $base 'work'
 $zip = Join-Path $base 'work.zip'
 if (Test-Path $base) { Remove-Item -Recurse -Force $base }

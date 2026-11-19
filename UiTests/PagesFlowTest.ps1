@@ -2,7 +2,7 @@
 # pictures of the later pages - zoomed out: screenshots), the toolbar with the app's buttons (Speichern, Exportieren,
 # Seite einfügen, Seite löschen), and the page operations: a page inserted after page 1 and deleted again (asked),
 # while the undo history of a stroke on page 1 survives both (undo/redo after each, checked in the saved file).
-#   native\UiTests\Run-AppTest.ps1 -Test native\UiTests\PagesFlowTest.ps1 -Extra <uiaprobe.exe>
+#   UiTests\Run-AppTest.ps1 -Test UiTests\PagesFlowTest.ps1 -Extra <uiaprobe.exe>
 # Toolbar buttons are found with InkPages' uiaprobe (the managed UI Automation client of PS 5.1 sees comctl32 toolbars
 # only as an empty pane); names are passed as ASCII parts (this script is read as ANSI).
 . C:\sbx\TestKit.ps1

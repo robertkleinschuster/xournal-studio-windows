@@ -2,7 +2,7 @@
 
 // Datei → PDF mit iPad-Anmerkungen importieren (the C# PdfImportCommand): the user picks an annotated PDF and the .xopp
 // to write; its PDF (the source without Apple's markup) goes beside it with the same name; the markup becomes the
-// document's strokes, texts and pictures (native/import). The source stays as it is; a target that would replace the
+// document's strokes, texts and pictures (the import module). The source stays as it is; a target that would replace the
 // source or the open document (or its PDF) is refused; an existing PDF of that name is replaced only when the user says
 // so, and only once everything else worked (it is staged as "<pdf>~import" first). Temporary files are deleted.
 // The work runs on the thread pool (RenderPictures needs Windows.Data.Pdf off the STA); afterwards the new document is

@@ -2,7 +2,7 @@
 # content (select all + pen drag), undo the move, erase across the page, saving after each step - and check the saved
 # file each time: strokes the user did not touch are byte-identical elements of the original, moved ones are the original
 # elements with all coordinates shifted by one offset (attributes and widths unchanged), new ink is added. Then reload.
-#   native\UiTests\Run-AppTest.ps1 -Test native\UiTests\InkRoundTripTest.ps1 -Extra <uiaprobe.exe>
+#   UiTests\Run-AppTest.ps1 -Test UiTests\InkRoundTripTest.ps1 -Extra <uiaprobe.exe>
 # Toolbar buttons are found by name with InkPages' uiaprobe (PS 5.1's managed UI Automation sees comctl32 toolbars only
 # as an empty pane).
 . C:\sbx\TestKit.ps1

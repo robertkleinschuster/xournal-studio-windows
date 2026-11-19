@@ -1,6 +1,6 @@
 ﻿# The Aufgaben tab in Windows Sandbox: the todo.txt shown (open by due date), a new task added with Enter, a task
 # completed with its check box (only its line changes, the file keeps CRLF), a task deleted from the context menu.
-#   native\UiTests\Run-AppTest.ps1 -Test native\UiTests\TasksTest.ps1 -Extra D:\src\InkPages\.local-build\tools\uiaprobe.exe
+#   UiTests\Run-AppTest.ps1 -Test UiTests\TasksTest.ps1 -Extra D:\src\InkPages\.local-build\tools\uiaprobe.exe
 . C:\sbx\TestKit.ps1
 
 function Lines { [IO.File]::ReadAllText('C:\work\todo.txt') }

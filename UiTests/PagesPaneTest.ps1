@@ -5,7 +5,7 @@
 #     refer to PDF pages after the original ones);
 #   - Datei > PDF mit iPad-Anmerkungen importieren with a PDF without Apple markup (the flow: pickers, the PDF beside the
 #     new .xopp, no temporary files left, the new document opened).
-#   native\UiTests\Run-AppTest.ps1 -Test native\UiTests\PagesPaneTest.ps1 -Extra <uiaprobe.exe>,examples\Grenzwerte.pdf
+#   UiTests\Run-AppTest.ps1 -Test UiTests\PagesPaneTest.ps1 -Extra <uiaprobe.exe>,examples\Grenzwerte.pdf
 # Names with umlauts are built from character codes (this script is read as ANSI by PS 5.1).
 . C:\sbx\TestKit.ps1
 

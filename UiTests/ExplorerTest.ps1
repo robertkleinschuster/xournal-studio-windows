@@ -2,7 +2,7 @@
 # content back, opened again), rename the open document with F2 (the leave question, then opened from its new place),
 # delete the open document's PDF (to the recycle bin; the document is left), a new folder named in place, Als Pfad
 # kopieren. The repository comes from the host (New-TestRepository.ps1: the sandbox has no git).
-#   native\UiTests\Run-AppTest.ps1 -Test native\UiTests\ExplorerTest.ps1 -Extra (native\UiTests\New-TestRepository.ps1),
+#   UiTests\Run-AppTest.ps1 -Test UiTests\ExplorerTest.ps1 -Extra (UiTests\New-TestRepository.ps1),
 #       D:\src\InkPages\.local-build\tools\uiaprobe.exe
 . C:\sbx\TestKit.ps1
 

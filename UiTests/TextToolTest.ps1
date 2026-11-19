@@ -2,7 +2,7 @@
 # umlauts and a second line), end it with a tap beside, save; edit it again, save; undo the change, save; select it with
 # a mouse lasso and move it, save - and check each saved file: the new <text> as upstream writes it (font "Sans", size,
 # x, y, color, content), the other texts and strokes unchanged.
-#   native\UiTests\Run-AppTest.ps1 -Test native\UiTests\TextToolTest.ps1 -Extra <uiaprobe.exe>
+#   UiTests\Run-AppTest.ps1 -Test UiTests\TextToolTest.ps1 -Extra <uiaprobe.exe>
 # (Umlauts as [char] codes: Windows PowerShell 5.1 reads a script without BOM in the ANSI code page.)
 . C:\sbx\TestKit.ps1
 
