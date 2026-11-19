@@ -17,6 +17,7 @@ add_executable(XournalStudio WIN32
     src/TaskRows.cpp
     src/TaskListView.cpp
     src/NewTaskForm.cpp
+    src/TaskEditDialog.cpp
     src/TasksPane.cpp
     src/ChildControls.cpp
     src/RecoveryCopies.cpp

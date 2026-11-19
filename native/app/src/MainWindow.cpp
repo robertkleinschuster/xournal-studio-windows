@@ -228,6 +228,7 @@ namespace xournal::app
         sync = std::make_unique<SyncController>(window, *session, messages);
         sync->stateChanged = [this] { OnSyncStateChanged(); };
         session->refusedWhileSyncing = [this](std::wstring const& what) { return sync->RefusedWhileSyncing(what); };
+        session->saveDeferredWhileSyncing = [this] { return sync->DeferSave(); };
 
         projectExplorer = std::make_unique<ProjectExplorer>(pane->Explorer());
         projectExplorer->refreshed = [this] { pane->Tasks().Reload(); };

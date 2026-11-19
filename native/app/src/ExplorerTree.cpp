@@ -31,11 +31,12 @@ namespace xournal::app
         }
 
         // The shell's small icon for a file or folder in the system image list, as File Explorer shows it. By name and
-        // attributes (SHGFI_USEFILEATTRIBUTES): the type's icon without touching the file.
-        int ShellIcon(std::wstring const& name, bool folder, bool open = false)
+        // attributes (SHGFI_USEFILEATTRIBUTES): the type's icon without touching the file; `ofFile`: the file's own icon
+        // (read from the file, for the types whose files each have their own).
+        int ShellIcon(std::wstring const& name, bool folder, bool open = false, bool ofFile = false)
         {
             SHFILEINFOW info{};
-            UINT flags = SHGFI_SYSICONINDEX | SHGFI_SMALLICON | SHGFI_USEFILEATTRIBUTES | (open ? SHGFI_OPENICON : 0);
+            UINT flags = SHGFI_SYSICONINDEX | SHGFI_SMALLICON | (ofFile ? 0 : SHGFI_USEFILEATTRIBUTES) | (open ? SHGFI_OPENICON : 0);
             if (!SHGetFileInfoW(name.c_str(), folder ? FILE_ATTRIBUTE_DIRECTORY : FILE_ATTRIBUTE_NORMAL, &info, sizeof(info), flags))
             {
                 LogError(std::format("explorer: no shell icon for {}", ToUtf8(name)));
@@ -141,7 +142,8 @@ namespace xournal::app
         insert.itemex.pszText = name.data();
         insert.itemex.lParam = static_cast<LPARAM>(nodes.size() - 1);
         insert.itemex.cChildren = entry.children.empty() ? 0 : 1;
-        insert.itemex.iImage = insert.itemex.iSelectedImage = Icon(name, entry.isFolder, false);
+        insert.itemex.iImage = insert.itemex.iSelectedImage = HasOwnIcon(entry) ? ShellIcon(entry.path.native(), false, false, true)
+            : Icon(name, entry.isFolder, false);
         insert.itemex.iExpandedImage = entry.isFolder ? Icon(name, true, true) : 0;
         HTREEITEM item = TreeView_InsertItem(tree, &insert);
         if (!item)
@@ -156,6 +158,22 @@ namespace xournal::app
         {
             TreeView_Expand(tree, item, TVE_EXPAND);
         }
+    }
+
+    // Programs, shortcuts and icon files show their own icon in File Explorer (their type has no single one); every
+    // other file shows its type's icon - read once per type, not per file.
+    bool ExplorerTree::HasOwnIcon(project::ProjectEntry const& entry)
+    {
+        if (entry.isFolder)
+        {
+            return false;
+        }
+        std::wstring extension = entry.path.extension().native();
+        for (wchar_t const* own : { L".exe", L".lnk", L".ico", L".url" })
+        {
+            if (EqualsIgnoreCase(extension, own)) return true;
+        }
+        return false;
     }
 
     int ExplorerTree::Icon(std::wstring const& name, bool folder, bool open)

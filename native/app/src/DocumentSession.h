@@ -47,6 +47,8 @@ namespace xournal::app
         /// While a sync runs: says so for "<what>" ("Öffnen", "Speichern") and returns true; nothing is opened or
         /// saved then (git works on the files).
         std::function<bool(std::wstring const& what)> refusedWhileSyncing;
+        /// While a sync runs, Speichern (Strg+S) waits for it: returns true when the save was put off (said).
+        std::function<bool()> saveDeferredWhileSyncing;
 
         /// Asks about unsaved changes; true when the document may be left (saved, discarded or unchanged).
         bool ConfirmLeave();

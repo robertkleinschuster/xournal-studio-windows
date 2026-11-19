@@ -56,6 +56,29 @@ namespace xournal::app
         return syncing;
     }
 
+    bool SyncController::DeferSave()
+    {
+        if (!syncing)
+        {
+            return false;
+        }
+        saveRequested = true;
+        messages(L"Synchronisierung läuft: gespeichert wird, sobald sie fertig ist.", ToastKind::Info);
+        return true;
+    }
+
+    // Saving was asked for during the sync and the pull did not change the document.
+    void SyncController::SaveIfRequested()
+    {
+        bool wanted = saveRequested;
+        saveRequested = false;
+        auto doc = session.Document();
+        if (wanted && session.IsModified() && doc && doc->FilePath())
+        {
+            session.Save();
+        }
+    }
+
     void SyncController::SetSyncing(bool value)
     {
         syncing = value;
@@ -123,8 +146,10 @@ namespace xournal::app
                 if (!error)
                 {
                     Finish(*result);
+                    SaveIfRequested();
                     return;
                 }
+                SaveIfRequested(); // the sync failed: the files are as they were
                 try
                 {
                     std::rethrow_exception(error);
@@ -158,6 +183,7 @@ namespace xournal::app
 
     bool SyncController::ResolvePulledDocument()
     {
+        saveRequested = false; // asked for before the document changed on disk: the user decides again
         if (session.IsModified())
         {
             int choice = Questions::Choose(owner, L"Dokument wurde auf einem anderen Gerät geändert",

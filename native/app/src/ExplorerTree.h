@@ -83,6 +83,7 @@ namespace xournal::app
         void ShowMenu(Node const& node, bool onItem, POINT screen);
         LRESULT CustomDraw(NMTVCUSTOMDRAW& draw) const;
         int Icon(std::wstring const& name, bool folder, bool open);
+        static bool HasOwnIcon(project::ProjectEntry const& entry);
 
         HWND tree = nullptr;
         ProjectSnapshot snapshot;

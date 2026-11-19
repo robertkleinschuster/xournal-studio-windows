@@ -53,15 +53,26 @@ Invoke-Test {
     if ((Lines) -notmatch "Bald fällig due:2026-01-01`r`n") { throw 'the other lines changed' }
     Shot '03-completed'
 
-    # 3. Delete a task from its context menu (asked first).
+    # 3. Edit a task (Bearbeiten: the text without its due: tag, the date in the picker): a new text, the date kept.
+    RightClickAt 'XournalStudioWindow' 'Bald f' | Out-Null
+    ClickAt '#32768' 'Bearbeiten' | Out-Null
+    Start-Sleep -Milliseconds 800
+    Shot '04-edit-dialog'
+    [System.Windows.Forms.SendKeys]::SendWait('^a'); Start-Sleep -Milliseconds 200
+    [System.Windows.Forms.SendKeys]::SendWait('Bald erledigt +GET'); Start-Sleep -Milliseconds 300
+    [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+    WaitFor 'edit' { (Lines) -match '(?m)^2026-11-15 Bald erledigt \+GET due:2026-01-01\r$' }
+    "after edit: $(Lines)"
+
+    # 4. Delete a task from its context menu (asked first).
     RightClickAt 'XournalStudioWindow' 'ter f' | Out-Null
     ClickAt '#32768' 'schen' | Out-Null
     Start-Sleep -Milliseconds 800
-    Shot '04-delete-question'
+    Shot '05-delete-question'
     ClickAnywhere 'Löschen' | Out-Null
     WaitFor 'delete' { (Lines) -notmatch 'Später fällig' }
     "after delete: $(Lines)"
-    Shot '05-deleted'
+    Shot '06-deleted'
 
     Get-Content "$out\config\errors.log" -ErrorAction SilentlyContinue | ForEach-Object { "errors.log: $_" }
 }

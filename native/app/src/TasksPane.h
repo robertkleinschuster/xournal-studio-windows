@@ -3,7 +3,7 @@
 // The Aufgaben tab: the project folder's todo.txt (services' TaskFile) shown in a TaskListView with a NewTaskForm above
 // it and "Erledigte anzeigen" below. The pane makes the changes: a new task (with an optional due date and a link to the
 // page in view, doc: tag as the GTK Xournal Studio wrote), completing or reopening a task with its check box, deleting it
-// from the context menu (asked), opening its linked page. Every change rewrites only its own line; nothing is written
+// from the context menu (asked), editing it (TaskEditDialog), opening its linked page. Every change rewrites only its own line; nothing is written
 // while a sync runs.
 
 #include "NewTaskForm.h"
@@ -59,6 +59,7 @@ namespace xournal::app
         bool Change(char const* what, std::function<bool(tasks::TaskFile&)> const& change);
         void Add();
         void Toggle(TaskRow const& row);
+        void Edit(TaskRow const& row);
         void Open(TaskRow const& row);
         void ShowMenu(TaskRow const& row, POINT screen);
         void CreateTaskFile();

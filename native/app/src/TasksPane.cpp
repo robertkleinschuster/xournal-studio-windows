@@ -2,6 +2,7 @@
 
 #include "ChildControls.h"
 #include "Questions.h"
+#include "TaskEditDialog.h"
 
 #include "xournal/base/Error.h"
 #include "xournal/base/Log.h"
@@ -19,7 +20,7 @@ namespace xournal::app
     {
         constexpr wchar_t ClassName[] = L"XournalStudioTasksPane";
         enum ControlId : int { FormId = 1, ListId = 10, ShowDoneId, CreateId };
-        enum MenuId : UINT { MenuOpenLink = 1, MenuDelete };
+        enum MenuId : UINT { MenuEdit = 1, MenuOpenLink, MenuDelete };
     }
 
     TasksPane::TasksPane(HWND parent, Messages show) : messages(std::move(show))
@@ -194,6 +195,35 @@ namespace xournal::app
         Change("complete task", [&](tasks::TaskFile& f) { return f.Replace(row.line, changed.ToString()); });
     }
 
+    // The text as written (with +projects, @contexts and other tags) without due: and doc:, which the dialog shows as a
+    // date and a link.
+    void TasksPane::Edit(TaskRow const& row)
+    {
+        std::wstring shown = TodoTxt::SetTag(TodoTxt::SetTag(row.task.description, L"due", std::nullopt), L"doc", std::nullopt);
+        auto [document, page] = currentPage ? currentPage() : std::pair<std::optional<std::filesystem::path>, int>();
+        auto values = TaskEditDialog::Show(window, { shown, row.task.Due(), row.link.has_value() }, row.linkText,
+            document.has_value());
+        if (!values)
+        {
+            return;
+        }
+        std::wstring description = values->text;
+        if (values->due)
+        {
+            description = TodoTxt::SetTag(description, L"due", TodoTxt::FormatDate(*values->due));
+        }
+        if (values->link)
+        {
+            auto doc = row.task.Tag(L"doc");
+            std::optional<std::wstring> link = doc ? doc
+                : document ? std::optional(TodoTxt::DocumentLink(file->Path(), *document, page)) : std::nullopt;
+            if (link) description = TodoTxt::SetTag(description, L"doc", *link);
+        }
+        TodoTask changed = row.task;
+        changed.description = description;
+        Change("edit task", [&](tasks::TaskFile& f) { return f.Replace(row.line, changed.ToString()); });
+    }
+
     void TasksPane::Open(TaskRow const& row)
     {
         if (row.link && openRequested)
@@ -209,12 +239,17 @@ namespace xournal::app
         {
             ThrowLastError("CreatePopupMenu");
         }
+        AppendMenuW(menu, MF_STRING, MenuEdit, L"&Bearbeiten…");
         AppendMenuW(menu, MF_STRING | (row.link ? MF_ENABLED : MF_GRAYED), MenuOpenLink, L"Verknüpfte Seite ö&ffnen");
         AppendMenuW(menu, MF_STRING, MenuDelete, L"&Löschen");
         UINT chosen = static_cast<UINT>(TrackPopupMenuEx(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, screen.x, screen.y, window, nullptr));
         DestroyMenu(menu);
         TaskRow target = row; // the menu ran a message loop: the list may have been refilled meanwhile
-        if (chosen == MenuOpenLink)
+        if (chosen == MenuEdit)
+        {
+            Edit(target);
+        }
+        else if (chosen == MenuOpenLink)
         {
             Open(target);
         }

@@ -125,7 +125,9 @@ namespace xournal::app
 
     bool DocumentSession::Save()
     {
-        if (!doc || (refusedWhileSyncing && refusedWhileSyncing(L"Speichern"))) return false;
+        if (!doc) return false;
+        if (doc->FilePath() && saveDeferredWhileSyncing && saveDeferredWhileSyncing()) return false; // saved after the sync
+        if (refusedWhileSyncing && refusedWhileSyncing(L"Speichern")) return false;
         if (!doc->FilePath()) return SaveAs();
         return SaveTo(*doc->FilePath(), false);
     }

@@ -35,6 +35,10 @@ namespace xournal::app
         /// true.
         bool RefusedWhileSyncing(std::wstring const& what) const;
 
+        /// While a sync runs: the document is saved once it ends (said in a toast) - unless the sync changed it, then the
+        /// user decides again. True when the save was put off.
+        bool DeferSave();
+
         /// A sync started or ended (menu, button, explorer refresh).
         std::function<void()> stateChanged;
 
@@ -42,10 +46,12 @@ namespace xournal::app
         void Finish(git::SyncResult const& result);
         bool ResolvePulledDocument();
         void SetSyncing(bool value);
+        void SaveIfRequested();
 
         HWND owner;
         DocumentSession& session;
         Messages messages;
         bool syncing = false;
+        bool saveRequested = false; // Strg+S during the sync
     };
 }
