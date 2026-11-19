@@ -138,9 +138,12 @@ wird hier, mit Commit.
 - [ ] Sandbox-Tests für alle Bereiche; Gerätetest durch den Nutzer
 
 ## Offene Fragen (für den Nutzer bzw. per Messung)
-1. **PDF-Export ohne PDFsharp:** Kandidat ganz nativ: Direct2D-Druck (`ID2D1PrintControl`) auf „Microsoft Print to
-   PDF“, PDF-Seiten über `IPdfRendererNative::RenderPageToDeviceContext` als Vektoren – muss per Test-App geprüft werden
-   (bleibt der Text Text, Größe, Annotationen). Alternative: eine kleine PDF-Bibliothek (z. B. qpdf, Apache-2.0).
+1. **PDF-Export ohne PDFsharp – entschieden 2026-11-19: qpdf.** Test (D:\src\pdf-export-probe): der reine Windows-Weg
+   (Direct2D-Druck → „Microsoft Print to PDF“) läuft ohne Dialog, Tinte bleibt Vektor, aber eingebettete Teil-Schriften
+   der Hintergrund-PDFs (praktisch alle echten PDFs, auch LaTeX-Skripte) werden zu Konturen (nicht durchsuchbar, größer),
+   undurchsichtige Bilder zu JPEG, und der Windows-Benutzername steht als Autor im PDF. Der Nutzer wählte qpdf
+   (Apache-2.0, statisch): Seiten des Hintergrund-PDFs exakt übernehmen (Annotationen eingezeichnet), Tinte/Lineaturen/
+   Bilder/Texte darüber – wie heute mit PDFsharp. Das Export-Modul entsteht zuerst im Probe-Ordner.
 2. **Ein Presenter pro Seite oder pro Dokument** (Phase 1, Messung).
 3. **Lizenz der neuen C++-Quellen** (wie bisher); upstream-Xournal++-Code (GPL) wird nicht übernommen, sondern unser
    C#-Code portiert – es sei denn, der Nutzer möchte das anders.
