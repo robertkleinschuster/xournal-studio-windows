@@ -112,8 +112,15 @@ ist seine Eingabe aktiv). 29 Unit-Tests, Sandbox `ToolsTest.ps1` grün. Offen: 2
 - **Die Maus schreibt nie** (Nutzer, 2026-11-19): nur der Stift schreibt. Maus-Ziehen wählt aus (wie Auswählen),
   verschiebt/skaliert die Auswahl, Klick daneben hebt sie auf, Klick auf einen Link folgt ihm.
 - **Platz einfügen:** vorerst nicht (Nutzer, 2026-11-19).
-- Vorab gemessen (Probe-Agent, D:\src\feature-probes): PDF-Text mit Positionen (Windows.Data.Pdf hat keinen Text),
-  Texteingabe auf der Tintenfläche (fensterloses RichEdit vs. Kind-Fenster).
+- Gemessen (Probe-Agent, D:\src\feature-probes, 2026-11-19):
+  - **PDF-Text: PDFium** (Nutzer: „PDFium-DLL“). Windows hat keinen brauchbaren Weg: Windows.Data.Pdf hat keinen Text,
+    der PDF-IFilter liefert Text ohne Positionen und Seitengrenzen, Windows.Media.Ocr ~1 s/Seite. PDFium
+    (bblanchon/pdfium-binaries, nur als DLL, 7,6 MB, verzögert geladen): 100 Seiten Text + Zeichenboxen in ~0,3 s,
+    Boxen exakt. Ausnahme von „eine Exe“: Google baut PDFium nur mit Clang, kein statischer MSVC-Build.
+  - **Text-Werkzeug: fensterloses RichEdit** (`ITextServices2::TxDrawD2D`) im DComp-Baum, Tinte darüber; Umlaute,
+    Tottasten, Emoji-Bereich gemessen. Ein Kind-Fenster passt nicht (unsichtbar oder verdeckt die Tinte, der Stift
+    schreibt hindurch). Bildschirmtastatur im Tablet-Modus: am Gerät prüfen.
+  - **Sprungmarken/Links: qpdf** (`pdf::PdfNavigation`, e97a8dd); Öffnen ~40–50 ms bei 500 Seiten → im Hintergrund.
 
 ### 5. Umstieg
 - Paritätsliste erfüllt, Sandbox-Tests grün, Gerätetest durch den Nutzer → Installer der C++-App, C#-App entfernen.
