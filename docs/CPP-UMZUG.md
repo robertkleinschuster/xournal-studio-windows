@@ -110,7 +110,7 @@ ist seine Eingabe aktiv). 29 Unit-Tests, Sandbox `ToolsTest.ps1` grün. Offen: 2
 - **PDF-Sprungmarken:** Inhaltsverzeichnis des PDFs als Baum im Reiter „Gliederung“, Tipp springt; Links im PDF per
   **Fingertipp** (der Finger zeichnet nie), Webadressen öffnen den Browser.
 - **Platz einfügen:** vorerst nicht (Nutzer, 2026-11-19).
-- Vorab gemessen (Probe-Agent, D:\srceature-probes): PDF-Text mit Positionen (Windows.Data.Pdf hat keinen Text),
+- Vorab gemessen (Probe-Agent, D:\src\feature-probes): PDF-Text mit Positionen (Windows.Data.Pdf hat keinen Text),
   Texteingabe auf der Tintenfläche (fensterloses RichEdit vs. Kind-Fenster).
 
 ### 5. Umstieg
