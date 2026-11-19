@@ -1,22 +1,65 @@
 #include "ExplorerTree.h"
 
-#include "FolderListing.h"
-
 #include "xournal/base/Error.h"
 #include "xournal/base/Log.h"
+#include "xournal/base/Paths.h"
+#include "xournal/project/ProjectFiles.h"
 
-#include <commctrl.h>
+#include <shellapi.h>
 #include <uxtheme.h>
+#include <windowsx.h>
 
 #include <format>
 
 namespace xournal::app
 {
+    namespace
+    {
+        // Git colors of the explorer (as code editors' git views): new green, modified blue - darker on a light window
+        // background, lighter on a dark one, so they stay readable either way.
+        COLORREF GitColor(git::FileState state)
+        {
+            COLORREF background = GetSysColor(COLOR_WINDOW);
+            bool dark = (GetRValue(background) * 299 + GetGValue(background) * 587 + GetBValue(background) * 114) / 1000 < 128;
+            if (state == git::FileState::New)
+            {
+                return dark ? RGB(0x6C, 0xCB, 0x5F) : RGB(0x10, 0x7C, 0x10);
+            }
+            return dark ? RGB(0x60, 0xCD, 0xFF) : RGB(0x00, 0x5F, 0xB8);
+        }
+
+        // The shell's small icon for a file or folder in the system image list, as File Explorer shows it. By name and
+        // attributes (SHGFI_USEFILEATTRIBUTES): the type's icon without touching the file.
+        int ShellIcon(std::wstring const& name, bool folder, bool open = false)
+        {
+            SHFILEINFOW info{};
+            UINT flags = SHGFI_SYSICONINDEX | SHGFI_SMALLICON | SHGFI_USEFILEATTRIBUTES | (open ? SHGFI_OPENICON : 0);
+            if (!SHGetFileInfoW(name.c_str(), folder ? FILE_ATTRIBUTE_DIRECTORY : FILE_ATTRIBUTE_NORMAL, &info, sizeof(info), flags))
+            {
+                LogError(std::format("explorer: no shell icon for {}", ToUtf8(name)));
+                return 0;
+            }
+            return info.iIcon;
+        }
+
+        enum MenuId : UINT
+        {
+            MenuOpen = 1,
+            MenuNewDocument,
+            MenuNewFolder,
+            MenuRename,
+            MenuDelete,
+            MenuDiscard,
+            MenuShowInExplorer,
+            MenuCopyPath,
+        };
+    }
+
     ExplorerTree::ExplorerTree(HWND parent, int id)
     {
         tree = CreateWindowExW(0, WC_TREEVIEWW, L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | TVS_HASBUTTONS | TVS_SHOWSELALWAYS |
-            TVS_FULLROWSELECT | TVS_TRACKSELECT, 0, 0, 0, 0, parent, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
-            GetModuleHandleW(nullptr), nullptr);
+            TVS_FULLROWSELECT | TVS_TRACKSELECT | TVS_EDITLABELS, 0, 0, 0, 0, parent,
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), GetModuleHandleW(nullptr), nullptr);
         if (!tree)
         {
             ThrowLastError("CreateWindowEx(TreeView)");
@@ -28,77 +71,372 @@ namespace xournal::app
             LogError(std::format("explorer: theme not set: {}", DescribeHr(hr)));
         }
         TreeView_SetExtendedStyle(tree, TVS_EX_DOUBLEBUFFER, TVS_EX_DOUBLEBUFFER);
+        // The system image list (shared, owned by the shell: the tree must not destroy it - no TVS_SHAREIMAGELISTS
+        // needed for a TreeView, which never destroys its image lists).
+        SHFILEINFOW info{};
+        auto images = reinterpret_cast<HIMAGELIST>(SHGetFileInfoW(L"C:\\", 0, &info, sizeof(info), SHGFI_SYSICONINDEX | SHGFI_SMALLICON));
+        if (!images)
+        {
+            LogError("explorer: system image list not available (shown without icons)");
+        }
+        else
+        {
+            TreeView_SetImageList(tree, images, TVSIL_NORMAL);
+        }
     }
 
-    void ExplorerTree::SetFolder(std::optional<std::filesystem::path> folder)
+    bool ExplorerTree::HasFocus() const
     {
+        HWND focus = GetFocus();
+        return focus == tree || (focus && GetParent(focus) == tree); // the tree or its label edit
+    }
+
+    void ExplorerTree::Show(ProjectSnapshot next)
+    {
+        if (!pendingSelection)
+        {
+            if (Node const* selected = NodeOf(TreeView_GetSelection(tree)))
+            {
+                pendingSelection = selected->path;
+            }
+        }
+        snapshot = std::move(next);
+        SendMessageW(tree, WM_SETREDRAW, FALSE, 0);
         TreeView_DeleteAllItems(tree);
-        paths.clear();
-        folders.clear();
-        if (!folder)
+        nodes.clear();
+        for (auto const& entry : snapshot.root.children)
+        {
+            Add(TVI_ROOT, entry);
+        }
+        if (pendingSelection)
+        {
+            if (HTREEITEM item = Find(*pendingSelection))
+            {
+                TreeView_SelectItem(tree, item);
+                TreeView_EnsureVisible(tree, item);
+            }
+            pendingSelection.reset();
+        }
+        SendMessageW(tree, WM_SETREDRAW, TRUE, 0);
+        InvalidateRect(tree, nullptr, TRUE);
+    }
+
+    void ExplorerTree::Add(HTREEITEM parent, project::ProjectEntry const& entry)
+    {
+        nodes.push_back({ entry.path, entry.isFolder });
+        std::wstring name = entry.Name();
+        TVINSERTSTRUCTW insert{};
+        insert.hParent = parent;
+        insert.hInsertAfter = TVI_LAST;
+        insert.itemex.mask = TVIF_TEXT | TVIF_PARAM | TVIF_CHILDREN | TVIF_IMAGE | TVIF_SELECTEDIMAGE |
+            (entry.isFolder ? TVIF_EXPANDEDIMAGE : 0);
+        insert.itemex.pszText = name.data();
+        insert.itemex.lParam = static_cast<LPARAM>(nodes.size() - 1);
+        insert.itemex.cChildren = entry.children.empty() ? 0 : 1;
+        insert.itemex.iImage = insert.itemex.iSelectedImage = Icon(name, entry.isFolder, false);
+        insert.itemex.iExpandedImage = entry.isFolder ? Icon(name, true, true) : 0;
+        HTREEITEM item = TreeView_InsertItem(tree, &insert);
+        if (!item)
+        {
+            ThrowLastError("TreeView_InsertItem");
+        }
+        for (auto const& child : entry.children)
+        {
+            Add(item, child);
+        }
+        if (entry.isFolder && expanded.contains(entry.path.native()))
+        {
+            TreeView_Expand(tree, item, TVE_EXPAND);
+        }
+    }
+
+    int ExplorerTree::Icon(std::wstring const& name, bool folder, bool open)
+    {
+        // Per file type (extension) once: the same icon for every file of a type.
+        std::wstring key = folder ? (open ? L"<open folder>" : L"<folder>") : std::filesystem::path(name).extension().native();
+        auto it = icons.find(key);
+        if (it == icons.end())
+        {
+            it = icons.emplace(key, ShellIcon(folder ? L"folder" : L"file" + key, folder, open)).first;
+        }
+        return it->second;
+    }
+
+    ExplorerTree::Node const* ExplorerTree::NodeOf(HTREEITEM item) const
+    {
+        if (!item)
+        {
+            return nullptr;
+        }
+        TVITEMW info{ TVIF_PARAM };
+        info.hItem = item;
+        if (!TreeView_GetItem(tree, &info) || info.lParam < 0 || static_cast<size_t>(info.lParam) >= nodes.size())
+        {
+            return nullptr;
+        }
+        return &nodes[static_cast<size_t>(info.lParam)];
+    }
+
+    HTREEITEM ExplorerTree::Find(std::filesystem::path const& p) const
+    {
+        // Depth first over the items (the tree holds every item; folders are only opened on the way to the item).
+        std::vector<HTREEITEM> pending;
+        for (HTREEITEM item = TreeView_GetRoot(tree); item; item = TreeView_GetNextSibling(tree, item))
+        {
+            pending.push_back(item);
+        }
+        while (!pending.empty())
+        {
+            HTREEITEM item = pending.back();
+            pending.pop_back();
+            if (Node const* node = NodeOf(item); node && project::ProjectFiles::SamePath(node->path, p))
+            {
+                return item;
+            }
+            for (HTREEITEM child = TreeView_GetChild(tree, item); child; child = TreeView_GetNextSibling(tree, child))
+            {
+                pending.push_back(child);
+            }
+        }
+        return nullptr;
+    }
+
+    void ExplorerTree::Select(std::filesystem::path const& p)
+    {
+        if (HTREEITEM item = Find(p))
+        {
+            TreeView_SelectItem(tree, item);
+            TreeView_EnsureVisible(tree, item);
+            return;
+        }
+        pendingSelection = p;
+    }
+
+    void ExplorerTree::BeginRename(std::filesystem::path const& p)
+    {
+        if (HTREEITEM item = Find(p))
+        {
+            SetFocus(tree);
+            TreeView_SelectItem(tree, item);
+            TreeView_EnsureVisible(tree, item);
+            TreeView_EditLabel(tree, item);
+        }
+    }
+
+    void ExplorerTree::Request(ExplorerCommand command, Node const& node, std::wstring newName)
+    {
+        if (requested)
+        {
+            requested({ command, node.path, node.isFolder, std::move(newName) });
+        }
+    }
+
+    void ExplorerTree::RequestForSelection(ExplorerCommand command)
+    {
+        HTREEITEM item = TreeView_GetSelection(tree);
+        if (Node const* node = NodeOf(item))
+        {
+            if (command == ExplorerCommand::Rename)
+            {
+                TreeView_EditLabel(tree, item);
+                return;
+            }
+            Request(command, *node);
+        }
+    }
+
+    void ExplorerTree::ShowMenu(Node const& node, bool onItem, POINT screen)
+    {
+        HMENU menu = CreatePopupMenu();
+        if (!menu)
+        {
+            ThrowLastError("CreatePopupMenu");
+        }
+        auto add = [&](UINT id, wchar_t const* text, bool enabled = true)
+        {
+            if (!AppendMenuW(menu, MF_STRING | (enabled ? MF_ENABLED : MF_GRAYED), id, text))
+            {
+                ThrowLastError("AppendMenu");
+            }
+        };
+        auto separator = [&] { AppendMenuW(menu, MF_SEPARATOR, 0, nullptr); };
+        if (onItem && !node.isFolder)
+        {
+            add(MenuOpen, L"Ö&ffnen");
+            separator();
+        }
+        add(MenuNewDocument, L"Neues &Dokument");
+        add(MenuNewFolder, L"Neuer O&rdner");
+        if (onItem)
+        {
+            separator();
+            add(MenuRename, L"&Umbenennen\tF2");
+            add(MenuDelete, L"&Löschen\tEntf");
+            if (!node.isFolder)
+            {
+                add(MenuDiscard, L"Änderungen &verwerfen", snapshot.StateOf(node.path) == git::FileState::Modified);
+            }
+            separator();
+            add(MenuShowInExplorer, L"Im &Explorer anzeigen");
+            add(MenuCopyPath, L"Als &Pfad kopieren\tStrg+Umschalt+C");
+        }
+        UINT chosen = static_cast<UINT>(TrackPopupMenuEx(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, screen.x, screen.y,
+            GetParent(tree), nullptr));
+        DestroyMenu(menu);
+        Node target = node; // the menu ran a message loop: the nodes may have been replaced meanwhile
+        switch (chosen)
+        {
+        case MenuOpen: Request(ExplorerCommand::Open, target); break;
+        case MenuNewDocument: Request(ExplorerCommand::NewDocument, target); break;
+        case MenuNewFolder: Request(ExplorerCommand::NewFolder, target); break;
+        case MenuRename: BeginRename(target.path); break;
+        case MenuDelete: Request(ExplorerCommand::Delete, target); break;
+        case MenuDiscard: Request(ExplorerCommand::Discard, target); break;
+        case MenuShowInExplorer: Request(ExplorerCommand::ShowInExplorer, target); break;
+        case MenuCopyPath: Request(ExplorerCommand::CopyPath, target); break;
+        default: break; // closed without a choice
+        }
+    }
+
+    void ExplorerTree::OnContextMenu(LPARAM lp)
+    {
+        if (!snapshot.folder)
         {
             return;
         }
-        AddChildren(TVI_ROOT, *folder);
-    }
-
-    void ExplorerTree::AddChildren(HTREEITEM parent, std::filesystem::path const& folder)
-    {
-        for (auto const& entry : list(folder))
+        POINT screen{ GET_X_LPARAM(lp), GET_Y_LPARAM(lp) };
+        HTREEITEM item = nullptr;
+        if (screen.x == -1 && screen.y == -1)
         {
-            TVINSERTSTRUCTW insert{};
-            insert.hParent = parent;
-            insert.hInsertAfter = TVI_LAST;
-            insert.item.mask = TVIF_TEXT | TVIF_CHILDREN;
-            insert.item.pszText = const_cast<wchar_t*>(entry.name.c_str());
-            insert.item.cChildren = entry.folder ? 1 : 0; // folders get their children when opened
-            HTREEITEM item = TreeView_InsertItem(tree, &insert);
-            if (!item)
+            // From the keyboard (Shift+F10, the menu key): at the selected item.
+            item = TreeView_GetSelection(tree);
+            RECT rc{};
+            if (item && TreeView_GetItemRect(tree, item, &rc, TRUE))
             {
-                ThrowLastError("TreeView_InsertItem");
+                screen = { rc.left, rc.bottom };
             }
-            paths[item] = entry.path;
-            folders[item] = entry.folder;
+            ClientToScreen(tree, &screen);
         }
-    }
-
-    std::optional<std::filesystem::path> ExplorerTree::PathOf(HTREEITEM item) const
-    {
-        auto it = paths.find(item);
-        return it == paths.end() ? std::nullopt : std::optional(it->second);
-    }
-
-    void ExplorerTree::ChooseSelected()
-    {
-        HTREEITEM item = TreeView_GetSelection(tree);
-        auto path = PathOf(item);
-        if (path && !folders[item] && fileChosen)
+        else
         {
-            fileChosen(*path);
+            TVHITTESTINFO hit{};
+            hit.pt = screen;
+            ScreenToClient(tree, &hit.pt);
+            item = TreeView_HitTest(tree, &hit);
+            if (item && (hit.flags & TVHT_ONITEM))
+            {
+                TreeView_SelectItem(tree, item);
+            }
+            else
+            {
+                item = nullptr;
+            }
         }
+        if (Node const* node = NodeOf(item))
+        {
+            ShowMenu(*node, true, screen);
+        }
+        else
+        {
+            ShowMenu({ *snapshot.folder, true }, false, screen); // the empty space: the project folder
+        }
+    }
+
+    LRESULT ExplorerTree::CustomDraw(NMTVCUSTOMDRAW& draw) const
+    {
+        switch (draw.nmcd.dwDrawStage)
+        {
+        case CDDS_PREPAINT:
+            return CDRF_NOTIFYITEMDRAW;
+        case CDDS_ITEMPREPAINT:
+        {
+            auto index = static_cast<size_t>(draw.nmcd.lItemlParam);
+            if (index < nodes.size())
+            {
+                git::FileState state = snapshot.StateOf(nodes[index].path);
+                if (state != git::FileState::Unchanged)
+                {
+                    draw.clrText = GitColor(state);
+                }
+            }
+            return CDRF_DODEFAULT;
+        }
+        }
+        return CDRF_DODEFAULT;
     }
 
     LRESULT ExplorerTree::OnNotify(NMHDR const& header)
     {
         switch (header.code)
         {
-        case TVN_ITEMEXPANDINGW:
+        case NM_CUSTOMDRAW:
+            return CustomDraw(const_cast<NMTVCUSTOMDRAW&>(reinterpret_cast<NMTVCUSTOMDRAW const&>(header)));
+        case TVN_ITEMEXPANDEDW:
         {
             auto const& info = reinterpret_cast<NMTREEVIEWW const&>(header);
-            HTREEITEM item = info.itemNew.hItem;
-            if (info.action == TVE_EXPAND && !TreeView_GetChild(tree, item))
+            if (Node const* node = NodeOf(info.itemNew.hItem))
             {
-                if (auto path = PathOf(item))
+                if (info.action & TVE_EXPAND)
                 {
-                    AddChildren(item, *path);
+                    expanded.insert(node->path.native());
+                }
+                else if (info.action & TVE_COLLAPSE)
+                {
+                    expanded.erase(node->path.native());
                 }
             }
-            return FALSE;
+            return 0;
         }
         case NM_DBLCLK:
         case NM_RETURN:
-            ChooseSelected();
-            return TRUE;
+            if (Node const* node = NodeOf(TreeView_GetSelection(tree)); node && !node->isFolder)
+            {
+                Request(ExplorerCommand::Open, *node);
+                return TRUE;
+            }
+            return FALSE;
+        case TVN_KEYDOWN:
+        {
+            auto const& key = reinterpret_cast<NMTVKEYDOWN const&>(header);
+            bool ctrl = GetKeyState(VK_CONTROL) < 0, shift = GetKeyState(VK_SHIFT) < 0;
+            if (key.wVKey == VK_F2)
+            {
+                RequestForSelection(ExplorerCommand::Rename);
+                return TRUE;
+            }
+            if (key.wVKey == 'C' && ctrl && shift)
+            {
+                RequestForSelection(ExplorerCommand::CopyPath);
+                return TRUE;
+            }
+            return FALSE;
+        }
+        case TVN_BEGINLABELEDITW:
+        {
+            auto const& info = reinterpret_cast<NMTVDISPINFOW const&>(header);
+            Node const* node = NodeOf(info.item.hItem);
+            if (!node)
+            {
+                return TRUE; // no editing
+            }
+            // Only the name before the extension is edited, as File Explorer does.
+            if (HWND edit = TreeView_GetEditControl(tree))
+            {
+                SetWindowTextW(edit, project::ProjectFiles::EditableName(node->path, node->isFolder).c_str());
+                SendMessageW(edit, EM_SETSEL, 0, -1);
+            }
+            return FALSE;
+        }
+        case TVN_ENDLABELEDITW:
+        {
+            auto const& info = reinterpret_cast<NMTVDISPINFOW const&>(header);
+            if (Node const* node = NodeOf(info.item.hItem); node && info.item.pszText)
+            {
+                // Carried out after the edit control is gone (the request rebuilds the tree).
+                Request(ExplorerCommand::Rename, *node, info.item.pszText);
+            }
+            return FALSE; // the label changes with the refresh, not here
+        }
         }
         return 0;
     }

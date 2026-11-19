@@ -12,7 +12,8 @@ namespace xournal::app
     namespace
     {
         constexpr wchar_t ClassName[] = L"XournalStudioSidePane";
-        constexpr int TabsId = 1, TreeId = 2;
+        constexpr int TabsId = 1, TreeId = 2, SyncId = 3;
+        constexpr int SyncButtonHeightDip = 32;
         constexpr wchar_t const* TabTitles[] = { L"Dateien", L"Aufgaben", L"Seiten" };
 
         HWND Placeholder(HWND parent, wchar_t const* text)
@@ -42,7 +43,7 @@ namespace xournal::app
         }
     }
 
-    SidePane::SidePane(HWND parent)
+    SidePane::SidePane(HWND parent, TasksPane::Messages messages)
     {
         HINSTANCE instance = GetModuleHandleW(nullptr);
         WNDCLASSEXW wc{ sizeof(wc) };
@@ -79,9 +80,15 @@ namespace xournal::app
         }
         explorer = std::make_unique<ExplorerTree>(window, TreeId);
         UseMessageFont(explorer->Window());
-        tasksPlaceholder = Placeholder(window, L"Aufgaben (todo.txt) folgen.");
+        syncButton = CreateWindowExW(0, WC_BUTTONW, L"Synchronisieren", WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON, 0, 0, 0, 0,
+            window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(SyncId)), instance, nullptr);
+        if (!syncButton)
+        {
+            ThrowLastError("CreateWindowEx(sync button)");
+        }
+        UseMessageFont(syncButton);
+        tasks = std::make_unique<TasksPane>(window, std::move(messages));
         pagesPlaceholder = Placeholder(window, L"Seitenübersicht folgt.");
-        UseMessageFont(tasksPlaceholder);
         UseMessageFont(pagesPlaceholder);
         ShowPage(0);
     }
@@ -106,7 +113,8 @@ namespace xournal::app
     void SidePane::ShowPage(int tab)
     {
         ShowWindow(explorer->Window(), tab == 0 ? SW_SHOW : SW_HIDE);
-        ShowWindow(tasksPlaceholder, tab == 1 ? SW_SHOW : SW_HIDE);
+        ShowWindow(syncButton, tab == 0 ? SW_SHOW : SW_HIDE);
+        ShowWindow(tasks->Window(), tab == 1 ? SW_SHOW : SW_HIDE);
         ShowWindow(pagesPlaceholder, tab == 2 ? SW_SHOW : SW_HIDE);
     }
 
@@ -117,17 +125,43 @@ namespace xournal::app
         MoveWindow(tabs, 0, 0, rc.right, rc.bottom, TRUE);
         RECT page = rc;
         TabCtrl_AdjustRect(tabs, FALSE, &page);
-        for (HWND child : { explorer->Window(), tasksPlaceholder, pagesPlaceholder })
+        for (HWND child : { explorer->Window(), tasks->Window(), pagesPlaceholder })
         {
             MoveWindow(child, page.left, page.top, page.right - page.left, page.bottom - page.top, TRUE);
             SetWindowPos(child, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE); // above the tab control
         }
+        // The tree leaves room for the sync button below it.
+        int button = MulDiv(SyncButtonHeightDip, static_cast<int>(GetDpiForWindow(window)), 96);
+        int gap = button / 4;
+        MoveWindow(explorer->Window(), page.left, page.top, page.right - page.left, page.bottom - page.top - button - 2 * gap, TRUE);
+        MoveWindow(syncButton, page.left + gap, page.bottom - button - gap, page.right - page.left - 2 * gap, button, TRUE);
+        SetWindowPos(syncButton, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+    }
+
+    void SidePane::SetSyncing(bool syncing)
+    {
+        SetWindowTextW(syncButton, syncing ? L"Synchronisiert …" : L"Synchronisieren");
+        EnableWindow(syncButton, !syncing);
     }
 
     LRESULT SidePane::Handle(UINT message, WPARAM wp, LPARAM lp)
     {
         switch (message)
         {
+        case WM_COMMAND:
+            if (LOWORD(wp) == SyncId && syncRequested)
+            {
+                syncRequested();
+                return 0;
+            }
+            break;
+        case WM_CONTEXTMENU:
+            if (reinterpret_cast<HWND>(wp) == explorer->Window())
+            {
+                explorer->OnContextMenu(lp);
+                return 0;
+            }
+            break;
         case WM_SIZE:
             Layout();
             return 0;
@@ -157,7 +191,7 @@ namespace xournal::app
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(reinterpret_cast<CREATESTRUCTW*>(lp)->lpCreateParams));
         }
         auto self = reinterpret_cast<SidePane*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
-        if (!self || !self->window || !self->explorer)
+        if (!self || !self->window || !self->explorer || !self->tasks)
         {
             return DefWindowProcW(hwnd, message, wp, lp);
         }

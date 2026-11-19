@@ -82,7 +82,7 @@ namespace xournal::app
             { CmdImportPdf, L"PDF mit iPad-Anmerkungen &importieren…", L"", 0, 0, false },
             {},
             { CmdOpenFolder, L"O&rdner öffnen…" },
-            { CmdSync, L"S&ynchronisieren", L"", 0, 0, false },
+            { CmdSync, L"S&ynchronisieren" },
             {},
             { CmdExit, L"&Beenden", L"Alt+F4" },
         }, keys), L"&Datei");

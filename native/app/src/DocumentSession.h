@@ -34,6 +34,20 @@ namespace xournal::app
         bool Save();                                 // false: not saved (cancelled or failed)
         bool SaveAs();
 
+        /// A new, empty document without the leave question (the caller asked already).
+        void ShowNew();
+        /// Opens without the leave question (the caller asked already, or the document is reloaded).
+        void Load(std::filesystem::path const& file);
+        /// Shows a restored recovery copy: it counts as changed (unsaved) until it is saved.
+        void ShowRecovered(std::shared_ptr<XoppDocument> restored);
+        /// The background PDF was renamed: the document refers to it there (written on the next save).
+        void MovePdf(std::filesystem::path const& pdf);
+        /// "Meine als Kopie speichern…": a copy with its own attachments; the document stays as it is.
+        bool SaveCopy();
+        /// While a sync runs: says so for "<what>" ("Öffnen", "Speichern") and returns true; nothing is opened or
+        /// saved then (git works on the files).
+        std::function<bool(std::wstring const& what)> refusedWhileSyncing;
+
         /// Asks about unsaved changes; true when the document may be left (saved, discarded or unchanged).
         bool ConfirmLeave();
 
@@ -52,5 +66,6 @@ namespace xournal::app
         DocumentView& view;
         std::shared_ptr<XoppDocument> doc;
         bool loading = false;
+        bool recovered = false; // a restored recovery copy, not saved yet
     };
 }

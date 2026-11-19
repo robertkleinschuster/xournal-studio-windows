@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 
+#include "AppFolder.h"
 #include "AppToolbar.h"
 #include "Commands.h"
 #include "Dialogs.h"
@@ -8,8 +9,6 @@
 #include "xournal/base/Error.h"
 #include "xournal/base/Log.h"
 #include "xournal/base/Text.h"
-
-#include <shellapi.h>
 
 #include <format>
 
@@ -21,14 +20,17 @@ namespace xournal::app
         constexpr UINT QueueMessage = WM_APP + 1;
         constexpr int PaneWidthDip = 280;
 
-        bool IsDocument(std::filesystem::path const& file)
+        // Keys typed into an edit box (the explorer's rename, a new task) are the box's, not the menu's shortcuts
+        // (Entf, Strg+C/V/X/A would otherwise act on the document).
+        bool TypingInEdit()
         {
-            auto extension = file.extension().native();
-            return EqualsIgnoreCase(extension, L".xopp") || EqualsIgnoreCase(extension, L".moj") || EqualsIgnoreCase(extension, L".pdf");
+            wchar_t name[16]{};
+            HWND focus = GetFocus();
+            return focus && GetClassNameW(focus, name, ARRAYSIZE(name)) && EqualsIgnoreCase(name, WC_EDITW);
         }
     }
 
-    MainWindow::MainWindow(HINSTANCE instance, Settings appSettings, std::optional<std::filesystem::path> startFile)
+    MainWindow::MainWindow(HINSTANCE instance, AppSettings appSettings, std::optional<std::filesystem::path> startFile)
         : settings(std::move(appSettings))
     {
         WNDCLASSEXW wc{ sizeof(wc) };
@@ -64,7 +66,12 @@ namespace xournal::app
         surface = inkpages::WritingSurface::Create(window);
         view = std::make_unique<DocumentView>(*surface);
         session = std::make_unique<DocumentSession>(window, *surface, *view);
-        session->changed = [this] { UpdateTitle(); };
+        session->changed = [this]
+        {
+            UpdateTitle();
+            if (explorerCommands) explorerCommands->DocumentShown();
+            if (projectExplorer) projectExplorer->Refresh(); // a save changes the git colors
+        };
         session->message = [this](std::wstring const& text, ToastKind kind) { Message(text, kind); };
         exportCommand = std::make_unique<PdfExportCommand>(window, *view,
             [this](std::wstring const& text, ToastKind kind) { Message(text, kind); });
@@ -85,16 +92,15 @@ namespace xournal::app
             SaveSettings();
         };
 
-        pane = std::make_unique<SidePane>(window);
+        pane = std::make_unique<SidePane>(window, [this](std::wstring const& text, ToastKind kind) { Message(text, kind); });
         pane->SetTab(settings.paneTab);
         pane->tabChanged = [this](int tab)
         {
             settings.paneTab = tab;
             SaveSettings();
         };
-        pane->Explorer().fileChosen = [this](std::filesystem::path const& file) { OpenFromExplorer(file); };
-        pane->Explorer().SetFolder(settings.projectFolder);
         toast = std::make_unique<Toast>(window);
+        CreateProjectParts();
 
         if (settings.window)
         {
@@ -113,14 +119,17 @@ namespace xournal::app
         SetPaneOpen(settings.paneOpen);
         Layout();
 
-        auto file = startFile ? startFile : settings.lastFile;
-        if (file && std::filesystem::exists(*file))
+        if (!recovery->OfferAtStart())
         {
-            session->Open(*file);
-        }
-        else
-        {
-            session->New();
+            auto file = startFile ? startFile : settings.lastFile;
+            if (file && std::filesystem::exists(*file))
+            {
+                session->Open(*file);
+            }
+            else
+            {
+                session->New();
+            }
         }
         UpdateTitle();
     }
@@ -131,7 +140,7 @@ namespace xournal::app
         BOOL result;
         while ((result = GetMessageW(&message, nullptr, 0, 0)) > 0)
         {
-            if (!TranslateAcceleratorW(window, menu.Accelerators(), &message))
+            if (TypingInEdit() || !TranslateAcceleratorW(window, menu.Accelerators(), &message))
             {
                 TranslateMessage(&message);
                 DispatchMessageW(&message);
@@ -175,6 +184,7 @@ namespace xournal::app
         if (!session) return;
         SetWindowTextW(window, session->Title().c_str());
         settings.lastFile = session->FilePath();
+        if (recovery) recovery->Update();
     }
 
     void MainWindow::UpdateMenu()
@@ -186,6 +196,7 @@ namespace xournal::app
         {
             menu.Enable(command, selection);
         }
+        menu.Enable(CmdSync, !sync->IsSyncing());
     }
 
     void MainWindow::OpenFolder()
@@ -193,31 +204,56 @@ namespace xournal::app
         auto folder = Dialogs::PickFolder(window, settings.projectFolder);
         if (!folder) return;
         settings.projectFolder = *folder;
-        pane->Explorer().SetFolder(folder);
+        SetProjectFolder(folder);
         SetPaneOpen(true);
         pane->SetTab(0);
         SaveSettings();
     }
 
-    void MainWindow::OpenFromExplorer(std::filesystem::path const& file)
+    // ---- project folder: explorer, tasks, sync, recovery copies
+
+    void MainWindow::CreateProjectParts()
     {
-        if (IsDocument(file))
+        auto messages = [this](std::wstring const& text, ToastKind kind) { Message(text, kind); };
+        sync = std::make_unique<SyncController>(window, *session, messages);
+        sync->stateChanged = [this] { OnSyncStateChanged(); };
+        session->refusedWhileSyncing = [this](std::wstring const& what) { return sync->RefusedWhileSyncing(what); };
+
+        projectExplorer = std::make_unique<ProjectExplorer>(pane->Explorer());
+        projectExplorer->refreshed = [this] { pane->Tasks().Reload(); };
+        explorerCommands = std::make_unique<ExplorerCommands>(window, *session, *sync, *projectExplorer, pane->Explorer(), messages);
+        explorerCommands->focusDocument = [this] { SetFocus(surface->Window()); };
+        explorerCommands->scrollToPage = [this](int page) { surface->ScrollToPage(page); };
+        pane->Explorer().requested = [this](ExplorerRequest const& request) { explorerCommands->Run(request); };
+        pane->syncRequested = [this] { OnCommand(CmdSync); };
+
+        TasksPane& tasks = pane->Tasks();
+        tasks.currentPage = [this] { return std::pair(session->FilePath(), surface->PageInView().value_or(-1)); };
+        tasks.refusedWhileSyncing = [this] { return sync->RefusedWhileSyncing(L"Das Ändern der Aufgaben"); };
+        tasks.openRequested = [this](std::filesystem::path const& document, int page) { explorerCommands->Open(document, page); };
+        tasks.showsDoneChanged = [this](bool shown)
         {
-            session->Open(file);
-            return;
-        }
-        // Other files open in their Windows app.
-        SHELLEXECUTEINFOW info{ sizeof(info) };
-        info.fMask = SEE_MASK_NOASYNC;
-        info.hwnd = window;
-        info.lpVerb = L"open";
-        info.lpFile = file.c_str();
-        info.nShow = SW_SHOWNORMAL;
-        if (!ShellExecuteExW(&info))
+            settings.doneTasksShown = shown;
+            SaveSettings();
+        };
+        tasks.SetShowsDone(settings.doneTasksShown);
+        SetProjectFolder(settings.projectFolder);
+
+        recovery = std::make_unique<RecoveryCopies>(window, AppFolder::Path(), *session, *view, messages);
+    }
+
+    void MainWindow::SetProjectFolder(std::optional<std::filesystem::path> const& folder)
+    {
+        projectExplorer->SetFolder(folder);
+        pane->Tasks().SetFolder(folder);
+    }
+
+    void MainWindow::OnSyncStateChanged()
+    {
+        pane->SetSyncing(sync->IsSyncing());
+        if (!sync->IsSyncing())
         {
-            HRESULT hr = HRESULT_FROM_WIN32(GetLastError());
-            LogError(std::format("explorer: open {}: {}", ToUtf8(file.native()), DescribeHr(hr)));
-            Message(std::format(L"„{}“ lässt sich nicht öffnen.", file.filename().native()), ToastKind::Error);
+            projectExplorer->Refresh();
         }
     }
 
@@ -231,6 +267,7 @@ namespace xournal::app
         case CmdSaveAs: session->SaveAs(); break;
         case CmdExportPdf: exportCommand->Export(session->Document()); break;
         case CmdOpenFolder: OpenFolder(); break;
+        case CmdSync: sync->Sync(projectExplorer->Folder()); break;
         case CmdExit: PostMessageW(window, WM_CLOSE, 0, 0); break;
         case CmdUndo: surface->Undo(); break;
         case CmdRedo: surface->Redo(); break;
@@ -238,7 +275,10 @@ namespace xournal::app
         case CmdCopy: surface->Copy(); break;
         case CmdPaste: surface->Paste(); break;
         case CmdDuplicate: surface->Duplicate(); break;
-        case CmdDelete: surface->DeleteSelection(); break;
+        case CmdDelete:
+            if (pane->Explorer().HasFocus()) pane->Explorer().RequestForSelection(ExplorerCommand::Delete); // Entf in the tree
+            else surface->DeleteSelection();
+            break;
         case CmdSelectAll: surface->SelectAll(); break;
         case CmdTogglePane: SetPaneOpen(!settings.paneOpen); SaveSettings(); break;
         case CmdFitWidth: surface->FitWidth(); break;
@@ -265,7 +305,7 @@ namespace xournal::app
         {
             ThrowLastError("GetWindowPlacement");
         }
-        settings.window = WindowState{ placement.rcNormalPosition, placement.showCmd == SW_SHOWMAXIMIZED };
+        settings.window = settings::WindowState{ placement.rcNormalPosition, placement.showCmd == SW_SHOWMAXIMIZED };
     }
 
     void MainWindow::SaveSettings()
@@ -287,6 +327,7 @@ namespace xournal::app
         {
             return false;
         }
+        recovery->End(); // saved or discarded: nothing to recover
         RememberWindow();
         settings.lastFile = session->FilePath();
         SaveSettings();
@@ -304,6 +345,16 @@ namespace xournal::app
         case WM_COMMAND:
             OnCommand(LOWORD(wp));
             return 0;
+        case WM_ACTIVATE:
+            if (LOWORD(wp) == WA_INACTIVE)
+            {
+                if (recovery) recovery->Deactivated(); // maybe for good (shutdown, log off): the copy now
+            }
+            else if (projectExplorer)
+            {
+                projectExplorer->Refresh(); // files may have changed in another app
+            }
+            break; // and the default handling (focus)
         case WM_INITMENUPOPUP:
             UpdateMenu();
             return 0;
@@ -318,6 +369,10 @@ namespace xournal::app
             return 0;
         case WM_DESTROY:
             // The parts go before the window's children do (the surface's ink thread hands its last pages back).
+            recovery.reset();
+            explorerCommands.reset();
+            projectExplorer.reset();
+            sync.reset();
             // The feature classes that hold the surface go before it (the view takes its callbacks back).
             exportCommand.reset();
             session.reset();

@@ -3,9 +3,12 @@
 # test only starts when no sandbox runs (`wsb list` empty), and holds .local-build\sandbox.lock (repository root) while
 # it runs. The sandbox window opens on the desktop.
 #   native\UiTests\Run-AppTest.ps1 -Test native\UiTests\InkRoundTripTest.ps1
+#   -Build: the build folder below native\.local-build (default cmake); -Extra: more files for C:\sbx\data.
 param(
     [Parameter(Mandatory)][string]$Test,
     [string]$Config = 'Release',
+    [string]$Build = 'cmake',
+    [string[]]$Extra = @(),
     [int]$TimeoutSeconds = 300
 )
 $ErrorActionPreference = 'Stop'
@@ -22,8 +25,8 @@ try {
     $app = Join-Path $native '.local-build\sandbox-app'
     if (Test-Path $app) { Remove-Item -Recurse -Force $app }
     New-Item -ItemType Directory -Force $app | Out-Null
-    Copy-Item (Join-Path $native ".local-build\cmake\app\$Config\XournalStudio.exe") $app
-    $data = @((Join-Path $repo 'examples\Schaltungen.xopp'), (Join-Path $repo 'examples\Schaltungen.pdf'))
+    Copy-Item (Join-Path $native ".local-build\$Build\app\$Config\XournalStudio.exe") $app
+    $data = @((Join-Path $repo 'examples\Schaltungen.xopp'), (Join-Path $repo 'examples\Schaltungen.pdf')) + $Extra
     & (Join-Path $native 'external\InkPages\UiTests\Run-SandboxTest.ps1') -App $app -Test $Test -Data $data `
         -Work (Join-Path $env:TEMP 'xournal-native-sandbox-test') -TimeoutSeconds $TimeoutSeconds
 }

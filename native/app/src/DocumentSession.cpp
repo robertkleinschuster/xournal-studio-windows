@@ -1,6 +1,7 @@
 #include "DocumentSession.h"
 
 #include "Dialogs.h"
+#include "ErrorText.h"
 #include "PdfPages.h"
 #include "UiQueue.h"
 
@@ -16,26 +17,6 @@ namespace xournal::app
     namespace
     {
         bool IsPdf(std::filesystem::path const& file) { return EqualsIgnoreCase(file.extension().native(), L".pdf"); }
-
-        std::wstring Describe(std::exception_ptr error)
-        {
-            try
-            {
-                std::rethrow_exception(error);
-            }
-            catch (std::exception const& e)
-            {
-                return FromUtf8(e.what());
-            }
-            catch (winrt::hresult_error const& e)
-            {
-                return std::wstring(e.message());
-            }
-            catch (...)
-            {
-                return L"unbekannter Fehler";
-            }
-        }
     }
 
     DocumentSession::DocumentSession(HWND owner, inkpages::WritingSurface& surface, DocumentView& view)
@@ -46,6 +27,7 @@ namespace xournal::app
     void DocumentSession::Show(std::shared_ptr<XoppDocument> next)
     {
         doc = std::move(next);
+        recovered = false;
         view.Show(doc);
         if (changed) changed();
     }
@@ -66,7 +48,50 @@ namespace xournal::app
 
     void DocumentSession::Open(std::filesystem::path const& file)
     {
-        if (loading || !ConfirmLeave()) return;
+        if (loading || (refusedWhileSyncing && refusedWhileSyncing(L"Öffnen")) || !ConfirmLeave()) return;
+        Load(file);
+    }
+
+    void DocumentSession::ShowNew()
+    {
+        Show(XoppDocument::CreateNew());
+    }
+
+    void DocumentSession::ShowRecovered(std::shared_ptr<XoppDocument> restored)
+    {
+        Show(std::move(restored));
+        recovered = true; // unsaved until the user saves it
+        if (changed) changed();
+    }
+
+    void DocumentSession::MovePdf(std::filesystem::path const& pdf)
+    {
+        if (doc) doc->MovePdf(pdf);
+    }
+
+    bool DocumentSession::SaveCopy()
+    {
+        if (!doc) return false;
+        std::filesystem::path folder = doc->FilePath() ? doc->FilePath()->parent_path() : std::filesystem::path();
+        auto file = Dialogs::SaveDocument(owner, folder, doc->SuggestedName() + L" (Kopie)");
+        if (!file) return false;
+        try
+        {
+            view.CaptureInk([&] { io::DocumentFile::SaveCopy(*doc, *file); });
+            if (message) message(std::format(L"Kopie gespeichert: {}", file->filename().native()), ToastKind::Success);
+            return true;
+        }
+        catch (...)
+        {
+            LogException(std::format("session: saving a copy at {}", ToUtf8(file->native())));
+            Fail(std::format(L"Speichern fehlgeschlagen: {}", ErrorText()));
+            return false;
+        }
+    }
+
+    void DocumentSession::Load(std::filesystem::path const& file)
+    {
+        if (loading || (refusedWhileSyncing && refusedWhileSyncing(L"Öffnen"))) return;
         loading = true;
         Log(std::format("session: opening {}", ToUtf8(file.native())));
         UiQueue::RunInBackground("open document", [this, file]
@@ -89,7 +114,7 @@ namespace xournal::app
                 if (error)
                 {
                     Dialogs::ShowError(owner, std::format(L"„{}“ kann nicht geöffnet werden.", file.filename().native()),
-                        Describe(error));
+                        ErrorText(error));
                     return;
                 }
                 Show(loaded);
@@ -99,14 +124,14 @@ namespace xournal::app
 
     bool DocumentSession::Save()
     {
-        if (!doc) return false;
+        if (!doc || (refusedWhileSyncing && refusedWhileSyncing(L"Speichern"))) return false;
         if (!doc->FilePath()) return SaveAs();
         return SaveTo(*doc->FilePath(), false);
     }
 
     bool DocumentSession::SaveAs()
     {
-        if (!doc) return false;
+        if (!doc || (refusedWhileSyncing && refusedWhileSyncing(L"Speichern"))) return false;
         std::filesystem::path folder = doc->FilePath() ? doc->FilePath()->parent_path()
             : doc->PdfPath() ? doc->PdfPath()->parent_path() : std::filesystem::path();
         auto file = Dialogs::SaveDocument(owner, folder, doc->SuggestedName());
@@ -124,6 +149,7 @@ namespace xournal::app
                 else io::DocumentFile::Save(*doc, file);
             });
             surface.MarkSaved();
+            recovered = false;
             if (message) message(std::format(L"Gespeichert: {}", file.filename().native()), ToastKind::Success);
             if (changed) changed();
             return true;
@@ -131,7 +157,7 @@ namespace xournal::app
         catch (...)
         {
             LogException(std::format("session: saving {}", ToUtf8(file.native())));
-            Fail(std::format(L"Speichern fehlgeschlagen: {}", Describe(std::current_exception())));
+            Fail(std::format(L"Speichern fehlgeschlagen: {}", ErrorText()));
             return false;
         }
     }
@@ -155,7 +181,7 @@ namespace xournal::app
     bool DocumentSession::IsModified() const
     {
         // The ink's history knows whether anything changed since the last save (the model has no other edits yet).
-        return doc && !surface.AtSavePoint();
+        return doc && (recovered || !surface.AtSavePoint());
     }
 
     std::wstring DocumentSession::Title() const

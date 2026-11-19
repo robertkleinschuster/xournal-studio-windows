@@ -4,10 +4,10 @@
 
 #include "AppFolder.h"
 #include "MainWindow.h"
-#include "Settings.h"
 
 #include "xournal/base/Log.h"
 #include "xournal/base/Text.h"
+#include "xournal/settings/Settings.h"
 
 #include <windows.h>
 #include <combaseapi.h>
@@ -55,7 +55,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
             xournal::LogError("InitCommonControlsEx failed");
         }
 
-        auto settings = xournal::app::Settings::Load(xournal::app::AppFolder::Path() / L"settings-native.json");
+        auto settings = xournal::settings::Settings::Load(xournal::settings::Settings::FileIn(xournal::app::AppFolder::Path()));
         xournal::app::MainWindow window(instance, std::move(settings), StartFile());
         int code = window.Run();
         xournal::Log("app: end");

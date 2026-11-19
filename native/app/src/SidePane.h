@@ -1,8 +1,10 @@
 #pragma once
 
-// The left side pane: a tab control with Dateien (the project folder's tree), Aufgaben and Seiten (to come).
+// The left side pane: a tab control with Dateien (the project folder's tree and the sync button), Aufgaben (todo.txt)
+// and Seiten (to come).
 
 #include "ExplorerTree.h"
+#include "TasksPane.h"
 
 #include <windows.h>
 
@@ -14,13 +16,19 @@ namespace xournal::app
     class SidePane
     {
     public:
-        explicit SidePane(HWND parent);
+        SidePane(HWND parent, TasksPane::Messages messages);
         ~SidePane();
         SidePane(SidePane const&) = delete;
         SidePane& operator=(SidePane const&) = delete;
 
         HWND Window() const { return window; }
         ExplorerTree& Explorer() { return *explorer; }
+        TasksPane& Tasks() { return *tasks; }
+
+        /// The sync button was pressed.
+        std::function<void()> syncRequested;
+        /// While a sync runs the button says so and waits.
+        void SetSyncing(bool syncing);
 
         int Tab() const;
         void SetTab(int tab);
@@ -35,8 +43,9 @@ namespace xournal::app
 
         HWND window = nullptr;
         HWND tabs = nullptr;
-        HWND tasksPlaceholder = nullptr;
+        HWND syncButton = nullptr;
         HWND pagesPlaceholder = nullptr;
         std::unique_ptr<ExplorerTree> explorer;
+        std::unique_ptr<TasksPane> tasks;
     };
 }
