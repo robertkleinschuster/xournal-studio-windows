@@ -34,7 +34,7 @@ public sealed class PageCommands
         ink.Undo.ContentEdited += (_, edited) => thumbnails.Edited(edited); // the pages an edit touched are drawn again
         pane.GoToRequested += (_, index) => pages.ScrollToPage(index);
         pane.InsertBlankRequested += (_, index) => pages.InsertBlankAt(index);
-        pane.InsertPdfRequested += async (_, index) => await insert.InsertAsync(index);
+        pane.InsertFromFileRequested += async (_, index) => await insert.InsertAsync(index);
         pane.MoveRequested += (_, move) => Move(move.From, move.To);
         pane.DeleteRequested += async (_, index) => await DeleteAsync(index);
     }
@@ -43,7 +43,7 @@ public sealed class PageCommands
     public void InsertAfterCurrent() => pages.InsertAfterCurrent();
 
     /// <summary>Pages of a PDF or document around the page in view (the dialog asks before or after).</summary>
-    public Task InsertPdfPagesAsync() => insert.InsertAsync(pages.CurrentIndex);
+    public Task InsertFromFileAsync() => insert.InsertAsync(pages.CurrentIndex);
 
     /// <summary>Deletes the page in view after asking.</summary>
     public Task DeleteCurrentAsync() => DeleteAsync(pages.CurrentIndex);

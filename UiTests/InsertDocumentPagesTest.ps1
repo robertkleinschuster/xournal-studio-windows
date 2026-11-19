@@ -1,5 +1,5 @@
 ﻿# Pages of another document (Seite -> Seiten aus PDF oder Dokument einfügen…), through the real file picker (typed
-# path), and the message floating over the top bar (closing by itself).
+# path), and the success toast (closing by itself).
 # Run-SandboxTest.ps1 -Test this -Document examples\Schaltungen.xopp -Extra <folder with Grenzwerte.xopp>
 # (its PDF Grenzwerte.pdf lies next to Schaltungen.xopp in examples, so the runner copies it).
 . C:\sbx\TestKit.ps1
@@ -49,7 +49,6 @@ Invoke-Test {
     Start-Sleep 4
     Shot '05-message-closed-by-itself'
 
-    # A message that stays: deleting the only page is refused (informational) - then an error-free close.
     Alive 'end'
     Copy-Item "$work\cfg\errors.log" $out -ErrorAction SilentlyContinue
 }

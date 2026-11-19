@@ -123,8 +123,8 @@ public sealed partial class PagesPane : UserControl
     /// <summary>A blank page at this index.</summary>
     public event EventHandler<int>? InsertBlankRequested;
 
-    /// <summary>Pages of a PDF around this page (the dialog asks before or after).</summary>
-    public event EventHandler<int>? InsertPdfRequested;
+    /// <summary>Pages of a PDF or document around this page (the dialog asks before or after).</summary>
+    public event EventHandler<int>? InsertFromFileRequested;
 
     /// <summary>Move a page: (from, to).</summary>
     public event EventHandler<(int From, int To)>? MoveRequested;
@@ -233,7 +233,7 @@ public sealed partial class PagesPane : UserControl
 
     private void OnInsertAfter(object sender, RoutedEventArgs e) => Act(sender, i => InsertBlankRequested?.Invoke(this, i + 1));
 
-    private void OnInsertPdf(object sender, RoutedEventArgs e) => Act(sender, i => InsertPdfRequested?.Invoke(this, i));
+    private void OnInsertFromFile(object sender, RoutedEventArgs e) => Act(sender, i => InsertFromFileRequested?.Invoke(this, i));
 
     private void OnMoveUp(object sender, RoutedEventArgs e) => Act(sender, i =>
     {

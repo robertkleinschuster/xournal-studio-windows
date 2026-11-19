@@ -40,7 +40,7 @@ public sealed partial class MainWindow : Window
         }
         AppWindow.TitleBar.PreferredTheme = TitleBarTheme.UseDefaultAppMode; // a dark title bar in dark mode (default: Legacy = light)
 
-        messages = new Messages(Info, Menu);
+        messages = new Messages(Toast, Info, Root);
         InkLog.Writer = DebugLog.Write;
         InkLog.ErrorWriter = message => DebugLog.Error($"ink error: {message}");
         bar = AppToolbar.Create(settings);
@@ -252,7 +252,7 @@ public sealed partial class MainWindow : Window
 
     private void OnInsertPage(object sender, RoutedEventArgs e) => pageCommands.InsertAfterCurrent();
 
-    private async void OnInsertPdfPages(object sender, RoutedEventArgs e) => await pageCommands.InsertPdfPagesAsync();
+    private async void OnInsertFromFile(object sender, RoutedEventArgs e) => await pageCommands.InsertFromFileAsync();
 
     private async void OnDeletePage(object sender, RoutedEventArgs e) => await pageCommands.DeleteCurrentAsync();
 

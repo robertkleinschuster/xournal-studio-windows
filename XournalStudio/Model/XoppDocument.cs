@@ -94,6 +94,14 @@ public sealed class XoppDocument
                 background.SetAttributeValue("pageno",
                     (pdfPageOf(from.PdfPageIndex) + 1).ToString(System.Globalization.CultureInfo.InvariantCulture));
             }
+            if (from.IsImageBackground && from.BackgroundImagePath == null && element.Element("background") is { } pixmap &&
+                (string?)pixmap.Attribute("domain") == "clone")
+            {
+                // A clone of a page that could not be resolved would clone a page of the target: it names nothing then
+                // (shown white, as upstream shows a missing picture).
+                pixmap.SetAttributeValue("domain", null);
+                pixmap.SetAttributeValue("filename", null);
+            }
             var page = XoppPage.FromXml(element);
             page.BackgroundImagePath = from.IsImageBackground ? from.BackgroundImagePath : null;
             copies.Add(page);

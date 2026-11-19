@@ -536,11 +536,13 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   `domain`/`filename` (only the first PDF background names the file); a picture background names the source's picture
   file (written as its path). Page inserts are not undoable (as PDF pages). Sandbox: `UiTests/InsertDocumentPagesTest.ps1`
   (the real file picker, a typed path).
-- **Messages (user, 2026-11-19: the InfoBar pushed the pages down, not aligned):** the InfoBar floats over the window's
-  top bar right of the menus (`Messages` places it by the MenuBar's width; `Grid.RowSpan` over menu and toolbar rows,
-  max 96 high) – never over the pages (ink is composed above XAML laid on the InkCanvas) and the pages never move.
-  Success/information close after 5 s, warnings after 12 s, errors stay. While shown it covers the toolbar's right part
-  (the user asked for toast-like messages; a windowed popup over the page was not used: it can swallow a barrel release).
+- **Messages as a toast (user, 2026-11-19: the InfoBar pushed the pages down; "overlays as own windows"):** the
+  InfoBar lies in a windowed `Popup` (`ShouldConstrainToRootBounds=false`, not light-dismiss) centered at the window's
+  bottom, over the pages: windowed popups are drawn above the experimental InkCanvas' ink (in-tree XAML is drawn under
+  it). Success/information close after 5 s; warnings and errors stay until closed. Sandbox (`UiTests/ToastTest.ps1`):
+  with the toast open a barrel lasso and barrel moves (one ending over the toast) work and the pen inks – the swallowed
+  barrel release seen with a light-dismiss `CommandBarFlyout` does not happen here. ContentDialogs stay
+  ContentDialogs (no windowed variant; `InkHidden` stays until microsoft-ui-xaml #10461 is fixed).
 - **Pages pane (user, 2026-11-18; side pane tab "Seiten", `Views/PagesPane` + `PageThumbnails`):** thumbnails of all
   pages (tap = go to the page; the page in view is selected), insert a blank page before/after, insert pages of a PDF
   (dialog with the PDF's pages as thumbnails to tap and "vor/nach Seite N" – `InsertPdfPagesCommand`), move up/down

@@ -143,8 +143,15 @@ public sealed class PageThumbnails
         }
     }
 
-    // What lies on the page, drawn by the PDF export (this page only, without the background PDF) and rendered.
-    private static async Task<Microsoft.UI.Xaml.Media.ImageSource?> ContentAsync(XoppPage page, CancellationToken cancel)
+    private static Task<Microsoft.UI.Xaml.Media.ImageSource?> ContentAsync(XoppPage page, CancellationToken cancel) =>
+        ContentAsync(page, PixelWidth, cancel);
+
+    /// <summary>
+    /// What lies on a page (ink, pictures, texts; a page without PDF with its paper), drawn by the PDF export – this page
+    /// only, without the background PDF, in memory – and rendered <paramref name="pixelWidth"/> wide (transparent on a PDF
+    /// page, to lie over its rendered PDF page).
+    /// </summary>
+    public static async Task<Microsoft.UI.Xaml.Media.ImageSource?> ContentAsync(XoppPage page, uint pixelWidth, CancellationToken cancel)
     {
         var snapshot = new XDocument(new XElement("xournal", page.Snapshot()));
         string? picture = page.BackgroundImagePath;
@@ -155,6 +162,6 @@ public sealed class PageThumbnails
             return stream.ToArray();
         }, cancel);
         using var pdf = await PdfBackground.LoadAsync(data);
-        return await pdf.RenderAsync(0, PixelWidth, cancel, transparent: page.IsPdf);
+        return await pdf.RenderAsync(0, pixelWidth, cancel, transparent: page.IsPdf);
     }
 }

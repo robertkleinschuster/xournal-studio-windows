@@ -11,7 +11,7 @@
             <MenuFlyoutItem Text="Leere Seite danach einfügen" Click="OnInsertAfter">
                 <MenuFlyoutItem.Icon><SymbolIcon Symbol="Add" /></MenuFlyoutItem.Icon>
             </MenuFlyoutItem>
-            <MenuFlyoutItem Text="Seiten aus PDF oder Dokument einfügen…" Click="OnInsertPdf">
+            <MenuFlyoutItem Text="Seiten aus PDF oder Dokument einfügen…" Click="OnInsertFromFile">
                 <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8A5;" /></MenuFlyoutItem.Icon>
             </MenuFlyoutItem>
             <MenuFlyoutSeparator />
@@ -42,7 +42,7 @@
                 <AppBarButton.Icon><SymbolIcon Symbol="Add" /></AppBarButton.Icon>
             </AppBarButton>
             <AppBarButton Width="44" LabelPosition="Collapsed" Label="Seiten aus PDF oder Dokument einfügen" AllowFocusOnInteraction="False"
-                          ToolTipService.ToolTip="Seiten aus einem PDF einfügen (z. B. ein Deckblatt)" Click="OnInsertPdf">
+                          ToolTipService.ToolTip="Seiten aus einem PDF (z. B. ein Deckblatt) oder einem anderen Dokument einfügen" Click="OnInsertFromFile">
                 <AppBarButton.Icon><FontIcon Glyph="&#xE8A5;" /></AppBarButton.Icon>
             </AppBarButton>
             <AppBarSeparator />

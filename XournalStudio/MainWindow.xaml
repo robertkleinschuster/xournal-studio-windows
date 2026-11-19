@@ -16,7 +16,7 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <MenuBar x:Name="Menu" Grid.Row="0" HorizontalAlignment="Left">
+        <MenuBar Grid.Row="0">
             <MenuBarItem Title="Datei">
                 <MenuFlyoutItem Text="Neu" Click="OnNew">
                     <MenuFlyoutItem.Icon><SymbolIcon Symbol="Page2" /></MenuFlyoutItem.Icon>
@@ -113,7 +113,7 @@
             </MenuBarItem>
             <MenuBarItem Title="Seite">
                 <MenuFlyoutItem x:Name="InsertPageMenuItem" Text="Seite einfügen" Click="OnInsertPage" />
-                <MenuFlyoutItem Text="Seiten aus PDF oder Dokument einfügen…" Click="OnInsertPdfPages">
+                <MenuFlyoutItem Text="Seiten aus PDF oder Dokument einfügen…" Click="OnInsertFromFile">
                     <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8A5;" /></MenuFlyoutItem.Icon>
                 </MenuFlyoutItem>
                 <MenuFlyoutItem x:Name="DeletePageMenuItem" Text="Seite löschen" Click="OnDeletePage" />
@@ -202,11 +202,15 @@
             </Grid>
         </SplitView>
 
-        <!-- Messages float over the window's top bar beside the menus (Messages places it): never over the pages – the
-             experimental InkCanvas draws its ink over XAML laid on it and takes the pen there (microsoft-ui-xaml #10461,
-             #11928) – and the pages do not move when one appears. Not wider than about a page column: its close button stays
-             away from the right screen edge (right-handed). -->
-        <InfoBar x:Name="Info" Grid.Row="0" Grid.RowSpan="2" VerticalAlignment="Top" HorizontalAlignment="Left"
-                 MaxWidth="720" MaxHeight="96" Margin="320,4,0,0" IsOpen="False" Canvas.ZIndex="1" />
+        <!-- Messages as a toast at the bottom of the window, over the pages: a windowed popup (ShouldConstrainToRootBounds
+             false) is drawn above the experimental InkCanvas' ink, in-tree XAML would be drawn under it (microsoft-ui-xaml
+             #10461, #11928). Not light-dismiss (a light-dismiss popup over the page swallowed a barrel release, see
+             CLAUDE.md); placed and opened by Messages. The InfoBar's tinted background lies on an opaque card. -->
+        <Popup x:Name="Toast" ShouldConstrainToRootBounds="False" IsLightDismissEnabled="False">
+            <Border Background="{ThemeResource SolidBackgroundFillColorBaseBrush}" CornerRadius="{ThemeResource OverlayCornerRadius}"
+                    BorderBrush="{ThemeResource SurfaceStrokeColorFlyoutBrush}" BorderThickness="1" MaxWidth="720">
+                <InfoBar x:Name="Info" IsOpen="False" />
+            </Border>
+        </Popup>
     </Grid>
 </Window>

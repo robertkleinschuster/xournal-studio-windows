@@ -1,6 +1,7 @@
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 using XournalStudio.Model;
 using XournalStudio.Services;
 
@@ -9,11 +10,11 @@ namespace XournalStudio.Views;
 /// <summary>
 /// Seiten einfügen (page menu and the pages pane): pages of another PDF (e.g. a cover sheet) or of another document
 /// (.xopp) before or after a page, chosen as thumbnails, stored as upstream Xournal++ stores a document – one background
-/// PDF, pages refer to its pages by number. PDF pages that are not the document's own are appended to the end of its PDF
-/// (<see cref="PdfPageAppender"/>, the file changes at once; the dialog says so); a page of the document's own PDF is just
-/// referred to, and a document without PDF takes the source's PDF as its PDF. Pages of a document are copied with all
-/// that lies on them (<see cref="XoppDocument.CopyPages"/>); their thumbnails are the document drawn as the PDF export
-/// draws it, in memory.
+/// PDF, pages refer to its pages by number (<see cref="BringPdfPagesAsync"/>: PDF pages that are not the document's own are
+/// appended to the end of its PDF, the file changes at once and the dialog says so; a document without PDF takes the
+/// source's PDF as its PDF). Pages of a document are copied with all that lies on them (<see cref="XoppDocument.CopyPages"/>).
+/// Thumbnails are rendered page by page while the dialog is open: a PDF page, and for a document's page its PDF page with
+/// what lies on it drawn over it (<see cref="PageThumbnails.ContentAsync"/>).
 /// </summary>
 public sealed class InsertPagesCommand(WindowId window, DocumentSession session, PagesController pages, Dialogs dialogs, Messages messages)
 {
@@ -27,53 +28,27 @@ public sealed class InsertPagesCommand(WindowId window, DocumentSession session,
         {
             return;
         }
-        if (Path.GetExtension(source).Equals(Pickers.Document, StringComparison.OrdinalIgnoreCase))
-        {
-            await InsertFromDocumentAsync(source, around);
-            return;
-        }
-        var doc = session.Document;
-        string? target = doc.PdfPath;
-        bool same = target != null && ProjectFiles.SamePath(source, target);
         PdfBackground? sourcePdf = null;
-        bool kept = false; // the source became the document's PDF (then it is never disposed here)
+        bool kept = false; // the source's PDF became the document's (then it is never disposed here)
         try
         {
-            sourcePdf = await PdfBackground.LoadAsync(source);
-            string where = target == null
-                ? $"Das Dokument verwendet dann „{Path.GetFileName(source)}“ als PDF-Hintergrund."
-                : same
-                    ? "Es ist das PDF des Dokuments: Die Seiten werden nur eingefügt."
-                    : $"Die Seiten werden ans Ende von „{Path.GetFileName(target)}“ angehängt – das PDF des Dokuments wird " +
-                      "dabei sofort geändert (wie in Xournal++ hat ein Dokument ein PDF), seine bisherigen Seiten bleiben.";
-            if (await AskAsync(Path.GetFileName(source), sourcePdf, where, around) is not { } choice)
+            var doc = session.Document;
+            if (Path.GetExtension(source).Equals(Pickers.Document, StringComparison.OrdinalIgnoreCase))
             {
-                return;
-            }
-            if (target != null && !same && session.RefusedWhileSyncing("Seiten an das PDF anhängen"))
-            {
-                return; // appending writes the document's PDF, which git may be working on
-            }
-            int at = choice.Before ? around : around + 1;
-            if (target == null || same)
-            {
-                session.UsePdf(source, sourcePdf);
-                kept = true;
-                pages.InsertPdfPagesAt(at, choice.Pages, sourcePdf);
+                var from = await Task.Run(() => XoppDocument.Load(source));
+                string? pdfPath = from.PdfPath != null && File.Exists(from.PdfPath) ? from.PdfPath : null;
+                sourcePdf = pdfPath != null ? await PdfBackground.LoadAsync(pdfPath) : null;
+                kept = await InsertFromDocumentAsync(doc, source, from, sourcePdf, around);
             }
             else
             {
-                int first = await Task.Run(() => PdfPageAppender.Append(target, source, choice.Pages));
-                var background = await PdfBackground.LoadAsync(target);
-                session.UsePdf(target, background);
-                pages.InsertPdfPagesAt(at, Enumerable.Range(first, choice.Pages.Count).ToList(), background);
+                sourcePdf = await PdfBackground.LoadAsync(source);
+                kept = await InsertFromPdfAsync(doc, source, sourcePdf, around);
             }
-            messages.Show(InfoBarSeverity.Success, "Seiten eingefügt",
-                $"{choice.Pages.Count} Seite(n) aus {Path.GetFileName(source)}" + (target == null || same ? "." : $" – an {Path.GetFileName(target)} angehängt."));
         }
         catch (Exception e)
         {
-            messages.Error("insert PDF pages", "Seiten konnten nicht eingefügt werden", e, source);
+            messages.Error("insert pages", "Seiten konnten nicht eingefügt werden", e, source);
         }
         finally
         {
@@ -84,93 +59,147 @@ public sealed class InsertPagesCommand(WindowId window, DocumentSession session,
         }
     }
 
-    // Pages of another document: thumbnails of the document as exported, then copies of the chosen pages; the PDF pages
-    // they show become the document's (appended to its PDF, or its PDF when it has none, or just referred to).
-    private async Task InsertFromDocumentAsync(string source, int around)
+    // Pages of a PDF. True: the PDF became the document's.
+    private async Task<bool> InsertFromPdfAsync(XoppDocument doc, string source, PdfBackground pdf, int around)
     {
-        PdfBackground? drawn = null;
-        try
+        string where = WhereText(doc, source, null, "Die Seiten werden");
+        var choice = await AskAsync(Path.GetFileName(source), pdf.PageCount,
+            async (i, closed) => (await pdf.RenderAsync(i, ThumbnailWidth, closed), null), where, around);
+        if (choice == null || await BringPdfPagesAsync(doc, source, pdf, choice.Value.Pages) is not { } brought)
         {
-            var from = await Task.Run(() => XoppDocument.Load(source));
-            if (from.Pages.Count == 0)
-            {
-                messages.Show(InfoBarSeverity.Warning, "Keine Seiten", $"{Path.GetFileName(source)} hat keine Seiten.");
-                return;
-            }
-            drawn = await DrawAsync(from);
-            var doc = session.Document;
-            string? target = doc.PdfPath, sourcePdf = from.PdfPath;
-            bool showsPdf = sourcePdf != null && from.Pages.Any(p => p.IsPdf);
-            bool same = showsPdf && target != null && ProjectFiles.SamePath(sourcePdf, target);
-            string where = !showsPdf || same
-                ? "Die Seiten werden mit allem, was darauf liegt, kopiert."
-                : target == null
-                    ? $"Die Seiten werden kopiert; das Dokument verwendet dann „{Path.GetFileName(sourcePdf)}“ als PDF-Hintergrund."
-                    : $"Die Seiten werden kopiert; ihre PDF-Seiten werden ans Ende von „{Path.GetFileName(target)}“ angehängt – " +
-                      "das PDF des Dokuments wird dabei sofort geändert (wie in Xournal++ hat ein Dokument ein PDF).";
-            if (await AskAsync(Path.GetFileName(source), drawn, where, around) is not { } choice)
-            {
-                return;
-            }
-            var pdfPages = showsPdf ? from.PdfPagesOf(choice.Pages) : [];
-            bool append = pdfPages.Count > 0 && target != null && !same;
-            if (append && session.RefusedWhileSyncing("Seiten an das PDF anhängen"))
-            {
-                return; // appending writes the document's PDF, which git may be working on
-            }
-            if (pdfPages.Count > 0 && !File.Exists(sourcePdf))
-            {
-                messages.Show(InfoBarSeverity.Warning, "Seiten nicht eingefügt", $"Das PDF der Seiten fehlt: {sourcePdf}");
-                return;
-            }
-            Func<int, int> pdfPageOf = p => p; // the same PDF, or the source's PDF becomes the document's
-            PdfBackground? background = null;
-            if (append)
-            {
-                int first = await Task.Run(() => PdfPageAppender.Append(target!, sourcePdf!, pdfPages));
-                pdfPageOf = p => first + pdfPages.IndexOf(p);
-                background = await PdfBackground.LoadAsync(target!);
-                session.UsePdf(target!, background);
-            }
-            else if (pdfPages.Count > 0 && target == null)
-            {
-                background = await PdfBackground.LoadAsync(sourcePdf!);
-                session.UsePdf(sourcePdf!, background);
-            }
-            int at = choice.Before ? around : around + 1;
-            pages.InsertCopiedPagesAt(at, XoppDocument.CopyPages(from, choice.Pages, pdfPageOf), background);
-            messages.Show(InfoBarSeverity.Success, "Seiten eingefügt", $"{choice.Pages.Count} Seite(n) aus {Path.GetFileName(source)}" +
-                (append ? $" – ihre PDF-Seiten an {Path.GetFileName(target)} angehängt." : "."));
+            return false;
         }
-        catch (Exception e)
-        {
-            messages.Error("insert document pages", "Seiten konnten nicht eingefügt werden", e, source);
-        }
-        finally
-        {
-            drawn?.Dispose(); // only for the thumbnails
-        }
+        pages.InsertPdfPagesAt(choice.Value.Before ? around : around + 1, choice.Value.Pages.Select(brought.PageOf).ToList(),
+            brought.Background ?? session.Pdf!);
+        Done(choice.Value.Pages.Count, source, doc, brought.Appended);
+        return brought.Adopted;
     }
 
-    // The document drawn as the PDF export draws it (with its PDF and picture backgrounds), in memory: the thumbnails.
-    private static async Task<PdfBackground> DrawAsync(XoppDocument doc)
+    // Pages of another document, copied with everything on them. True: its PDF became the document's.
+    private async Task<bool> InsertFromDocumentAsync(XoppDocument doc, string source, XoppDocument from, PdfBackground? fromPdf, int around)
     {
-        var snapshot = doc.Snapshot(doc.ReferenceBase);
-        var pictures = doc.Pages.Select(page => page.BackgroundImagePath).ToList();
-        string? pdf = doc.PdfPath != null && File.Exists(doc.PdfPath) ? doc.PdfPath : null;
-        byte[] data = await Task.Run(() =>
+        if (from.Pages.Count == 0)
         {
-            using var stream = new MemoryStream();
-            PdfExport.Write(snapshot, pdf, stream, i => i < pictures.Count ? pictures[i] : null);
-            return stream.ToArray();
-        });
-        return await PdfBackground.LoadAsync(data);
+            messages.Show(InfoBarSeverity.Warning, "Keine Seiten", $"{Path.GetFileName(source)} hat keine Seiten.");
+            return false;
+        }
+        string where = from.Pages.Any(p => p.IsPdf) && from.PdfPath != null
+            ? WhereText(doc, from.PdfPath, source, "Die Seiten werden mit allem, was darauf liegt, kopiert; ihre PDF-Seiten werden")
+            : "Die Seiten werden mit allem, was darauf liegt, kopiert.";
+        var choice = await AskAsync(Path.GetFileName(source), from.Pages.Count, async (i, closed) =>
+        {
+            var page = from.Pages[i];
+            var background = page.IsPdf && fromPdf != null ? await fromPdf.RenderAsync(page.PdfPageIndex, ThumbnailWidth, closed) : null;
+            return (background, await PageThumbnails.ContentAsync(page, ThumbnailWidth, closed));
+        }, where, around);
+        if (choice == null)
+        {
+            return false;
+        }
+        var pdfPages = from.PdfPagesOf(choice.Value.Pages);
+        (Func<int, int> PageOf, PdfBackground? Background, bool Appended, bool Adopted) brought = (p => p, null, false, false);
+        if (pdfPages.Count > 0)
+        {
+            if (fromPdf == null)
+            {
+                // A document whose PDF is missing (or not named): its PDF pages cannot be brought along.
+                messages.Show(InfoBarSeverity.Warning, "Seiten nicht eingefügt",
+                    $"Das PDF der Seiten fehlt: {from.PdfPath ?? $"{Path.GetFileName(source)} nennt keines"}");
+                return false;
+            }
+            if (await BringPdfPagesAsync(doc, from.PdfPath!, fromPdf, pdfPages) is not { } pdf)
+            {
+                return false;
+            }
+            brought = pdf;
+        }
+        pages.InsertCopiedPagesAt(choice.Value.Before ? around : around + 1,
+            XoppDocument.CopyPages(from, choice.Value.Pages, brought.PageOf), brought.Background);
+        Done(choice.Value.Pages.Count, source, doc, brought.Appended);
+        return brought.Adopted;
     }
 
-    // The pages to insert (thumbnails to tap, in the PDF's order) and before or after which page; null: canceled.
-    private async Task<(List<int> Pages, bool Before)?> AskAsync(string file, PdfBackground pdf, string where, int around)
+    /// <summary>
+    /// The document gets <paramref name="sourcePages"/> of <paramref name="sourcePdf"/> as pages of its one PDF: the same PDF
+    /// is just referred to; a document without PDF takes the source as its PDF (Adopted); otherwise they are appended to
+    /// its PDF (written at once; not during a sync). PageOf maps a source page to the document's PDF page; Background is the
+    /// document's PDF when it changed. Null: refused, or the document was left meanwhile (said).
+    /// </summary>
+    private async Task<(Func<int, int> PageOf, PdfBackground? Background, bool Appended, bool Adopted)?> BringPdfPagesAsync(
+        XoppDocument doc, string sourcePdf, PdfBackground loaded, IReadOnlyList<int> sourcePages)
     {
-        int count = pdf.PageCount;
+        if (!StillOpen(doc))
+        {
+            return null;
+        }
+        string? target = doc.PdfPath;
+        if (target != null && ProjectFiles.SamePath(target, sourcePdf))
+        {
+            return (p => p, null, false, false);
+        }
+        if (target == null)
+        {
+            session.UsePdf(sourcePdf, loaded);
+            return (p => p, loaded, false, true);
+        }
+        if (session.RefusedWhileSyncing("Seiten an das PDF anhängen"))
+        {
+            return null; // appending writes the document's PDF, which git may be working on
+        }
+        var list = sourcePages.ToList();
+        int first = await Task.Run(() => PdfPageAppender.Append(target, sourcePdf, list));
+        var background = await PdfBackground.LoadAsync(target);
+        if (!StillOpen(doc))
+        {
+            background.Dispose();
+            return null; // the pages are in the PDF's end now (unused, harmless); nothing is inserted elsewhere
+        }
+        session.UsePdf(target, background);
+        return (p => first + list.IndexOf(p), background, true, false);
+    }
+
+    // The insert goes on only into the document it began in.
+    private bool StillOpen(XoppDocument doc)
+    {
+        if (session.Document == doc)
+        {
+            return true;
+        }
+        messages.Show(InfoBarSeverity.Informational, "Seiten nicht eingefügt", "Inzwischen ist ein anderes Dokument geöffnet.");
+        return false;
+    }
+
+    // What happens to the document's PDF, for the dialog. sourceDocument: the .xopp whose PDF it is (null: a PDF).
+    private static string WhereText(XoppDocument doc, string sourcePdf, string? sourceDocument, string start)
+    {
+        string? target = doc.PdfPath;
+        if (target != null && ProjectFiles.SamePath(target, sourcePdf))
+        {
+            return sourceDocument == null ? "Es ist das PDF des Dokuments: Die Seiten werden nur eingefügt." : start.Split(';')[0] + ".";
+        }
+        if (target == null)
+        {
+            // An attached PDF ("<doc>.xopp.bg.pdf") belongs to the other document's name: renamed or deleted with it.
+            string attached = sourceDocument != null && Path.GetFileName(sourcePdf).StartsWith(Path.GetFileName(sourceDocument) + ".",
+                StringComparison.OrdinalIgnoreCase)
+                ? $" Es ist ein Anhang von „{Path.GetFileName(sourceDocument)}“: Wird das umbenannt oder gelöscht, fehlt der Hintergrund."
+                : "";
+            return (sourceDocument == null ? "" : start.Split(';')[0] + ". ") +
+                $"Das Dokument verwendet dann „{Path.GetFileName(sourcePdf)}“ als PDF-Hintergrund." + attached;
+        }
+        return $"{start} ans Ende von „{Path.GetFileName(target)}“ angehängt – das PDF des Dokuments wird dabei sofort geändert " +
+            "(wie in Xournal++ hat ein Dokument ein PDF), seine bisherigen Seiten bleiben.";
+    }
+
+    private void Done(int count, string source, XoppDocument doc, bool appended) =>
+        messages.Show(InfoBarSeverity.Success, "Seiten eingefügt", $"{count} Seite(n) aus {Path.GetFileName(source)}" +
+            (appended ? $" – PDF-Seiten an {Path.GetFileName(doc.PdfPath)} angehängt." : "."));
+
+    // The pages to insert (thumbnails to tap, in the source's order) and before or after which page; null: canceled.
+    // render gives a page's thumbnail: its background (PDF page) and what lies on it (null: nothing).
+    private async Task<(List<int> Pages, bool Before)?> AskAsync(string file, int count,
+        Func<int, CancellationToken, Task<(ImageSource? Background, ImageSource? Content)>> render, string where, int around)
+    {
         var thumbnails = new GridView
         {
             SelectionMode = ListViewSelectionMode.Multiple,
@@ -208,7 +237,7 @@ public sealed class InsertPagesCommand(WindowId window, DocumentSession session,
         thumbnails.SelectionChanged += (_, _) => dialog.IsPrimaryButtonEnabled = thumbnails.SelectedItems.Count > 0;
         using var closed = new CancellationTokenSource();
         var items = (List<FrameworkElement>)thumbnails.ItemsSource;
-        var rendering = RenderThumbnailsAsync(pdf, items, closed.Token);
+        var rendering = RenderThumbnailsAsync(render, items, closed.Token);
         ContentDialogResult result;
         try
         {
@@ -218,10 +247,9 @@ public sealed class InsertPagesCommand(WindowId window, DocumentSession session,
         {
             closed.Cancel(); // the rest of the thumbnails is not needed any more (also renders still waiting)
             await rendering;
-            foreach (var item in items)
+            foreach (var image in items.SelectMany(Layers))
             {
-                var image = (Image)((Border)((StackPanel)item).Children[0]).Child;
-                Services.PictureRenderer.Release(image.Source);
+                PictureRenderer.Release(image.Source);
                 image.Source = null;
             }
         }
@@ -233,6 +261,7 @@ public sealed class InsertPagesCommand(WindowId window, DocumentSession session,
         return (chosen, before.IsChecked == true);
     }
 
+    // A thumbnail: a white sheet with two layers (background, content over it) and the page number.
     private static FrameworkElement Thumbnail(int index) => new StackPanel
     {
         Tag = index,
@@ -244,17 +273,28 @@ public sealed class InsertPagesCommand(WindowId window, DocumentSession session,
             new Border
             {
                 Height = ThumbnailWidth / 1.5 * 1.414, // A4's proportion until the page is rendered
-                Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Colors.White),
-                BorderBrush = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["CardStrokeColorDefaultBrush"],
+                Background = new SolidColorBrush(Colors.White),
+                BorderBrush = (Brush)Application.Current.Resources["CardStrokeColorDefaultBrush"],
                 BorderThickness = new Thickness(1),
-                Child = new Image { Stretch = Microsoft.UI.Xaml.Media.Stretch.Uniform },
+                Child = new Grid
+                {
+                    Children =
+                    {
+                        new Image { Stretch = Stretch.Uniform },
+                        new Image { Stretch = Stretch.Uniform },
+                    },
+                },
             },
             new TextBlock { Text = (index + 1).ToString(), HorizontalAlignment = HorizontalAlignment.Center },
         },
     };
 
+    private static IEnumerable<Image> Layers(FrameworkElement thumbnail) =>
+        ((Grid)((Border)((StackPanel)thumbnail).Children[0]).Child).Children.Cast<Image>();
+
     // One page after the other (Windows.Data.Pdf renders one page at a time), until the dialog closes.
-    private static async Task RenderThumbnailsAsync(PdfBackground pdf, List<FrameworkElement> items, CancellationToken closed)
+    private static async Task RenderThumbnailsAsync(Func<int, CancellationToken, Task<(ImageSource?, ImageSource?)>> render,
+        List<FrameworkElement> items, CancellationToken closed)
     {
         foreach (var item in items)
         {
@@ -264,12 +304,20 @@ public sealed class InsertPagesCommand(WindowId window, DocumentSession session,
             }
             try
             {
-                var frame = (Border)((StackPanel)item).Children[0];
-                if (await pdf.RenderAsync((int)item.Tag, ThumbnailWidth, closed) is { } image)
+                var (background, content) = await render((int)item.Tag, closed);
+                var layers = Layers(item).ToList();
+                if (closed.IsCancellationRequested)
                 {
-                    frame.Height = double.NaN;
-                    ((Image)frame.Child).Source = image;
+                    PictureRenderer.Release(background);
+                    PictureRenderer.Release(content);
+                    return;
                 }
+                if (background != null || content != null)
+                {
+                    ((Border)((StackPanel)item).Children[0]).Height = double.NaN;
+                }
+                layers[0].Source = background;
+                layers[1].Source = content;
             }
             catch (OperationCanceledException)
             {
