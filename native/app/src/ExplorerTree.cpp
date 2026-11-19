@@ -44,7 +44,7 @@ namespace xournal::app
 
     void ExplorerTree::AddChildren(HTREEITEM parent, std::filesystem::path const& folder)
     {
-        for (auto const& entry : FolderListing::List(folder))
+        for (auto const& entry : list(folder))
         {
             TVINSERTSTRUCTW insert{};
             insert.hParent = parent;

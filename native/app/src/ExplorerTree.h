@@ -1,10 +1,13 @@
 #pragma once
 
-// The project folder as a TreeView (comctl32): folders open on demand, everything on disk is shown (FolderListing).
-// Double-click or Enter on a file asks the window to open it.
+// The project folder as a TreeView (comctl32): folders open on demand. What a folder holds comes from `list` (seam for
+// the project service in native/services; until it lands: FolderListing). Double-click or Enter on a file asks the
+// window to open it.
 
 #include <windows.h>
 #include <commctrl.h>
+
+#include "FolderListing.h"
 
 #include <filesystem>
 #include <functional>
@@ -24,6 +27,9 @@ namespace xournal::app
 
         /// Shows this folder (nothing: an empty tree with a hint).
         void SetFolder(std::optional<std::filesystem::path> folder);
+
+        /// What a folder holds, in the order shown.
+        std::function<std::vector<FolderEntry>(std::filesystem::path const&)> list = FolderListing::List;
 
         /// A file was chosen (double-click, Enter).
         std::function<void(std::filesystem::path const&)> fileChosen;
