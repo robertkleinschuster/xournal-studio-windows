@@ -45,7 +45,7 @@ jobs:
         if: github.ref_type == 'tag'
         shell: pwsh
         run: |
-          .\install.ps1 -SkipInstall
+          .\install.ps1 -SkipInstall -SourceDir (Join-Path $env:RUNNER_TEMP 's')
           $version = $env:GITHUB_REF_NAME.TrimStart('v')
           $stage = '.local-build\install-stage'
           Copy-Item THIRD-PARTY.md $stage

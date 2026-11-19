@@ -6,13 +6,15 @@
 #   .\install.ps1              unit tests, Release build, install, start check
 #   .\install.ps1 -SkipTests   without the unit tests
 #   .\install.ps1 -SkipInstall build and stage only (.local-build\install-stage)
+#   -SourceDir <dir>           the worktree elsewhere (CI: a short path - MSBuild's file tracker fails beyond MAX_PATH
+#                              in the nested libjpeg-turbo build under the runner's long checkout path)
 # Next to the exe: pdfium.dll (when the build puts it there) and licenses\ - the license texts of the third-party code
 # the exe contains (THIRD-PARTY.md); a missing license text stops the install.
-param([switch]$SkipTests, [switch]$SkipInstall, [string]$Config = 'Release')
+param([switch]$SkipTests, [switch]$SkipInstall, [string]$Config = 'Release', [string]$SourceDir = '')
 
 $ErrorActionPreference = 'Stop'
 $repo = $PSScriptRoot
-$source = Join-Path $repo '.local-build\install-source'
+$source = if ($SourceDir) { $SourceDir } else { Join-Path $repo '.local-build\install-source' }
 $build = Join-Path $source '.local-build\cmake'
 $stage = Join-Path $repo '.local-build\install-stage'
 $target = Join-Path $env:LOCALAPPDATA 'Programs\Xournal Studio (Win32)'
