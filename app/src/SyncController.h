@@ -6,7 +6,7 @@
 // While it runs, nothing that writes project files starts: RefusedWhileSyncing says so.
 
 #include "DocumentSession.h"
-#include "Toast.h"
+#include "MessageKind.h"
 
 #include "xournal/git/GitSync.h"
 
@@ -22,7 +22,7 @@ namespace xournal::app
     class SyncController
     {
     public:
-        using Messages = std::function<void(std::wstring const&, ToastKind)>;
+        using Messages = std::function<void(std::wstring const&, MessageKind)>;
 
         SyncController(HWND owner, DocumentSession& session, Messages messages);
 
@@ -35,7 +35,7 @@ namespace xournal::app
         /// true.
         bool RefusedWhileSyncing(std::wstring const& what) const;
 
-        /// While a sync runs: the document is saved once it ends (said in a toast) - unless the sync changed it, then the
+        /// While a sync runs: the document is saved once it ends (shown in the status bar) - unless the sync changed it, then the
         /// user decides again. True when the save was put off.
         bool DeferSave();
 

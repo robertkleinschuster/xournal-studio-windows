@@ -6,11 +6,7 @@
 // 2026-11-16); this device is released while the app still runs (Shutdown). One page at a time (the interop docs), on
 // the render thread only. Pixels come back to memory (BGRA, premultiplied) for the underlay to draw.
 
-#include <d3d11.h>
-#include <windows.data.pdf.interop.h>
-#include <wrl/client.h>
-
-#include <winrt/Windows.Data.Pdf.h>
+#include "xournal/pdf/NativePdfRenderer.h"
 
 #include <cstdint>
 #include <memory>
@@ -20,12 +16,7 @@
 namespace xournal::app
 {
     /// Pixels in memory: BGRA, premultiplied, rows of width * 4 bytes.
-    struct CpuBitmap
-    {
-        UINT width = 0;
-        UINT height = 0;
-        std::vector<std::uint8_t> pixels;
-    };
+    using CpuBitmap = pdf::NativePdfBitmap;
 
     class PdfPageRenderer
     {
@@ -36,19 +27,16 @@ namespace xournal::app
         std::shared_ptr<CpuBitmap> Render(winrt::Windows::Data::Pdf::PdfPage const& page, UINT width, UINT height, bool transparent,
             std::optional<D2D_RECT_F> source = std::nullopt);
         std::shared_ptr<CpuBitmap> RenderThumbnail(winrt::Windows::Data::Pdf::PdfPage const& page, UINT width, UINT height,
-            bool transparent);
+            bool transparent, std::optional<D2D_RECT_F> source = std::nullopt);
 
         /// Releases the device (before the process ends; no rendering afterwards).
         void Shutdown();
 
     private:
-        void EnsureDevice();
         std::shared_ptr<CpuBitmap> RenderOnce(winrt::Windows::Data::Pdf::PdfPage const& page, UINT width, UINT height, bool transparent,
             std::optional<D2D_RECT_F> source);
 
-        Microsoft::WRL::ComPtr<ID3D11Device> device;
-        Microsoft::WRL::ComPtr<ID3D11DeviceContext> context;
-        Microsoft::WRL::ComPtr<IPdfRendererNative> renderer;
+        pdf::NativePdfRenderer renderer;
         bool shutDown = false;
     };
 }

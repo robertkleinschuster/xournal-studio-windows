@@ -35,6 +35,7 @@ namespace xournal::app
         void Drop(std::function<bool(std::uint64_t key)> const& which);
         /// The page in view: jobs nearest to it run first.
         void SetFocus(int page);
+        void SetThumbnailFocus(int page);
 
         /// Ends the thread after the running job and releases the renderer's device (before the app exits).
         void Stop();
@@ -54,6 +55,7 @@ namespace xournal::app
         std::condition_variable wake;
         std::map<std::uint64_t, Waiting> waiting;
         int focus = 0;
+        int thumbnailFocus = 0;
         bool stopping = false;
         PdfPageRenderer renderer; // used on the render thread only
         std::thread thread;

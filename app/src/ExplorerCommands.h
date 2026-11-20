@@ -10,7 +10,7 @@
 #include "ExplorerTree.h"
 #include "ProjectExplorer.h"
 #include "SyncController.h"
-#include "Toast.h"
+#include "MessageKind.h"
 
 #include <windows.h>
 
@@ -24,7 +24,7 @@ namespace xournal::app
     class ExplorerCommands
     {
     public:
-        using Messages = std::function<void(std::wstring const&, ToastKind)>;
+        using Messages = std::function<void(std::wstring const&, MessageKind)>;
 
         ExplorerCommands(HWND owner, DocumentSession& session, SyncController& sync, ProjectExplorer& explorer,
             ExplorerTree& tree, Messages messages);

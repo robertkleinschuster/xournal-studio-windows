@@ -21,6 +21,7 @@ namespace xournal::app
 
         /// The menu bar; the window takes it over (SetMenu), so it is destroyed with the window.
         HMENU Bar() const { return bar; }
+        void WindowOwnsBar() { ownsBar = false; }
         HACCEL Accelerators() const { return accelerators; }
 
         void Enable(int command, bool enabled);
@@ -30,6 +31,7 @@ namespace xournal::app
 
     private:
         HMENU bar = nullptr;
+        bool ownsBar = true;
         HACCEL accelerators = nullptr;
         HMENU recent = nullptr; // Zuletzt geöffnet (a submenu of Datei)
     };

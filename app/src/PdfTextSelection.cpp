@@ -2,6 +2,7 @@
 
 #include "UiQueue.h"
 
+#include "xournal/base/Clipboard.h"
 #include "xournal/base/Error.h"
 #include "xournal/base/Log.h"
 #include "xournal/base/Text.h"
@@ -9,7 +10,6 @@
 #include "xournal/pdf/PdfPlaces.h"
 
 #include <algorithm>
-#include <cstring>
 #include <format>
 
 namespace xournal::app
@@ -20,18 +20,6 @@ namespace xournal::app
         // between lines the selection keeps its last character).
         constexpr double PressTolerance = 2;
         constexpr double DragTolerance = 6;
-
-        class ClipboardScope
-        {
-        public:
-            explicit ClipboardScope(HWND owner)
-            {
-                if (!OpenClipboard(owner)) ThrowLastError("OpenClipboard (PDF text)");
-            }
-            ~ClipboardScope() { CloseClipboard(); }
-            ClipboardScope(ClipboardScope const&) = delete;
-            ClipboardScope& operator=(ClipboardScope const&) = delete;
-        };
 
         pdftext::CharRange Union(pdftext::CharRange a, pdftext::CharRange b)
         {
@@ -204,24 +192,7 @@ namespace xournal::app
     void PdfTextSelection::Copy()
     {
         if (selectedText.empty()) return;
-        ClipboardScope open(owner);
-        if (!EmptyClipboard()) ThrowLastError("EmptyClipboard (PDF text)");
-        size_t bytes = (selectedText.size() + 1) * sizeof(wchar_t);
-        HGLOBAL memory = GlobalAlloc(GMEM_MOVEABLE, bytes);
-        if (!memory) ThrowLastError("GlobalAlloc (PDF text)");
-        void* p = GlobalLock(memory);
-        if (!p)
-        {
-            GlobalFree(memory);
-            ThrowLastError("GlobalLock (PDF text)");
-        }
-        std::memcpy(p, selectedText.c_str(), bytes);
-        GlobalUnlock(memory);
-        if (!SetClipboardData(CF_UNICODETEXT, memory))
-        {
-            GlobalFree(memory);
-            ThrowLastError("SetClipboardData(CF_UNICODETEXT)");
-        }
+        Clipboard::PutText(owner, selectedText);
         Log(std::format("pdf text selection: {} characters copied", selectedText.size()));
     }
 

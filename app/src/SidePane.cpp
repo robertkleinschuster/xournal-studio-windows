@@ -1,10 +1,12 @@
 #include "SidePane.h"
+#include "ChildControls.h"
 
 #include "xournal/base/Error.h"
 #include "xournal/base/Log.h"
 
 #include <commctrl.h>
 
+#include <algorithm>
 #include <format>
 
 namespace xournal::app
@@ -17,6 +19,14 @@ namespace xournal::app
         constexpr wchar_t const* TabTitles[] = { L"Dateien", L"Aufgaben", L"Seiten", L"Suche", L"Gliederung" };
         constexpr int OutlineTab = 4, FixedTabs = 4; // Suche is SidePane::SearchTab
 
+        void InsertTab(HWND tabs, int index)
+        {
+            TCITEMW item{ TCIF_TEXT };
+            item.pszText = const_cast<wchar_t*>(TabTitles[index]);
+            if (TabCtrl_InsertItem(tabs, index, &item) == -1)
+                ThrowHr("TCM_INSERTITEM (side pane)", E_FAIL);
+        }
+
         HWND Placeholder(HWND parent, wchar_t const* text)
         {
             HWND label = CreateWindowExW(0, WC_STATICW, text, WS_CHILD | SS_CENTER, 0, 0, 0, 0, parent, nullptr,
@@ -28,20 +38,6 @@ namespace xournal::app
             return label;
         }
 
-        // The controls use the window's message font (comctl32 v6 does not pick it up by itself).
-        void UseMessageFont(HWND control)
-        {
-            NONCLIENTMETRICSW metrics{ sizeof(metrics) };
-            if (SystemParametersInfoForDpi(SPI_GETNONCLIENTMETRICS, sizeof(metrics), &metrics, 0, GetDpiForWindow(control)))
-            {
-                static HFONT font = CreateFontIndirectW(&metrics.lfMessageFont); // one per process, kept until exit
-                SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
-            }
-            else
-            {
-                LogError(std::format("side pane: message font: {}", DescribeHr(HRESULT_FROM_WIN32(GetLastError()))));
-            }
-        }
     }
 
     SidePane::SidePane(HWND parent, TasksPane::Messages messages)
@@ -66,28 +62,25 @@ namespace xournal::app
         {
             ThrowLastError("CreateWindowEx(side pane)");
         }
+        ChildControls::PendingPaneWindow pending(window);
         tabs = CreateWindowExW(0, WC_TABCONTROLW, L"", WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS, 0, 0, 0, 0, window,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(TabsId)), instance, nullptr);
         if (!tabs)
         {
             ThrowLastError("CreateWindowEx(tab control)");
         }
-        UseMessageFont(tabs);
+        ChildControls::UseMessageFont(tabs);
         for (int i = 0; i < FixedTabs; ++i)
-        {
-            TCITEMW item{ TCIF_TEXT };
-            item.pszText = const_cast<wchar_t*>(TabTitles[i]);
-            TabCtrl_InsertItem(tabs, i, &item);
-        }
+            InsertTab(tabs, i);
         explorer = std::make_unique<ExplorerTree>(window, TreeId);
-        UseMessageFont(explorer->Window());
+        ChildControls::UseMessageFont(explorer->Window());
         syncButton = CreateWindowExW(0, WC_BUTTONW, L"Synchronisieren", WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON, 0, 0, 0, 0,
             window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(SyncId)), instance, nullptr);
         if (!syncButton)
         {
             ThrowLastError("CreateWindowEx(sync button)");
         }
-        UseMessageFont(syncButton);
+        ChildControls::UseMessageFont(syncButton);
         syncTip = CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASSW, nullptr, WS_POPUP | TTS_ALWAYSTIP | TTS_NOPREFIX,
             CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, window, nullptr, instance, nullptr);
         if (!syncTip)
@@ -101,20 +94,20 @@ namespace xournal::app
         tool.lpszText = const_cast<wchar_t*>(L"Synchronisieren");
         if (!SendMessageW(syncTip, TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&tool)))
         {
-            ThrowLastError("TTM_ADDTOOL(sync button)");
+            ThrowHr("TTM_ADDTOOL(sync button)", E_FAIL);
         }
         SendMessageW(syncTip, TTM_SETMAXTIPWIDTH, 0, MulDiv(320, static_cast<int>(GetDpiForWindow(window)), 96)); // lines
         tasks = std::make_unique<TasksPane>(window, std::move(messages));
         pagesContent = Placeholder(window, L"Seitenübersicht folgt.");
-        UseMessageFont(pagesContent);
         ShowPage(0);
+        pending.Release();
     }
 
     SidePane::~SidePane()
     {
         if (window && IsWindow(window))
         {
-            SetWindowLongPtrW(window, GWLP_USERDATA, 0);
+            ChildControls::SetWindowData(window, nullptr);
         }
     }
 
@@ -142,18 +135,15 @@ namespace xournal::app
 
     void SidePane::ShowOutlineTab(bool shown)
     {
-        if (shown == outlineShown) return;
-        outlineShown = shown;
+        if (shown == (TabCtrl_GetItemCount(tabs) > OutlineTab)) return;
         if (shown)
         {
-            TCITEMW item{ TCIF_TEXT };
-            item.pszText = const_cast<wchar_t*>(TabTitles[OutlineTab]);
-            if (TabCtrl_InsertItem(tabs, OutlineTab, &item) < 0) ThrowLastError("TabCtrl_InsertItem (Gliederung)");
+            InsertTab(tabs, OutlineTab);
             Layout(); // a new row of tabs may change the content's area
             return;
         }
         bool wasShown = Tab() == OutlineTab;
-        TabCtrl_DeleteItem(tabs, OutlineTab);
+        if (!TabCtrl_DeleteItem(tabs, OutlineTab)) ThrowHr("TCM_DELETEITEM (Gliederung)", E_FAIL);
         if (wasShown)
         {
             SetTab(0);
@@ -173,7 +163,7 @@ namespace xournal::app
             ThrowHr("TCM_GETITEMRECT (side pane tabs)", E_FAIL);
         }
         int width = last.right - first.left; // independent of how far the strip is scrolled
-        if (!outlineShown)
+        if (count == FixedTabs)
         {
             // Gliederung's tab as wide as the control would make it: its text plus the padding the first tab has.
             HDC dc = GetDC(tabs);
@@ -196,11 +186,14 @@ namespace xournal::app
     {
         if (tab < 0 || tab >= TabCtrl_GetItemCount(tabs)) tab = 0;
         TabCtrl_SetCurSel(tabs, tab);
+        if (Tab() != tab) ThrowHr("TCM_SETCURSEL (side pane)", E_FAIL);
         ShowPage(tab);
     }
 
     void SidePane::ShowPage(int tab)
     {
+        if (!SetWindowPos(tabs, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE))
+            ThrowLastError("SetWindowPos (tab background)");
         ShowWindow(explorer->Window(), tab == 0 ? SW_SHOW : SW_HIDE);
         ShowWindow(syncButton, tab == 0 ? SW_SHOW : SW_HIDE);
         ShowWindow(tasks->Window(), tab == 1 ? SW_SHOW : SW_HIDE);
@@ -211,46 +204,49 @@ namespace xournal::app
 
     void SidePane::Layout()
     {
-        RECT rc;
-        GetClientRect(window, &rc);
-        MoveWindow(tabs, 0, 0, rc.right, rc.bottom, TRUE);
+        RECT rc{};
+        if (!GetClientRect(window, &rc)) ThrowLastError("GetClientRect (side pane)");
+        if (!MoveWindow(tabs, 0, 0, rc.right, rc.bottom, TRUE)) ThrowLastError("MoveWindow (tabs)");
         RECT page = rc;
         TabCtrl_AdjustRect(tabs, FALSE, &page);
-        for (HWND child : { explorer->Window(), tasks->Window(), pagesContent, searchContent, outlineContent })
+        LONG width = std::max(0L, page.right - page.left);
+        LONG height = std::max(0L, page.bottom - page.top);
+        for (HWND child : { tasks->Window(), pagesContent, searchContent, outlineContent })
         {
-            if (!child) continue;
-            MoveWindow(child, page.left, page.top, page.right - page.left, page.bottom - page.top, TRUE);
-            SetWindowPos(child, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE); // above the tab control
+            if (child && !MoveWindow(child, page.left, page.top, width, height, TRUE))
+                ThrowLastError("MoveWindow (side pane content)");
         }
         // The tree leaves room for the sync button below it.
         int button = MulDiv(SyncButtonHeightDip, static_cast<int>(GetDpiForWindow(window)), 96);
         int gap = button / 4;
-        MoveWindow(explorer->Window(), page.left, page.top, page.right - page.left, page.bottom - page.top - button - 2 * gap, TRUE);
-        MoveWindow(syncButton, page.left + gap, page.bottom - button - gap, page.right - page.left - 2 * gap, button, TRUE);
-        SetWindowPos(syncButton, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+        if (!MoveWindow(explorer->Window(), page.left, page.top, width, std::max(0L, height - button - 2 * gap), TRUE))
+            ThrowLastError("MoveWindow (explorer tree)");
+        if (!MoveWindow(syncButton, page.left + gap, page.bottom - button - gap, std::max(0L, width - 2 * gap), button, TRUE))
+            ThrowLastError("MoveWindow (sync button)");
     }
 
     void SidePane::SetSyncing(bool value)
     {
+        if (!SetWindowTextW(syncButton, value ? L"Synchronisiert …" : syncText.c_str()))
+            ThrowLastError("SetWindowText (sync button)");
         syncing = value;
-        SetWindowTextW(syncButton, syncing ? L"Synchronisiert …" : syncText.c_str());
         EnableWindow(syncButton, !syncing);
     }
 
     void SidePane::SetSyncStatus(std::wstring text, std::wstring const& details)
     {
         syncText = std::move(text);
-        if (!syncing)
-        {
-            SetWindowTextW(syncButton, syncText.c_str());
-        }
+        if (!syncing && !SetWindowTextW(syncButton, syncText.c_str()))
+            ThrowLastError("SetWindowText (sync button)");
         TTTOOLINFOW tool{ sizeof(tool) };
         tool.hwnd = window;
         tool.uId = reinterpret_cast<UINT_PTR>(syncButton);
         std::wstring lines; // the tooltip breaks lines at "\r\n"
+        lines.reserve(details.size());
         for (wchar_t c : details)
         {
-            lines += c == L'\n' ? std::wstring(L"\r\n") : std::wstring(1, c);
+            if (c == L'\n') lines += L'\r';
+            lines += c;
         }
         tool.lpszText = lines.data(); // copied by the tooltip
         SendMessageW(syncTip, TTM_UPDATETIPTEXTW, 0, reinterpret_cast<LPARAM>(&tool));
@@ -274,6 +270,13 @@ namespace xournal::app
                 return 0;
             }
             break;
+        case WM_DPICHANGED_AFTERPARENT:
+            ChildControls::UseMessageFont(tabs);
+            ChildControls::UseMessageFont(explorer->Window());
+            ChildControls::UseMessageFont(syncButton);
+            SendMessageW(syncTip, TTM_SETMAXTIPWIDTH, 0, MulDiv(320, static_cast<int>(GetDpiForWindow(window)), 96));
+            Layout();
+            return 0;
         case WM_SIZE:
             Layout();
             return 0;
@@ -300,7 +303,7 @@ namespace xournal::app
     {
         if (message == WM_NCCREATE)
         {
-            SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(reinterpret_cast<CREATESTRUCTW*>(lp)->lpCreateParams));
+            if (!ChildControls::SetWindowData(hwnd, reinterpret_cast<CREATESTRUCTW*>(lp)->lpCreateParams)) return FALSE;
         }
         auto self = reinterpret_cast<SidePane*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
         if (!self || !self->window || !self->explorer || !self->tasks)

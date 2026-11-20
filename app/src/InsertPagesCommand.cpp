@@ -74,7 +74,7 @@ namespace xournal::app
     };
 
     InsertPagesCommand::InsertPagesCommand(HWND owner, DocumentSession& session, DocumentView& view,
-        std::function<void(std::wstring const&, ToastKind)> message)
+        std::function<void(std::wstring const&, MessageKind)> message)
         : owner(owner), session(session), view(view), message(std::move(message))
     {
     }
@@ -130,7 +130,7 @@ namespace xournal::app
                 {
                     running = false;
                     message(std::format(L"Seiten konnten nicht eingefügt werden ({}): {}", source->file.filename().native(), error),
-                        ToastKind::Error);
+                        MessageKind::Error);
                     return;
                 }
                 Ask(source, around);
@@ -144,7 +144,7 @@ namespace xournal::app
         if (source->Count() == 0)
         {
             finish();
-            message(std::format(L"Keine Seiten: {} hat keine Seiten.", source->file.filename().native()), ToastKind::Warning);
+            message(std::format(L"Keine Seiten: {} hat keine Seiten.", source->file.filename().native()), MessageKind::Warning);
             return;
         }
         // What happens to the document's PDF (the C# wording).
@@ -234,7 +234,7 @@ namespace xournal::app
         catch (...)
         {
             LogException("insert pages: the dialog");
-            message(L"Seiten konnten nicht eingefügt werden: " + ErrorText(), ToastKind::Error);
+            message(L"Seiten konnten nicht eingefügt werden: " + ErrorText(), MessageKind::Error);
         }
         std::uint64_t keys = source->keys;
         view.Queue().Drop([keys](std::uint64_t key) { return (key >> 32) == keys; }); // thumbnails not needed any more
@@ -260,7 +260,7 @@ namespace xournal::app
         {
             running = false;
             message(std::format(L"Seiten nicht eingefügt: das PDF der Seiten fehlt ({}).", source->document && source->document->PdfPath()
-                ? source->document->PdfPath()->native() : source->file.filename().native() + L" nennt keines"), ToastKind::Warning);
+                ? source->document->PdfPath()->native() : source->file.filename().native() + L" nennt keines"), MessageKind::Warning);
             return;
         }
         if (target.PdfPath() && Paths::Same(*target.PdfPath(), *source->pdfPath))
@@ -298,7 +298,7 @@ namespace xournal::app
                 if (!error.empty())
                 {
                     running = false;
-                    message(L"Seiten konnten nicht eingefügt werden: " + error, ToastKind::Error);
+                    message(L"Seiten konnten nicht eingefügt werden: " + error, MessageKind::Error);
                     return;
                 }
                 auto pageOf = [needed, first](int p)
@@ -317,7 +317,7 @@ namespace xournal::app
         if (session.Document() != source->target)
         {
             // The insert goes on only into the document it began in (appended PDF pages stay unused at its end).
-            message(L"Seiten nicht eingefügt: inzwischen ist ein anderes Dokument geöffnet.", ToastKind::Info);
+            message(L"Seiten nicht eingefügt: inzwischen ist ein anderes Dokument geöffnet.", MessageKind::Info);
             return;
         }
         std::vector<std::shared_ptr<XoppPage>> pages;
@@ -339,6 +339,6 @@ namespace xournal::app
         view.InsertPages(index, std::move(pages));
         std::wstring text = std::format(L"Seiten eingefügt: {} Seite(n) aus {}", chosen.size(), source->file.filename().native());
         text += appended ? std::format(L" – PDF-Seiten an {} angehängt.", source->target->PdfPath()->filename().native()) : L".";
-        message(text, ToastKind::Success);
+        message(text, MessageKind::Success);
     }
 }

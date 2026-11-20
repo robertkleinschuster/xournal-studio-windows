@@ -1,5 +1,5 @@
 ﻿# The Aufgaben tab in Windows Sandbox: the todo.txt shown (groups Überfällig / Offen, open by due date), a new task
-# added with Enter and a due date ("Fällig am:" check box), a task completed with its check box (only its line changes,
+# added with Enter and an optional date (the date picker's check box), a task completed with its check box (only its line changes,
 # the file keeps CRLF), a task's text edited in place (F2), a task edited with the dialog (context menu; a double-click
 # opens it too), a task deleted from the context menu.
 #   UiTests\Run-AppTest.ps1 -Test UiTests\TasksTest.ps1 -Extra D:\src\InkPages\.local-build\tools\uiaprobe.exe
@@ -54,9 +54,12 @@ Invoke-Test {
     }
     & C:\sbx\data\uiaprobe.exe XournalStudioWindow | Out-File "$out\uia-tree.txt" -Encoding utf8
 
-    # 1. A new task: typed into the box, Enter adds it at the end of the file - with a due date: the check box
-    # "Fällig am:" enables the date picker beside it (today), the task gets due:<today>; adding unchecks it again.
-    ClickAt 'XournalStudioWindow' 'llig am' | Out-Null
+    # 1. Enable the optional date using the native check box at the start of the date picker (id 21).
+    $pickerId = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::AutomationIdProperty, '21')
+    $picker = [System.Windows.Automation.AutomationElement]::RootElement.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $pickerId)
+    if ($null -eq $picker) { throw 'the date picker (id 21) was not found' }
+    $dateBounds = $picker.Current.BoundingRectangle
+    [Inj]::ClickPixel([int]($dateBounds.X + $dateBounds.Height / 2), [int]($dateBounds.Y + $dateBounds.Height / 2))
     Shot '01b-due-date-row'
     # The box by its control id (20, UI Automation's id of a Win32 control; it has no name, only a cue banner).
     $cond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::AutomationIdProperty, '20')
@@ -64,8 +67,8 @@ Invoke-Test {
     if ($box -eq $null) { Shot 'missing-new-task-box' | Out-Null; throw 'the new task box (id 20) not found' }
     $r = $box.Current.BoundingRectangle
     [Inj]::ClickPixel([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2)); Start-Sleep -Milliseconds 400
-    [System.Windows.Forms.SendKeys]::SendWait('Neue Übung abgeben'); Start-Sleep -Milliseconds 300
-    [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+    [Inj]::TypeText('Neue Übung abgeben'); Start-Sleep -Milliseconds 300
+    [Inj]::Key(0x0D)
     WaitFor 'add' { (Lines) -match 'Neue Übung abgeben' }
     $today = Get-Date -Format 'yyyy-MM-dd'
     if ((Lines) -notmatch "Neue Übung abgeben due:$today") { throw "the new task has no due:$today" }

@@ -55,10 +55,11 @@ long formulas in several colors. For open pen/UI design questions, propose how O
 - **Light only for now** (user, 2026-11-19): Win32 has no documented dark mode for comctl32 controls (Microsoft Learn
   "Support Dark and Light themes in Win32 apps" documents only detection and the dark title bar); half dark would be
   Frankenstein, the undocumented uxtheme routes a hack. Revisit once Microsoft documents it.
-- **Icons and colors** (user, 2026-11-19): commands with Segoe Fluent Icons (undo/redo = the official E7A7/E7A6), own
-  path icons in the same style only where no documented glyph fits (glyph list: `~/.claude/docs/segoe-fluent-icons.txt`);
-  files and folders in the explorer tree with the shell's system image list; messages with the system's
-  info/warning/error icons (`TaskDialog`, `SIID_*`); toasts in Windows 11 InfoBar colors.
+- **Shared UI and toolbar icons** (user, 2026-11-20): develop Xournal Studio and its InkPages submodule together.
+  InkPages owns the single toolbar design and icon set. Xournal Studio supplies its commands and uses those icons.
+  Use simple, recognisable symbols from InkPages, rendered as bitmaps at the toolbar's DPI.
+  In reviews, move duplicated UI behavior into InkPages when both projects can share it. Preserve the app icon.
+  Use the shell image list for files and folders, native TaskDialogs for decisions, and the status bar for feedback.
 - **Pen, finger, mouse** (user, 2026-11-20): only the pen writes. Finger and touchpad gestures pan (with inertia) and zoom
   the sheet. Touchpad pointer movement, clicks and drags follow the mouse column.
 
@@ -253,8 +254,8 @@ code). In short: `base ← model ← io ← pdf, pdftext, search, import, servic
   to relatively keep the old reference (as with File Explorer; the loader then looks next to the .xopp).
 - Tasks: only `<project folder>/todo.txt`; no reminders, no date words in quick add. Shown with comctl32 in its
   standard look (user, 2026-11-20: "nutze da die win32 komponenten passender"): a report-view ListView with column
-  headers, check boxes, groups Überfällig / Offen / Erledigt, info tips and in-place editing (F2); "Fällig am:" is a
-  check box with the date picker beside it; a double-click opens the edit dialog; the form above it in Windows' control
+  headers, check boxes, groups Überfällig / Offen / Erledigt, info tips and in-place editing (F2); the "Fällig am:"
+  date picker includes its own check box (`DTS_SHOWNONE`). A double-click opens the edit dialog; the form above it in Windows' control
   sizes.
 - The page in view is outlined in documents with more than one page.
 - **PDF text with the mouse** (user, 2026-11-20: "dass die maus pdf text auswählen kann ... in die zwischenablage"):
@@ -269,7 +270,7 @@ code). In short: `base ← model ← io ← pdf, pdftext, search, import, servic
 - **XmlLite writes LF as CR LF** in `WriteString`/`WriteWhitespace` (measured 2026-11-19): `XmlText` writes the pieces
   between line feeds through the writer and each LF with `WriteRaw` – texts and formatting keep LF as upstream writes.
 - **comctl32: `LVM_INSERTMARKHITTEST` answers -1 for every point of an `LVS_OWNERDATA` list** (measured with a probe
-  2026-11-19); the pages pane has one ordinary item per page (text/image by callback). In icon view with
+  2026-11-19). The pages pane now uses report view and `ListView_GetTopIndex`. In icon view with
   `LVS_ALIGNTOP` the insert mark is a vertical bar and before/after follow the horizontal position; `LVS_ALIGNLEFT`
   gives a horizontal mark but wraps items into columns.
 - **Clipboard** (`SelectionClipboard`): own format "Xournal Studio Clip" = a `<clip>` of upstream elements as XML (app

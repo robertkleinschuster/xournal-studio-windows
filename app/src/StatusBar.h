@@ -1,5 +1,7 @@
 #pragma once
 
+#include "MessageKind.h"
+
 // The status bar at the window's bottom (comctl32, no size grip): "Seite n von m" and the zoom in percent, as PDF viewers
 // show them. A double-click on the page part asks for "Gehe zu Seite". Nothing interactive at the right edge.
 
@@ -21,6 +23,7 @@ namespace xournal::app
         void Layout();
         /// `page` 0-based (-1: none), `percent` = the zoom as viewers count it (100 % = the page's real size).
         void Show(int page, int count, int percent);
+        void ShowMessage(std::wstring const& text, MessageKind kind);
         /// WM_NOTIFY from the bar; true when handled.
         bool OnNotify(NMHDR const& header);
 
@@ -30,6 +33,7 @@ namespace xournal::app
         void SetPart(int part, std::wstring const& text, std::wstring& shown);
 
         HWND bar = nullptr;
+        UINT partsDpi = 0;
         std::wstring pageText, zoomText;
     };
 }

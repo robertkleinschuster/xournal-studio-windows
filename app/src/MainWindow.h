@@ -1,6 +1,6 @@
 #pragma once
 
-// The main window: wires the menu, the toolbar, the side pane, the writing surface, the toast and the settings to the
+// The main window: wires the menu, toolbar, side pane, writing surface, status bar and settings to the
 // feature classes (DocumentSession, DocumentView, ProjectExplorer, ExplorerCommands, SyncController, TasksPane,
 // RecoveryCopies). It holds no feature logic of its own.
 
@@ -27,7 +27,7 @@
 #include "SidePane.h"
 #include "StatusBar.h"
 #include "SyncController.h"
-#include "Toast.h"
+#include "MessageKind.h"
 #include "ViewNavigation.h"
 
 #include "xournal/settings/Settings.h"
@@ -79,7 +79,7 @@ namespace xournal::app
         void UpdateSyncButton();
         void RememberWindow();
         void SaveSettings();
-        void Message(std::wstring const& text, ToastKind kind);
+        void Message(std::wstring const& text, MessageKind kind);
         void CopyPdfText(); // Strg+C with the PDF's text selected (a failure shown)
         // The viewer's parts: the status bar's page and zoom, the shown document's position remembered by file, the
         // pages' context menu, files dropped on the window.
@@ -96,7 +96,6 @@ namespace xournal::app
         std::unique_ptr<inkpages::WritingSurface> surface;
         std::unique_ptr<inkpages::Toolbar> toolbar;
         std::unique_ptr<SidePane> pane;
-        std::unique_ptr<Toast> toast;
         std::unique_ptr<StatusBar> statusBar;
         std::unique_ptr<ViewNavigation> navigation;
         std::unique_ptr<LinkHover> linkHover;

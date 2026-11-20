@@ -9,7 +9,7 @@
 #include "DelayedAction.h"
 #include "DocumentSession.h"
 #include "DocumentView.h"
-#include "Toast.h"
+#include "MessageKind.h"
 
 #include "xournal/recovery/Autosave.h"
 
@@ -24,7 +24,7 @@ namespace xournal::app
     class RecoveryCopies
     {
     public:
-        using Messages = std::function<void(std::wstring const&, ToastKind)>;
+        using Messages = std::function<void(std::wstring const&, MessageKind)>;
 
         RecoveryCopies(HWND owner, std::filesystem::path const& appFolder, DocumentSession& session, DocumentView& view,
             Messages messages);

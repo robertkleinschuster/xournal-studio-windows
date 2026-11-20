@@ -2,6 +2,7 @@
 
 #include "AppFolder.h"
 #include "AppToolbar.h"
+#include "ChildControls.h"
 #include "Commands.h"
 #include "Dialogs.h"
 #include "ErrorText.h"
@@ -25,7 +26,6 @@ namespace xournal::app
     namespace
     {
         constexpr wchar_t ClassName[] = L"XournalStudioWindow";
-        constexpr UINT QueueMessage = WM_APP + 1;
         constexpr int PaneWidthDip = 280;
 
         // Keys typed into an edit box (the explorer's rename, a new task) are the box's, not the menu's shortcuts
@@ -72,20 +72,35 @@ namespace xournal::app
         {
             ThrowLastError("CreateWindowEx(main window)");
         }
-        UiQueue::Attach(window, QueueMessage);
-        CreateParts(std::move(startFile));
+        menu.WindowOwnsBar();
+        try
+        {
+            UiQueue::Attach();
+            CreateParts(std::move(startFile));
+        }
+        catch (...)
+        {
+            if (!DestroyWindow(window))
+            {
+                LogError(std::format("DestroyWindow (startup): {}", DescribeHr(HRESULT_FROM_WIN32(GetLastError()))));
+                UiQueue::Detach();
+            }
+            throw;
+        }
     }
 
     MainWindow::~MainWindow()
     {
-        if (window && IsWindow(window))
+        if (window && IsWindow(window) && !DestroyWindow(window))
         {
-            DestroyWindow(window);
+            LogError(std::format("DestroyWindow (main window): {}", DescribeHr(HRESULT_FROM_WIN32(GetLastError()))));
         }
     }
 
     void MainWindow::CreateParts(std::optional<std::filesystem::path> startFile)
     {
+        statusBar = std::make_unique<StatusBar>(window);
+        statusBar->pageDoubleClicked = [this] { OnCommand(CmdGoToPage); };
         surface = inkpages::WritingSurface::Create(window);
         navigation = std::make_unique<ViewNavigation>(window, *surface);
         view = std::make_unique<DocumentView>(*surface);
@@ -114,14 +129,14 @@ namespace xournal::app
             if (explorerCommands) explorerCommands->DocumentShown();
             if (projectExplorer) projectExplorer->Refresh(); // a save changes the git colors
         };
-        session->message = [this](std::wstring const& text, ToastKind kind) { Message(text, kind); };
+        session->message = [this](std::wstring const& text, MessageKind kind) { Message(text, kind); };
         exportCommand = std::make_unique<PdfExportCommand>(window, *view,
-            [this](std::wstring const& text, ToastKind kind) { Message(text, kind); });
+            [this](std::wstring const& text, MessageKind kind) { Message(text, kind); });
         pageCommands = std::make_unique<PageCommands>(window, *surface, *view);
         insertCommand = std::make_unique<InsertPagesCommand>(window, *session, *view,
-            [this](std::wstring const& text, ToastKind kind) { Message(text, kind); });
+            [this](std::wstring const& text, MessageKind kind) { Message(text, kind); });
         importCommand = std::make_unique<PdfImportCommand>(window, *session,
-            [this](std::wstring const& text, ToastKind kind) { Message(text, kind); });
+            [this](std::wstring const& text, MessageKind kind) { Message(text, kind); });
         view->pagesChanged = [this]
         {
             session->NotePagesChanged();
@@ -151,7 +166,7 @@ namespace xournal::app
         surface->emptyRectangle = [this](int page, inkpages::RectF area)
         {
             auto failed = [this](std::wstring const& error) {
-                Message(std::format(L"PDF-Bereich konnte nicht kopiert werden: {}", error), ToastKind::Error);
+                Message(std::format(L"PDF-Bereich konnte nicht kopiert werden: {}", error), MessageKind::Error);
             };
             try { clipboard->OfferPdfArea(page, area, failed); }
             catch (...)
@@ -170,7 +185,7 @@ namespace xournal::app
             catch (...)
             {
                 LogException("clipboard: copy");
-                Message(std::format(L"Kopieren fehlgeschlagen: {}", ErrorText()), ToastKind::Error);
+                Message(std::format(L"Kopieren fehlgeschlagen: {}", ErrorText()), MessageKind::Error);
                 return false; // Ausschneiden keeps the selection
             }
         };
@@ -183,7 +198,7 @@ namespace xournal::app
             catch (...)
             {
                 LogException("clipboard: paste");
-                Message(std::format(L"Einfügen fehlgeschlagen: {}", ErrorText()), ToastKind::Error);
+                Message(std::format(L"Einfügen fehlgeschlagen: {}", ErrorText()), MessageKind::Error);
                 return inkpages::Clip{}; // nothing pasted (not Windows ink instead)
             }
         };
@@ -200,7 +215,7 @@ namespace xournal::app
             SaveSettings();
         };
 
-        pane = std::make_unique<SidePane>(window, [this](std::wstring const& text, ToastKind kind) { Message(text, kind); });
+        pane = std::make_unique<SidePane>(window, [this](std::wstring const& text, MessageKind kind) { Message(text, kind); });
         pane->SetTab(settings.paneTab);
         pane->tabChanged = [this](int tab)
         {
@@ -231,7 +246,6 @@ namespace xournal::app
             links->Tapped(page, point);
         };
         CreateSearch();
-        toast = std::make_unique<Toast>(window);
         surface->firstPenStroke = [this]
         {
             if (settings.penHasWritten) return;
@@ -244,10 +258,8 @@ namespace xournal::app
             settings.mouseHintShown = true;
             SaveSettings();
             Message(L"Zum Schreiben den Stift verwenden. Mit Maus und Finger blättern, Text markieren und Links öffnen. "
-                L"Auswählen und Text gehen auch mit der Maus.", ToastKind::Info);
+                L"Auswählen und Text gehen auch mit der Maus.", MessageKind::Info);
         };
-        statusBar = std::make_unique<StatusBar>(window);
-        statusBar->pageDoubleClicked = [this] { OnCommand(CmdGoToPage); };
         DragAcceptFiles(window, TRUE); // a .xopp or PDF dropped on the window opens
         CreateProjectParts();
 
@@ -321,9 +333,6 @@ namespace xournal::app
             ? std::max(MulDiv(PaneWidthDip, static_cast<int>(GetDpiForWindow(window)), 96), pane->TabsWidth()) : 0;
         MoveWindow(pane->Window(), 0, top, paneWidth, rc.bottom - top, TRUE);
         MoveWindow(surface->Window(), paneWidth, top, rc.right - paneWidth, rc.bottom - top, TRUE);
-        RECT area;
-        GetWindowRect(surface->Window(), &area);
-        toast->Place(area);
     }
 
     void MainWindow::SetPaneOpen(bool open)
@@ -480,13 +489,13 @@ namespace xournal::app
         if (documents.empty())
         {
             Message(L"Nur Xournal++-Dokumente (.xopp), MrWriter-Dokumente (.moj) und PDF-Dateien können geöffnet werden.",
-                ToastKind::Warning);
+                MessageKind::Warning);
             return;
         }
         if (documents.size() + others > 1)
         {
             Message(std::format(L"Nur „{}“ wird geöffnet - eine Datei auf einmal.", documents.front().filename().native()),
-                ToastKind::Info);
+                MessageKind::Info);
         }
         SetForegroundWindow(window);
         session->Open(documents.front());
@@ -513,7 +522,7 @@ namespace xournal::app
 
     void MainWindow::CreateProjectParts()
     {
-        auto messages = [this](std::wstring const& text, ToastKind kind) { Message(text, kind); };
+        auto messages = [this](std::wstring const& text, MessageKind kind) { Message(text, kind); };
         sync = std::make_unique<SyncController>(window, *session, messages);
         sync->stateChanged = [this] { OnSyncStateChanged(); };
         sync->finished = [this](bool succeeded) { remoteFetch->SyncEnded(succeeded); };
@@ -600,7 +609,9 @@ namespace xournal::app
         case CmdMovePageDown: pageCommands->MoveCurrent(1); break;
         case CmdOpenFolder: OpenFolder(); break;
         case CmdSync: sync->Sync(projectExplorer->Folder()); break;
-        case CmdExit: PostMessageW(window, WM_CLOSE, 0, 0); break;
+        case CmdExit:
+            if (!PostMessageW(window, WM_CLOSE, 0, 0)) ThrowLastError("PostMessageW (close main window)");
+            break;
         case CmdUndo: surface->Undo(); break;
         case CmdRedo: surface->Redo(); break;
         // Strg+X/C/V in the explorer tree are its files'.
@@ -659,16 +670,13 @@ namespace xournal::app
         catch (...)
         {
             LogException("clipboard: copy the PDF's text");
-            Message(std::format(L"Kopieren fehlgeschlagen: {}", ErrorText()), ToastKind::Error);
+            Message(std::format(L"Kopieren fehlgeschlagen: {}", ErrorText()), MessageKind::Error);
         }
     }
 
-    void MainWindow::Message(std::wstring const& text, ToastKind kind)
+    void MainWindow::Message(std::wstring const& text, MessageKind kind)
     {
-        RECT area;
-        GetWindowRect(surface->Window(), &area);
-        toast->Place(area);
-        toast->Show(text, kind);
+        if (statusBar) statusBar->ShowMessage(text, kind);
     }
 
     void MainWindow::RememberWindow()
@@ -690,7 +698,7 @@ namespace xournal::app
         catch (...)
         {
             LogException("settings: save");
-            Message(L"Die Einstellungen konnten nicht gespeichert werden.", ToastKind::Error);
+            Message(L"Die Einstellungen konnten nicht gespeichert werden.", MessageKind::Error);
         }
     }
 
@@ -715,9 +723,18 @@ namespace xournal::app
         switch (message)
         {
         case WM_SIZE:
-        case WM_MOVE:
             Layout();
             return 0;
+        case WM_DPICHANGED:
+        {
+            auto const& bounds = *reinterpret_cast<RECT const*>(lp);
+            if (!SetWindowPos(window, nullptr, bounds.left, bounds.top, bounds.right - bounds.left,
+                    bounds.bottom - bounds.top, SWP_NOZORDER | SWP_NOACTIVATE))
+            {
+                ThrowLastError("SetWindowPos (DPI change)");
+            }
+            return 0;
+        }
         case WM_COMMAND:
             OnCommand(LOWORD(wp));
             return 0;
@@ -768,16 +785,11 @@ namespace xournal::app
         case WM_INITMENUPOPUP:
             UpdateMenu();
             return 0;
-        case QueueMessage:
-            UiQueue::Run(lp);
-            return 0;
         case WM_CLOSE:
-            if (Close())
-            {
-                DestroyWindow(window);
-            }
+            if (Close() && !DestroyWindow(window)) ThrowLastError("DestroyWindow (close main window)");
             return 0;
         case WM_DESTROY:
+            UiQueue::Detach();
             // The parts go before the window's children do (the surface's ink thread hands its last pages back).
             recovery.reset();
             explorerCommands.reset();
@@ -785,19 +797,23 @@ namespace xournal::app
             projectExplorer.reset();
             sync.reset();
             // The feature classes that hold the surface go before it (the view takes its callbacks back).
-            surface->tapped = nullptr;
-            surface->mouseClaims = nullptr;
-            surface->emptyRectangle = nullptr;
-            surface->deferPaste = nullptr;
-            surface->firstPenStroke = nullptr;
-            surface->mousePannedWithWriteTool = nullptr;
-            surface->mouseGesture = nullptr;
-            surface->touchHeld = nullptr;
-            surface->selectionChanged = nullptr;
-            surface->textEditingChanged = nullptr;
-            surface->cursorAt = nullptr;
+            if (surface)
+            {
+                surface->tapped = nullptr;
+                surface->mouseClaims = nullptr;
+                surface->emptyRectangle = nullptr;
+                surface->deferPaste = nullptr;
+                surface->firstPenStroke = nullptr;
+                surface->mousePannedWithWriteTool = nullptr;
+                surface->mouseGesture = nullptr;
+                surface->touchHeld = nullptr;
+                surface->selectionChanged = nullptr;
+                surface->historyChanged = nullptr;
+                surface->textEditingChanged = nullptr;
+                surface->cursorAt = nullptr;
+            }
             linkHover.reset();
-            view->pdfLoaded = nullptr;
+            if (view) view->pdfLoaded = nullptr;
             search.reset();
             searchPane.reset();
             outline.reset();
@@ -824,8 +840,8 @@ namespace xournal::app
         if (message == WM_NCCREATE)
         {
             auto self = reinterpret_cast<MainWindow*>(reinterpret_cast<CREATESTRUCTW*>(lp)->lpCreateParams);
+            if (!ChildControls::SetWindowData(hwnd, self)) return FALSE;
             self->window = hwnd;
-            SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
         }
         auto self = reinterpret_cast<MainWindow*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
         if (!self)
@@ -839,9 +855,9 @@ namespace xournal::app
         catch (...)
         {
             LogException(std::format("main window: message 0x{:X}", message));
-            if (self->toast)
+            if (self->statusBar)
             {
-                self->toast->Show(L"Ein Fehler ist aufgetreten (Einzelheiten in errors.log).", ToastKind::Error);
+                self->Message(L"Ein Fehler ist aufgetreten (Einzelheiten in errors.log).", MessageKind::Error);
             }
             return 0;
         }

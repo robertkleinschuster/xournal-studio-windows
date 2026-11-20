@@ -17,18 +17,6 @@ namespace xournal::app
             }
         }
 
-        // Segoe Fluent Icons for the commands (E74E Save, EDE1 Export).
-        constexpr wchar_t GlyphSave = L'\uE74E';
-        constexpr wchar_t GlyphExport = L'\uEDE1';
-
-        // The page buttons: a sheet with a folded corner and a plus / minus badge, drawn as paths in Segoe Fluent's style
-        // (the C# app's AppToolbar icons; Segoe Fluent Icons documents no "page add/remove" glyph). Nonzero fill: outline,
-        // fold and badge clockwise, the plus/minus counter-clockwise (a hole in the badge).
-        constexpr wchar_t const* Sheet = L"F1 M5,9.3 V3.5 L5.6,2.1 L7,1.5 H12 L17,6.5 V17 L16.4,18.4 L15,19 H10.7 V17.6 H15 "
-            L"L15.4,17.4 L15.6,17 V7.1 L11.4,2.9 H7 L6.6,3.1 L6.4,3.5 V9.3 Z M10.9,2.2 H12.3 V5.5 H16.3 V6.9 H10.9 Z "
-            L"M5,10.5 A4.5,4.5 0 1 1 5,19.5 A4.5,4.5 0 1 1 5,10.5 Z ";
-        std::wstring const InsertPageIcon = std::wstring(Sheet) + L"M4.3,12.25 V14.3 H2.25 V15.7 H4.3 V17.75 H5.7 V15.7 H7.75 V14.3 H5.7 V12.25 Z";
-        std::wstring const DeletePageIcon = std::wstring(Sheet) + L"M2.75,14.3 V15.7 H7.25 V14.3 Z";
     }
 
     inkpages::ToolbarTexts GermanToolbarTexts()
@@ -66,7 +54,6 @@ namespace xournal::app
         t.paste = L"Einfügen (Strg+V)";
         t.duplicate = L"Auswahl duplizieren (Strg+D)";
         t.deleteSelection = L"Auswahl löschen (Entf)";
-        t.selectAll = L"Alles auf der Seite auswählen (Strg+A)";
         t.undo = L"Rückgängig (Strg+Z)";
         t.redo = L"Wiederholen (Strg+Y)";
         t.color = L"Farbe";
@@ -83,11 +70,12 @@ namespace xournal::app
     {
         std::vector<inkpages::ToolbarButton> buttons{
             // Save and Export at the toolbar's start, where apps put them (user, 2026-11-20).
-            { CmdSave, GlyphSave, L"Speichern (Strg+S)", actions.save, L"Speichern", {}, 20, false, true },
-            { CmdExportPdf, GlyphExport, L"Als PDF exportieren (Strg+E)", actions.exportPdf, L"Als PDF exportieren", {}, 20, false, true },
-            { CmdInsertPage, 0, L"Seite einfügen (nach der Seite im Blick)", actions.insertPage, L"Seite einfügen", InsertPageIcon, 20, true },
-            { CmdDeletePage, 0, L"Seite löschen", actions.deletePage, L"Seite löschen", DeletePageIcon, 20 },
+            { CmdSave, 0, L"Speichern (Strg+S)", actions.save, L"Speichern", {}, 20, false, true, inkpages::ToolbarSymbol::Save },
+            { CmdExportPdf, 0, L"Als PDF exportieren (Strg+E)", actions.exportPdf, L"Als PDF exportieren", {}, 20, false, true, inkpages::ToolbarSymbol::ExportPdf },
+            { CmdInsertPage, 0, L"Seite einfügen (nach der Seite im Blick)", actions.insertPage, L"Seite einfügen", {}, 20, true, false, inkpages::ToolbarSymbol::InsertPage },
+            { CmdDeletePage, 0, L"Seite löschen", actions.deletePage, L"Seite löschen", {}, 20, false, false, inkpages::ToolbarSymbol::DeletePage },
         };
-        return inkpages::Toolbar::Create(parent, surface, std::move(choices), GermanToolbarTexts(), CursorFor, std::move(buttons));
+        return inkpages::Toolbar::Create(parent, surface, std::move(choices), GermanToolbarTexts(), CursorFor,
+            std::move(buttons));
     }
 }

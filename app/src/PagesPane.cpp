@@ -1,9 +1,9 @@
 #include "PagesPane.h"
 
 #include "ChildControls.h"
-#include "GlyphImages.h"
 #include "ThumbnailDrawing.h"
 
+#include "inkpages/Toolbar.h"
 #include "xournal/base/Error.h"
 #include "xournal/base/Log.h"
 
@@ -24,12 +24,28 @@ namespace xournal::app
         constexpr wchar_t ClassName[] = L"XournalStudioPagesPane";
         constexpr int ListId = 1, BarId = 2;
         constexpr int ThumbWidthDip = 150;
+        constexpr int PreviewColumn = 1, LabelWidthDip = 65;
         enum MenuCommand : UINT { MenuBefore = 1, MenuAfter, MenuFromFile, MenuUp, MenuDown, MenuDelete };
         enum BarCommand : int { BarUp = 101, BarDown };
         constexpr wchar_t GlyphUp = 0xE74A, GlyphDown = 0xE74B; // Segoe Fluent Icons "Up" / "Down"
 
         int Scaled(int dip, HWND window) { return MulDiv(dip, static_cast<int>(GetDpiForWindow(window)), 96); }
 
+        HIMAGELIST PageButtonImages(int size)
+        {
+            std::unique_ptr<std::remove_pointer_t<HIMAGELIST>, decltype(&ImageList_Destroy)> images(
+                ImageList_Create(size, size, ILC_COLOR32, 2, 0), ImageList_Destroy);
+            if (!images) ThrowHr("ImageList_Create (page buttons)", E_FAIL);
+            for (wchar_t glyph : { GlyphUp, GlyphDown })
+            {
+                HBITMAP bitmap = inkpages::CreateFluentGlyphBitmap(glyph, GetSysColor(COLOR_BTNTEXT), size);
+                if (!bitmap) ThrowHr("CreateFluentGlyphBitmap (page buttons)", E_FAIL);
+                int index = ImageList_Add(images.get(), bitmap, nullptr);
+                if (!DeleteObject(bitmap)) LogError("DeleteObject (page button glyph) failed");
+                if (index < 0) ThrowHr("ImageList_Add (page buttons)", E_FAIL);
+            }
+            return images.release();
+        }
     }
 
     PagesPane::PagesPane(HWND parent, PageThumbnails& thumbnails) : thumbnails(thumbnails)
@@ -48,22 +64,55 @@ namespace xournal::app
         }
         window = CreateWindowExW(0, ClassName, L"", WS_CHILD | WS_CLIPCHILDREN, 0, 0, 0, 0, parent, nullptr, instance, this);
         if (!window) ThrowLastError("CreateWindowEx(pages pane)");
+        ChildControls::PendingPaneWindow pending(window);
         CreateBar();
-        list =CreateWindowExW(0, WC_LISTVIEWW, L"Seiten", WS_CHILD | WS_VISIBLE | WS_TABSTOP | LVS_ICON | LVS_SHAREIMAGELISTS |
-            LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_AUTOARRANGE | LVS_ALIGNTOP, 0, 0, 0, 0, window,
+        list = CreateWindowExW(0, WC_LISTVIEWW, L"Seiten", WS_CHILD | WS_VISIBLE | WS_TABSTOP | LVS_REPORT | LVS_SHAREIMAGELISTS |
+            LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_NOCOLUMNHEADER, 0, 0, 0, 0, window,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(ListId)), instance, nullptr);
         if (!list) ThrowLastError("CreateWindowEx(pages list)");
         HRESULT hr = SetWindowTheme(list, L"Explorer", nullptr); // File Explorer's selection look
         if (FAILED(hr)) LogError(std::format("pages pane: theme not set: {}", DescribeHr(hr)));
-        ListView_SetExtendedListViewStyle(list, LVS_EX_DOUBLEBUFFER);
-        UpdateSizes();
+        ListView_SetExtendedListViewStyle(list, LVS_EX_DOUBLEBUFFER | LVS_EX_FULLROWSELECT);
+        LVCOLUMNW column{ LVCF_WIDTH | LVCF_SUBITEM };
+        for (int index : { 0, PreviewColumn })
+        {
+            column.cx = Scaled(LabelWidthDip, window);
+            column.iSubItem = index;
+            if (ListView_InsertColumn(list, index, &column) == -1)
+                ThrowHr("LVM_INSERTCOLUMN (page thumbnails)", E_FAIL);
+        }
+        try
+        {
+            UpdateSizes();
+        }
+        catch (...)
+        {
+            ReleaseImageLists();
+            throw;
+        }
+        pending.Release();
     }
 
     PagesPane::~PagesPane()
     {
-        if (window && IsWindow(window)) SetWindowLongPtrW(window, GWLP_USERDATA, 0);
-        if (images) ImageList_Destroy(images);
-        if (barImages) ImageList_Destroy(barImages);
+        if (window && IsWindow(window)) ChildControls::SetWindowData(window, nullptr);
+        ReleaseImageLists();
+    }
+
+    void PagesPane::ReleaseImageLists()
+    {
+        if (images)
+        {
+            if (IsWindow(list)) ListView_SetImageList(list, nullptr, LVSIL_SMALL);
+            if (!ImageList_Destroy(images)) LogError("ImageList_Destroy (page thumbnails) failed");
+            images = nullptr;
+        }
+        if (barImages)
+        {
+            if (IsWindow(bar)) SendMessageW(bar, TB_SETIMAGELIST, 0, 0);
+            if (!ImageList_Destroy(barImages)) LogError("ImageList_Destroy (page toolbar) failed");
+            barImages = nullptr;
+        }
     }
 
     void PagesPane::CreateBar()
@@ -91,19 +140,18 @@ namespace xournal::app
 
     void PagesPane::UpdateSizes()
     {
-        HIMAGELIST glyphs = CreateGlyphImages({ GlyphUp, GlyphDown }, Scaled(16, window));
+        HIMAGELIST glyphs = PageButtonImages(Scaled(16, window));
         SendMessageW(bar, TB_SETIMAGELIST, 0, reinterpret_cast<LPARAM>(glyphs));
         if (barImages) ImageList_Destroy(barImages);
         barImages = glyphs;
         ChildControls::UseMessageFont(bar);
         SendMessageW(bar, TB_AUTOSIZE, 0, 0);
 
-        // One transparent image of an A4 thumbnail's size gives every item its place; the page is drawn over it, fitted
-        // into the slot less a margin, and its layers are rendered at exactly that size.
+        // Use the small image list for native row height. Draw each thumbnail in the preview column.
         thumbWidth = Scaled(ThumbWidthDip, window);
         thumbHeight = static_cast<int>(std::lround(thumbWidth * 1.4142));
-        HIMAGELIST created = CreateSlotImages({ thumbWidth, thumbHeight });
-        ListView_SetImageList(list, created, LVSIL_NORMAL);
+        HIMAGELIST created = CreateSlotImages({ 1, thumbHeight });
+        ListView_SetImageList(list, created, LVSIL_SMALL);
         if (images) ImageList_Destroy(images);
         images = created;
         thumbnails.SetBox(Box());
@@ -117,22 +165,22 @@ namespace xournal::app
 
     void PagesPane::Layout()
     {
-        RECT rc;
-        GetClientRect(window, &rc);
+        RECT rc{};
+        if (!GetClientRect(window, &rc)) ThrowLastError("GetClientRect (pages pane)");
         int gap = Scaled(4, window);
         int barHeight = HIWORD(SendMessageW(bar, TB_GETBUTTONSIZE, 0, 0));
         MoveWindow(bar, gap, gap, rc.right - 2 * gap, barHeight, TRUE);
         int top = barHeight + 2 * gap;
         MoveWindow(list, 0, top, rc.right, std::max(0, static_cast<int>(rc.bottom) - top), TRUE);
-        // One column: an item as wide as the list.
-        int width = std::max(thumbWidth + Scaled(16, window), static_cast<int>(rc.right) - GetSystemMetricsForDpi(SM_CXVSCROLL, GetDpiForWindow(window)));
-        ListView_SetIconSpacing(list, width, thumbHeight + Scaled(36, window));
-        ListView_Arrange(list, LVA_DEFAULT);
+        if (!ListView_SetColumnWidth(list, 0, Scaled(LabelWidthDip, window)) ||
+            !ListView_SetColumnWidth(list, PreviewColumn, LVSCW_AUTOSIZE_USEHEADER))
+            ThrowHr("LVM_SETCOLUMNWIDTH (page thumbnails)", E_FAIL);
+        UpdateThumbnailFocus();
     }
 
     void PagesPane::SetCount(int pages)
     {
-        // Ordinary items whose text and image come from LVN_GETDISPINFO.
+        // Ordinary items whose labels come from LVN_GETDISPINFO.
         selecting = true;
         for (int n = ListView_GetItemCount(list); n > pages; --n)
         {
@@ -142,11 +190,14 @@ namespace xournal::app
         {
             LVITEMW item{ LVIF_TEXT | LVIF_IMAGE, n };
             item.pszText = LPSTR_TEXTCALLBACKW;
-            item.iImage = I_IMAGECALLBACK;
+            item.iImage = 0;
             if (ListView_InsertItem(list, &item) < 0) LogError(std::format("pages pane: item {} not inserted", n + 1));
         }
         selecting = false;
         count = ListView_GetItemCount(list);
+        if (!ListView_SetColumnWidth(list, PreviewColumn, LVSCW_AUTOSIZE_USEHEADER))
+            ThrowHr("LVM_SETCOLUMNWIDTH (page thumbnails)", E_FAIL);
+        UpdateThumbnailFocus();
         InvalidateRect(list, nullptr, TRUE);
         UpdateButtons();
     }
@@ -155,9 +206,9 @@ namespace xournal::app
     {
         if (index < 0 || index >= count || Selected() == index) return;
         selecting = true;
-        ListView_SetItemState(list, -1, 0, LVIS_SELECTED | LVIS_FOCUSED);
         ListView_SetItemState(list, index, LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED);
         ListView_EnsureVisible(list, index, FALSE);
+        UpdateThumbnailFocus();
         selecting = false;
         UpdateButtons();
     }
@@ -190,7 +241,12 @@ namespace xournal::app
     void PagesPane::DrawThumbnail(HDC dc, RECT const& area, int index)
     {
         auto layers = thumbnails.Of(index);
-        DrawPageThumbnail(dc, area, Box(), layers.aspect, layers.background.get(), layers.content.get());
+        DrawCachedPageThumbnail(dc, area, Box(), layers.aspect, layers.background.get(), layers.content.get());
+    }
+
+    void PagesPane::UpdateThumbnailFocus()
+    {
+        thumbnails.SetPaneFocus(count ? ListView_GetTopIndex(list) : -1);
     }
 
     LRESULT PagesPane::OnCustomDraw(NMLVCUSTOMDRAW& draw)
@@ -204,10 +260,11 @@ namespace xournal::app
         case CDDS_ITEMPOSTPAINT:
         {
             int index = static_cast<int>(draw.nmcd.dwItemSpec);
-            RECT icon{ LVIR_ICON };
-            if (ListView_GetItemRect(list, index, &icon, LVIR_ICON))
+            RECT preview{};
+            if (ListView_GetSubItemRect(list, index, PreviewColumn, LVIR_BOUNDS, &preview) &&
+                preview.right - preview.left >= Box().cx)
             {
-                DrawThumbnail(draw.nmcd.hdc, icon, index);
+                DrawThumbnail(draw.nmcd.hdc, preview, index);
             }
             return CDRF_DODEFAULT;
         }
@@ -248,15 +305,17 @@ namespace xournal::app
         if (header.hwndFrom != list) return 0;
         switch (header.code)
         {
+        case LVN_ENDSCROLL:
+            UpdateThumbnailFocus();
+            return 0;
         case LVN_GETDISPINFOW:
         {
             auto& info = const_cast<NMLVDISPINFOW&>(reinterpret_cast<NMLVDISPINFOW const&>(header));
-            if (info.item.mask & LVIF_TEXT)
+            if ((info.item.mask & LVIF_TEXT) && info.item.iSubItem == 0)
             {
                 std::wstring text = std::format(L"Seite {}", info.item.iItem + 1);
                 wcsncpy_s(info.item.pszText, info.item.cchTextMax, text.c_str(), _TRUNCATE);
             }
-            if (info.item.mask & LVIF_IMAGE) info.item.iImage = 0;
             return 0;
         }
         case LVN_ITEMCHANGED:
@@ -311,7 +370,7 @@ namespace xournal::app
     {
         if (message == WM_NCCREATE)
         {
-            SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(reinterpret_cast<CREATESTRUCTW*>(lp)->lpCreateParams));
+            if (!ChildControls::SetWindowData(hwnd, reinterpret_cast<CREATESTRUCTW*>(lp)->lpCreateParams)) return FALSE;
         }
         auto self = reinterpret_cast<PagesPane*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
         if (!self || !self->window || !self->list) return DefWindowProcW(hwnd, message, wp, lp);

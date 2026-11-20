@@ -14,8 +14,9 @@
 $ae = [string][char]0xE4; $ue = [string][char]0xFC; $oe = [string][char]0xF6
 function Ctrl($k, $label) { [Inj]::Ctrl($k); Start-Sleep -Milliseconds 1500; "ctrl+$label" }
 # The center of an element (by part of its name) in screen pixels, found by the native UI Automation client.
-function Probe($name) {
-    $at = & C:\sbx\data\uiaprobe.exe XournalStudioWindow $name
+function Probe($name, [switch]$Exact) {
+    $matchOptions = @(if ($Exact) { '--exact' })
+    $at = & C:\sbx\data\uiaprobe.exe XournalStudioWindow $name @matchOptions
     if ($LASTEXITCODE -ne 0 -or -not $at) { throw "'$name' not found by uiaprobe" }
     $x, $y = "$at".Trim() -split ' '
     , @([int]$x, [int]$y)
@@ -23,8 +24,8 @@ function Probe($name) {
 function Dip($pixel) { , @(($pixel[0] / 1.5), (($pixel[1] - 64) / 1.5)) } # screen pixels -> client DIPs (150 %, client at y 64)
 function TypePath($path) {
     Start-Sleep -Milliseconds 1500
-    [System.Windows.Forms.SendKeys]::SendWait($path); Start-Sleep -Milliseconds 300
-    [System.Windows.Forms.SendKeys]::SendWait('{ENTER}'); Start-Sleep -Milliseconds 3000
+    [Inj]::TypeText($path); Start-Sleep -Milliseconds 300
+    [Inj]::Key(0x0D); Start-Sleep -Milliseconds 3000
     "typed $path"
 }
 function Read-Xopp($file) {
@@ -63,12 +64,13 @@ Invoke-Test {
     & C:\sbx\data\uiaprobe.exe XournalStudioWindow | Out-File "$out\uia-tree.txt" -Encoding utf8
 
     # A tap on page 2's thumbnail goes there (a thumbnail in view: one scrolled out of view has its center outside).
-    $p2 = Probe 'Seite 2'
+    $p2 = Probe 'Seite 2' -Exact
     [Inj]::ClickPixel($p2[0], $p2[1]); Start-Sleep 2
     Shot '02-went-to-page-2'
 
     # The context menu of page 1: a blank page after it.
-    $p1 = Probe 'Seite 1'
+    [Inj]::Key(0x24); Start-Sleep -Milliseconds 500 # Home in the focused list reveals the first row.
+    $p1 = Probe 'Seite 1' -Exact
     [Inj]::RightClickPixel($p1[0], $p1[1]); Start-Sleep 1
     Shot '03-page-menu'
     # The item by its access key: the managed UI Automation client did not find the popup menu's items.
@@ -82,7 +84,7 @@ Invoke-Test {
     # The pane's toolbar moves the selected page (the new page 2, in view): Nach oben makes it the first; there Nach oben
     # is disabled (a click changes nothing); Nach unten brings it back; the Seite menu moves the page in view up again.
     function Order { Ctrl 0x53 'S' | Out-Null; (Pages $file | ForEach-Object { $_.type }) -join ',' }
-    $p2 = Probe 'Seite 2'
+    $p2 = Probe 'Seite 2' -Exact
     [Inj]::ClickPixel($p2[0], $p2[1]); Start-Sleep 2
     $up = Probe 'Nach oben'
     [Inj]::ClickPixel($up[0], $up[1]); Start-Sleep 2
@@ -106,7 +108,7 @@ Invoke-Test {
     if ($pages[0].type -ne 'solid') { throw 'Seite nach oben (menu) did not move the page in view' }
 
     # Pages of Grenzwerte.pdf, all, after the page in view: appended to Schaltungen.pdf.
-    $p1 = Probe 'Seite 1'
+    $p1 = Probe 'Seite 1' -Exact
     [Inj]::RightClickPixel($p1[0], $p1[1]); Start-Sleep 1
     Shot '04-page-menu'
     [Inj]::Key(0x50); 'menu: Seiten aus &PDF oder Dokument einfuegen'
@@ -147,6 +149,6 @@ Invoke-Test {
     $script:p.Refresh()
     "title: $($script:p.MainWindowTitle)"
     if ($script:p.MainWindowTitle -notlike 'Import *') { throw 'the imported document was not opened' }
-    Select-String -Path "$out\app.log" -Pattern 'toast \(|import:|navigation read|document view: page' | ForEach-Object { "log: $($_.Line)" }
+    Select-String -Path "$out\app.log" -Pattern 'status message \(|import:|navigation read|document view: page' | ForEach-Object { "log: $($_.Line)" }
     Get-Content "$out\config\errors.log" -ErrorAction SilentlyContinue | ForEach-Object { "errors.log: $_" }
 }

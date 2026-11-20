@@ -1,5 +1,6 @@
 #include "xournal/project/FileClipboard.h"
 
+#include "xournal/base/Clipboard.h"
 #include "xournal/base/Error.h"
 #include "xournal/base/Log.h"
 
@@ -14,27 +15,6 @@ namespace xournal::project::FileClipboard
 {
     namespace
     {
-        // The clipboard while open; closed again at the end of the scope.
-        struct OpenedClipboard
-        {
-            explicit OpenedClipboard(HWND owner)
-            {
-                if (!OpenClipboard(owner))
-                {
-                    ThrowLastError("OpenClipboard");
-                }
-            }
-            ~OpenedClipboard()
-            {
-                if (!CloseClipboard())
-                {
-                    LogError(std::format("CloseClipboard: {}", DescribeHr(HRESULT_FROM_WIN32(GetLastError()))));
-                }
-            }
-            OpenedClipboard(OpenedClipboard const&) = delete;
-            OpenedClipboard& operator=(OpenedClipboard const&) = delete;
-        };
-
         UINT DropEffectFormat()
         {
             UINT format = RegisterClipboardFormatW(CFSTR_PREFERREDDROPEFFECT);
@@ -45,28 +25,6 @@ namespace xournal::project::FileClipboard
             return format;
         }
 
-        // Hands `bytes` to the clipboard as `format` (the clipboard owns the memory once SetClipboardData succeeded).
-        void SetData(UINT format, void const* bytes, size_t size)
-        {
-            HGLOBAL memory = GlobalAlloc(GMEM_MOVEABLE, size);
-            if (!memory)
-            {
-                ThrowLastError("GlobalAlloc");
-            }
-            void* target = GlobalLock(memory);
-            if (!target)
-            {
-                GlobalFree(memory);
-                ThrowLastError("GlobalLock");
-            }
-            std::memcpy(target, bytes, size);
-            GlobalUnlock(memory);
-            if (!SetClipboardData(format, memory))
-            {
-                GlobalFree(memory);
-                ThrowLastError(std::format("SetClipboardData({})", format));
-            }
-        }
     }
 
     std::vector<std::uint8_t> DropBlock(std::vector<path> const& files)
@@ -110,13 +68,10 @@ namespace xournal::project::FileClipboard
         std::vector<std::uint8_t> block = DropBlock(files);
         DWORD effect = move ? DROPEFFECT_MOVE : DROPEFFECT_COPY | DROPEFFECT_LINK; // as File Explorer writes it
         UINT effectFormat = DropEffectFormat();
-        OpenedClipboard clipboard(owner);
-        if (!EmptyClipboard())
-        {
-            ThrowLastError("EmptyClipboard");
-        }
-        SetData(CF_HDROP, block.data(), block.size());
-        SetData(effectFormat, &effect, sizeof(effect));
+        Clipboard::Opened clipboard(owner);
+        clipboard.Clear();
+        clipboard.SetData(CF_HDROP, block.data(), block.size());
+        clipboard.SetData(effectFormat, &effect, sizeof(effect));
     }
 
     std::optional<Content> Get(HWND owner)
@@ -126,7 +81,7 @@ namespace xournal::project::FileClipboard
             return std::nullopt;
         }
         UINT effectFormat = DropEffectFormat();
-        OpenedClipboard clipboard(owner);
+        Clipboard::Opened clipboard(owner);
         auto drop = static_cast<HDROP>(GetClipboardData(CF_HDROP));
         if (!drop)
         {
@@ -152,10 +107,7 @@ namespace xournal::project::FileClipboard
 
     void Clear(HWND owner)
     {
-        OpenedClipboard clipboard(owner);
-        if (!EmptyClipboard())
-        {
-            ThrowLastError("EmptyClipboard");
-        }
+        Clipboard::Opened clipboard(owner);
+        clipboard.Clear();
     }
 }

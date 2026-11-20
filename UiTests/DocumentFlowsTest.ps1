@@ -103,11 +103,13 @@ Invoke-Test {
     # 5. export as PDF
     Ctrl 0x45 'E'
     TypePath 'C:\work\Export.pdf'
-    for ($i = 0; $i -lt 30 -and -not (Log-Has 'toast \((success|warning)\): Als PDF exportiert'); $i++) { Start-Sleep -Milliseconds 500 }
+    $exportMessage = 'status message \((success|warning)\): Als PDF exportiert'
+    for ($i = 0; $i -lt 30 -and -not (Log-Has $exportMessage); $i++) { Start-Sleep -Milliseconds 500 }
     Shot '06-exported'
+    if (-not (Log-Has $exportMessage)) { throw 'no status message for the exported PDF' }
     if (-not (Test-Path 'C:\work\Export.pdf')) { throw 'no exported PDF' }
     $head = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes('C:\work\Export.pdf')[0..4])
     if ($head -ne '%PDF-') { throw "the export is not a PDF ($head)" }
-    Select-String -Path "$out\app.log" -Pattern 'toast \(' | ForEach-Object { "log: $($_.Line)" }
+    Select-String -Path "$out\app.log" -Pattern 'status message \(' | ForEach-Object { "log: $($_.Line)" }
     Get-Content "$out\config\errors.log" -ErrorAction SilentlyContinue | ForEach-Object { "errors.log: $_" }
 }

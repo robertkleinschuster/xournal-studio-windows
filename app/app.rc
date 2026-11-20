@@ -2,10 +2,110 @@
 #include <winres.h>
 #include <commctrl.h>
 #include "Resources.h"
+#include "Commands.h"
 
 // The app's icon (the C# app's: 16/32/48/256 px, 32 bpp) - the first icon resource, so Explorer, the Start menu
 // shortcut and the taskbar use it.
 IDI_APP ICON "app.ico"
+
+IDM_MAIN MENU
+BEGIN
+    POPUP "&Datei"
+    BEGIN
+        MENUITEM "&Neu\tStrg+N", CmdNew
+        MENUITEM "Ö&ffnen…\tStrg+O", CmdOpen
+        MENUITEM "&Speichern\tStrg+S", CmdSave
+        MENUITEM "Speichern &unter…\tStrg+Umschalt+S", CmdSaveAs
+        MENUITEM "Als PDF e&xportieren…\tStrg+E", CmdExportPdf
+        MENUITEM "PDF mit iPad-Anmerkungen &importieren…", CmdImportPdf
+        MENUITEM SEPARATOR
+        MENUITEM "Zuletzt &geöffnet", CmdRecentFirst
+        MENUITEM SEPARATOR
+        MENUITEM "O&rdner öffnen…", CmdOpenFolder
+        MENUITEM "S&ynchronisieren", CmdSync
+        MENUITEM SEPARATOR
+        MENUITEM "&Beenden\tAlt+F4", CmdExit
+    END
+    POPUP "&Bearbeiten"
+    BEGIN
+        MENUITEM "&Rückgängig\tStrg+Z", CmdUndo
+        MENUITEM "&Wiederholen\tStrg+Y", CmdRedo
+        MENUITEM SEPARATOR
+        MENUITEM "&Ausschneiden\tStrg+X", CmdCut
+        MENUITEM "&Kopieren\tStrg+C", CmdCopy
+        MENUITEM "&Einfügen\tStrg+V", CmdPaste
+        MENUITEM SEPARATOR
+        MENUITEM "&Duplizieren\tStrg+D", CmdDuplicate
+        MENUITEM "&Löschen\tEntf", CmdDelete
+        MENUITEM SEPARATOR
+        MENUITEM "Alles a&uswählen\tStrg+A", CmdSelectAll
+        MENUITEM "Auswahl auf&heben\tEsc", CmdClearSelection
+        MENUITEM SEPARATOR
+        MENUITEM "&Suchen…\tStrg+F", CmdFind
+        MENUITEM "&Weitersuchen\tF3", CmdFindNext
+        MENUITEM "&Rückwärts suchen\tUmschalt+F3", CmdFindPrevious
+    END
+    POPUP "&Seite"
+    BEGIN
+        MENUITEM "Seite &einfügen", CmdInsertPage
+        MENUITEM "Seiten aus &PDF oder Dokument einfügen…", CmdInsertFromFile
+        MENUITEM SEPARATOR
+        MENUITEM "Seite nach &oben", CmdMovePageUp
+        MENUITEM "Seite nach &unten", CmdMovePageDown
+        MENUITEM SEPARATOR
+        MENUITEM "Seite &löschen", CmdDeletePage
+    END
+    POPUP "&Ansicht"
+    BEGIN
+        MENUITEM "&Dateien und Aufgaben\tStrg+B", CmdTogglePane
+        MENUITEM SEPARATOR
+        MENUITEM "&Vergrößern\tStrg+Plus", CmdZoomIn
+        MENUITEM "Ver&kleinern\tStrg+Minus", CmdZoomOut
+        MENUITEM "&Originalgröße (100 %)\tStrg+1", CmdActualSize
+        MENUITEM "&Ganze Seite\tStrg+0", CmdFitPage
+        MENUITEM "&Seitenbreite\tStrg+2", CmdFitWidth
+        MENUITEM SEPARATOR
+        MENUITEM "Gehe &zu Seite…\tStrg+G", CmdGoToPage
+        MENUITEM "Zu&rück\tAlt+Links", CmdBack
+        MENUITEM "Vor&wärts\tAlt+Rechts", CmdForward
+    END
+END
+
+IDA_MAIN ACCELERATORS
+BEGIN
+    "N", CmdNew, VIRTKEY, CONTROL
+    "O", CmdOpen, VIRTKEY, CONTROL
+    "S", CmdSave, VIRTKEY, CONTROL
+    "S", CmdSaveAs, VIRTKEY, CONTROL, SHIFT
+    "E", CmdExportPdf, VIRTKEY, CONTROL
+    "Z", CmdUndo, VIRTKEY, CONTROL
+    "Y", CmdRedo, VIRTKEY, CONTROL
+    "X", CmdCut, VIRTKEY, CONTROL
+    "C", CmdCopy, VIRTKEY, CONTROL
+    "V", CmdPaste, VIRTKEY, CONTROL
+    "D", CmdDuplicate, VIRTKEY, CONTROL
+    VK_DELETE, CmdDelete, VIRTKEY
+    "A", CmdSelectAll, VIRTKEY, CONTROL
+    VK_ESCAPE, CmdClearSelection, VIRTKEY
+    "F", CmdFind, VIRTKEY, CONTROL
+    VK_F3, CmdFindNext, VIRTKEY
+    VK_F3, CmdFindPrevious, VIRTKEY, SHIFT
+    "B", CmdTogglePane, VIRTKEY, CONTROL
+    VK_OEM_PLUS, CmdZoomIn, VIRTKEY, CONTROL
+    VK_OEM_MINUS, CmdZoomOut, VIRTKEY, CONTROL
+    "1", CmdActualSize, VIRTKEY, CONTROL
+    "0", CmdFitPage, VIRTKEY, CONTROL
+    "2", CmdFitWidth, VIRTKEY, CONTROL
+    "G", CmdGoToPage, VIRTKEY, CONTROL
+    VK_LEFT, CmdBack, VIRTKEY, ALT
+    VK_RIGHT, CmdForward, VIRTKEY, ALT
+    VK_ADD, CmdZoomIn, VIRTKEY, CONTROL
+    VK_SUBTRACT, CmdZoomOut, VIRTKEY, CONTROL
+    VK_NUMPAD0, CmdFitPage, VIRTKEY, CONTROL
+    VK_NUMPAD1, CmdActualSize, VIRTKEY, CONTROL
+    VK_NUMPAD2, CmdFitWidth, VIRTKEY, CONTROL
+    VK_OEM_PLUS, CmdZoomIn, VIRTKEY, CONTROL, SHIFT
+END
 
 // The app manifest as a resource: comctl32 v6 (visual styles), PerMonitorV2 DPI awareness, UTF-8 code page.
 CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "app.manifest"
@@ -16,19 +116,19 @@ CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "app.manifest"
 
 // Seiten aus PDF oder Dokument einfügen: the source's pages as thumbnails to tap, before or after the page, what happens
 // to the document's PDF (InsertPagesDialog fills the texts).
-IDD_INSERT_PAGES DIALOGEX 0, 0, 330, 236
+IDD_INSERT_PAGES DIALOGEX 0, 0, 270, 236
 STYLE DS_MODALFRAME | DS_SHELLFONT | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Seiten einfügen"
 FONT 9, "Segoe UI", 400, 0, 0x1
 BEGIN
-    LTEXT           "", IDC_INSERT_COUNT, 7, 7, 316, 10
-    CONTROL         "", IDC_INSERT_LIST, WC_LISTVIEW, LVS_ICON | LVS_SHOWSELALWAYS | LVS_AUTOARRANGE | LVS_SHAREIMAGELISTS | WS_BORDER | WS_TABSTOP, 7, 20, 316, 120
+    LTEXT           "", IDC_INSERT_COUNT, 7, 7, 256, 10
+    CONTROL         "", IDC_INSERT_LIST, WC_LISTVIEW, LVS_REPORT | LVS_NOSORTHEADER | LVS_SHOWSELALWAYS | LVS_SHAREIMAGELISTS | WS_BORDER | WS_TABSTOP, 7, 20, 256, 120
     CONTROL         "<a>Alle auswählen</a>", IDC_INSERT_ALL, "SysLink", WS_TABSTOP, 7, 144, 120, 10
     AUTORADIOBUTTON "", IDC_INSERT_AFTER, 7, 160, 120, 10, WS_GROUP | WS_TABSTOP
     AUTORADIOBUTTON "", IDC_INSERT_BEFORE, 135, 160, 120, 10
-    LTEXT           "", IDC_INSERT_WHERE, 7, 176, 316, 34
-    DEFPUSHBUTTON   "Einfügen", IDOK, 213, 215, 52, 14
-    PUSHBUTTON      "Abbrechen", IDCANCEL, 271, 215, 52, 14
+    LTEXT           "", IDC_INSERT_WHERE, 7, 176, 256, 34
+    DEFPUSHBUTTON   "Einfügen", IDOK, 153, 215, 52, 14
+    PUSHBUTTON      "Abbrechen", IDCANCEL, 211, 215, 52, 14
 END
 
 // Gehe zu Seite (Strg+G): the page number with arrows (GoToPageDialog sets the label, the range and the page shown).
@@ -42,4 +142,18 @@ BEGIN
     CONTROL         "", IDC_GOTO_SPIN, UPDOWN_CLASS, UDS_SETBUDDYINT | UDS_ALIGNRIGHT | UDS_ARROWKEYS | UDS_NOTHOUSANDS, 160, 8, 10, 14
     DEFPUSHBUTTON   "OK", IDOK, 73, 37, 50, 14
     PUSHBUTTON      "Abbrechen", IDCANCEL, 129, 37, 50, 14
+END
+
+IDD_TASK_EDIT DIALOGEX 0, 0, 240, 104
+STYLE DS_MODALFRAME | DS_SHELLFONT | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Aufgabe bearbeiten"
+FONT 9, "MS Shell Dlg 2", 400, 0, 0
+BEGIN
+    CONTROL         "&Aufgabe", -1, "Static", SS_LEFT, 7, 7, 226, 9
+    EDITTEXT        IDC_TASK_TEXT, 7, 18, 226, 14, WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL
+    LTEXT           "&Fällig am:", -1, 7, 41, 56, 10
+    CONTROL         "", IDC_TASK_DUE, DATETIMEPICK_CLASS, WS_TABSTOP | DTS_SHORTDATEFORMAT | DTS_SHOWNONE, 65, 39, 100, 14
+    AUTOCHECKBOX    "Mit dieser Seite &verknüpfen", IDC_TASK_LINK, 7, 60, 226, 10, WS_TABSTOP
+    DEFPUSHBUTTON   "Speichern", IDOK, 129, 83, 50, 14
+    PUSHBUTTON      "Abbrechen", IDCANCEL, 183, 83, 50, 14
 END

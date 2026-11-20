@@ -1,21 +1,23 @@
 # Builds the native Xournal Studio (C++/Win32) and installs it for the current user, side by side with the C# app:
 #   %LOCALAPPDATA%\Programs\Xournal Studio (Win32)  +  Start menu entry "Xournal Studio (Win32)".
 # The C# app's folder and shortcut are not touched; no file associations are registered.
-# What is installed is the committed state (HEAD): it is built in a clean git worktree (.local-build\install-source,
-# with its own build folder), so changes in the working tree - also other agents' work in progress - never reach it.
+# By default, build committed HEAD in a clean worktree (.local-build\install-source).
+# -FromBuild explicitly selects the existing build of the current worktree.
 #   .\install.ps1              unit tests, Release build, install, start check
 #   .\install.ps1 -SkipTests   without the unit tests
 #   .\install.ps1 -SkipInstall build and stage only (.local-build\install-stage)
 #   .\install.ps1 -FromCi      no local build: the app CI staged for main (the newest green push run, gh run
 #                              download; tools\CiArtifact.ps1); -Commit <rev>: that commit's run. Same checks and install.
+#   .\install.ps1 -FromBuild  stage and install the already built local binaries (including worktree changes).
 #   -SourceDir <dir>           the worktree elsewhere (CI: a short path - MSBuild's file tracker fails beyond MAX_PATH
 #                              in the nested libjpeg-turbo build under the runner's long checkout path)
 # Next to the exe: pdfium.dll (when the build puts it there) and licenses\ - the license texts of the third-party code
 # the exe contains (THIRD-PARTY.md); a missing license text stops the install.
 param([switch]$SkipTests, [switch]$SkipInstall, [string]$Config = 'Release', [string]$SourceDir = '', [switch]$FromCi,
-    [string]$Commit = '')
+    [string]$Commit = '', [switch]$FromBuild)
 
 $ErrorActionPreference = 'Stop'
+if ($FromBuild -and ($FromCi -or $SourceDir)) { throw '-FromBuild uses only the current repository build.' }
 $repo = $PSScriptRoot
 $source = if ($SourceDir) { $SourceDir } else { Join-Path $repo '.local-build\install-source' }
 $build = Join-Path $source '.local-build\cmake'
@@ -43,11 +45,50 @@ function Assert-NoMsi {
 }
 if (-not $SkipInstall) { Assert-NotRunning; Assert-NoMsi }
 
+function Stage-LocalApp([string]$BuildDir, [string]$SourceDir) {
+    # Stage: the exe, the DLLs the build put next to it (pdfium.dll), its licenses folder, and the license texts of the
+    # statically linked third-party code (the configure copies them from the dependency cache to <build>\licenses,
+    # cmake/DependencyCache.cmake).
+    $output = Join-Path $BuildDir "app\$Config"
+    if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
+    New-Item -ItemType Directory -Force $stage | Out-Null
+    Copy-Item (Join-Path $output $exeName) $stage
+    Get-ChildItem $output -Filter *.dll | Copy-Item -Destination $stage
+    if (Test-Path (Join-Path $output 'licenses')) { Copy-Item -Recurse (Join-Path $output 'licenses') $stage }
+    $licenses = @(
+        @{ Name = 'zlib'; Files = @('LICENSE') },
+        @{ Name = 'qpdf'; Files = @('LICENSE.txt', 'NOTICE.md') },
+        @{ Name = 'libjpeg-turbo'; Files = @('LICENSE.md') },
+        @{ Name = 'protozero'; Files = @('LICENSE.md', 'LICENSE.from_folly') },
+        @{ Name = 'libgit2'; Files = @('COPYING') }
+    )
+    foreach ($license in $licenses) {
+        $folder = Join-Path $stage "licenses\$($license.Name)"
+        New-Item -ItemType Directory -Force $folder | Out-Null
+        foreach ($file in $license.Files) {
+            $text = Join-Path $BuildDir "licenses\$($license.Name)\$file"
+            if (-not (Test-Path $text)) { throw "license text missing: $text" }
+            Copy-Item $text $folder
+        }
+    }
+    Copy-Item (Join-Path $SourceDir 'THIRD-PARTY.md') (Join-Path $stage 'licenses')
+}
+
 if ($FromCi) {
     # The staged app of the newest green CI run of that commit (tools\CiArtifact.ps1), instead of a local build.
     . (Join-Path $repo 'tools\CiArtifact.ps1')
     $app = Get-XournalCiApp -Repo $repo -Commit $Commit -Destination $stage
     $installed = "CI artifact $($app.ArtifactId) of run $($app.RunId), commit $($app.HeadSha.Substring(0, 7)) ($($app.Url))"
+}
+elseif ($FromBuild) {
+    . (Join-Path $repo 'tools\BuildLock.ps1')
+    $lock = Enter-XournalBuildLock "install.ps1 -FromBuild in $repo"
+    try {
+        Stage-LocalApp (Join-Path $repo '.local-build\cmake') $repo
+        $hash = (Get-FileHash (Join-Path $stage $exeName)).Hash
+        $installed = "local build ($($hash.Substring(0, 12)))"
+    }
+    finally { Exit-XournalBuildLock $lock }
 }
 else {
     # One build at a time on this machine (tools\BuildLock.ps1): held from the checkout to the staged files; the
@@ -78,32 +119,7 @@ else {
         if ($SkipTests) { $buildArgs.NoTests = $true }
         & (Join-Path $source 'build.ps1') @buildArgs
 
-        # Stage: the exe, the DLLs the build put next to it (pdfium.dll), its licenses folder, and the license texts of the
-        # statically linked third-party code (the configure copies them from the dependency cache to <build>\licenses,
-        # cmake/DependencyCache.cmake).
-        $output = Join-Path $build "app\$Config"
-        if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
-        New-Item -ItemType Directory -Force $stage | Out-Null
-        Copy-Item (Join-Path $output $exeName) $stage
-        Get-ChildItem $output -Filter *.dll | Copy-Item -Destination $stage
-        if (Test-Path (Join-Path $output 'licenses')) { Copy-Item -Recurse (Join-Path $output 'licenses') $stage }
-        $licenses = @(
-            @{ Name = 'zlib'; Files = @('LICENSE') },
-            @{ Name = 'qpdf'; Files = @('LICENSE.txt', 'NOTICE.md') },
-            @{ Name = 'libjpeg-turbo'; Files = @('LICENSE.md') },
-            @{ Name = 'protozero'; Files = @('LICENSE.md', 'LICENSE.from_folly') },
-            @{ Name = 'libgit2'; Files = @('COPYING') }
-        )
-        foreach ($license in $licenses) {
-            $folder = Join-Path $stage "licenses\$($license.Name)"
-            New-Item -ItemType Directory -Force $folder | Out-Null
-            foreach ($file in $license.Files) {
-                $text = Join-Path $build "licenses\$($license.Name)\$file"
-                if (-not (Test-Path $text)) { throw "license text missing: $text" }
-                Copy-Item $text $folder
-            }
-        }
-        Copy-Item (Join-Path $source 'THIRD-PARTY.md') (Join-Path $stage 'licenses')
+        Stage-LocalApp $build $source
     }
     finally { Exit-XournalBuildLock $lock }
     $installed = $commit.Substring(0, 7)

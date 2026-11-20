@@ -1,5 +1,6 @@
 #include "InsertPagesDialog.h"
 
+#include "Dialogs.h"
 #include "Resources.h"
 #include "ThumbnailDrawing.h"
 
@@ -9,6 +10,7 @@
 #include <commctrl.h>
 #include <uxtheme.h>
 
+#include <algorithm>
 #include <cmath>
 #include <format>
 
@@ -16,7 +18,8 @@ namespace xournal::app
 {
     namespace
     {
-        constexpr int ThumbWidthDip = 80; // a page about as wide as a stamp, its layout recognizable
+        constexpr int ThumbWidthDip = 76;
+        constexpr int PreviewColumn = 1;
 
         struct DialogState
         {
@@ -27,7 +30,7 @@ namespace xournal::app
             HWND dialog = nullptr;
             HWND list = nullptr;
             HIMAGELIST images = nullptr;
-            SIZE box{}; // a thumbnail's box in the item's image slot (pixels)
+            SIZE box{}; // maximum preview size in pixels
         };
 
         int Scaled(int dip, HWND window) { return MulDiv(dip, static_cast<int>(GetDpiForWindow(window)), 96); }
@@ -45,7 +48,7 @@ namespace xournal::app
             auto const& r = state.request;
             SetWindowTextW(dialog, std::format(L"Seiten aus „{}“ einfügen", r.file).c_str());
             SetDlgItemTextW(dialog, IDC_INSERT_COUNT,
-                std::format(L"{} {} – die gewünschten antippen.", r.count, r.count == 1 ? L"Seite" : L"Seiten").c_str());
+                r.count == 1 ? L"1 Seite" : std::format(L"{} Seiten – gewünschte Seiten antippen.", r.count).c_str());
             SetDlgItemTextW(dialog, IDC_INSERT_AFTER, std::format(L"nach Seite {}", r.around + 1).c_str());
             SetDlgItemTextW(dialog, IDC_INSERT_BEFORE, std::format(L"vor Seite {}", r.around + 1).c_str());
             SetDlgItemTextW(dialog, IDC_INSERT_WHERE, r.where.c_str());
@@ -54,12 +57,22 @@ namespace xournal::app
             state.list = GetDlgItem(dialog, IDC_INSERT_LIST);
             HRESULT hr = SetWindowTheme(state.list, L"Explorer", nullptr);
             if (FAILED(hr)) LogError(std::format("insert dialog: theme not set: {}", DescribeHr(hr)));
-            ListView_SetExtendedListViewStyle(state.list, LVS_EX_CHECKBOXES | LVS_EX_DOUBLEBUFFER);
-            int width = Scaled(ThumbWidthDip, dialog), height = static_cast<int>(std::lround(width * 1.4142));
-            state.images = CreateSlotImages({ width, height });
-            int margin = Scaled(3, dialog);
-            state.box = { width - 2 * margin, height - 2 * margin };
-            ListView_SetImageList(state.list, state.images, LVSIL_NORMAL);
+            ListView_SetExtendedListViewStyle(state.list, LVS_EX_CHECKBOXES | LVS_EX_DOUBLEBUFFER | LVS_EX_FULLROWSELECT);
+            int width = Scaled(ThumbWidthDip, dialog);
+            state.box = { width, static_cast<LONG>(std::lround(width * 1.4142)) };
+            // The small image list sets the native report row height. The checkbox stays in the first column.
+            state.images = CreateSlotImages({ 1, state.box.cy + Scaled(8, dialog) });
+            ListView_SetImageList(state.list, state.images, LVSIL_SMALL);
+            wchar_t const* titles[] = { L"Seite", L"Vorschau" };
+            for (int column = 0; column < ARRAYSIZE(titles); ++column)
+            {
+                LVCOLUMNW info{ LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM };
+                info.pszText = const_cast<wchar_t*>(titles[column]);
+                info.cx = Scaled(120, dialog);
+                info.iSubItem = column;
+                if (ListView_InsertColumn(state.list, column, &info) == -1)
+                    ThrowHr("LVM_INSERTCOLUMN (insert pages)", E_FAIL);
+            }
 
             state.thumbnails.resize(r.count);
             for (int i = 0; i < r.count; ++i)
@@ -69,8 +82,15 @@ namespace xournal::app
                 item.iItem = i;
                 item.pszText = text.data();
                 item.iImage = 0;
-                ListView_InsertItem(state.list, &item);
+                if (ListView_InsertItem(state.list, &item) == -1)
+                    ThrowHr("LVM_INSERTITEM (insert pages)", E_FAIL);
             }
+            if (!ListView_SetColumnWidth(state.list, PreviewColumn, LVSCW_AUTOSIZE_USEHEADER))
+                ThrowHr("LVM_SETCOLUMNWIDTH (insert pages)", E_FAIL);
+            LVCOLUMNW fixed{ LVCF_FMT, LVCFMT_LEFT | LVCFMT_FIXED_WIDTH };
+            for (int column = 0; column < ARRAYSIZE(titles); ++column)
+                if (!ListView_SetColumn(state.list, column, &fixed))
+                    ThrowHr("LVM_SETCOLUMN (insert pages)", E_FAIL);
             if (r.count == 1) ListView_SetCheckState(state.list, 0, TRUE); // one page: nothing to choose
             UpdateOk(state);
 
@@ -104,7 +124,7 @@ namespace xournal::app
                 // A tap on a page checks or unchecks it (not only a tap on its small box).
                 auto const& click = reinterpret_cast<NMITEMACTIVATE const&>(header);
                 LVHITTESTINFO hit{ click.ptAction };
-                int item = ListView_HitTest(state.list, &hit);
+                int item = ListView_SubItemHitTest(state.list, &hit);
                 if (item >= 0 && !(hit.flags & LVHT_ONITEMSTATEICON))
                 {
                     ListView_SetCheckState(state.list, item, !ListView_GetCheckState(state.list, item));
@@ -123,11 +143,13 @@ namespace xournal::app
                 else if (draw.nmcd.dwDrawStage == CDDS_ITEMPOSTPAINT)
                 {
                     int index = static_cast<int>(draw.nmcd.dwItemSpec);
-                    RECT icon{ LVIR_ICON };
-                    if (index < static_cast<int>(state.thumbnails.size()) && ListView_GetItemRect(state.list, index, &icon, LVIR_ICON))
+                    RECT preview{};
+                    if (index < static_cast<int>(state.thumbnails.size()) &&
+                        ListView_GetSubItemRect(state.list, index, PreviewColumn, LVIR_BOUNDS, &preview))
                     {
                         double aspect = state.request.aspect ? state.request.aspect(index) : 1.4142;
-                        DrawPageThumbnail(draw.nmcd.hdc, icon, state.box, aspect, state.thumbnails[index].get(), nullptr);
+                        preview.right = std::min(preview.right, preview.left + state.box.cx + Scaled(12, state.dialog));
+                        DrawPageThumbnail(draw.nmcd.hdc, preview, state.box, aspect, state.thumbnails[index].get());
                     }
                 }
                 SetWindowLongPtrW(state.dialog, DWLP_MSGRESULT, result);
@@ -139,14 +161,11 @@ namespace xournal::app
 
         INT_PTR CALLBACK Proc(HWND dialog, UINT message, WPARAM wp, LPARAM lp)
         {
-            if (message == WM_INITDIALOG)
-            {
-                SetWindowLongPtrW(dialog, DWLP_USER, lp);
-            }
-            auto state = reinterpret_cast<DialogState*>(GetWindowLongPtrW(dialog, DWLP_USER));
-            if (!state) return FALSE;
             try
             {
+                if (message == WM_INITDIALOG) Dialogs::SetState(dialog, lp);
+                auto state = reinterpret_cast<DialogState*>(GetWindowLongPtrW(dialog, DWLP_USER));
+                if (!state) return FALSE;
                 switch (message)
                 {
                 case WM_INITDIALOG:
@@ -163,12 +182,12 @@ namespace xournal::app
                             if (ListView_GetCheckState(state->list, i)) choice.pages.push_back(i);
                         choice.before = IsDlgButtonChecked(dialog, IDC_INSERT_BEFORE) == BST_CHECKED;
                         state->choice = std::move(choice);
-                        EndDialog(dialog, IDOK);
+                        if (!EndDialog(dialog, IDOK)) ThrowLastError("EndDialog (insert pages)");
                         return TRUE;
                     }
                     if (LOWORD(wp) == IDCANCEL)
                     {
-                        EndDialog(dialog, IDCANCEL);
+                        if (!EndDialog(dialog, IDCANCEL)) ThrowLastError("EndDialog (insert pages)");
                         return TRUE;
                     }
                     return FALSE;
@@ -177,6 +196,11 @@ namespace xournal::app
             catch (...)
             {
                 LogException(std::format("insert dialog: message 0x{:X}", message));
+                if (message == WM_INITDIALOG)
+                {
+                    if (!EndDialog(dialog, IDCANCEL)) LogError("EndDialog (insert pages initialization) failed");
+                    return TRUE;
+                }
             }
             return FALSE;
         }
@@ -187,9 +211,10 @@ namespace xournal::app
         DialogState state{ request };
         INT_PTR result = DialogBoxParamW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDD_INSERT_PAGES), owner, Proc,
             reinterpret_cast<LPARAM>(&state));
+        DWORD error = result <= 0 ? GetLastError() : ERROR_SUCCESS;
         state.alive.reset(); // thumbnails still on their way are dropped
-        if (state.images) ImageList_Destroy(state.images);
-        if (result == -1) ThrowLastError("DialogBoxParam (insert pages)");
+        if (state.images && !ImageList_Destroy(state.images)) LogError("ImageList_Destroy (insert pages) failed");
+        if (result <= 0) ThrowHr("DialogBoxParam (insert pages)", HRESULT_FROM_WIN32(error));
         return result == IDOK ? state.choice : std::nullopt;
     }
 }

@@ -62,7 +62,7 @@ namespace xournal::app
         return document;
     }
 
-    PdfBackground::PdfBackground(RenderQueue& queue, std::uint64_t generation, std::function<void(int)> ready)
+    PdfBackground::PdfBackground(RenderQueue& queue, std::uint64_t generation, std::function<void(std::set<int> const&)> ready)
         : queue(queue), generation(generation), ready(std::move(ready))
     {
     }
@@ -116,8 +116,10 @@ namespace xournal::app
             {
                 if (auto self = weak.lock())
                 {
+                    std::set<int> pages;
                     for (auto const& [pdfPage, entry] : self->rendered)
-                        for (int page : entry.pages) self->ready(page);
+                        pages.insert(entry.pages.begin(), entry.pages.end());
+                    if (!pages.empty()) self->ready(pages);
                     if (self->loaded) self->loaded();
                 }
             });
@@ -260,15 +262,16 @@ namespace xournal::app
         if (readyPosted) return;
         readyPosted = true;
         std::weak_ptr<PdfBackground> weak = weak_from_this();
-        UiQueue::Post("pdf pages ready", [weak]
+        auto redraw = [weak]
         {
             auto self = weak.lock();
             if (!self) return;
             self->readyPosted = false;
             auto pages = std::move(self->readyPages);
             self->readyPages.clear();
-            for (int page : pages) self->ready(page);
-        });
+            if (!pages.empty()) self->ready(pages);
+        };
+        if (!UiQueue::Post("pdf pages ready", redraw)) redraw();
     }
 
     void PdfBackground::RequestPreview(int page, PageKey key, PixelSize size)
@@ -346,7 +349,14 @@ namespace xournal::app
                     auto dips = pdfPageObject.Size();
                     float kx = dips.Width / size.width / pixelsPerUnit, ky = dips.Height / size.height / pixelsPerUnit;
                     D2D_RECT_F part{ pixels.left * kx, pixels.top * ky, pixels.right * kx, pixels.bottom * ky };
-                    bitmap = renderer.Render(pdfPageObject, width, height, false, part);
+                    // Use the same area filter as the thumbnails for small, reduced pages. Bound the
+                    // extra GPU readback so supersampling cannot turn a large on-screen tile into a bottleneck.
+                    constexpr double MaxFilteredPixels = 750'000;
+                    double pagePixels = static_cast<double>(size.width) * size.height * pixelsPerUnit * pixelsPerUnit;
+                    if (kx > 1 && ky > 1 && pagePixels <= MaxFilteredPixels)
+                        bitmap = renderer.RenderThumbnail(pdfPageObject, width, height, false, part);
+                    else
+                        bitmap = renderer.Render(pdfPageObject, width, height, false, part);
                 }
                 catch (...)
                 {
@@ -379,11 +389,10 @@ namespace xournal::app
         }, rank);
     }
 
-    void PdfBackground::RenderPage(int pdfPage, UINT width, UINT height, int priorityPage,
+    void PdfBackground::RenderPage(std::uint64_t key, int pdfPage, UINT width, UINT height, int priorityPage,
         std::function<void(std::shared_ptr<CpuBitmap>)> done)
     {
         // A page move changes the priority index while the request is waiting.
-        std::uint64_t key = NextRequest();
         queue.Submit(key, priorityPage, std::format("render PDF page {} for a thumbnail", pdfPage + 1),
             [source = source, pdfPage, width, height, done](PdfPageRenderer& renderer)
         {

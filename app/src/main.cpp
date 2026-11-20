@@ -5,6 +5,7 @@
 #include "AppFolder.h"
 #include "MainWindow.h"
 
+#include "inkpages/UiDispatch.h"
 #include "xournal/base/Log.h"
 #include "xournal/base/Text.h"
 #include "xournal/settings/Settings.h"
@@ -46,6 +47,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
         xournal::app::AppFolder::SetUpLogging();
         xournal::Log("app: start");
         winrt::init_apartment(winrt::apartment_type::single_threaded);
+        inkpages::UiDispatcherScope dispatcher;
         CO_MTA_USAGE_COOKIE mta{};
         winrt::check_hresult(CoIncrementMTAUsage(&mta)); // thread pool work (PDF sizes, loading) runs in the implicit MTA
 

@@ -28,8 +28,10 @@ function Files { (Get-ChildItem 'C:\work' -Force | Where-Object Name -ne '.git' 
 # comctl32 controls and Win32 menus through the native UI Automation client (InkPages' uiaprobe, in C:\sbx\data): the
 # managed client of Windows PowerShell does not see their items. ASCII parts of names (the probe matches substrings).
 function At($class, $text) {
+    $filter = @()
+    if ($class -eq 'XournalStudioWindow') { $filter += '--tree-item' }
     for ($i = 0; $i -lt 10; $i++) {
-        $r = & C:\sbx\data\uiaprobe.exe $class $text
+        $r = & C:\sbx\data\uiaprobe.exe $class $text @filter
         if ($LASTEXITCODE -eq 0) { $p = "$r".Trim() -split ' '; return @([int]$p[0], [int]$p[1]) }
         Start-Sleep -Milliseconds 300
     }

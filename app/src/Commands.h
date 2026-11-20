@@ -1,52 +1,41 @@
 #pragma once
 
-// The app's command ids: menu items, accelerators and the app's toolbar buttons share them.
+// Shared command IDs for native menus, accelerators, and toolbar buttons.
 
-namespace xournal::app
-{
-    enum Command : int
-    {
-        // Datei
-        CmdNew = 100,
-        CmdOpen,
-        CmdSave,
-        CmdSaveAs,
-        CmdExportPdf,
-        CmdImportPdf,
-        CmdOpenFolder,
-        CmdSync,
-        CmdExit,
-        // Bearbeiten
-        CmdUndo = 200,
-        CmdRedo,
-        CmdCut,
-        CmdCopy,
-        CmdPaste,
-        CmdDuplicate,
-        CmdDelete,
-        CmdSelectAll,
-        CmdClearSelection,
-        CmdFind,
-        CmdFindNext,
-        CmdFindPrevious,
-        // Seite
-        CmdInsertPage = 300,
-        CmdInsertFromFile,
-        CmdDeletePage,
-        CmdMovePageUp,
-        CmdMovePageDown,
-        // Ansicht
-        CmdTogglePane = 400,
-        CmdFitWidth,
-        CmdZoomIn,
-        CmdZoomOut,
-        CmdActualSize,
-        CmdFitPage,
-        CmdGoToPage,
-        CmdBack,
-        CmdForward,
-        // Datei -> Zuletzt geöffnet: CmdRecentFirst + index (settings' recentFiles)
-        CmdRecentFirst = 500,
-        CmdRecentLast = CmdRecentFirst + 19,
-    };
-}
+#define CmdNew 100
+#define CmdOpen 101
+#define CmdSave 102
+#define CmdSaveAs 103
+#define CmdExportPdf 104
+#define CmdImportPdf 105
+#define CmdOpenFolder 106
+#define CmdSync 107
+#define CmdExit 108
+#define CmdUndo 200
+#define CmdRedo 201
+#define CmdCut 202
+#define CmdCopy 203
+#define CmdPaste 204
+#define CmdDuplicate 205
+#define CmdDelete 206
+#define CmdSelectAll 207
+#define CmdClearSelection 208
+#define CmdFind 209
+#define CmdFindNext 210
+#define CmdFindPrevious 211
+#define CmdInsertPage 300
+#define CmdInsertFromFile 301
+#define CmdDeletePage 302
+#define CmdMovePageUp 303
+#define CmdMovePageDown 304
+#define CmdTogglePane 400
+#define CmdFitWidth 401
+#define CmdZoomIn 402
+#define CmdZoomOut 403
+#define CmdActualSize 404
+#define CmdFitPage 405
+#define CmdGoToPage 406
+#define CmdBack 407
+#define CmdForward 408
+#define CmdRecentFirst 500
+#define CmdRecentLast (CmdRecentFirst + 19)

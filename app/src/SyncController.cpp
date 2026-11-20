@@ -51,7 +51,7 @@ namespace xournal::app
     {
         if (syncing)
         {
-            messages(std::format(L"Synchronisierung läuft: {} ist möglich, sobald sie fertig ist.", what), ToastKind::Info);
+            messages(std::format(L"Synchronisierung läuft: {} ist möglich, sobald sie fertig ist.", what), MessageKind::Info);
         }
         return syncing;
     }
@@ -63,7 +63,7 @@ namespace xournal::app
             return false;
         }
         saveRequested = true;
-        messages(L"Synchronisierung läuft: gespeichert wird, sobald sie fertig ist.", ToastKind::Info);
+        messages(L"Synchronisierung läuft: gespeichert wird, sobald sie fertig ist.", MessageKind::Info);
         return true;
     }
 
@@ -93,7 +93,7 @@ namespace xournal::app
         }
         if (!folder)
         {
-            messages(L"Kein Projektordner geöffnet (Datei → Ordner öffnen).", ToastKind::Info);
+            messages(L"Kein Projektordner geöffnet (Datei → Ordner öffnen).", MessageKind::Info);
             return;
         }
         std::optional<std::filesystem::path> root;
@@ -104,12 +104,12 @@ namespace xournal::app
         catch (...)
         {
             LogException("sync: find repository");
-            messages(std::format(L"Synchronisieren fehlgeschlagen: {}", ErrorText()), ToastKind::Error);
+            messages(std::format(L"Synchronisieren fehlgeschlagen: {}", ErrorText()), MessageKind::Error);
             return;
         }
         if (!root)
         {
-            messages(L"Der Projektordner ist kein Git-Repository.", ToastKind::Info);
+            messages(L"Der Projektordner ist kein Git-Repository.", MessageKind::Info);
             return;
         }
         session.EndTextEditing(); // a text being typed counts as a change
@@ -159,11 +159,11 @@ namespace xournal::app
                 catch (git::SyncConflict const& conflict)
                 {
                     messages(std::format(L"Konflikt beim Synchronisieren: {}. Die eigenen Änderungen sind committet, aber "
-                        L"nicht hochgeladen; den Konflikt mit Git lösen.", FromUtf8(conflict.what())), ToastKind::Error);
+                        L"nicht hochgeladen; den Konflikt mit Git lösen.", FromUtf8(conflict.what())), MessageKind::Error);
                 }
                 catch (...)
                 {
-                    messages(std::format(L"Synchronisieren fehlgeschlagen: {}", ErrorText()), ToastKind::Error);
+                    messages(std::format(L"Synchronisieren fehlgeschlagen: {}", ErrorText()), MessageKind::Error);
                 }
             });
         });
@@ -179,7 +179,7 @@ namespace xournal::app
         }
         if (!documentChanged || ResolvePulledDocument())
         {
-            messages(Describe(result), ToastKind::Success);
+            messages(Describe(result), MessageKind::Success);
         }
     }
 
@@ -195,13 +195,13 @@ namespace xournal::app
             if (choice == 2 || choice < 0)
             {
                 messages(L"Eigene Version behalten: die geholte Version wird beim Speichern mit der eigenen überschrieben; "
-                    L"sie bleibt in der Git-Historie.", ToastKind::Warning);
+                    L"sie bleibt in der Git-Historie.", MessageKind::Warning);
                 return false;
             }
             if (choice == 1 && !session.SaveCopy())
             {
                 messages(L"Keine Kopie gespeichert: die geholte Version wird beim Speichern mit der eigenen überschrieben; "
-                    L"sie bleibt in der Git-Historie.", ToastKind::Warning);
+                    L"sie bleibt in der Git-Historie.", MessageKind::Warning);
                 return false;
             }
         }
@@ -219,7 +219,7 @@ namespace xournal::app
         auto gone = doc->FilePath();
         session.ShowNew();
         messages(std::format(L"Das Dokument wurde auf einem anderen Gerät gelöscht oder umbenannt: {} gibt es nach der "
-            L"Synchronisierung nicht mehr.", gone ? gone->native() : std::wstring()), ToastKind::Warning);
+            L"Synchronisierung nicht mehr.", gone ? gone->native() : std::wstring()), MessageKind::Warning);
         return false;
     }
 }

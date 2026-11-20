@@ -15,7 +15,7 @@ namespace xournal::app
 {
     namespace
     {
-        // The toast's text for a finished export (the C# PdfExportCommand's wording).
+        // The status message for a finished export.
         std::wstring Describe(std::filesystem::path const& target, pdf::ExportResult const& result,
             std::optional<std::filesystem::path> const& background, bool& complete)
         {
@@ -40,7 +40,7 @@ namespace xournal::app
         }
     }
 
-    PdfExportCommand::PdfExportCommand(HWND owner, DocumentView& view, std::function<void(std::wstring const&, ToastKind)> message)
+    PdfExportCommand::PdfExportCommand(HWND owner, DocumentView& view, std::function<void(std::wstring const&, MessageKind)> message)
         : owner(owner), view(view), message(std::move(message))
     {
     }
@@ -50,7 +50,7 @@ namespace xournal::app
         if (!doc) return;
         if (running)
         {
-            message(L"Ein Export läuft noch.", ToastKind::Info);
+            message(L"Ein Export läuft noch.", MessageKind::Info);
             return;
         }
         auto background = doc->PdfPath();
@@ -66,7 +66,7 @@ namespace xournal::app
         if (background && Paths::Same(*target, *background))
         {
             message(L"Nicht exportiert: das ist die PDF, auf der das Dokument liegt; bitte einen anderen Namen wählen.",
-                ToastKind::Warning);
+                MessageKind::Warning);
             return;
         }
 
@@ -79,7 +79,7 @@ namespace xournal::app
         catch (...)
         {
             LogException(std::format("export PDF to {}: reading the document", ToUtf8(target->native())));
-            message(std::format(L"Export fehlgeschlagen: {}", ErrorText()), ToastKind::Error);
+            message(std::format(L"Export fehlgeschlagen: {}", ErrorText()), MessageKind::Error);
             return;
         }
         running = true;
@@ -101,12 +101,12 @@ namespace xournal::app
                 running = false;
                 if (!result)
                 {
-                    message(std::format(L"Export fehlgeschlagen ({}): {}", file.filename().native(), error), ToastKind::Error);
+                    message(std::format(L"Export fehlgeschlagen ({}): {}", file.filename().native(), error), MessageKind::Error);
                     return;
                 }
                 bool complete = true;
                 std::wstring text = Describe(file, *result, background, complete);
-                message(text, complete ? ToastKind::Success : ToastKind::Warning);
+                message(text, complete ? MessageKind::Success : MessageKind::Warning);
             });
         });
     }

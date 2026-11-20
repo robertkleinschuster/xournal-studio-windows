@@ -67,7 +67,7 @@ namespace xournal::app
         }
     }
 
-    PdfImportCommand::PdfImportCommand(HWND owner, DocumentSession& session, std::function<void(std::wstring const&, ToastKind)> message)
+    PdfImportCommand::PdfImportCommand(HWND owner, DocumentSession& session, std::function<void(std::wstring const&, MessageKind)> message)
         : owner(owner), session(session), message(std::move(message))
     {
     }
@@ -76,7 +76,7 @@ namespace xournal::app
     {
         if (running)
         {
-            message(L"Ein Import läuft noch.", ToastKind::Info);
+            message(L"Ein Import läuft noch.", MessageKind::Info);
             return;
         }
         std::optional<std::filesystem::path> folder;
@@ -98,7 +98,7 @@ namespace xournal::app
             : L"";
         if (!refused.empty())
         {
-            message(L"Nicht importiert: " + refused + L" Bitte einen anderen Ordner oder Namen wählen.", ToastKind::Warning);
+            message(L"Nicht importiert: " + refused + L" Bitte einen anderen Ordner oder Namen wählen.", MessageKind::Warning);
             return;
         }
         if (Paths::FileExists(pdf) && !Dialogs::Confirm(owner, L"PDF ersetzen?",
@@ -150,10 +150,10 @@ namespace xournal::app
                 running = false;
                 if (!error.empty())
                 {
-                    message(L"Import fehlgeschlagen: " + error, ToastKind::Error);
+                    message(L"Import fehlgeschlagen: " + error, MessageKind::Error);
                     return;
                 }
-                message(summary, ToastKind::Success);
+                message(summary, MessageKind::Success);
                 session.Open(xopp);
             });
         });

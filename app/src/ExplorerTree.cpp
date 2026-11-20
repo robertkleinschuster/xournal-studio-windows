@@ -1,5 +1,6 @@
 #include "ExplorerTree.h"
 
+#include "ChildControls.h"
 #include "UiQueue.h"
 
 #include "xournal/base/Error.h"
@@ -125,9 +126,9 @@ namespace xournal::app
                 pendingSelection = selected->path;
             }
         }
+        ChildControls::BatchRedraw redraw(tree);
+        if (!TreeView_DeleteAllItems(tree)) ThrowHr("TVM_DELETEITEM (explorer)", E_FAIL);
         snapshot = std::move(next);
-        SendMessageW(tree, WM_SETREDRAW, FALSE, 0);
-        TreeView_DeleteAllItems(tree);
         nodes.clear();
         for (auto const& entry : snapshot.root.children)
         {
@@ -142,8 +143,6 @@ namespace xournal::app
             }
             pendingSelection.reset();
         }
-        SendMessageW(tree, WM_SETREDRAW, TRUE, 0);
-        InvalidateRect(tree, nullptr, TRUE);
     }
 
     void ExplorerTree::Add(HTREEITEM parent, project::ProjectEntry const& entry)
@@ -303,13 +302,18 @@ namespace xournal::app
         }
     }
 
-    void ExplorerTree::ShowMenu(Node const& node, bool onItem, POINT screen)
+    void ExplorerTree::ShowMenu(Node node, bool onItem, POINT screen)
     {
         HMENU menu = CreatePopupMenu();
         if (!menu)
         {
             ThrowLastError("CreatePopupMenu");
         }
+        struct OwnedMenu
+        {
+            HMENU handle;
+            ~OwnedMenu() { if (!DestroyMenu(handle)) LogError("DestroyMenu (explorer) failed"); }
+        } owned{ menu };
         auto add = [&](UINT id, wchar_t const* text, bool enabled = true)
         {
             if (!AppendMenuW(menu, MF_STRING | (enabled ? MF_ENABLED : MF_GRAYED), id, text))
@@ -317,7 +321,9 @@ namespace xournal::app
                 ThrowLastError("AppendMenu");
             }
         };
-        auto separator = [&] { AppendMenuW(menu, MF_SEPARATOR, 0, nullptr); };
+        auto separator = [&] {
+            if (!AppendMenuW(menu, MF_SEPARATOR, 0, nullptr)) ThrowLastError("AppendMenu (explorer separator)");
+        };
         bool onFile = onItem && !node.missing; // a deleted item is not on disk: it can only be restored
         if (onItem && !node.isFolder)
         {
@@ -345,8 +351,8 @@ namespace xournal::app
         }
         UINT chosen = static_cast<UINT>(TrackPopupMenuEx(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, screen.x, screen.y,
             GetParent(tree), nullptr));
-        DestroyMenu(menu);
-        Node target = node; // the menu ran a message loop: the nodes may have been replaced meanwhile
+        // The menu pumps messages. The copied node remains valid if a refresh replaces the tree.
+        auto const& target = node;
         switch (chosen)
         {
         case MenuOpen: Request(ExplorerCommand::Open, target); break;

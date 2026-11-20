@@ -18,6 +18,8 @@ add_library(XournalPdf STATIC
     src/DocumentExport.cpp
     src/PdfPageAppender.cpp
     src/PdfAreaRenderer.cpp
+    src/NativePdfRenderer.cpp
+    src/PngEncoding.cpp
     src/ClipPicture.cpp
     src/PageFrame.cpp
     src/PdfNavigation.cpp

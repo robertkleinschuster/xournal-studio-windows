@@ -46,6 +46,7 @@ namespace xournal::app
         {
             ThrowLastError("CreateWindowEx(tasks pane)");
         }
+        ChildControls::PendingPaneWindow pending(window);
         form = std::make_unique<NewTaskForm>(window, FormId);
         form->submitted = [this] { Add(); };
         list = std::make_unique<TaskListView>(window, ListId);
@@ -57,13 +58,14 @@ namespace xournal::app
         noFile = ChildControls::Create(window, WC_STATICW, L"", SS_LEFT, 0);
         createButton = ChildControls::Create(window, WC_BUTTONW, L"todo.txt anlegen", WS_TABSTOP | BS_PUSHBUTTON, CreateId);
         Reload();
+        pending.Release();
     }
 
     TasksPane::~TasksPane()
     {
         if (window && IsWindow(window))
         {
-            SetWindowLongPtrW(window, GWLP_USERDATA, 0);
+            ChildControls::SetWindowData(window, nullptr);
         }
     }
 
@@ -119,7 +121,7 @@ namespace xournal::app
         catch (...)
         {
             LogException(std::format("tasks: read {}", file ? ToUtf8(file->Path().native()) : ""));
-            messages(L"todo.txt konnte nicht gelesen werden (Einzelheiten in errors.log).", ToastKind::Error);
+            messages(L"todo.txt konnte nicht gelesen werden (Einzelheiten in errors.log).", MessageKind::Error);
         }
         form->Show(exists);
         ShowWindow(list->Window(), exists ? SW_SHOW : SW_HIDE);
@@ -150,13 +152,13 @@ namespace xournal::app
             if (!written)
             {
                 messages(L"Die Aufgabe wurde inzwischen geändert (andere App oder Synchronisierung); die Liste ist neu geladen.",
-                    ToastKind::Warning);
+                    MessageKind::Warning);
             }
         }
         catch (...)
         {
             LogException(std::format("tasks: {} in {}", what, ToUtf8(file->Path().native())));
-            messages(L"todo.txt konnte nicht geschrieben werden (Einzelheiten in errors.log).", ToastKind::Error);
+            messages(L"todo.txt konnte nicht geschrieben werden (Einzelheiten in errors.log).", MessageKind::Error);
         }
         Reload();
         return written;
@@ -281,6 +283,12 @@ namespace xournal::app
     {
         switch (message)
         {
+        case WM_DPICHANGED_AFTERPARENT:
+            form->UpdateFonts();
+            for (HWND control : { showDoneBox, noFile, createButton, list->Window() })
+                ChildControls::UseMessageFont(control);
+            Layout();
+            return 0;
         case WM_SIZE:
             Layout();
             return 0;
@@ -321,7 +329,7 @@ namespace xournal::app
     {
         if (message == WM_NCCREATE)
         {
-            SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(reinterpret_cast<CREATESTRUCTW*>(lp)->lpCreateParams));
+            if (!ChildControls::SetWindowData(hwnd, reinterpret_cast<CREATESTRUCTW*>(lp)->lpCreateParams)) return FALSE;
         }
         auto self = reinterpret_cast<TasksPane*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
         if (!self || !self->window || !self->list)

@@ -90,7 +90,7 @@ namespace xournal::app
         Node const* NodeOf(HTREEITEM item) const;
         HTREEITEM Find(std::filesystem::path const& p) const;
         void Request(ExplorerCommand command, Node const& node, std::wstring newName = {});
-        void ShowMenu(Node const& node, bool onItem, POINT screen);
+        void ShowMenu(Node node, bool onItem, POINT screen);
         LRESULT CustomDraw(NMTVCUSTOMDRAW& draw);
         void UpdateStruckFont();
         int Icon(std::wstring const& name, bool folder, bool open);

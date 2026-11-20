@@ -35,6 +35,12 @@ namespace xournal::app
         focus = page;
     }
 
+    void RenderQueue::SetThumbnailFocus(int page)
+    {
+        std::scoped_lock guard(mutex);
+        thumbnailFocus = page;
+    }
+
     void RenderQueue::Stop()
     {
         {
@@ -77,7 +83,8 @@ namespace xournal::app
                         if (!thumbnail) nearest = it;
                         continue;
                     }
-                    int distance = std::abs(it->second.page - focus), best = std::abs(nearest->second.page - focus);
+                    int target = thumbnail ? thumbnailFocus : focus;
+                    int distance = std::abs(it->second.page - target), best = std::abs(nearest->second.page - target);
                     if (distance < best || (distance == best && it->second.rank < nearest->second.rank))
                     {
                         nearest = it;

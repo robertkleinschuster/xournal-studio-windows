@@ -10,6 +10,9 @@
 
 namespace xournal::app::Dialogs
 {
+    // Store the WM_INITDIALOG parameter for subsequent dialog messages.
+    void SetState(HWND dialog, LPARAM state);
+
     /// Öffnen: a .xopp, a MrWriter .moj or a PDF; nothing when cancelled.
     std::optional<std::filesystem::path> OpenDocument(HWND owner, std::optional<std::filesystem::path> const& folder);
 

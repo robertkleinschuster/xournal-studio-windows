@@ -28,6 +28,7 @@ namespace xournal::app
     public:
         /// `pdfLoaded`: the background PDF (and its navigation) is loaded - also after LoadPdf (UI thread).
         PageUnderlay(RenderQueue& queue, XoppDocument const& doc, std::uint64_t generation, std::function<void(int)> invalidate,
+            std::function<void(std::set<int> const&)> invalidateBatch,
             FilePictures const& pictures, std::function<void()> pdfLoaded);
 
         void Draw(int page, XoppPage const& content, ID2D1DeviceContext* dc, inkpages::RectF area, float pixelsPerUnit);
@@ -63,7 +64,7 @@ namespace xournal::app
 
         RenderQueue& queue;
         std::uint64_t generation;
-        std::function<void(int)> invalidate;
+        std::function<void(std::set<int> const&)> invalidateBatch;
         std::function<void()> pdfLoaded;
         std::shared_ptr<PdfBackground> pdf;
         std::shared_ptr<PictureBitmaps> bitmaps;

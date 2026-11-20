@@ -7,7 +7,7 @@
 // asked again (Abbrechen keeps the shown document), and a document shown meanwhile (a new one, a recovered copy) wins.
 
 #include "DocumentView.h"
-#include "Toast.h"
+#include "MessageKind.h"
 
 #include "xournal/model/XoppDocument.h"
 
@@ -28,8 +28,8 @@ namespace xournal::app
 
         /// Shown after any change of the document or its saved state (title, last file).
         std::function<void()> changed;
-        /// Messages for the toast.
-        std::function<void(std::wstring const&, ToastKind)> message;
+        /// Messages for the status bar.
+        std::function<void(std::wstring const&, MessageKind)> message;
 
         void New();
         void Open();                                 // asks for the file

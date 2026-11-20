@@ -116,6 +116,6 @@ Invoke-Test {
     ToolbarButton 'Speichern'
     Start-Sleep 1
     Expect-Pages 'saved with the toolbar button' $file $original.Count ($original[0].strokes + 1) | Out-Null
-    Select-String -Path "$out\app.log" -Pattern 'document view: page|toast \(' | ForEach-Object { "log: $($_.Line)" }
+    Select-String -Path "$out\app.log" -Pattern 'document view: page|status message \(' | ForEach-Object { "log: $($_.Line)" }
     Get-Content "$out\config\errors.log" -ErrorAction SilentlyContinue | ForEach-Object { "errors.log: $_" }
 }

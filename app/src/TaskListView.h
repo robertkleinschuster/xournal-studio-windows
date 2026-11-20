@@ -47,6 +47,8 @@ namespace xournal::app
 
         HWND list = nullptr;
         std::vector<TaskRow> rows;
+        int dueWidth = 0;
+        UINT columnsDpi = 0;
         bool filling = false; // the check boxes change while the list is filled: not the user's
     };
 }

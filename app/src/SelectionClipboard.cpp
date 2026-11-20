@@ -6,6 +6,7 @@
 #include "PdfBackground.h"
 #include "UiQueue.h"
 
+#include "xournal/base/Clipboard.h"
 #include "xournal/base/Error.h"
 #include "xournal/base/Log.h"
 #include "xournal/base/Text.h"
@@ -36,47 +37,21 @@ namespace xournal::app
             return format;
         }
 
-        // The clipboard, open while this lives.
-        class OpenClipboardScope
-        {
-        public:
-            explicit OpenClipboardScope(HWND owner)
-            {
-                if (!OpenClipboard(owner)) ThrowLastError("OpenClipboard");
-            }
-            ~OpenClipboardScope() { CloseClipboard(); }
-            OpenClipboardScope(OpenClipboardScope const&) = delete;
-            OpenClipboardScope& operator=(OpenClipboardScope const&) = delete;
-        };
-
-        void SetBytes(UINT format, std::span<std::uint8_t const> bytes)
-        {
-            HGLOBAL memory = GlobalAlloc(GMEM_MOVEABLE, bytes.size());
-            if (!memory) ThrowLastError("GlobalAlloc (clipboard)");
-            void* p = GlobalLock(memory);
-            if (!p)
-            {
-                GlobalFree(memory);
-                ThrowLastError("GlobalLock (clipboard)");
-            }
-            std::memcpy(p, bytes.data(), bytes.size());
-            GlobalUnlock(memory);
-            if (!SetClipboardData(format, memory))
-            {
-                GlobalFree(memory); // still ours: the clipboard did not take it
-                ThrowLastError(std::format("SetClipboardData({})", format));
-            }
-        }
-
         std::vector<std::uint8_t> GetBytes(UINT format)
         {
             HANDLE data = GetClipboardData(format);
             if (!data) ThrowLastError(std::format("GetClipboardData({})", format));
             SIZE_T size = GlobalSize(data);
+            if (!size) return {};
+            std::vector<std::uint8_t> bytes(size);
             void const* p = GlobalLock(data);
             if (!p) ThrowLastError("GlobalLock (clipboard data)");
-            std::vector<std::uint8_t> bytes(static_cast<std::uint8_t const*>(p), static_cast<std::uint8_t const*>(p) + size);
-            GlobalUnlock(data);
+            std::memcpy(bytes.data(), p, size);
+            if (!GlobalUnlock(data))
+            {
+                DWORD error = GetLastError();
+                if (error != NO_ERROR) ThrowHr("GlobalUnlock (clipboard data)", HRESULT_FROM_WIN32(error));
+            }
             return bytes;
         }
 
@@ -142,9 +117,9 @@ namespace xournal::app
         auto xml = XoppClip::Create({ 0, 0, width, height }, elements);
         auto bytes = io::SerializeXml(*xml);
         {
-            OpenClipboardScope open(owner);
-            if (!EmptyClipboard()) ThrowLastError("EmptyClipboard");
-            SetBytes(clipFormat, bytes);
+            Clipboard::Opened open(owner);
+            open.Clear();
+            open.SetBytes(clipFormat, bytes);
         }
         pendingArea.reset();
         Log(std::format("clipboard: {} strokes, {} pictures/texts copied ({} bytes)", clip.strokes.size(),
@@ -218,12 +193,12 @@ namespace xournal::app
                             try
                             {
                                 {
-                                    OpenClipboardScope open(owner);
+                                    Clipboard::Opened open(owner);
                                     if (GetClipboardSequenceNumber() != request->sequence) return;
-                                    if (!EmptyClipboard()) ThrowLastError("EmptyClipboard (PDF area)");
-                                    SetBytes(clipFormat, xml);
-                                    SetBytes(pngFormat, png);
-                                    SetBytes(CF_DIB, dib);
+                                    open.Clear();
+                                    open.SetBytes(clipFormat, xml);
+                                    open.SetBytes(pngFormat, png);
+                                    open.SetBytes(CF_DIB, dib);
                                 }
                                 Log("clipboard: PDF area copied");
                                 auto document = view.Document();
@@ -291,9 +266,9 @@ namespace xournal::app
                     Log("clipboard: changed meanwhile - the copy's picture is not added");
                     return;
                 }
-                OpenClipboardScope open(owner); // still the owner: added to the copy without emptying it
-                SetBytes(pngFormat, png);
-                SetBytes(CF_DIB, dib);
+                Clipboard::Opened open(owner); // still the owner: added to the copy without emptying it
+                open.SetBytes(pngFormat, png);
+                open.SetBytes(CF_DIB, dib);
                 Log(std::format("clipboard: picture added (PNG {} bytes)", png.size()));
             });
         });
@@ -312,7 +287,7 @@ namespace xournal::app
     {
         std::vector<std::uint8_t> bytes;
         {
-            OpenClipboardScope open(owner);
+            Clipboard::Opened open(owner);
             bytes = GetBytes(clipFormat);
         }
         // The global memory may be larger than what was put there: the XML ends at its last '>'.
@@ -345,7 +320,7 @@ namespace xournal::app
         std::vector<std::uint8_t> png;
         std::shared_ptr<CpuBitmap> pixels;
         {
-            OpenClipboardScope open(owner);
+            Clipboard::Opened open(owner);
             if (IsClipboardFormatAvailable(pngFormat))
             {
                 png = GetBytes(pngFormat);

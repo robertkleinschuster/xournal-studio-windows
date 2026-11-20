@@ -50,7 +50,7 @@ namespace xournal::app
     {
         if (loading)
         {
-            if (message) message(L"Ein Dokument wird gerade geöffnet; bitte einen Moment warten.", ToastKind::Info);
+            if (message) message(L"Ein Dokument wird gerade geöffnet; bitte einen Moment warten.", MessageKind::Info);
             return;
         }
         if (!ConfirmLeave()) return;
@@ -115,7 +115,7 @@ namespace xournal::app
         try
         {
             view.CaptureInk([&] { io::DocumentFile::SaveCopy(*doc, *file); });
-            if (message) message(std::format(L"Kopie gespeichert: {}", file->filename().native()), ToastKind::Success);
+            if (message) message(std::format(L"Kopie gespeichert: {}", file->filename().native()), MessageKind::Success);
             return true;
         }
         catch (...)
@@ -160,7 +160,7 @@ namespace xournal::app
                     // Another document was shown while this one loaded (a new or recovered one): that one stays.
                     Log(std::format("session: {} loaded after another document was shown - not shown", ToUtf8(file.native())));
                     if (message) message(std::format(L"„{}“ wurde nicht geöffnet: inzwischen wird ein anderes Dokument gezeigt.",
-                        file.filename().native()), ToastKind::Warning);
+                        file.filename().native()), MessageKind::Warning);
                     return;
                 }
                 // Edits made while it loaded belong to the shown document: the question about them comes now (a text
@@ -170,7 +170,7 @@ namespace xournal::app
                 {
                     Log(std::format("session: {} loaded, kept the edited document (Abbrechen)", ToUtf8(file.native())));
                     if (message) message(std::format(L"„{}“ wurde nicht geöffnet; das geänderte Dokument bleibt offen.",
-                        file.filename().native()), ToastKind::Info);
+                        file.filename().native()), MessageKind::Info);
                     return;
                 }
                 Show(loaded, file);
@@ -213,7 +213,7 @@ namespace xournal::app
             changedOutsideInk = false;
             pagesChanged = false;
         pagesChanged = false;
-            if (message) message(std::format(L"Gespeichert: {}", file.filename().native()), ToastKind::Success);
+            if (message) message(std::format(L"Gespeichert: {}", file.filename().native()), MessageKind::Success);
             if (fileUsed) fileUsed(file);
             if (changed) changed();
             return true;
@@ -228,7 +228,7 @@ namespace xournal::app
 
     void DocumentSession::Fail(std::wstring const& what)
     {
-        if (message) message(what, ToastKind::Error);
+        if (message) message(what, MessageKind::Error);
     }
 
     void DocumentSession::EndTextEditing()

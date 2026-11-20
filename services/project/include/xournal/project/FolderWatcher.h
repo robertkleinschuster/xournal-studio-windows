@@ -1,8 +1,8 @@
 #pragma once
 
 // Reports changes in the project folder (files and folders created, deleted, renamed or written) with
-// ReadDirectoryChangesW on a worker thread of its own. Changes inside hidden folders such as .git are left out (git
-// status itself writes there). `changed` runs on the worker thread, at least once per batch of changes Windows reports:
+// ReadDirectoryChangesW with Windows thread-pool I/O. Changes inside hidden folders such as .git are left out (git
+// status itself writes there). `changed` runs on a pool thread, at least once per batch of changes Windows reports:
 // the receiver debounces and reads the folder again. An exception from `changed` is logged, never let out of the thread.
 // When Windows loses changes (buffer overflow, e.g. a checkout) `changed` runs too, so everything is read again; when
 // watching fails for good (the folder was deleted) the error is logged, `changed` runs once more and the watch ends.
@@ -13,7 +13,8 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
-#include <thread>
+#include <mutex>
+#include <vector>
 
 namespace xournal::project
 {
@@ -22,7 +23,7 @@ namespace xournal::project
     public:
         /// Starts watching at once; throws when the folder cannot be opened.
         FolderWatcher(std::filesystem::path folder, std::function<void()> changed);
-        /// Stops the worker and waits for it (a running `changed` finishes first).
+        /// Cancels the read and waits for completion callbacks (a running `changed` finishes first).
         ~FolderWatcher();
         FolderWatcher(FolderWatcher const&) = delete;
         FolderWatcher& operator=(FolderWatcher const&) = delete;
@@ -39,14 +40,19 @@ namespace xournal::project
         };
         using Handle = std::unique_ptr<void, HandleCloser>;
 
-        void Run() noexcept;
+        static void CALLBACK Completed(PTP_CALLBACK_INSTANCE, void* context, void*, ULONG result, ULONG_PTR bytes, PTP_IO) noexcept;
+        void Read();
+        void OnCompleted(ULONG result, ULONG_PTR bytes) noexcept;
         void Raise() noexcept;
-        bool HasShownChange(std::uint8_t const* buffer) const;
+        bool HasShownChange() const;
 
         std::filesystem::path folder;
         std::function<void()> changed;
         Handle directory;
-        Handle stop;
-        std::thread worker;
+        std::vector<DWORD> buffer;
+        OVERLAPPED overlapped{};
+        PTP_IO io = nullptr;
+        std::mutex lock;
+        bool stopping = false;
     };
 }

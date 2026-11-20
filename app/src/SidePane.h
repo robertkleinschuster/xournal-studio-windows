@@ -67,7 +67,6 @@ namespace xournal::app
         HWND pagesContent = nullptr; // a placeholder until the window puts the pages pane in
         HWND searchContent = nullptr;
         HWND outlineContent = nullptr;
-        bool outlineShown = false;
         std::unique_ptr<ExplorerTree> explorer;
         std::unique_ptr<TasksPane> tasks;
     };

@@ -105,9 +105,10 @@ namespace xournal::app
     }
 
     PageUnderlay::PageUnderlay(RenderQueue& queue, XoppDocument const& doc, std::uint64_t generation,
-        std::function<void(int)> invalidate, FilePictures const& pictures, std::function<void()> pdfLoaded)
-        : queue(queue), generation(generation), invalidate(invalidate), pdfLoaded(std::move(pdfLoaded)),
-          pdf(std::make_shared<PdfBackground>(queue, generation, invalidate)),
+        std::function<void(int)> invalidate, std::function<void(std::set<int> const&)> invalidateBatch,
+        FilePictures const& pictures, std::function<void()> pdfLoaded)
+        : queue(queue), generation(generation), invalidateBatch(std::move(invalidateBatch)), pdfLoaded(std::move(pdfLoaded)),
+          pdf(std::make_shared<PdfBackground>(queue, generation, this->invalidateBatch)),
           bitmaps(std::make_shared<PictureBitmaps>(queue, generation, invalidate)),
           pictures(pictures)
     {
@@ -120,7 +121,7 @@ namespace xournal::app
 
     void PageUnderlay::LoadPdf(std::filesystem::path const& file)
     {
-        pdf = std::make_shared<PdfBackground>(queue, generation, invalidate);
+        pdf = std::make_shared<PdfBackground>(queue, generation, invalidateBatch);
         pdf->loaded = pdfLoaded;
         pdf->Load(file); // its pages are drawn again as their bitmaps arrive
     }

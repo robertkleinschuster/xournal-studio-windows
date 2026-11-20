@@ -1,177 +1,44 @@
 #include "MainMenu.h"
 
 #include "Commands.h"
+#include "Resources.h"
 #include "xournal/base/Error.h"
+#include "xournal/base/Log.h"
 
 #include <shlwapi.h>
 
 #include <format>
-#include <initializer_list>
 #include <string>
-#include <vector>
 
 namespace xournal::app
 {
-    namespace
-    {
-        struct Item
-        {
-            int command = 0;           // 0: separator
-            wchar_t const* text = L"";
-            wchar_t const* keys = L""; // shown right-aligned after a tab
-            BYTE modifiers = 0;        // FCONTROL, FSHIFT (FVIRTKEY is added)
-            WORD key = 0;              // virtual key; 0: no shortcut
-            bool enabled = true;
-        };
-
-        HMENU Popup(std::initializer_list<Item> items, std::vector<ACCEL>& accelerators)
-        {
-            HMENU menu = CreatePopupMenu();
-            if (!menu)
-            {
-                ThrowLastError("CreatePopupMenu");
-            }
-            for (auto const& item : items)
-            {
-                if (item.command == 0)
-                {
-                    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-                    continue;
-                }
-                std::wstring text = item.text;
-                if (*item.keys)
-                {
-                    text += L"\t";
-                    text += item.keys;
-                }
-                UINT flags = MF_STRING | (item.enabled ? MF_ENABLED : MF_GRAYED);
-                if (!AppendMenuW(menu, flags, static_cast<UINT_PTR>(item.command), text.c_str()))
-                {
-                    ThrowLastError("AppendMenu");
-                }
-                if (item.key)
-                {
-                    accelerators.push_back({ static_cast<BYTE>(FVIRTKEY | item.modifiers), item.key, static_cast<WORD>(item.command) });
-                }
-            }
-            return menu;
-        }
-
-        void AddPopup(HMENU bar, HMENU popup, wchar_t const* title)
-        {
-            if (!AppendMenuW(bar, MF_POPUP, reinterpret_cast<UINT_PTR>(popup), title))
-            {
-                ThrowLastError("AppendMenu (popup)");
-            }
-        }
-    }
-
     MainMenu::MainMenu()
     {
-        std::vector<ACCEL> keys;
-        bar = CreateMenu();
-        if (!bar)
-        {
-            ThrowLastError("CreateMenu");
-        }
-        constexpr BYTE Ctrl = FCONTROL, CtrlShift = FCONTROL | FSHIFT;
-        // Features of later phases are listed (as in the C# app) but disabled until they exist.
-        AddPopup(bar, Popup({
-            { CmdNew, L"&Neu", L"Strg+N", Ctrl, 'N' },
-            { CmdOpen, L"Ö&ffnen…", L"Strg+O", Ctrl, 'O' },
-            { CmdSave, L"&Speichern", L"Strg+S", Ctrl, 'S' },
-            { CmdSaveAs, L"Speichern &unter…", L"Strg+Umschalt+S", CtrlShift, 'S' },
-            { CmdExportPdf, L"Als PDF e&xportieren…", L"Strg+E", Ctrl, 'E' },
-            { CmdImportPdf, L"PDF mit iPad-Anmerkungen &importieren…" },
-            {},
-            { CmdRecentFirst, L"Zuletzt &geöffnet" }, // replaced by the submenu below
-            {},
-            { CmdOpenFolder, L"O&rdner öffnen…" },
-            { CmdSync, L"S&ynchronisieren" },
-            {},
-            { CmdExit, L"&Beenden", L"Alt+F4" },
-        }, keys), L"&Datei");
-        AddPopup(bar, Popup({
-            { CmdUndo, L"&Rückgängig", L"Strg+Z", Ctrl, 'Z' },
-            { CmdRedo, L"&Wiederholen", L"Strg+Y", Ctrl, 'Y' },
-            {},
-            { CmdCut, L"&Ausschneiden", L"Strg+X", Ctrl, 'X' },
-            { CmdCopy, L"&Kopieren", L"Strg+C", Ctrl, 'C' },
-            { CmdPaste, L"&Einfügen", L"Strg+V", Ctrl, 'V' },
-            {},
-            { CmdDuplicate, L"&Duplizieren", L"Strg+D", Ctrl, 'D' },
-            { CmdDelete, L"&Löschen", L"Entf", 0, VK_DELETE },
-            {},
-            { CmdSelectAll, L"Alles a&uswählen", L"Strg+A", Ctrl, 'A' },
-            { CmdClearSelection, L"Auswahl auf&heben", L"Esc", 0, VK_ESCAPE },
-            {},
-            { CmdFind, L"&Suchen…", L"Strg+F", Ctrl, 'F' },
-            { CmdFindNext, L"&Weitersuchen", L"F3", 0, VK_F3 },
-            { CmdFindPrevious, L"&Rückwärts suchen", L"Umschalt+F3", FSHIFT, VK_F3 },
-        }, keys), L"&Bearbeiten");
-        AddPopup(bar, Popup({
-            { CmdInsertPage, L"Seite &einfügen" },
-            { CmdInsertFromFile, L"Seiten aus &PDF oder Dokument einfügen…" },
-            {},
-            { CmdMovePageUp, L"Seite nach &oben" },
-            { CmdMovePageDown, L"Seite nach &unten" },
-            {},
-            { CmdDeletePage, L"Seite &löschen" },
-        }, keys), L"&Seite");
-        // Zoom and page shortcuts as Acrobat and SumatraPDF have them (Strg+0 Ganze Seite, Strg+1 Originalgröße, Strg+2
-        // Seitenbreite); Zurück/Vorwärts as browsers and Edge's PDF viewer (Alt+Links/Rechts, the mouse's side buttons).
-        constexpr BYTE Alt = FALT;
-        AddPopup(bar, Popup({
-            { CmdTogglePane, L"&Dateien und Aufgaben", L"Strg+B", Ctrl, 'B' },
-            {},
-            { CmdZoomIn, L"&Vergrößern", L"Strg+Plus", Ctrl, VK_OEM_PLUS },
-            { CmdZoomOut, L"Ver&kleinern", L"Strg+Minus", Ctrl, VK_OEM_MINUS },
-            { CmdActualSize, L"&Originalgröße (100 %)", L"Strg+1", Ctrl, '1' },
-            { CmdFitPage, L"&Ganze Seite", L"Strg+0", Ctrl, '0' },
-            { CmdFitWidth, L"&Seitenbreite", L"Strg+2", Ctrl, '2' },
-            {},
-            { CmdGoToPage, L"Gehe &zu Seite…", L"Strg+G", Ctrl, 'G' },
-            { CmdBack, L"Zu&rück", L"Alt+Links", Alt, VK_LEFT },
-            { CmdForward, L"Vor&wärts", L"Alt+Rechts", Alt, VK_RIGHT },
-        }, keys), L"&Ansicht");
-        keys.push_back({ FVIRTKEY | FCONTROL, VK_ADD, CmdZoomIn });       // the number pad's + and - too
-        keys.push_back({ FVIRTKEY | FCONTROL, VK_SUBTRACT, CmdZoomOut });
-        keys.push_back({ FVIRTKEY | FCONTROL, VK_NUMPAD0, CmdFitPage });
-        keys.push_back({ FVIRTKEY | FCONTROL, VK_NUMPAD1, CmdActualSize });
-        keys.push_back({ FVIRTKEY | FCONTROL, VK_NUMPAD2, CmdFitWidth });
-        keys.push_back({ FVIRTKEY | FCONTROL | FSHIFT, VK_OEM_PLUS, CmdZoomIn }); // some layouts need Umschalt for +
+        HINSTANCE instance = GetModuleHandleW(nullptr);
+        accelerators = LoadAcceleratorsW(instance, MAKEINTRESOURCEW(IDA_MAIN));
+        if (!accelerators) ThrowLastError("LoadAccelerators (main menu)");
 
-        // Datei -> Zuletzt geöffnet: a submenu in place of its placeholder, filled by SetRecentFiles.
-        recent = CreatePopupMenu();
-        if (!recent)
-        {
-            ThrowLastError("CreatePopupMenu(recent files)");
-        }
-        HMENU file = GetSubMenu(bar, 0);
+        using MenuHandle = std::unique_ptr<std::remove_pointer_t<HMENU>, decltype(&DestroyMenu)>;
+        MenuHandle mainMenu(LoadMenuW(instance, MAKEINTRESOURCEW(IDM_MAIN)), DestroyMenu);
+        if (!mainMenu) ThrowLastError("LoadMenu (main menu)");
+        MenuHandle recentMenu(CreatePopupMenu(), DestroyMenu);
+        if (!recentMenu) ThrowLastError("CreatePopupMenu (recent files)");
+
+        HMENU file = GetSubMenu(mainMenu.get(), 0);
         MENUITEMINFOW info{ sizeof(info) };
         info.fMask = MIIM_SUBMENU | MIIM_ID;
-        info.wID = 0;
-        info.hSubMenu = recent;
+        info.hSubMenu = recentMenu.get();
         if (!SetMenuItemInfoW(file, CmdRecentFirst, FALSE, &info))
-        {
-            ThrowLastError("SetMenuItemInfo(recent files)");
-        }
+            ThrowLastError("SetMenuItemInfo (recent files)");
+        recent = recentMenu.release();
         SetRecentFiles({});
-
-        accelerators = CreateAcceleratorTableW(keys.data(), static_cast<int>(keys.size()));
-        if (!accelerators)
-        {
-            ThrowLastError("CreateAcceleratorTable");
-        }
+        bar = mainMenu.release();
     }
 
     MainMenu::~MainMenu()
     {
-        if (accelerators)
-        {
-            DestroyAcceleratorTable(accelerators);
-        }
-        // The bar belongs to the window once set (destroyed with it).
+        if (ownsBar && IsMenu(bar) && !DestroyMenu(bar))
+            LogError("DestroyMenu (main menu) failed");
     }
 
     void MainMenu::SetRecentFiles(std::vector<std::filesystem::path> const& files)

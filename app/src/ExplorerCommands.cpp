@@ -4,6 +4,7 @@
 #include "Questions.h"
 #include "UiQueue.h"
 
+#include "xournal/base/Clipboard.h"
 #include "xournal/base/Error.h"
 #include "xournal/base/Log.h"
 #include "xournal/base/Paths.h"
@@ -82,7 +83,7 @@ namespace xournal::app
                 catch (...)
                 {
                     LogException(std::format("explorer: rename {}", ToUtf8(request.path.native())));
-                    messages(std::format(L"{}: {}", FailureTitle(request.command), ErrorText()), ToastKind::Error);
+                    messages(std::format(L"{}: {}", FailureTitle(request.command), ErrorText()), MessageKind::Error);
                 }
                 explorer.RefreshNow();
             });
@@ -116,7 +117,7 @@ namespace xournal::app
         catch (...)
         {
             LogException(std::format("explorer: command {} on {}", static_cast<int>(request.command), ToUtf8(request.path.native())));
-            messages(std::format(L"{}: {}", FailureTitle(request.command), ErrorText()), ToastKind::Error);
+            messages(std::format(L"{}: {}", FailureTitle(request.command), ErrorText()), MessageKind::Error);
         }
         if (changesFiles)
         {
@@ -139,7 +140,7 @@ namespace xournal::app
     {
         if (!Paths::FileExists(file))
         {
-            messages(std::format(L"Nicht gefunden: {}", file.native()), ToastKind::Warning);
+            messages(std::format(L"Nicht gefunden: {}", file.native()), MessageKind::Warning);
             return;
         }
         if (IsDocument(file))
@@ -228,7 +229,7 @@ namespace xournal::app
         std::filesystem::path parent = Paths::Full(item).parent_path();
         if (auto error = NameError(parent, newName, item))
         {
-            messages(*error, ToastKind::Warning);
+            messages(*error, MessageKind::Warning);
             return;
         }
         auto doc = session.Document();
@@ -288,7 +289,7 @@ namespace xournal::app
         git::DiscardPlan plan = git::GitSync::PlanDiscard(*root, item);
         if (plan.Empty())
         {
-            messages(std::format(L"„{}“ hat keine Änderungen.", NameOf(item)), ToastKind::Info);
+            messages(std::format(L"„{}“ hat keine Änderungen.", NameOf(item)), MessageKind::Info);
             return;
         }
         auto doc = session.Document();
@@ -347,7 +348,7 @@ namespace xournal::app
     {
         project::FileClipboard::Put(owner, { Paths::Full(item) }, move);
         messages(move ? std::format(L"Ausgeschnitten: {} – mit Einfügen in einen Ordner verschieben.", NameOf(item))
-                      : std::format(L"Kopiert: {}", NameOf(item)), ToastKind::Success);
+                      : std::format(L"Kopiert: {}", NameOf(item)), MessageKind::Success);
     }
 
     // Einfügen: the files on the clipboard (from here or File Explorer) copied or - after Ausschneiden - moved into the
@@ -359,7 +360,7 @@ namespace xournal::app
         auto content = project::FileClipboard::Get(owner);
         if (!content || content->files.empty())
         {
-            messages(L"In der Zwischenablage sind keine Dateien.", ToastKind::Info);
+            messages(L"In der Zwischenablage sind keine Dateien.", MessageKind::Info);
             return;
         }
         auto done = project::ProjectFiles::Transfer(content->files, folder, content->move, owner);
@@ -403,34 +404,7 @@ namespace xournal::app
     void ExplorerCommands::CopyPath(std::filesystem::path const& item)
     {
         std::wstring text = L"\"" + Paths::Full(item).native() + L"\"";
-        if (!OpenClipboard(owner))
-        {
-            ThrowLastError("OpenClipboard");
-        }
-        struct Closer { ~Closer() { CloseClipboard(); } } closer;
-        if (!EmptyClipboard())
-        {
-            ThrowLastError("EmptyClipboard");
-        }
-        size_t bytes = (text.size() + 1) * sizeof(wchar_t);
-        HGLOBAL memory = GlobalAlloc(GMEM_MOVEABLE, bytes);
-        if (!memory)
-        {
-            ThrowLastError("GlobalAlloc");
-        }
-        void* target = GlobalLock(memory);
-        if (!target)
-        {
-            GlobalFree(memory);
-            ThrowLastError("GlobalLock");
-        }
-        memcpy(target, text.c_str(), bytes);
-        GlobalUnlock(memory);
-        if (!SetClipboardData(CF_UNICODETEXT, memory))
-        {
-            GlobalFree(memory);
-            ThrowLastError("SetClipboardData");
-        }
-        messages(L"Pfad kopiert.", ToastKind::Success);
+        Clipboard::PutText(owner, text);
+        messages(L"Pfad kopiert.", MessageKind::Success);
     }
 }

@@ -1,23 +1,25 @@
 #include "UiQueue.h"
 
+#include "inkpages/UiDispatch.h"
 #include "xournal/base/Error.h"
 #include "xournal/base/Log.h"
 
 #include <format>
 #include <memory>
+#include <mutex>
 
 namespace xournal::app::UiQueue
 {
     namespace
     {
-        HWND target = nullptr;
-        UINT queueMessage = 0;
-
         struct Item
         {
             std::string name;
             std::function<void()> work;
         };
+
+        std::mutex mutex;
+        std::shared_ptr<inkpages::UiDispatch> target;
 
         void RunLogged(Item const& item)
         {
@@ -32,28 +34,28 @@ namespace xournal::app::UiQueue
         }
     }
 
-    void Attach(HWND window, UINT message)
+    void Attach()
     {
-        target = window;
-        queueMessage = message;
+        std::scoped_lock lock(mutex);
+        target = std::make_shared<inkpages::UiDispatch>();
     }
 
-    void Post(std::string name, std::function<void()> work)
+    void Detach()
     {
-        auto item = std::make_unique<Item>(Item{ std::move(name), std::move(work) });
-        if (!PostMessageW(target, queueMessage, 0, reinterpret_cast<LPARAM>(item.get())))
+        std::scoped_lock lock(mutex);
+        if (target) target->Close();
+        target.reset();
+    }
+
+    bool Post(std::string name, std::function<void()> work)
+    {
+        std::shared_ptr<inkpages::UiDispatch> dispatch;
         {
-            // The window is gone (closing): the work cannot run any more - said, not dropped silently.
-            LogError(std::format("UiQueue: {} not run: {}", item->name, DescribeHr(HRESULT_FROM_WIN32(GetLastError()))));
-            return;
+            std::scoped_lock lock(mutex);
+            dispatch = target;
         }
-        item.release(); // owned by the message until Run
-    }
-
-    void Run(LPARAM pointer)
-    {
-        std::unique_ptr<Item> item(reinterpret_cast<Item*>(pointer));
-        RunLogged(*item);
+        if (!dispatch) return false;
+        return dispatch->Post([item = Item{ std::move(name), std::move(work) }] { RunLogged(item); });
     }
 
     void RunInBackground(std::string name, std::function<void()> work)

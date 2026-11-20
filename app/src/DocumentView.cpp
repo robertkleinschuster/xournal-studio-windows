@@ -74,12 +74,13 @@ namespace xournal::app
         std::uint64_t old = generation++;
         renderQueue.Drop([old](std::uint64_t key) { return (key >> 32) == old; });
         auto invalidate = [this](int page) { surface.InvalidatePage(page); };
+        auto invalidateBatch = [this](std::set<int> const& pages) { surface.InvalidatePages(pages); };
         surface.SetTextHost(nullptr); // an edit of the old document ends into it, while its host is still here
         surface.SetPictureHost(nullptr);
         texts.reset();
         pictures = std::make_unique<FilePictures>(doc, surface, bridge->Lock(), invalidate);
         texts = std::make_unique<FileTexts>(doc, bridge->Lock(), *pictures, invalidate);
-        underlay = std::make_unique<PageUnderlay>(renderQueue, *doc, generation, invalidate, *pictures,
+        underlay = std::make_unique<PageUnderlay>(renderQueue, *doc, generation, invalidate, invalidateBatch, *pictures,
             [this] { if (pdfLoaded) pdfLoaded(); });
         surface.SetPictureHost(pictures.get());
         surface.SetTextHost(texts.get());

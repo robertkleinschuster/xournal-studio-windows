@@ -14,6 +14,13 @@ using Microsoft::WRL::ComPtr;
 
 namespace xournal::app::Dialogs
 {
+    void SetState(HWND dialog, LPARAM state)
+    {
+        SetLastError(ERROR_SUCCESS);
+        if (!SetWindowLongPtrW(dialog, DWLP_USER, state) && GetLastError() != ERROR_SUCCESS)
+            ThrowLastError("SetWindowLongPtr (dialog state)");
+    }
+
     namespace
     {
         // Shows a file dialog; false when the user cancelled (any other failure throws).

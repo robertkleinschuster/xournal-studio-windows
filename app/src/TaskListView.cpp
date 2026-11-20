@@ -17,6 +17,7 @@ namespace xournal::app
     namespace
     {
         enum GroupId : int { Overdue = 1, Open, Done };
+        constexpr wchar_t DueColumnTitle[] = L"Fällig";
 
         int GroupOf(TaskRow const& row) { return row.task.done ? Done : row.overdue ? Overdue : Open; }
 
@@ -52,7 +53,7 @@ namespace xournal::app
         {
             LogError(std::format("tasks: list theme not set: {}", DescribeHr(hr)));
         }
-        wchar_t const* titles[] = { L"Aufgabe", L"Fällig" };
+        wchar_t const* titles[] = { L"Aufgabe", DueColumnTitle };
         for (int i = 0; i < 2; ++i)
         {
             LVCOLUMNW column{ LVCF_TEXT | LVCF_WIDTH };
@@ -66,31 +67,40 @@ namespace xournal::app
 
     void TaskListView::Layout(int left, int top, int width, int height, int)
     {
-        MoveWindow(list, left, top, width, std::max(0, height), TRUE);
+        if (!MoveWindow(list, left, top, width, std::max(0, height), TRUE))
+            ThrowLastError("MoveWindow (task list)");
         FitColumns();
     }
 
     // Fällig as wide as its widest text (or its header), Aufgabe the rest of the visible width.
     void TaskListView::FitColumns()
     {
-        int dpi = static_cast<int>(GetDpiForWindow(list));
-        int due = ListView_GetStringWidth(list, L"Fällig") + MulDiv(16, dpi, 96);
-        for (auto const& row : rows)
+        UINT dpi = GetDpiForWindow(list);
+        if (!dpi) ThrowHr("GetDpiForWindow (task list)", E_FAIL);
+        if (!dueWidth || columnsDpi != dpi)
         {
-            due = std::max(due, ListView_GetStringWidth(list, row.dueText.c_str()) + MulDiv(16, dpi, 96));
+            if (!ListView_SetColumnWidth(list, 1, LVSCW_AUTOSIZE))
+                ThrowHr("LVM_SETCOLUMNWIDTH (measure task dates)", E_FAIL);
+            int header = ListView_GetStringWidth(list, DueColumnTitle) + MulDiv(16, static_cast<int>(dpi), 96);
+            dueWidth = std::max(header, ListView_GetColumnWidth(list, 1));
+            columnsDpi = dpi;
         }
-        RECT client;
-        GetClientRect(list, &client);
-        ListView_SetColumnWidth(list, 1, due);
-        ListView_SetColumnWidth(list, 0, std::max(MulDiv(60, dpi, 96), static_cast<int>(client.right) - due));
+        if (ListView_GetColumnWidth(list, 1) != dueWidth && !ListView_SetColumnWidth(list, 1, dueWidth))
+            ThrowHr("LVM_SETCOLUMNWIDTH (task dates)", E_FAIL);
+        RECT client{};
+        if (!GetClientRect(list, &client)) ThrowLastError("GetClientRect (task list)");
+        int titleWidth = std::max(MulDiv(60, static_cast<int>(dpi), 96), static_cast<int>(client.right) - dueWidth);
+        if (ListView_GetColumnWidth(list, 0) != titleWidth && !ListView_SetColumnWidth(list, 0, titleWidth))
+            ThrowHr("LVM_SETCOLUMNWIDTH (task titles)", E_FAIL);
     }
 
-    void TaskListView::Show(TaskRows const& shown)
+    void TaskListView::Show(TaskRows const& shown) try
     {
-        rows = shown.rows;
         filling = true;
-        SendMessageW(list, WM_SETREDRAW, FALSE, 0);
-        ListView_DeleteAllItems(list);
+        dueWidth = 0;
+        ChildControls::BatchRedraw redraw(list);
+        if (!ListView_DeleteAllItems(list)) ThrowHr("LVM_DELETEALLITEMS (tasks)", E_FAIL);
+        rows = shown.rows;
         ListView_RemoveAllGroups(list);
         // Only groups that have tasks (in this order).
         for (int group : { Overdue, Open, Done })
@@ -103,11 +113,7 @@ namespace xournal::app
             g.pszHeader = header.data();
             g.iGroupId = group;
             if (ListView_InsertGroup(list, -1, &g) < 0)
-            {
-                filling = false;
-                SendMessageW(list, WM_SETREDRAW, TRUE, 0);
-                ThrowLastError("ListView_InsertGroup (tasks)");
-            }
+                ThrowHr("LVM_INSERTGROUP (tasks)", E_FAIL);
         }
         for (size_t i = 0; i < rows.size(); i++)
         {
@@ -120,18 +126,17 @@ namespace xournal::app
             item.iGroupId = GroupOf(row);
             int index = ListView_InsertItem(list, &item);
             if (index < 0)
-            {
-                filling = false;
-                SendMessageW(list, WM_SETREDRAW, TRUE, 0);
-                ThrowLastError("ListView_InsertItem(task)");
-            }
+                ThrowHr("LVM_INSERTITEM (tasks)", E_FAIL);
             ListView_SetItemText(list, index, 1, const_cast<wchar_t*>(row.dueText.c_str()));
             ListView_SetCheckState(list, index, row.task.done);
         }
         FitColumns();
-        SendMessageW(list, WM_SETREDRAW, TRUE, 0);
-        InvalidateRect(list, nullptr, TRUE);
         filling = false;
+    }
+    catch (...)
+    {
+        filling = false;
+        throw;
     }
 
     TaskRow const* TaskListView::RowOfItem(int item) const

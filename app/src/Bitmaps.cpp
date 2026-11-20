@@ -3,6 +3,7 @@
 #include "xournal/base/Error.h"
 #include "xournal/base/Log.h"
 #include "xournal/io/Files.h"
+#include "xournal/pdf/PngEncoding.h"
 
 #include <shlwapi.h>
 #include <wincodec.h>
@@ -61,33 +62,7 @@ namespace xournal::app
         std::vector<std::uint8_t> EncodePng(CpuBitmap const& bitmap)
         {
             auto factory = Factory();
-            UINT stride = bitmap.width * 4;
-            ComPtr<IWICBitmap> source;
-            Check("IWICImagingFactory::CreateBitmapFromMemory", factory->CreateBitmapFromMemory(bitmap.width, bitmap.height,
-                GUID_WICPixelFormat32bppPBGRA, stride, static_cast<UINT>(bitmap.pixels.size()),
-                const_cast<BYTE*>(bitmap.pixels.data()), &source));
-            ComPtr<IWICFormatConverter> converter; // PNG keeps straight alpha
-            Check("IWICImagingFactory::CreateFormatConverter", factory->CreateFormatConverter(&converter));
-            Check("IWICFormatConverter::Initialize", converter->Initialize(source.Get(), GUID_WICPixelFormat32bppBGRA,
-                WICBitmapDitherTypeNone, nullptr, 0, WICBitmapPaletteTypeCustom));
-            ComPtr<IStream> stream;
-            stream.Attach(SHCreateMemStream(nullptr, 0));
-            if (!stream) ThrowHr("SHCreateMemStream (PNG)", E_OUTOFMEMORY);
-            ComPtr<IWICBitmapEncoder> encoder;
-            Check("IWICImagingFactory::CreateEncoder (PNG)", factory->CreateEncoder(GUID_ContainerFormatPng, nullptr, &encoder));
-            Check("IWICBitmapEncoder::Initialize", encoder->Initialize(stream.Get(), WICBitmapEncoderNoCache));
-            ComPtr<IWICBitmapFrameEncode> frame;
-            Check("IWICBitmapEncoder::CreateNewFrame", encoder->CreateNewFrame(&frame, nullptr));
-            Check("IWICBitmapFrameEncode::Initialize", frame->Initialize(nullptr));
-            Check("IWICBitmapFrameEncode::WriteSource", frame->WriteSource(converter.Get(), nullptr));
-            Check("IWICBitmapFrameEncode::Commit", frame->Commit());
-            Check("IWICBitmapEncoder::Commit", encoder->Commit());
-            ULARGE_INTEGER size{};
-            Check("IStream_Size", IStream_Size(stream.Get(), &size));
-            Check("IStream_Reset", IStream_Reset(stream.Get()));
-            std::vector<std::uint8_t> png(static_cast<size_t>(size.QuadPart));
-            Check("IStream_Read", IStream_Read(stream.Get(), png.data(), static_cast<ULONG>(png.size())));
-            return png;
+            return pdf::EncodePng(*factory.Get(), bitmap.width, bitmap.height, bitmap.pixels);
         }
 
         std::shared_ptr<CpuBitmap> DecodeFile(std::filesystem::path const& file)

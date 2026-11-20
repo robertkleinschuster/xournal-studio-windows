@@ -10,7 +10,7 @@
 #include "NewTaskForm.h"
 #include "TaskListView.h"
 #include "TaskRows.h"
-#include "Toast.h"
+#include "MessageKind.h"
 
 #include "xournal/tasks/TaskFile.h"
 
@@ -28,7 +28,7 @@ namespace xournal::app
     class TasksPane
     {
     public:
-        using Messages = std::function<void(std::wstring const&, ToastKind)>;
+        using Messages = std::function<void(std::wstring const&, MessageKind)>;
 
         TasksPane(HWND parent, Messages messages);
         ~TasksPane();

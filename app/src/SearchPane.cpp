@@ -49,11 +49,11 @@ namespace xournal::app
         }
         window = CreateWindowExW(0, ClassName, L"", WS_CHILD | WS_CLIPCHILDREN, 0, 0, 0, 0, parent, nullptr, instance, this);
         if (!window) ThrowLastError("CreateWindowEx(search pane)");
+        ChildControls::PendingPaneWindow pending(window);
         field = CreateWindowExW(0, WC_EDITW, L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, 0, 0, 0, 0,
             window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(FieldId)), instance, nullptr);
         if (!field) ThrowLastError("CreateWindowEx(search field)");
         Edit_SetCueBannerTextFocused(field, L"Suchen: PDF, Texte, Handschrift", TRUE);
-        if (!SetWindowSubclass(field, FieldProc, 1, reinterpret_cast<DWORD_PTR>(this))) ThrowLastError("SetWindowSubclass(search field)");
         status = CreateWindowExW(0, WC_STATICW, L"", WS_CHILD | WS_VISIBLE | SS_LEFT | SS_ENDELLIPSIS, 0, 0, 0, 0, window,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(StatusId)), instance, nullptr);
         if (!status) ThrowLastError("CreateWindowEx(search status)");
@@ -71,15 +71,19 @@ namespace xournal::app
             LVCOLUMNW column{ LVCF_TEXT | LVCF_WIDTH };
             column.pszText = const_cast<wchar_t*>(titles[i]);
             column.cx = Dip(window, widths[i]);
-            if (ListView_InsertColumn(list, i, &column) < 0) ThrowLastError("ListView_InsertColumn (search)");
+            if (ListView_InsertColumn(list, i, &column) < 0) ThrowHr("LVM_INSERTCOLUMN (search)", E_FAIL);
         }
         for (HWND control : { field, status, list }) ChildControls::UseMessageFont(control);
+        if (!SetWindowSubclass(field, FieldProc, 1, reinterpret_cast<DWORD_PTR>(this)))
+            ThrowHr("SetWindowSubclass (search field)", E_FAIL);
+        pending.Release();
     }
 
     SearchPane::~SearchPane()
     {
-        if (field) RemoveWindowSubclass(field, FieldProc, 1);
-        if (window && IsWindow(window)) SetWindowLongPtrW(window, GWLP_USERDATA, 0);
+        if (IsWindow(field) && !RemoveWindowSubclass(field, FieldProc, 1))
+            LogError("RemoveWindowSubclass (search field) failed");
+        if (window && IsWindow(window)) ChildControls::SetWindowData(window, nullptr);
     }
 
     void SearchPane::FocusField()
@@ -111,7 +115,7 @@ namespace xournal::app
         else if (hits.empty()) text = L"Keine Treffer";
         else if (current) text = std::format(L"Treffer {} von {}", *current + 1, hits.size());
         else text = std::format(L"{} Treffer", hits.size());
-        SetWindowTextW(status, text.c_str());
+        if (!SetWindowTextW(status, text.c_str())) ThrowLastError("SetWindowText (search status)");
         filling = true;
         ListView_SetItemCountEx(list, static_cast<int>(rows.size()), LVSICF_NOSCROLL);
         ListView_SetItemState(list, -1, 0, LVIS_SELECTED | LVIS_FOCUSED);
@@ -155,23 +159,30 @@ namespace xournal::app
 
     void SearchPane::Layout()
     {
-        RECT rc;
-        GetClientRect(window, &rc);
+        RECT rc{};
+        if (!GetClientRect(window, &rc)) ThrowLastError("GetClientRect (search pane)");
         int gap = Dip(window, GapDip), fieldHeight = Dip(window, FieldHeightDip), statusHeight = Dip(window, StatusHeightDip);
-        int width = rc.right - 2 * gap;
-        MoveWindow(field, gap, gap, width, fieldHeight, TRUE);
-        MoveWindow(status, gap, gap * 2 + fieldHeight, width, statusHeight, TRUE);
+        int width = std::max(0, static_cast<int>(rc.right) - 2 * gap);
+        if (!MoveWindow(field, gap, gap, width, fieldHeight, TRUE)) ThrowLastError("MoveWindow (search field)");
+        if (!MoveWindow(status, gap, gap * 2 + fieldHeight, width, statusHeight, TRUE))
+            ThrowLastError("MoveWindow (search status)");
         int top = gap * 2 + fieldHeight + statusHeight;
-        MoveWindow(list, 0, top, rc.right, rc.bottom - top, TRUE);
+        if (!MoveWindow(list, 0, top, rc.right, std::max(0, static_cast<int>(rc.bottom) - top), TRUE))
+            ThrowLastError("MoveWindow (search results)");
         // The hit's text gets what the page and kind columns leave.
         int rest = rc.right - Dip(window, PageColumnDip) - Dip(window, KindColumnDip) - GetSystemMetricsForDpi(SM_CXVSCROLL, GetDpiForWindow(window));
-        ListView_SetColumnWidth(list, 2, std::max(rest, Dip(window, 120)));
+        if (!ListView_SetColumnWidth(list, 2, std::max(rest, Dip(window, 120))))
+            ThrowHr("LVM_SETCOLUMNWIDTH (search results)", E_FAIL);
     }
 
     LRESULT SearchPane::Handle(UINT message, WPARAM wp, LPARAM lp)
     {
         switch (message)
         {
+        case WM_DPICHANGED_AFTERPARENT:
+            for (HWND control : { field, status, list }) ChildControls::UseMessageFont(control);
+            Layout();
+            return 0;
         case WM_SIZE:
             Layout();
             return 0;
@@ -231,7 +242,7 @@ namespace xournal::app
     {
         if (message == WM_NCCREATE)
         {
-            SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(reinterpret_cast<CREATESTRUCTW*>(lp)->lpCreateParams));
+            if (!ChildControls::SetWindowData(hwnd, reinterpret_cast<CREATESTRUCTW*>(lp)->lpCreateParams)) return FALSE;
         }
         auto self = reinterpret_cast<SearchPane*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
         if (!self || !self->list) return DefWindowProcW(hwnd, message, wp, lp);

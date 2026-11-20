@@ -92,7 +92,7 @@ namespace xournal::app
             [this](std::string const&, std::exception_ptr error)
             {
                 std::wstring text = std::format(L"Wiederherstellungskopie fehlgeschlagen: {}", ErrorText(error));
-                UiQueue::Post("recovery: report failure", [this, text] { messages(text, ToastKind::Warning); });
+                UiQueue::Post("recovery: report failure", [this, text] { messages(text, MessageKind::Warning); });
             });
         // Windows starts the app again after a crash or an update restart (if it ran 60 s); the start offers the copy.
         HRESULT hr = RegisterApplicationRestart(L"", 0);
@@ -173,7 +173,7 @@ namespace xournal::app
         catch (...)
         {
             LogException("recovery: find copies");
-            messages(std::format(L"Wiederherstellungskopien nicht lesbar: {}", ErrorText()), ToastKind::Error);
+            messages(std::format(L"Wiederherstellungskopien nicht lesbar: {}", ErrorText()), MessageKind::Error);
             return false;
         }
         for (auto const& entry : entries)
@@ -200,7 +200,7 @@ namespace xournal::app
             catch (...)
             {
                 LogException(std::format("recovery: recycle {}", ToUtf8(entry.id)));
-                messages(std::format(L"Verwerfen fehlgeschlagen: {}", ErrorText()), ToastKind::Error);
+                messages(std::format(L"Verwerfen fehlgeschlagen: {}", ErrorText()), MessageKind::Error);
             }
             return false;
         }
@@ -226,7 +226,7 @@ namespace xournal::app
         {
             LogException(std::format("recovery: restore {}", ToUtf8(entry.id)));
             messages(std::format(L"Wiederherstellung fehlgeschlagen: {} – die Kopie bleibt erhalten: {}", ErrorText(),
-                entry.copyPath.native()), ToastKind::Error);
+                entry.copyPath.native()), MessageKind::Error);
             return false;
         }
     }

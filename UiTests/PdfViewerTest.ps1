@@ -159,9 +159,9 @@ Invoke-Test {
     ExpectPage 1 'back on page 1'
 
     # Middle-button drag pans the pages.
-    [Inj]::MoveMouse(500, 500)
+    [Inj]::MoveMouse(500, 420)
     [ViewerInput]::Button(0x20, 0)  # middle down
-    for ($y = 500; $y -ge 150; $y -= 10) { [Inj]::MoveMouse(500, $y) }
+    for ($y = 420; $y -ge 150; $y -= 10) { [Inj]::MoveMouse(500, $y) }
     [ViewerInput]::Button(0x40, 0)  # middle up
     Start-Sleep 1
     Expect 'viewer: middle-button pan' 'the middle button pans'

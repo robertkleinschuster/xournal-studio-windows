@@ -5,13 +5,14 @@
 //   - what lies on it - ink, pictures, texts (a page without PDF: its paper too) - drawn by the PDF export for that one
 //     page without the background PDF into memory (pdf::ExportToMemory; nothing of the user's notes goes to a file) and
 //     rendered, transparent on a PDF page. Drawn again only for pages an edit touched.
-// Pages nearest to the page in view first, only while the pane is shown, a moment after the last change. A layer that
+// Pages nearest to the visible list items first, only while the pane is shown. A layer that
 // fails is logged and left (not tried again until the page is edited). Kept per page object, so pages inserted, moved
 // or deleted keep their images; far pages give their bitmaps back.
 
 #include "DelayedAction.h"
 #include "DocumentView.h"
 #include "PdfPageRenderer.h"
+#include "ThumbnailDrawing.h"
 
 #include "xournal/model/XoppPage.h"
 
@@ -33,8 +34,8 @@ namespace xournal::app
 
         struct Layers
         {
-            std::shared_ptr<CpuBitmap> background; // the PDF page (nothing yet, or not a PDF page)
-            std::shared_ptr<CpuBitmap> content;    // what lies on the page (transparent on a PDF page)
+            std::shared_ptr<ThumbnailBitmap> background; // the PDF page (nothing yet, or not a PDF page)
+            std::shared_ptr<ThumbnailBitmap> content;    // what lies on the page (transparent on a PDF page)
             double aspect = 1.414;                 // height / width
         };
 
@@ -43,6 +44,7 @@ namespace xournal::app
 
         /// Thumbnails are made only while the pane is shown.
         void SetActive(bool active);
+        void SetPaneFocus(int index);
         /// A new document (all thumbnails start over).
         void Reset();
         /// An edit touched these pages (indices now).
@@ -56,22 +58,26 @@ namespace xournal::app
     private:
         struct Thumb
         {
-            std::shared_ptr<CpuBitmap> background, content;
+            std::shared_ptr<ThumbnailBitmap> background, content;
+            std::shared_ptr<CpuBitmap> backgroundForUpload, contentForUpload;
             bool backgroundTried = false; // rendered, or failed (not tried again)
             bool contentStale = true;
-            bool contentRunning = false;
+            std::uint64_t backgroundRequest = 0;
+            std::uint64_t contentRequest = 0;
         };
 
         void Refresh();
         void RequestBackground(int index, XoppPage const& page, std::shared_ptr<XoppPage> const& key);
         void RequestContent(int index, std::shared_ptr<XoppPage> const& page, XmlElementPtr snapshot);
         int IndexOf(XoppPage const* page) const;
-        void Trim(int focus);
+        void Trim(std::set<XoppPage const*> const& retained);
+        void Cancel(Thumb& thumb);
 
         DocumentView& view;
         inkpages::WritingSurface& surface;
         SIZE box{};
         bool active = false;
+        int paneFocus = -1;
         std::uint64_t generation = 0; // a new document's results are not mixed with the old one's
         std::map<XoppPage const*, Thumb> thumbs;
         std::map<XoppPage const*, std::shared_ptr<XoppPage>> keep; // the pages the map's keys point to

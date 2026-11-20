@@ -6,7 +6,6 @@
 #include "xournal/base/Text.h"
 
 #include <format>
-#include <vector>
 
 namespace xournal::project
 {
@@ -36,7 +35,7 @@ namespace xournal::project
     }
 
     FolderWatcher::FolderWatcher(std::filesystem::path folderToWatch, std::function<void()> onChanged)
-        : folder(Paths::Full(folderToWatch)), changed(std::move(onChanged))
+        : folder(Paths::Full(folderToWatch)), changed(std::move(onChanged)), buffer(BufferSize / sizeof(DWORD))
     {
         HANDLE dir = CreateFileW(folder.c_str(), FILE_LIST_DIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
             nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED, nullptr);
@@ -45,26 +44,35 @@ namespace xournal::project
             ThrowLastError(std::format("watch folder {}", ToUtf8(folder.native())));
         }
         directory.reset(dir);
-        HANDLE stopEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
-        if (!stopEvent)
+        io = CreateThreadpoolIo(directory.get(), Completed, this, nullptr);
+        if (!io) ThrowLastError("CreateThreadpoolIo (folder watcher)");
+        try
         {
-            ThrowLastError("folder watcher: CreateEvent");
+            Read();
         }
-        stop.reset(stopEvent);
-        worker = std::thread([this] { Run(); });
+        catch (...)
+        {
+            directory.reset();
+            CloseThreadpoolIo(io);
+            throw;
+        }
     }
 
     FolderWatcher::~FolderWatcher()
     {
-        if (!SetEvent(stop.get()))
         {
-            // The worker would never end: a destructor cannot report this but by the log and by not hanging forever.
-            LogError(std::format("folder watcher: SetEvent: {} (worker left running)",
-                DescribeHr(HRESULT_FROM_WIN32(GetLastError()))));
-            worker.detach();
-            return;
+            std::scoped_lock guard(lock);
+            stopping = true;
+            if (!CancelIoEx(directory.get(), &overlapped))
+            {
+                DWORD error = GetLastError();
+                if (error != ERROR_NOT_FOUND)
+                    LogError(std::format("CancelIoEx (folder watcher): {}", DescribeHr(HRESULT_FROM_WIN32(error))));
+            }
         }
-        worker.join();
+        WaitForThreadpoolIoCallbacks(io, FALSE);
+        directory.reset();
+        CloseThreadpoolIo(io);
     }
 
     bool FolderWatcher::IsInHiddenFolder(std::filesystem::path const& root, std::filesystem::path const& p)
@@ -85,11 +93,12 @@ namespace xournal::project
         return IsHiddenPart(parts.back()) && IsDirectory(Paths::Full(p));
     }
 
-    bool FolderWatcher::HasShownChange(std::uint8_t const* buffer) const
+    bool FolderWatcher::HasShownChange() const
     {
+        auto const* records = reinterpret_cast<std::uint8_t const*>(buffer.data());
         for (DWORD offset = 0;;)
         {
-            auto const* info = reinterpret_cast<FILE_NOTIFY_INFORMATION const*>(buffer + offset);
+            auto const* info = reinterpret_cast<FILE_NOTIFY_INFORMATION const*>(records + offset);
             std::wstring_view name(info->FileName, info->FileNameLength / sizeof(wchar_t));
             if (!IsInHiddenFolder(folder, folder / name))
             {
@@ -115,67 +124,43 @@ namespace xournal::project
         }
     }
 
-    void FolderWatcher::Run() noexcept
+    void FolderWatcher::Read()
+    {
+        std::scoped_lock guard(lock);
+        if (stopping) return;
+        overlapped = {};
+        StartThreadpoolIo(io);
+        if (!ReadDirectoryChangesW(directory.get(), buffer.data(), BufferSize, TRUE, Filter, nullptr, &overlapped, nullptr))
+        {
+            DWORD error = GetLastError();
+            CancelThreadpoolIo(io); // no completion will arrive for the failed submission
+            ThrowHr(std::format("watch folder {}", ToUtf8(folder.native())), HRESULT_FROM_WIN32(error));
+        }
+    }
+
+    void CALLBACK FolderWatcher::Completed(PTP_CALLBACK_INSTANCE, void* context, void*, ULONG result, ULONG_PTR bytes, PTP_IO) noexcept
+    {
+        static_cast<FolderWatcher*>(context)->OnCompleted(result, bytes);
+    }
+
+    void FolderWatcher::OnCompleted(ULONG result, ULONG_PTR bytes) noexcept
     {
         try
         {
-            Handle done(CreateEventW(nullptr, TRUE, FALSE, nullptr));
-            if (!done)
             {
-                ThrowLastError("folder watcher: CreateEvent");
+                std::scoped_lock guard(lock);
+                if (stopping) return;
             }
-            std::vector<DWORD> storage(BufferSize / sizeof(DWORD)); // DWORD-aligned, as ReadDirectoryChangesW requires
-            auto* buffer = reinterpret_cast<std::uint8_t*>(storage.data());
-            for (;;)
+            if (result != ERROR_SUCCESS && result != ERROR_NOTIFY_ENUM_DIR)
+                ThrowHr(std::format("watch folder {}", ToUtf8(folder.native())), HRESULT_FROM_WIN32(result));
+            if (result == ERROR_NOTIFY_ENUM_DIR || bytes == 0)
             {
-                OVERLAPPED overlapped{};
-                overlapped.hEvent = done.get();
-                if (!ReadDirectoryChangesW(directory.get(), buffer, BufferSize, TRUE, Filter, nullptr, &overlapped, nullptr))
-                {
-                    ThrowLastError(std::format("watch folder {}", ToUtf8(folder.native())));
-                }
-                HANDLE events[] = { done.get(), stop.get() };
-                DWORD signaled = WaitForMultipleObjects(2, events, FALSE, INFINITE);
-                if (signaled == WAIT_FAILED)
-                {
-                    ThrowLastError("folder watcher: WaitForMultipleObjects");
-                }
-                DWORD bytes = 0;
-                if (signaled == WAIT_OBJECT_0 + 1)
-                {
-                    // Stopping: cancel the read and wait until Windows no longer writes into the buffer.
-                    if (!CancelIoEx(directory.get(), &overlapped) && GetLastError() != ERROR_NOT_FOUND)
-                    {
-                        ThrowLastError("folder watcher: CancelIoEx");
-                    }
-                    if (!GetOverlappedResult(directory.get(), &overlapped, &bytes, TRUE) &&
-                        GetLastError() != ERROR_OPERATION_ABORTED)
-                    {
-                        ThrowLastError("folder watcher: GetOverlappedResult (stopping)");
-                    }
-                    return;
-                }
-                if (!GetOverlappedResult(directory.get(), &overlapped, &bytes, FALSE))
-                {
-                    if (GetLastError() == ERROR_NOTIFY_ENUM_DIR)
-                    {
-                        Log(std::format("folder watcher: changes in {} lost (too many) - read again", ToUtf8(folder.native())));
-                        Raise();
-                        continue;
-                    }
-                    ThrowLastError(std::format("watch folder {}", ToUtf8(folder.native())));
-                }
-                if (bytes == 0)
-                {
-                    // The buffer overflowed: changes were lost, so everything is read again.
-                    Log(std::format("folder watcher: changes in {} lost (buffer full) - read again", ToUtf8(folder.native())));
-                    Raise();
-                }
-                else if (HasShownChange(buffer))
-                {
-                    Raise();
-                }
+                Log(std::format("folder watcher: changes in {} lost - read again", ToUtf8(folder.native())));
+                Raise();
             }
+            else if (HasShownChange())
+                Raise();
+            Read();
         }
         catch (...)
         {

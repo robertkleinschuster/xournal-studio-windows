@@ -24,6 +24,12 @@ namespace xournal::app
             tool.lpszText = const_cast<wchar_t*>(text);
             return tool;
         }
+
+        void DestroyTooltip(HWND tooltip)
+        {
+            if (!DestroyWindow(tooltip))
+                LogError(std::format("DestroyWindow (link tooltip): {}", DescribeHr(HRESULT_FROM_WIN32(GetLastError()))));
+        }
     }
 
     LinkHover::LinkHover(HWND owner, PdfLinks& links) : owner(owner), links(links)
@@ -32,13 +38,18 @@ namespace xournal::app
             CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, owner, nullptr, GetModuleHandleW(nullptr), nullptr);
         if (!tip) ThrowLastError("CreateWindowEx(link tooltip)");
         TTTOOLINFOW tool = Tool(owner, L"");
-        if (!SendMessageW(tip, TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&tool))) ThrowLastError("TTM_ADDTOOL(link tooltip)");
+        if (!SendMessageW(tip, TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&tool)))
+        {
+            DestroyTooltip(tip);
+            ThrowHr("TTM_ADDTOOL(link tooltip)", E_FAIL);
+        }
         SendMessageW(tip, TTM_SETMAXTIPWIDTH, 0, MulDiv(MaxWidthDip, static_cast<int>(GetDpiForWindow(owner)), 96));
     }
 
     LinkHover::~LinkHover()
     {
-        if (tip) DestroyWindow(tip);
+        // DestroyWindow on the owner may already have destroyed its tooltip.
+        if (IsWindow(tip)) DestroyTooltip(tip);
     }
 
     LPCWSTR LinkHover::CursorAt(int page, inkpages::PointF point)

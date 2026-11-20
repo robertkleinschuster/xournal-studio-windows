@@ -1,6 +1,6 @@
 #pragma once
 
-// The Aufgaben tab's form for a new task: its text (Enter adds), an optional due date (a check box "Fällig am:" and a date picker enabled while it is checked; none by default),
+// The Aufgaben tab's form for a new task: its text (Enter adds), an optional due date using the date picker's check box,
 // "Mit dieser Seite verknüpfen" and the Hinzufügen button. It only collects; TasksPane writes the task.
 
 #include "xournal/model/TodoTxt.h"
@@ -30,6 +30,7 @@ namespace xournal::app
 
         /// Places the controls from `top`; returns the y below them.
         int Layout(int left, int top, int width, int dpi);
+        void UpdateFonts();
         void Show(bool shown);
         void EnableLink(bool enabled);
 
@@ -45,7 +46,7 @@ namespace xournal::app
     private:
         static LRESULT CALLBACK EditProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp, UINT_PTR id, DWORD_PTR data);
 
-        int addId, hasDueId;
-        HWND text = nullptr, hasDue = nullptr, due = nullptr, linkPage = nullptr, addButton = nullptr;
+        int addId;
+        HWND text = nullptr, dueLabel = nullptr, due = nullptr, linkPage = nullptr, addButton = nullptr;
     };
 }

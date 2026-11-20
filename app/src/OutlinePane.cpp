@@ -34,6 +34,7 @@ namespace xournal::app
         }
         window = CreateWindowExW(0, ClassName, L"", WS_CHILD | WS_CLIPCHILDREN, 0, 0, 0, 0, parent, nullptr, instance, this);
         if (!window) ThrowLastError("CreateWindowEx(outline pane)");
+        ChildControls::PendingPaneWindow pending(window);
         // TVS_LINESATROOT (only effective with TVS_HASLINES): the top-level entries get their expand chevron too - a single
         // tap on it opens an entry, handy with the finger (user, 2026-11-20). The Explorer theme draws chevrons, no lines.
         tree = CreateWindowExW(0, WC_TREEVIEWW, L"Inhalt der PDF", WS_CHILD | WS_VISIBLE | WS_TABSTOP | TVS_HASBUTTONS |
@@ -44,21 +45,20 @@ namespace xournal::app
         if (FAILED(hr)) LogError(std::format("outline pane: theme not set: {}", DescribeHr(hr)));
         TreeView_SetExtendedStyle(tree, TVS_EX_DOUBLEBUFFER | TVS_EX_AUTOHSCROLL, TVS_EX_DOUBLEBUFFER | TVS_EX_AUTOHSCROLL);
         ChildControls::UseMessageFont(tree);
+        pending.Release();
     }
 
     OutlinePane::~OutlinePane()
     {
-        if (window && IsWindow(window)) SetWindowLongPtrW(window, GWLP_USERDATA, 0);
+        if (window && IsWindow(window)) ChildControls::SetWindowData(window, nullptr);
     }
 
     void OutlinePane::Show(std::vector<pdf::OutlineEntry> const& outline)
     {
-        SendMessageW(tree, WM_SETREDRAW, FALSE, 0);
-        TreeView_DeleteAllItems(tree);
+        ChildControls::BatchRedraw redraw(tree);
+        if (!TreeView_DeleteAllItems(tree)) ThrowHr("TVM_DELETEITEM (outline)", E_FAIL);
         destinations.clear();
         Add(TVI_ROOT, outline);
-        SendMessageW(tree, WM_SETREDRAW, TRUE, 0);
-        InvalidateRect(tree, nullptr, TRUE);
     }
 
     void OutlinePane::Add(HTREEITEM parent, std::vector<pdf::OutlineEntry> const& entries)
@@ -73,7 +73,7 @@ namespace xournal::app
             insert.item.lParam = static_cast<LPARAM>(destinations.size());
             destinations.push_back(entry.destination);
             HTREEITEM item = TreeView_InsertItem(tree, &insert);
-            if (!item) ThrowLastError("TreeView_InsertItem (outline)");
+            if (!item) ThrowHr("TVM_INSERTITEM (outline)", E_FAIL);
             Add(item, entry.children);
         }
     }
@@ -99,6 +99,9 @@ namespace xournal::app
     {
         switch (message)
         {
+        case WM_DPICHANGED_AFTERPARENT:
+            ChildControls::UseMessageFont(tree);
+            return 0;
         case WM_SIZE:
             MoveWindow(tree, 0, 0, LOWORD(lp), HIWORD(lp), TRUE);
             return 0;
@@ -140,7 +143,7 @@ namespace xournal::app
     {
         if (message == WM_NCCREATE)
         {
-            SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(reinterpret_cast<CREATESTRUCTW*>(lp)->lpCreateParams));
+            if (!ChildControls::SetWindowData(hwnd, reinterpret_cast<CREATESTRUCTW*>(lp)->lpCreateParams)) return FALSE;
         }
         auto self = reinterpret_cast<OutlinePane*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
         if (!self || !self->tree) return DefWindowProcW(hwnd, message, wp, lp);

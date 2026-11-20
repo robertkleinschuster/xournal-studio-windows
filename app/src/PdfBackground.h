@@ -43,8 +43,8 @@ namespace xournal::app
     class PdfBackground : public std::enable_shared_from_this<PdfBackground>
     {
     public:
-        /// `ready(page)`: a page's bitmap arrived (UI thread) - the underlay of that document page is drawn again.
-        PdfBackground(RenderQueue& queue, std::uint64_t generation, std::function<void(int page)> ready);
+        /// Bitmap arrivals on the UI thread, grouped for one redraw.
+        PdfBackground(RenderQueue& queue, std::uint64_t generation, std::function<void(std::set<int> const&)> ready);
 
         /// Starts loading the PDF (render thread).
         void Load(std::filesystem::path const& pdf);
@@ -56,7 +56,7 @@ namespace xournal::app
         /// A PDF page rendered once at `width` x `height` pixels for a thumbnail (render thread, near `priorityPage` first;
         /// a newer request for the same PDF page replaces a waiting one). `done` runs on the UI thread, with nothing when
         /// the page cannot be rendered (logged) or the PDF is not loaded.
-        void RenderPage(int pdfPage, UINT width, UINT height, int priorityPage,
+        void RenderPage(std::uint64_t key, int pdfPage, UINT width, UINT height, int priorityPage,
             std::function<void(std::shared_ptr<CpuBitmap>)> done);
         /// Explicit copy of an area from the loaded PDF. Completion runs on the render thread.
         void RenderArea(int pdfPage, int documentPage, Rect area, double scale,
@@ -127,7 +127,7 @@ namespace xournal::app
 
         RenderQueue& queue;
         std::uint64_t generation;
-        std::function<void(int)> ready;
+        std::function<void(std::set<int> const&)> ready;
         std::shared_ptr<Source> source = std::make_shared<Source>();
         std::map<PageKey, Rendered> rendered; // UI thread
         std::map<int, Size> shownSizes;   // by PDF page, read once (UI thread)

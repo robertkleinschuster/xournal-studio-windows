@@ -1,5 +1,6 @@
 #include "GoToPageDialog.h"
 
+#include "Dialogs.h"
 #include "Resources.h"
 
 #include "xournal/base/Error.h"
@@ -29,9 +30,10 @@ namespace xournal::app::GoToPageDialog
                 case WM_INITDIALOG:
                 {
                     auto state = reinterpret_cast<State*>(lp);
-                    SetWindowLongPtrW(dialog, DWLP_USER, lp);
+                    Dialogs::SetState(dialog, lp);
                     std::wstring label = std::format(L"&Seite (1 – {}):", state->count);
-                    SetDlgItemTextW(dialog, IDC_GOTO_LABEL, label.c_str());
+                    if (!SetDlgItemTextW(dialog, IDC_GOTO_LABEL, label.c_str()))
+                        ThrowLastError("SetDlgItemText (go to page)");
                     HWND spin = GetDlgItem(dialog, IDC_GOTO_SPIN);
                     SendMessageW(spin, UDM_SETBUDDY, reinterpret_cast<WPARAM>(GetDlgItem(dialog, IDC_GOTO_PAGE)), 0);
                     SendMessageW(spin, UDM_SETRANGE32, 1, state->count);
@@ -57,12 +59,12 @@ namespace xournal::app::GoToPageDialog
                             return TRUE;
                         }
                         state->chosen = page - 1;
-                        EndDialog(dialog, IDOK);
+                        if (!EndDialog(dialog, IDOK)) ThrowLastError("EndDialog (go to page)");
                         return TRUE;
                     }
                     if (LOWORD(wp) == IDCANCEL)
                     {
-                        EndDialog(dialog, IDCANCEL);
+                        if (!EndDialog(dialog, IDCANCEL)) ThrowLastError("EndDialog (go to page)");
                         return TRUE;
                     }
                     break;
@@ -71,7 +73,7 @@ namespace xournal::app::GoToPageDialog
             catch (...)
             {
                 LogException("Gehe zu Seite");
-                EndDialog(dialog, IDCANCEL);
+                if (!EndDialog(dialog, IDCANCEL)) LogError("EndDialog (go to page error) failed");
                 return TRUE;
             }
             return FALSE;
@@ -84,7 +86,7 @@ namespace xournal::app::GoToPageDialog
         State state{ current, count };
         INT_PTR result = DialogBoxParamW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDD_GOTO_PAGE), owner, Proc,
             reinterpret_cast<LPARAM>(&state));
-        if (result == -1) ThrowLastError("DialogBoxParam(Gehe zu Seite)");
+        if (result <= 0) ThrowLastError("DialogBoxParam (go to page)");
         if (result != IDOK || state.chosen < 0) return std::nullopt;
         Log(std::format("go to page {} of {}", state.chosen + 1, count));
         return state.chosen;

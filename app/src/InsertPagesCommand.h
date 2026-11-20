@@ -12,7 +12,7 @@
 
 #include "DocumentSession.h"
 #include "DocumentView.h"
-#include "Toast.h"
+#include "MessageKind.h"
 
 #include <windows.h>
 
@@ -25,7 +25,7 @@ namespace xournal::app
     {
     public:
         InsertPagesCommand(HWND owner, DocumentSession& session, DocumentView& view,
-            std::function<void(std::wstring const&, ToastKind)> message);
+            std::function<void(std::wstring const&, MessageKind)> message);
 
         /// Inserts pages before or after page `around` (0-based; the dialog asks which).
         void Insert(int around);
@@ -40,7 +40,7 @@ namespace xournal::app
         HWND owner;
         DocumentSession& session;
         DocumentView& view;
-        std::function<void(std::wstring const&, ToastKind)> message;
+        std::function<void(std::wstring const&, MessageKind)> message;
         bool running = false;
     };
 }

@@ -36,6 +36,7 @@ Requires Windows 11 and Visual Studio 2026 with C++ (its CMake is used). Clone w
                        # then a start check. Refused while the installed app runs.
 .\install.ps1 -SkipInstall   # build and stage only (.local-build\install-stage)
 .\install.ps1 -FromCi       # install the app CI built for the newest green main run instead of building
+.\install.ps1 -FromBuild    # install the existing local build without recompiling
 UiTests\Run-AppTest.ps1 -Test UiTests\TasksTest.ps1 -Extra <InkPages' uiaprobe.exe>   # a UI test in Windows Sandbox
 ```
 
@@ -74,7 +75,7 @@ base  <-  model  <-  io  <-  pdf, pdftext, search, import, services/ (project, g
 | `model` | `XournalModel` | The document in memory: XML tree (`Xml`), `XoppDocument`, `XoppPage` with `PageInk` (stroke elements bound to the ink layer) and `PageImages`, `Strokes` (element <-> ink, `StrokeShape`), `XoppImage`, `XoppText`, `XoppClip`, `Background`, `BackgroundRuling`, references (`src/References.h`), `Snapshot`, `Attachments`, `CopyPages`, `DocumentNames`, `TodoTxt`. No file contents read or written, no UI. | base; crypt32 (base64), Windows' ICU (characters) |
 | `io` | `XournalIo` | `XmlText` (XmlLite), `Gzip` (zlib), `Files` (whole-file reads, `<file>~` then replace), `DocumentFile` (load/save/Save As with attachments) | model; xmllite, shlwapi, zlib |
 | `pdf` | `XournalPdf` | `RenderTiles` (the tile grid pages are rendered in on screen); PDF export (`PdfExport`: export pages in the model's terms - `StrokeShape` parts, `BackgroundRuling`, `XoppText`, picture placement; `DocumentExport`: the app's one call, `PrepareExport` on the ink thread + `ExportDocument` on any thread, never over the background PDF) and `PdfPageAppender` (pages of another PDF appended to the document's PDF, annotations flattened; links to the outside - URI actions - stay, internal GoTo links are dropped as they would point into the source); `TextBoxLayout` (the DirectWrite layout of a text box, shared by the export and the search); `PdfAreaRenderer` (areas of pages as PNG with Windows.Data.Pdf on its own Direct3D device, transparent; from a file or from memory); `ClipPicture` (a copied selection as a transparent PNG: exported onto one page in memory, rendered); `PdfNavigation` (from the PDF's bytes: the outline as a tree with named destinations resolved, and a page's links - GoTo or URI - with their areas; places in `PageFrame`'s shown coordinates: crop box turned by /Rotate, as Windows.Data.Pdf shows the page). Background PDF pages are kept exactly (form XObjects; text stays text), texts are embedded TrueType subsets. Draws the model's shapes and rulings: pdf depends on model, model never on pdf. | io; qpdf 12.4.2 (static, native crypto), libjpeg-turbo 3.2.1 (qpdf needs it), the shared zlib; DirectWrite, Font Subsetting API (fontsub), WIC |
-| `services/project` | `XournalProject` | `ProjectTree` (the folder as on disk: Windows-hidden/system items left out, links shown but not entered, File Explorer's order - `CompareStringEx` with `SORT_DIGITSASNUMBERS`, ties ordinal), `ProjectFiles` (name validation, "Name (2)", `IsAtOrBelow`/`MapRenamed`/`SamePath`, rename exactly one item with `MoveFileEx`, new folder, recycle bin with `IFileOperation`, `Transfer` = copy/move with `IFileOperation` as File Explorer's paste: the shell's conflict questions, undo record, "Name - Kopie" beside the original, where each item went from `IFileOperationProgressSink`), `ProjectTree::AddMissing` (deleted files of the last commit at their place, marked missing), `FileClipboard` (files on the clipboard as File Explorer has them: CF_HDROP + "Preferred DropEffect"), `FolderWatcher` (`ReadDirectoryChangesW` on its own thread, hidden folders such as .git ignored, nothing escapes the thread) | base; shell32, ole32 |
+| `services/project` | `XournalProject` | `ProjectTree` (the folder as on disk: Windows-hidden/system items left out, links shown but not entered, File Explorer's order - `CompareStringEx` with `SORT_DIGITSASNUMBERS`, ties ordinal), `ProjectFiles` (name validation, "Name (2)", `IsAtOrBelow`/`MapRenamed`/`SamePath`, rename exactly one item with `MoveFileEx`, new folder, recycle bin with `IFileOperation`, `Transfer` = copy/move with `IFileOperation` as File Explorer's paste: the shell's conflict questions, undo record, "Name - Kopie" beside the original, where each item went from `IFileOperationProgressSink`), `ProjectTree::AddMissing` (deleted files of the last commit at their place, marked missing), `FileClipboard` (files on the clipboard as File Explorer has them: CF_HDROP + "Preferred DropEffect"), `FolderWatcher` (`ReadDirectoryChangesW` with thread-pool I/O, hidden folders such as .git ignored, callback failures logged) | base; shell32, ole32 |
 | `services/git` | `XournalGit` | `GitSync` (status with folders: modified > new, renamed and deleted shown as modified; sync = commit all, fetch, rebase or fast-forward, push, a conflict aborted and thrown as `SyncConflict`; `GetDivergence` = commits ahead/behind the upstream branch from the local references, `Fetch` = the upstream's remote, remote-tracking references only - a fetch and a sync never run at once; `PlanDiscard`/`Discard` of a file or folder: tracked files checked out from HEAD - deleted ones come back -, new files listed for the recycle bin and taken out of the index), `SyncStatus` (the sync button's text "Synchronisieren   3  ↑1  ↓2" and its tooltip lines), `GitCredentials` (Credential Manager: `CredReadW` of `git:https://host`, UTF-8 or UTF-16 secrets) | base; libgit2 1.9.7 (dependency cache, static, WinHTTP, the shared zlib) |
 | `services/tasks` | `XournalTasks` | `TaskFile` (todo.txt line edits, re-read before each change, line endings/encoding/final newline kept, ANSI refused) | io |
 | `services/recovery` | `XournalRecovery` | `Recovery` (copy + info JSON with the writing process' id and start time in `<app folder>\Recovery-native` - apart from the C# app's `Recovery` folder, so neither app sees the other's copies; abandoned = that process is gone; recycle bin under a readable name), `Autosave` (ordered write/delete queue on a worker; the app's UI decides when) | io, project; Windows.Data.Json |
@@ -115,10 +116,10 @@ Xournal's width is the width at full pressure; Windows ink's size the width at h
 the window's parts to feature classes:
 
 - `MainMenu` (Datei/Bearbeiten/Seite/Ansicht with the C# app's shortcuts (tag `csharp-final`); features of later phases shown disabled),
-  `AppToolbar` (InkPages' toolbar in German with the exe's pen cursors and the app's buttons: Speichern, Als PDF
-  exportieren | Seite einfügen, Seite löschen - the page buttons drawn from path data), `SidePane` (Dateien, Aufgaben,
-  Seiten), `Toast` (a layered popup at the bottom of the surface; Windows 11 InfoBar colors with the system icons;
-  success/info close after 5 s, warnings and errors stay), `Dialogs` (file dialogs, the leave question).
+  `AppToolbar` (InkPages' toolbar in German with the exe's pen cursors and the shared command and tool icons rendered
+  as bitmaps at the toolbar's DPI), `SidePane` (Dateien, Aufgaben,
+  Seiten), `StatusBar` (page, zoom and the latest app message with a tooltip),
+  `Dialogs` (file dialogs, the leave question).
 - `DocumentSession`: new, open (.xopp, .moj, or a PDF as a new document; loaded on the thread pool), save, Save As with
   attachments, the leave question (Speichern / Nicht speichern / Abbrechen); saving only by choice.
 - `DocumentView`: the shown document on InkPages' `WritingSurface` - page sizes from the model, plain paper in the page's
@@ -133,7 +134,7 @@ the window's parts to feature classes:
 - `PageUnderlay` (Direct2D into InkPages' page underlay, upstream's order: background - paper color and
   `BackgroundRuling`, the PDF page, a picture - then each layer's drawn strokes, pictures and texts) with
   `PdfBackground` (the background PDF loaded from memory, pages rendered on `RenderQueue`'s thread by
-  `PdfPageRenderer` - `IPdfRendererNative` on the app's own D3D11 device, released while the app runs -, nearest page
+  `PdfPageRenderer` - `IPdfRendererNative` on an owned D3D11 device through the shared NativePdfRenderer, released while the app runs -, nearest page
   first, cancellable: a small preview of the whole page as the placeholder, then the page at exactly the settled zoom's
   pixels - as one bitmap up to 8 Mpx, beyond in 2048 px tiles (`pdf::TileGrid`) of the area the sheet draws -, each
   rendered once per zoom and kept while scrolling), `PictureBitmaps` (WIC; `<teximage>` PDFs rendered), `TextDrawing`
@@ -166,13 +167,13 @@ the window's parts to feature classes:
   the size of the page in view after it; Seite löschen: asked, cannot be undone, the last page stays; Seite nach oben /
   nach unten: one place, the view follows). Page operations keep the ink's undo history (InkPages'
   `InsertPages`/`RemovePage`/`MovePage`); the app's per-page data follows the same `PageMap`.
-- `PagesPane` (the Seiten tab): the pages as thumbnails in a comctl32 ListView (icon view, a transparent slot image,
-  the page drawn over it in custom draw from `PageThumbnails`, its layers rendered at exactly the drawn size -
-  `ThumbnailDrawing`, also the insert dialog's); a small comctl32 toolbar above it, "Nach oben" / "Nach unten" with Segoe Fluent Icons glyphs
-  (`GlyphImages`), moves the selected page (no drag and drop: the user found it bad for moving pages); its context menu
+- `PagesPane` (the Seiten tab): the pages as rows in a comctl32 ListView. The ListView provides the top visible row
+  for thumbnail loading. `ThumbnailDrawing` draws each preview into its column at render size, also in the insert
+  dialog. A small comctl32 toolbar above the list moves the selected page with "Nach oben" / "Nach unten", using
+  InkPages' Segoe Fluent Icons renderer. The list's context menu
   inserts, moves and deletes pages.
-- `TasksPane` (the Aufgaben tab, `<project>/todo.txt`): `NewTaskForm` (text box with cue banner, a "Fällig am:"
-  check box with the date picker beside it - enabled while checked, as in Windows' dialogs, in the edit dialog too -,
+- `TasksPane` (the Aufgaben tab, `<project>/todo.txt`): `NewTaskForm` (text box with cue banner, an optional due
+  date with the date picker's own check box, also used by the edit dialog,
   Hinzufügen, link to the page in view) above a `TaskListView` - a comctl32 ListView in report view with the
   Explorer theme, column headers Aufgabe / Fällig, check boxes (done), groups Überfällig / Offen / Erledigt with counts,
   info tips, in-place editing (F2; the priority read back as todo.txt writes it, due: and doc: kept - `TodoTxt::EditText`/`WithEditText`) - and "Erledigte anzeigen" below; `TaskEditDialog` (a double-click on a

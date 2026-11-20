@@ -27,7 +27,7 @@ namespace xournal::pdf
     class PdfAreaRenderer
     {
     public:
-        /// Loads the PDF (Windows.Data.Pdf) and creates the device. Throws xournal::Error.
+        /// Loads the PDF into memory (Windows.Data.Pdf). Throws xournal::Error.
         explicit PdfAreaRenderer(std::filesystem::path const& pdf);
         /// The same for a PDF in memory (e.g. one the export wrote only to be rendered).
         explicit PdfAreaRenderer(std::span<std::uint8_t const> pdf);

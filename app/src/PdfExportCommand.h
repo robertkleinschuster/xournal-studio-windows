@@ -2,10 +2,10 @@
 
 // Datei → Als PDF exportieren: asks where (the document's name in its folder; never over its background PDF, so a name
 // that would be that PDF gets " (mit Notizen)"), takes the document as it is now (saved or not) on the UI thread and
-// writes the PDF with the pdf module on the thread pool. The result is a toast as the C# app showed it.
+// writes the PDF with the pdf module on the thread pool. The result goes to the status bar.
 
 #include "DocumentView.h"
-#include "Toast.h"
+#include "MessageKind.h"
 
 #include "xournal/model/XoppDocument.h"
 
@@ -20,14 +20,14 @@ namespace xournal::app
     class PdfExportCommand
     {
     public:
-        PdfExportCommand(HWND owner, DocumentView& view, std::function<void(std::wstring const&, ToastKind)> message);
+        PdfExportCommand(HWND owner, DocumentView& view, std::function<void(std::wstring const&, MessageKind)> message);
 
         void Export(std::shared_ptr<XoppDocument> const& doc);
 
     private:
         HWND owner;
         DocumentView& view;
-        std::function<void(std::wstring const&, ToastKind)> message;
+        std::function<void(std::wstring const&, MessageKind)> message;
         bool running = false;
     };
 }

@@ -1,7 +1,7 @@
 #pragma once
 
 // The side pane's "Seiten" tab (the C# PagesPane): the document's pages as thumbnails, one below the other, in a
-// comctl32 ListView (icon view; one item per page with text and image by callback; the thumbnails are drawn in custom
+// comctl32 ListView (report view; one item per page; the thumbnails are drawn in custom
 // draw from PageThumbnails). A tap goes to the page; the selected page follows the page in view. A comctl32 toolbar
 // above the list moves the selected page up or down ("Nach oben" / "Nach unten", disabled at the first / last page);
 // the context menu inserts a blank page before/after, pages of a PDF or document, moves up/down, deletes (asked by the
@@ -44,11 +44,13 @@ namespace xournal::app
         LRESULT Handle(UINT message, WPARAM wp, LPARAM lp);
         LRESULT OnNotify(NMHDR const& header);
         LRESULT OnCustomDraw(NMLVCUSTOMDRAW& draw);
+        void UpdateThumbnailFocus();
         void DrawThumbnail(HDC dc, RECT const& area, int index);
         void ShowMenu(int index, POINT screen);
         void CreateBar();
         void Layout();
         void UpdateSizes();
+        void ReleaseImageLists();
         SIZE Box() const; // the thumbnails' box in an item's image slot
         void UpdateButtons();
         void MoveBy(int index, int delta);
