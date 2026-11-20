@@ -35,6 +35,12 @@ add_executable(XournalStudio WIN32
     src/OutlinePane.cpp
     src/PdfLinks.cpp
     src/PdfTextSelection.cpp
+    src/LinkHover.cpp
+    src/ViewNavigation.cpp
+    src/GoToPageDialog.cpp
+    src/StatusBar.cpp
+    src/PageContextMenu.cpp
+    src/FileDrop.cpp
     src/PdfOutline.cpp
     src/DocumentSearch.cpp
     src/SearchPane.cpp

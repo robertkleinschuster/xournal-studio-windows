@@ -106,11 +106,28 @@ namespace xournal::settings
                     continue;
                 }
                 JsonObject position = value.GetObject();
-                settings.documentPositions[std::wstring(key)] =
-                    { Number(position, L"verticalOffset", 0), Number(position, L"zoom", 1) };
+                settings.documentPositions[std::wstring(key)] = { static_cast<int>(Number(position, L"page", 0)),
+                    Number(position, L"x", 0), Number(position, L"y", 0), Number(position, L"zoom", 1) };
+            }
+        }
+        if (Has(o, L"recentFiles", JsonValueType::Array))
+        {
+            for (auto const& value : o.GetNamedArray(L"recentFiles"))
+            {
+                if (value.ValueType() == JsonValueType::String && settings.recentFiles.size() < MaxRecentFiles)
+                {
+                    settings.recentFiles.emplace_back(std::wstring(value.GetString()));
+                }
             }
         }
         return settings;
+    }
+
+    void Settings::RememberRecent(std::filesystem::path const& recent)
+    {
+        std::erase_if(recentFiles, [&](std::filesystem::path const& p) { return EqualsIgnoreCase(p.native(), recent.native()); });
+        recentFiles.insert(recentFiles.begin(), recent);
+        if (recentFiles.size() > MaxRecentFiles) recentFiles.resize(MaxRecentFiles);
     }
 
     void Settings::Save() const
@@ -153,11 +170,19 @@ namespace xournal::settings
         for (auto const& [document, position] : documentPositions)
         {
             JsonObject entry;
-            entry.SetNamedValue(L"verticalOffset", JsonValue::CreateNumberValue(position.verticalOffset));
+            entry.SetNamedValue(L"page", JsonValue::CreateNumberValue(position.page));
+            entry.SetNamedValue(L"x", JsonValue::CreateNumberValue(position.x));
+            entry.SetNamedValue(L"y", JsonValue::CreateNumberValue(position.y));
             entry.SetNamedValue(L"zoom", JsonValue::CreateNumberValue(position.zoom));
             positions.SetNamedValue(document, entry);
         }
         o.SetNamedValue(L"documentPositions", positions);
+        JsonArray recent;
+        for (auto const& path : recentFiles)
+        {
+            recent.Append(JsonValue::CreateStringValue(path.native()));
+        }
+        o.SetNamedValue(L"recentFiles", recent);
         std::filesystem::path folder = file.parent_path();
         if (std::error_code error; !folder.empty() && (std::filesystem::create_directories(folder, error), error))
         {

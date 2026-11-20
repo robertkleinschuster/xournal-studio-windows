@@ -21,6 +21,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <vector>
 
@@ -34,7 +35,8 @@ namespace xournal::app
         DocumentView(DocumentView const&) = delete;
         DocumentView& operator=(DocumentView const&) = delete;
 
-        void Show(std::shared_ptr<XoppDocument> doc);
+        /// Shows a document at `place` (its last position), else at the page width from the top.
+        void Show(std::shared_ptr<XoppDocument> doc, std::optional<inkpages::ViewPlace> place = std::nullopt);
 
         /// Inserts a page at `index` (InkPages keeps the history; the app's per-page data follows the same PageMap) and
         /// scrolls to it.
@@ -57,6 +59,8 @@ namespace xournal::app
         std::function<void(std::set<int> const&)> pagesEdited;
         /// The view moved or zoomed (the page in view may be another).
         std::function<void()> viewMoved;
+        /// Pages were inserted, removed or moved (the app's places of pages follow `map`).
+        std::function<void(inkpages::PageMap const& map)> pagesRemapped;
         /// The background PDF and its navigation are loaded (the outline can be shown; UI thread).
         std::function<void()> pdfLoaded;
 

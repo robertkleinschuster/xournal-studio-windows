@@ -26,14 +26,24 @@ namespace xournal::app
     {
     }
 
-    void DocumentSession::Show(std::shared_ptr<XoppDocument> next)
+    void DocumentSession::Show(std::shared_ptr<XoppDocument> next, std::optional<std::filesystem::path> from)
     {
+        if (doc && leaving) leaving();
         doc = std::move(next);
+        openedFrom = std::move(from);
         ++shownCount;
         changedOutsideInk = false;
         pagesChanged = false;
-        view.Show(doc);
+        auto key = PlaceKey();
+        view.Show(doc, key && placeOf ? placeOf(*key) : std::nullopt);
         if (changed) changed();
+    }
+
+    std::optional<std::filesystem::path> DocumentSession::PlaceKey() const
+    {
+        if (!doc) return std::nullopt;
+        if (auto own = doc->FilePath()) return own;
+        return openedFrom;
     }
 
     void DocumentSession::New()
@@ -163,7 +173,8 @@ namespace xournal::app
                         file.filename().native()), ToastKind::Info);
                     return;
                 }
-                Show(loaded);
+                Show(loaded, file);
+                if (fileUsed) fileUsed(file);
             });
         });
     }
@@ -203,6 +214,7 @@ namespace xournal::app
             pagesChanged = false;
         pagesChanged = false;
             if (message) message(std::format(L"Gespeichert: {}", file.filename().native()), ToastKind::Success);
+            if (fileUsed) fileUsed(file);
             if (changed) changed();
             return true;
         }

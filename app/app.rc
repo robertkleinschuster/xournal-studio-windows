@@ -30,3 +30,16 @@ BEGIN
     DEFPUSHBUTTON   "Einfügen", IDOK, 213, 215, 52, 14
     PUSHBUTTON      "Abbrechen", IDCANCEL, 271, 215, 52, 14
 END
+
+// Gehe zu Seite (Strg+G): the page number with arrows (GoToPageDialog sets the label, the range and the page shown).
+IDD_GOTO_PAGE DIALOGEX 0, 0, 186, 58
+STYLE DS_MODALFRAME | DS_SHELLFONT | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Gehe zu Seite"
+FONT 9, "Segoe UI", 400, 0, 0x1
+BEGIN
+    LTEXT           "", IDC_GOTO_LABEL, 7, 10, 90, 10
+    EDITTEXT        IDC_GOTO_PAGE, 100, 8, 60, 14, ES_NUMBER | ES_AUTOHSCROLL | WS_TABSTOP
+    CONTROL         "", IDC_GOTO_SPIN, UPDOWN_CLASS, UDS_SETBUDDYINT | UDS_ALIGNRIGHT | UDS_ARROWKEYS | UDS_NOTHOUSANDS, 160, 8, 10, 14
+    DEFPUSHBUTTON   "OK", IDOK, 73, 37, 50, 14
+    PUSHBUTTON      "Abbrechen", IDCANCEL, 129, 37, 50, 14
+END

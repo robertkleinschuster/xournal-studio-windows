@@ -13,7 +13,10 @@
 #include <windows.h>
 
 #include <map>
+#include <functional>
 #include <memory>
+#include <optional>
+#include <string>
 #include <vector>
 
 namespace xournal::app
@@ -28,6 +31,13 @@ namespace xournal::app
 
         /// A tap on a page (UI thread): follows the link there, if any.
         void Tapped(int page, inkpages::PointF point);
+
+        /// The link at a place of a page (page coordinates), if any.
+        std::optional<pdf::Link> LinkAt(int page, inkpages::PointF point);
+        /// What a link leads to, for its tooltip: the web address, or "Seite n" (the document page that shows its target).
+        std::wstring Describe(pdf::Link const& link);
+        /// Before Go moves the view (a link, an outline entry): Back returns to where the view was.
+        std::function<void()> jumping;
 
     private:
         std::vector<pdf::Link> const& LinksOf(pdf::PdfNavigation const& navigation, int pdfPage);

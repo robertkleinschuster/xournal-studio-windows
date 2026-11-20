@@ -40,5 +40,13 @@ namespace xournal::app
         CmdFitWidth,
         CmdZoomIn,
         CmdZoomOut,
+        CmdActualSize,
+        CmdFitPage,
+        CmdGoToPage,
+        CmdBack,
+        CmdForward,
+        // Datei -> Zuletzt geöffnet: CmdRecentFirst + index (settings' recentFiles)
+        CmdRecentFirst = 500,
+        CmdRecentLast = CmdRecentFirst + 19,
     };
 }

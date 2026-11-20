@@ -48,6 +48,7 @@ namespace xournal::app
         }
         Log(std::format("pdf links: to page {} at {:.0f},{:.0f} (PDF page {})", place->page + 1, place->point.x,
             place->point.y, destination.page + 1));
+        if (jumping) jumping();
         surface.ScrollTo(place->page, { static_cast<float>(place->point.x), static_cast<float>(place->point.y) });
         return true;
     }
@@ -64,24 +65,42 @@ namespace xournal::app
         return it->second;
     }
 
-    void PdfLinks::Tapped(int page, inkpages::PointF point)
+    std::optional<pdf::Link> PdfLinks::LinkAt(int page, inkpages::PointF point)
     {
         auto doc = view.Document();
         auto background = view.Pdf();
         auto navigation = background ? background->Navigation() : nullptr;
-        if (!doc || !navigation || page < 0 || page >= static_cast<int>(doc->Pages().size())) return;
+        if (!doc || !navigation || page < 0 || page >= static_cast<int>(doc->Pages().size())) return std::nullopt;
         auto const& content = *doc->Pages()[page];
+        if (!content.IsPdf()) return std::nullopt;
         auto shown = [background](int pdfPage) { return background->ShownSize(pdfPage); };
         auto at = pdf::ToShown(content, { point.x, point.y }, shown);
-        if (!at) return;
+        if (!at) return std::nullopt;
         keep = navigation;
         for (auto const& link : LinksOf(*navigation, content.PdfPageIndex()))
         {
-            if (!Contains(link.area, *at)) continue;
-            if (auto destination = std::get_if<pdf::Destination>(&link.target)) Go(*destination);
-            else OpenUri(std::get<std::wstring>(link.target));
-            return;
+            if (Contains(link.area, *at)) return link;
         }
+        return std::nullopt;
+    }
+
+    void PdfLinks::Tapped(int page, inkpages::PointF point)
+    {
+        auto link = LinkAt(page, point);
+        if (!link) return;
+        if (auto destination = std::get_if<pdf::Destination>(&link->target)) Go(*destination);
+        else OpenUri(std::get<std::wstring>(link->target));
+    }
+
+    std::wstring PdfLinks::Describe(pdf::Link const& link)
+    {
+        auto destination = std::get_if<pdf::Destination>(&link.target);
+        if (!destination) return std::get<std::wstring>(link.target);
+        auto doc = view.Document();
+        auto background = view.Pdf();
+        auto shown = [background](int pdfPage) { return background ? background->ShownSize(pdfPage) : std::nullopt; };
+        auto place = doc ? pdf::FindPlace(*doc, *destination, surface.PageInView().value_or(0), shown) : std::nullopt;
+        return place ? std::format(L"Seite {}", place->page + 1) : L"Seite nicht im Dokument";
     }
 
     void PdfLinks::OpenUri(std::wstring const& uri)

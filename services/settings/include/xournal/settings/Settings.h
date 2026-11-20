@@ -13,6 +13,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "xournal/base/Text.h"
 
@@ -24,10 +25,11 @@ namespace xournal::settings
         bool maximized = true;
     };
 
-    /// Where a document was last shown.
+    /// Where a document was last shown: the page and the point of it (page units) at the view's top left, and the zoom.
     struct DocumentPosition
     {
-        double verticalOffset = 0;
+        int page = 0;
+        double x = 0, y = 0;
         double zoom = 1;
         bool operator==(DocumentPosition const&) const = default;
     };
@@ -57,6 +59,12 @@ namespace xournal::settings
         std::string toolChoices;
         /// The last position of each opened document, by path (case ignored like Windows).
         std::map<std::wstring, DocumentPosition, LessIgnoreCase> documentPositions;
+        /// Datei -> Zuletzt geöffnet: newest first, at most MaxRecentFiles, each path once (case ignored like Windows).
+        std::vector<std::filesystem::path> recentFiles;
+        static constexpr std::size_t MaxRecentFiles = 10;
+
+        /// `file` was opened or saved: first in recentFiles (an older entry of it goes, the oldest beyond the maximum too).
+        void RememberRecent(std::filesystem::path const& file);
 
     private:
         std::filesystem::path file;

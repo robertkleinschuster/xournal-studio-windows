@@ -57,6 +57,14 @@ namespace xournal::app
         /// Where the save dialog opens for a document never saved: the folder selected in the explorer, else the project
         /// folder (user, 2026-11-20); none: the PDF's folder.
         std::function<std::optional<std::filesystem::path>()> folderForNew;
+        /// Another document is about to be shown: the shown one is left (its position can be remembered by PlaceKey).
+        std::function<void()> leaving;
+        /// Where to show a document remembered by `key` (none: the default - the page width at the top).
+        std::function<std::optional<inkpages::ViewPlace>(std::filesystem::path const& key)> placeOf;
+        /// A file was opened or saved under its name (Zuletzt geöffnet).
+        std::function<void(std::filesystem::path const&)> fileUsed;
+        /// The file the shown document's position is remembered by: its own file, else the PDF it was opened from.
+        std::optional<std::filesystem::path> PlaceKey() const;
 
         /// Ends the Text tool's editing first (the typed text is part of the document), then asks about unsaved changes;
         /// true when the document may be left (saved, discarded or unchanged).
@@ -75,7 +83,7 @@ namespace xournal::app
         std::shared_ptr<XoppDocument> Document() const { return doc; }
 
     private:
-        void Show(std::shared_ptr<XoppDocument> doc);
+        void Show(std::shared_ptr<XoppDocument> doc, std::optional<std::filesystem::path> openedFrom = {});
         bool SaveTo(std::filesystem::path const& file, bool saveAs);
         void Fail(std::wstring const& what);
 
@@ -83,6 +91,7 @@ namespace xournal::app
         inkpages::WritingSurface& surface;
         DocumentView& view;
         std::shared_ptr<XoppDocument> doc;
+        std::optional<std::filesystem::path> openedFrom; // the file the shown document was loaded from (.xopp or PDF)
         bool loading = false;
         std::uint64_t edits = 0;     // changes of the shown document (ink history, pages, references)
         std::uint64_t shownCount = 0; // documents shown so far: a load whose document was replaced meanwhile is dropped

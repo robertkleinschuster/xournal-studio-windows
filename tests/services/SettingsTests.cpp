@@ -8,6 +8,9 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <format>
+
 namespace xournal::tests
 {
     using xournal::settings::Settings;
@@ -37,7 +40,9 @@ namespace xournal::tests
         settings.paneTab = 2;
         settings.doneTasksShown = true;
         settings.toolChoices = "pens=1:0.85,3:2.26;eraser=7";
-        settings.documentPositions[L"C:\\Uni\\Blatt.xopp"] = { 1234.5, 1.5 };
+        settings.documentPositions[L"C:\\Uni\\Blatt.xopp"] = { 3, -12.5, 140.25, 1.5 };
+        settings.RememberRecent(temp / L"b.xopp");
+        settings.RememberRecent(temp / L"a.pdf");
         settings.Save();
 
         Settings read = Settings::Load(file);
@@ -54,11 +59,27 @@ namespace xournal::tests
         EXPECT_EQ(settings.toolChoices, read.toolChoices);
         // Positions by path, case ignored like Windows.
         ASSERT_TRUE(read.documentPositions.contains(L"c:\\uni\\blatt.xopp"));
-        EXPECT_EQ((settings::DocumentPosition{ 1234.5, 1.5 }), read.documentPositions.at(L"C:\\UNI\\BLATT.XOPP"));
+        EXPECT_EQ((settings::DocumentPosition{ 3, -12.5, 140.25, 1.5 }), read.documentPositions.at(L"C:\\UNI\\BLATT.XOPP"));
+        ASSERT_EQ(2u, read.recentFiles.size());
+        EXPECT_EQ(temp / L"a.pdf", read.recentFiles[0]) << "newest first";
 
         read.projectFolder.reset();
         read.Save();
         EXPECT_FALSE(Settings::Load(file).projectFolder);
+    }
+
+    TEST(Settings, RecentFilesAreEachOnceNewestFirstAndCapped)
+    {
+        Settings settings;
+        for (int i = 0; i < 12; ++i) settings.RememberRecent(std::format(L"C:\\Uni\\Blatt {}.xopp", i));
+        ASSERT_EQ(Settings::MaxRecentFiles, settings.recentFiles.size());
+        EXPECT_EQ(std::filesystem::path(L"C:\\Uni\\Blatt 11.xopp"), settings.recentFiles.front());
+        EXPECT_EQ(std::filesystem::path(L"C:\\Uni\\Blatt 2.xopp"), settings.recentFiles.back()) << "the oldest went";
+        settings.RememberRecent(L"c:\\uni\\blatt 5.XOPP"); // the same file, other case
+        EXPECT_EQ(Settings::MaxRecentFiles, settings.recentFiles.size());
+        EXPECT_EQ(std::filesystem::path(L"c:\\uni\\blatt 5.XOPP"), settings.recentFiles.front());
+        EXPECT_EQ(1, std::count_if(settings.recentFiles.begin(), settings.recentFiles.end(),
+            [](auto const& p) { return EqualsIgnoreCase(p.native(), L"C:\\Uni\\Blatt 5.xopp"); }));
     }
 
     TEST(Settings, KeysOfANewerVersionAreKept)

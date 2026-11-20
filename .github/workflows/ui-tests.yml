@@ -64,6 +64,7 @@ jobs:
               @{ test = 'PagesPaneTest' }
               @{ test = 'PdfNavigationTest' }
               @{ test = 'PdfTextSelectTest' }
+              @{ test = 'PdfViewerTest' }
               @{ test = 'RecoveryTest' }
               @{ test = 'TasksTest' }
               @{ test = 'TextToolTest' }

@@ -5,7 +5,9 @@
 
 #include <windows.h>
 
+#include <filesystem>
 #include <memory>
+#include <vector>
 
 namespace xournal::app
 {
@@ -23,9 +25,12 @@ namespace xournal::app
 
         void Enable(int command, bool enabled);
         void Check(int command, bool checked);
+        /// Datei -> Zuletzt geöffnet: the files, newest first (CmdRecentFirst + index).
+        void SetRecentFiles(std::vector<std::filesystem::path> const& files);
 
     private:
         HMENU bar = nullptr;
         HACCEL accelerators = nullptr;
+        HMENU recent = nullptr; // Zuletzt geöffnet (a submenu of Datei)
     };
 }

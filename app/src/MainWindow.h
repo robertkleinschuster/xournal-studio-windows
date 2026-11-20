@@ -9,6 +9,7 @@
 #include "ExplorerCommands.h"
 #include "MainMenu.h"
 #include "InsertPagesCommand.h"
+#include "LinkHover.h"
 #include "PageCommands.h"
 #include "PageThumbnails.h"
 #include "PagesPane.h"
@@ -24,8 +25,10 @@
 #include "RecoveryCopies.h"
 #include "RemoteFetch.h"
 #include "SidePane.h"
+#include "StatusBar.h"
 #include "SyncController.h"
 #include "Toast.h"
+#include "ViewNavigation.h"
 
 #include "xournal/settings/Settings.h"
 
@@ -33,6 +36,7 @@
 #include "inkpages/WritingSurface.h"
 
 #include <windows.h>
+#include <shellapi.h>
 
 #include <filesystem>
 #include <memory>
@@ -77,6 +81,13 @@ namespace xournal::app
         void SaveSettings();
         void Message(std::wstring const& text, ToastKind kind);
         void CopyPdfText(); // Strg+C with the PDF's text selected (a failure shown)
+        // The viewer's parts: the status bar's page and zoom, the shown document's position remembered by file, the
+        // pages' context menu, files dropped on the window.
+        void UpdateStatus();
+        void RememberPlace();
+        void ShowPageMenu(LPARAM lp);
+        void OpenDropped(HDROP drop);
+        void OpenRecent(int index);
         bool Close();
 
         HWND window = nullptr;
@@ -86,6 +97,10 @@ namespace xournal::app
         std::unique_ptr<inkpages::Toolbar> toolbar;
         std::unique_ptr<SidePane> pane;
         std::unique_ptr<Toast> toast;
+        std::unique_ptr<StatusBar> statusBar;
+        std::unique_ptr<ViewNavigation> navigation;
+        std::unique_ptr<LinkHover> linkHover;
+        HWND focusBefore = nullptr; // the focused child when the window was deactivated (given back on activation)
         std::unique_ptr<DocumentView> view;
         std::unique_ptr<SelectionClipboard> clipboard;
         std::unique_ptr<DocumentSession> session;

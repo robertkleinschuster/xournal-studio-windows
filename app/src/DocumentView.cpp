@@ -59,7 +59,7 @@ namespace xournal::app
         if (viewMoved) viewMoved();
     }
 
-    void DocumentView::Show(std::shared_ptr<XoppDocument> doc)
+    void DocumentView::Show(std::shared_ptr<XoppDocument> doc, std::optional<inkpages::ViewPlace> place)
     {
         std::vector<inkpages::PageSpec> specs;
         for (auto const& page : doc->Pages())
@@ -83,7 +83,8 @@ namespace xournal::app
         surface.SetTextHost(texts.get());
         surface.SetPages(std::move(specs));
         MarkCurrentPage();
-        surface.FitWidth();
+        if (place) surface.GoTo(*place);
+        else surface.FitWidth();
         if (shown) shown();
     }
 
@@ -98,6 +99,7 @@ namespace xournal::app
         }
         pictures->Remap(map);
         underlay->Remap(map);
+        if (pagesRemapped) pagesRemapped(map);
     }
 
     void DocumentView::InsertPage(int index, std::shared_ptr<XoppPage> page)

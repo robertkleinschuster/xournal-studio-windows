@@ -5,6 +5,8 @@
 #include "Commands.h"
 #include "Dialogs.h"
 #include "ErrorText.h"
+#include "FileDrop.h"
+#include "PageContextMenu.h"
 #include "Resources.h"
 #include "UiQueue.h"
 
@@ -13,6 +15,7 @@
 #include "xournal/base/Text.h"
 
 #include <commctrl.h>
+#include <windowsx.h>
 
 #include <algorithm>
 #include <format>
@@ -84,8 +87,26 @@ namespace xournal::app
     void MainWindow::CreateParts(std::optional<std::filesystem::path> startFile)
     {
         surface = inkpages::WritingSurface::Create(window);
+        navigation = std::make_unique<ViewNavigation>(window, *surface);
         view = std::make_unique<DocumentView>(*surface);
         session = std::make_unique<DocumentSession>(window, *surface, *view);
+        // The last position of each document (by its file, or the PDF it was opened from) and the recent files.
+        session->leaving = [this] { RememberPlace(); };
+        session->placeOf = [this](std::filesystem::path const& key) -> std::optional<inkpages::ViewPlace>
+        {
+            auto it = settings.documentPositions.find(key.native());
+            if (it == settings.documentPositions.end()) return std::nullopt;
+            auto const& p = it->second;
+            return inkpages::ViewPlace{ p.page, { static_cast<float>(p.x), static_cast<float>(p.y) }, static_cast<float>(p.zoom) };
+        };
+        session->fileUsed = [this](std::filesystem::path const& file)
+        {
+            settings.RememberRecent(file);
+            menu.SetRecentFiles(settings.recentFiles);
+            SaveSettings();
+        };
+        menu.SetRecentFiles(settings.recentFiles);
+        view->pagesRemapped = [this](inkpages::PageMap const& map) { navigation->PagesRemapped(map); };
         session->changed = [this]
         {
             UpdateTitle();
@@ -109,6 +130,7 @@ namespace xournal::app
             if (pagesPane) pagesPane->SetCount(view->PageCount());
             if (search) search->PagesChanged();
             textSelection->Clear();
+            UpdateStatus();
         };
         // Set before the toolbar: it chains these handlers.
         surface->historyChanged = [this] { if (session) session->NoteEdit(); UpdateTitle(); UpdateCommands(); };
@@ -171,6 +193,14 @@ namespace xournal::app
         CreatePagesPane();
         // The background PDF's outline (Gliederung) and links: a mouse click or finger tap follows a link.
         links = std::make_unique<PdfLinks>(window, *surface, *view);
+        links->jumping = [this] { navigation->Remember(); }; // links and outline entries: Zurück returns
+        linkHover = std::make_unique<LinkHover>(window, *links);
+        // The cursor over the pages: the hand over a link (with its tooltip), the I-beam over the PDF's text.
+        surface->cursorAt = [this](int page, inkpages::PointF point) -> LPCWSTR
+        {
+            if (LPCWSTR link = linkHover->CursorAt(page, point)) return link;
+            return page >= 0 && textSelection->TextAt(page, point) ? IDC_IBEAM : nullptr;
+        };
         outline = std::make_unique<PdfOutline>(*pane, *view, *links);
         view->pdfLoaded = [this]
         {
@@ -184,6 +214,9 @@ namespace xournal::app
         };
         CreateSearch();
         toast = std::make_unique<Toast>(window);
+        statusBar = std::make_unique<StatusBar>(window);
+        statusBar->pageDoubleClicked = [this] { OnCommand(CmdGoToPage); };
+        DragAcceptFiles(window, TRUE); // a .xopp or PDF dropped on the window opens
         CreateProjectParts();
 
         if (settings.window)
@@ -241,12 +274,14 @@ namespace xournal::app
 
     void MainWindow::Layout()
     {
-        if (!surface || !toolbar || !pane)
+        if (!surface || !toolbar || !pane || !statusBar)
         {
             return;
         }
         RECT rc;
         GetClientRect(window, &rc);
+        statusBar->Layout();
+        rc.bottom = std::max(0L, rc.bottom - statusBar->Height());
         int top = toolbar->Height();
         MoveWindow(toolbar->Window(), 0, 0, rc.right, top, TRUE);
         // 280 DIP, but never narrower than the tabs need (one row, no scroll arrows - with the font they really have).
@@ -284,10 +319,16 @@ namespace xournal::app
             thumbnails->Reset();
             pagesPane->SetCount(view->PageCount());
             pagesPane->Select(surface->PageInView().value_or(0));
+            navigation->DocumentShown();
+            UpdateStatus();
         };
         view->pagesEdited = [this](std::set<int> const& pages) { thumbnails->Edited(pages); };
-        view->viewMoved = [this] { pagesPane->Select(surface->PageInView().value_or(0)); };
-        pagesPane->goTo = [this](int index) { surface->ScrollToPage(index); };
+        view->viewMoved = [this]
+        {
+            pagesPane->Select(surface->PageInView().value_or(0));
+            UpdateStatus();
+        };
+        pagesPane->goTo = [this](int index) { navigation->Jump([this, index] { surface->ScrollToPage(index); }); };
         pagesPane->insertBlank = [this](int index) { pageCommands->InsertBlankAt(index); };
         pagesPane->insertFromFile = [this](int index) { insertCommand->Insert(index); };
         pagesPane->move = [this](int from, int to)
@@ -306,7 +347,11 @@ namespace xournal::app
         searchPane->searchRequested = [this](std::wstring const& query) { search->Start(query); };
         searchPane->next = [this] { search->Next(); };
         searchPane->previous = [this] { search->Previous(); };
-        searchPane->chosen = [this](size_t index) { search->Show(index); };
+        searchPane->chosen = [this](size_t index)
+        {
+            navigation->Remember(); // a hit picked from the list is a jump (F3 steps are not)
+            search->Show(index);
+        };
         searchPane->leave = [this] { SetFocus(surface->Window()); };
         search->changed = [this] { searchPane->Show(search->Hits(), search->Current(), search->Running(), search->Query()); };
         // The hit into view, scrolled only as far as needed (all its lines).
@@ -370,6 +415,57 @@ namespace xournal::app
         menu.Enable(CmdSync, !sync->IsSyncing());
         menu.Enable(CmdMovePageUp, pageCommands->CanMoveCurrent(-1));
         menu.Enable(CmdMovePageDown, pageCommands->CanMoveCurrent(1));
+        menu.Enable(CmdBack, navigation->CanGoBack());
+        menu.Enable(CmdForward, navigation->CanGoForward());
+    }
+
+    void MainWindow::UpdateStatus()
+    {
+        if (!statusBar || !view) return;
+        statusBar->Show(surface->PageInView().value_or(-1), view->PageCount(), navigation->ZoomPercent());
+    }
+
+    void MainWindow::RememberPlace()
+    {
+        auto key = session ? session->PlaceKey() : std::nullopt;
+        auto place = surface->CurrentPlace();
+        if (!key || !place) return;
+        settings.documentPositions[key->native()] = { place->page, place->point.x, place->point.y, place->zoom };
+    }
+
+    void MainWindow::ShowPageMenu(LPARAM lp)
+    {
+        RECT area;
+        GetWindowRect(surface->Window(), &area);
+        POINT center{ (area.left + area.right) / 2, (area.top + area.bottom) / 2 }; // a keyboard request
+        int command = PageContextMenu::Show(window, { GET_X_LPARAM(lp), GET_Y_LPARAM(lp) }, center,
+            { surface->HasSelection(), textSelection->HasSelection(), navigation->CanGoBack(), navigation->CanGoForward() });
+        if (command) OnCommand(command);
+    }
+
+    void MainWindow::OpenDropped(HDROP drop)
+    {
+        size_t others = 0;
+        auto documents = FileDrop::Documents(drop, others);
+        if (documents.empty())
+        {
+            Message(L"Nur Xournal++-Dokumente (.xopp), MrWriter-Dokumente (.moj) und PDF-Dateien können geöffnet werden.",
+                ToastKind::Warning);
+            return;
+        }
+        if (documents.size() + others > 1)
+        {
+            Message(std::format(L"Nur „{}“ wird geöffnet - eine Datei auf einmal.", documents.front().filename().native()),
+                ToastKind::Info);
+        }
+        SetForegroundWindow(window);
+        session->Open(documents.front());
+    }
+
+    void MainWindow::OpenRecent(int index)
+    {
+        if (index < 0 || index >= static_cast<int>(settings.recentFiles.size())) return;
+        session->Open(settings.recentFiles[index]);
     }
 
     void MainWindow::OpenFolder()
@@ -506,9 +602,19 @@ namespace xournal::app
         case CmdFindNext: if (search->Hits().empty()) ShowSearch(); else search->Next(); break;
         case CmdFindPrevious: if (search->Hits().empty()) ShowSearch(); else search->Previous(); break;
         case CmdFitWidth: surface->FitWidth(); break;
-        case CmdZoomIn: surface->ZoomTo(surface->CurrentView().zoom * 1.25f); break;
-        case CmdZoomOut: surface->ZoomTo(surface->CurrentView().zoom / 1.25f); break;
+        case CmdFitPage: surface->FitPage(); break;
+        case CmdActualSize: navigation->ActualSize(); break;
+        case CmdZoomIn: navigation->ZoomIn(); break;
+        case CmdZoomOut: navigation->ZoomOut(); break;
+        case CmdGoToPage: navigation->GoToPage(); break;
+        case CmdBack: navigation->Back(); break;
+        case CmdForward: navigation->Forward(); break;
         default:
+            if (command >= CmdRecentFirst && command <= CmdRecentLast)
+            {
+                OpenRecent(command - CmdRecentFirst);
+                break;
+            }
             Log(std::format("command {} is not available yet", command)); // disabled in the menu; an accelerator may still come
             break;
         }
@@ -567,6 +673,7 @@ namespace xournal::app
             return false;
         }
         recovery->End(); // saved or discarded: nothing to recover
+        RememberPlace();
         RememberWindow();
         settings.lastFile = session->FilePath();
         SaveSettings();
@@ -584,9 +691,42 @@ namespace xournal::app
         case WM_COMMAND:
             OnCommand(LOWORD(wp));
             return 0;
+        case WM_NOTIFY:
+            if (statusBar && statusBar->OnNotify(*reinterpret_cast<NMHDR const*>(lp))) return 0;
+            break;
+        case WM_CONTEXTMENU:
+            // The pages' menu (InkPages leaves the right click to the parent); other children have their own.
+            if (surface && reinterpret_cast<HWND>(wp) == surface->Window())
+            {
+                ShowPageMenu(lp);
+                return 0;
+            }
+            break;
+        case WM_APPCOMMAND:
+            // The mouse's back/forward buttons (Windows makes them from WM_XBUTTONUP) and the keyboard's browser keys.
+            switch (GET_APPCOMMAND_LPARAM(lp))
+            {
+            case APPCOMMAND_BROWSER_BACKWARD: OnCommand(CmdBack); return TRUE;
+            case APPCOMMAND_BROWSER_FORWARD: OnCommand(CmdForward); return TRUE;
+            }
+            break;
+        case WM_DROPFILES:
+            OpenDropped(reinterpret_cast<HDROP>(wp));
+            return 0;
+        case WM_SETFOCUS:
+            // The keyboard goes back where it was (the tree, the search box), else to the pages (scroll keys).
+            if (surface)
+            {
+                HWND target = focusBefore && IsWindow(focusBefore) && IsChild(window, focusBefore) && IsWindowVisible(focusBefore)
+                    ? focusBefore : surface->Window();
+                SetFocus(target);
+                return 0;
+            }
+            break;
         case WM_ACTIVATE:
             if (LOWORD(wp) == WA_INACTIVE)
             {
+                focusBefore = GetFocus();
                 if (recovery) recovery->Deactivated(); // maybe for good (shutdown, log off): the copy now
             }
             else if (projectExplorer)
@@ -620,6 +760,8 @@ namespace xournal::app
             surface->mouseGesture = nullptr;
             surface->selectionChanged = nullptr;
             surface->textEditingChanged = nullptr;
+            surface->cursorAt = nullptr;
+            linkHover.reset();
             view->pdfLoaded = nullptr;
             search.reset();
             searchPane.reset();
