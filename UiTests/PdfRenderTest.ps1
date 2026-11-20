@@ -1,6 +1,6 @@
 # PDF pages and thumbnails on screen: a generated PDF of 80 pages (page 1: text from 4 to 16 pt, hairlines, a fine grid,
 # diagonals; page 2 turned by /Rotate 90; page 3 a crop box inside a larger media box, red marks outside it that must not
-# show; page 4 a /Square annotation with an appearance; page 5 A5 landscape; then copies of page 1) opened as a document.
+# show; page 4 a /Square annotation with an appearance; page 5 A5 landscape; then copies of page 1) as a .xopp background.
 # Screenshots at fit width, zoomed in by keys (settled) and by a pinch (right after it and settled), at the largest zoom,
 # zoomed out, the Seiten tab and the thumbnails after writing; the log's render lines (pdf render, bitmap upload,
 # underlay ... drawn ... in ms) and the process' memory after scrolling through the document at a high zoom.
@@ -96,14 +96,34 @@ function New-RenderPdf($file, $copies) {
     [IO.File]::WriteAllBytes($file, [Text.Encoding]::ASCII.GetBytes($body))
 }
 
+function New-RenderDocument($file, $count) {
+    $pages = for ($n = 1; $n -le $count; $n++) {
+        $width = if ($n -eq 2) { 842 } else { 595 }
+        $height = switch ($n) { 2 { 595 } 5 { 420 } default { 842 } }
+        $source = if ($n -eq 1) { 'domain="absolute" filename="Render.pdf" ' } else { '' }
+        '<page width="{0}" height="{1}"><background type="pdf" {2}pageno="{3}"/><layer/></page>' -f $width, $height, $source, $n
+    }
+    $stream = [IO.File]::Create($file)
+    try {
+        $gzip = New-Object IO.Compression.GZipStream($stream, [IO.Compression.CompressionMode]::Compress)
+        try {
+            $xml = '<xournal creator="test" fileversion="4"><title>Render</title>' + ($pages -join '') + '</xournal>'
+            $bytes = [Text.Encoding]::UTF8.GetBytes($xml)
+            $gzip.Write($bytes, 0, $bytes.Length)
+        } finally { $gzip.Dispose() }
+    } finally { $stream.Dispose() }
+}
+
 Invoke-Test {
     New-Item -ItemType Directory -Force C:\work | Out-Null
     New-RenderPdf 'C:\work\Render.pdf' 75
+    $saved = 'C:\work\Render.xopp'
+    New-RenderDocument $saved 80
     $env:XOURNAL_STUDIO_CONFIG_DIR = "$out\config"
     $env:XOURNAL_STUDIO_LOG = "$out\app.log"
     New-Item -ItemType Directory -Force $env:XOURNAL_STUDIO_CONFIG_DIR | Out-Null
     Set-Content "$out\config\settings-native.json" '{"toolChoices":"select=1"}' -Encoding Ascii
-    Start-TestApp 'XournalStudio.exe' '"C:\work\Render.pdf"'
+    Start-TestApp 'XournalStudio.exe' '"C:\work\Render.xopp"'
     Shot '01-open-fit-width'
     Memory 'opened'
     $cx = [int]([Inj]::W / 2); $cy = [int]([Inj]::H / 2)
@@ -203,13 +223,11 @@ Invoke-Test {
     }
     if (-not (Select-String "$out\app.log" -Pattern 'clipboard: PDF area copied' -Quiet)) { throw 'PDF rectangle was not copied' }
     Ctrl 0x56 'V'
+    $previousWrite = (Get-Item -LiteralPath $saved).LastWriteTimeUtc
     Ctrl 0x53 'S'
-    Start-Sleep 1
-    $saved = 'C:\work\Snapshot.xopp'
-    [Inj]::Ctrl(0x41)
-    [Inj]::TypeText($saved)
-    [Inj]::Key(0x0D)
-    Start-Sleep 2
+    for ($i = 0; $i -lt 20 -and (Get-Item -LiteralPath $saved).LastWriteTimeUtc -eq $previousWrite; $i++) {
+        Start-Sleep -Milliseconds 200
+    }
     $stream = [IO.File]::OpenRead($saved)
     try {
         $gzip = New-Object IO.Compression.GZipStream($stream, [IO.Compression.CompressionMode]::Decompress)
