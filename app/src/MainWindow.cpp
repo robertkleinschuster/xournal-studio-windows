@@ -234,7 +234,9 @@ namespace xournal::app
         GetClientRect(window, &rc);
         int top = toolbar->Height();
         MoveWindow(toolbar->Window(), 0, 0, rc.right, top, TRUE);
-        int paneWidth = settings.paneOpen ? MulDiv(PaneWidthDip, static_cast<int>(GetDpiForWindow(window)), 96) : 0;
+        // 280 DIP, but never narrower than the tabs need (one row, no scroll arrows - with the font they really have).
+        int paneWidth = settings.paneOpen
+            ? std::max(MulDiv(PaneWidthDip, static_cast<int>(GetDpiForWindow(window)), 96), pane->TabsWidth()) : 0;
         MoveWindow(pane->Window(), 0, top, paneWidth, rc.bottom - top, TRUE);
         MoveWindow(surface->Window(), paneWidth, top, rc.right - paneWidth, rc.bottom - top, TRUE);
         RECT area;

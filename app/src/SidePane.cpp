@@ -164,6 +164,34 @@ namespace xournal::app
 
     int SidePane::Tab() const { return TabCtrl_GetCurSel(tabs); }
 
+    int SidePane::TabsWidth() const
+    {
+        int count = TabCtrl_GetItemCount(tabs);
+        RECT first{}, last{};
+        if (count <= 0 || !TabCtrl_GetItemRect(tabs, 0, &first) || !TabCtrl_GetItemRect(tabs, count - 1, &last))
+        {
+            ThrowHr("TCM_GETITEMRECT (side pane tabs)", E_FAIL);
+        }
+        int width = last.right - first.left; // independent of how far the strip is scrolled
+        if (!outlineShown)
+        {
+            // Gliederung's tab as wide as the control would make it: its text plus the padding the first tab has.
+            HDC dc = GetDC(tabs);
+            if (!dc) ThrowHr("GetDC (side pane tabs)", E_FAIL);
+            HGDIOBJ old = SelectObject(dc, reinterpret_cast<HFONT>(SendMessageW(tabs, WM_GETFONT, 0, 0)));
+            SIZE outline{}, firstText{};
+            bool measured = GetTextExtentPoint32W(dc, TabTitles[OutlineTab], static_cast<int>(wcslen(TabTitles[OutlineTab])), &outline) &&
+                GetTextExtentPoint32W(dc, TabTitles[0], static_cast<int>(wcslen(TabTitles[0])), &firstText);
+            if (old) SelectObject(dc, old);
+            ReleaseDC(tabs, dc);
+            if (!measured) ThrowHr("GetTextExtentPoint32 (side pane tabs)", E_FAIL);
+            width += outline.cx + (first.right - first.left - firstText.cx);
+        }
+        // The selected tab stands out a little on both sides; the strip's border.
+        int dpi = static_cast<int>(GetDpiForWindow(tabs));
+        return width + 2 * GetSystemMetricsForDpi(SM_CXEDGE, static_cast<UINT>(dpi)) + MulDiv(4, dpi, 96);
+    }
+
     void SidePane::SetTab(int tab)
     {
         if (tab < 0 || tab >= TabCtrl_GetItemCount(tabs)) tab = 0;

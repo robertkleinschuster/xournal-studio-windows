@@ -47,6 +47,10 @@ namespace xournal::app
         void SetTab(int tab);
         /// The user chose another tab.
         std::function<void(int)> tabChanged;
+        /// The width (pixels) the tab strip needs to show every tab in one row without scroll arrows - Gliederung
+        /// included even while it is hidden, so the pane does not change width with the document. Measured from the tab
+        /// control's own item rectangles and its font.
+        int TabsWidth() const;
 
     private:
         static LRESULT CALLBACK Proc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp);
