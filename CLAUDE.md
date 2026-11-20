@@ -139,9 +139,11 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   worktree missed; measured: a second worktree hits 100 %, Ninja's header deps stay relative); Debug info `/Z7` (`CMAKE_MSVC_DEBUG_INFORMATION_FORMAT`; ccache cannot cache `/Zi`). The
   build folder stays `.local-build\cmake` (outputs in `app\<Config>`); an old Visual Studio-generator tree there is
   removed and configured again. For the IDE, open the folder in Visual Studio (CMake). Measured in CI (4-core
-  runner, 2026-11-20): old workflow ~15-16 min per push (VS generator, everything from source); VS generator with the
-  dependency cache 18.4 min cold (third-party 5.8 min) / 11.7 min warm; Ninja with an empty ccache: third-party
-  2.5 min, own code 6.2-7.6 min.
+  runner, 2026-11-20, whole job): old workflow ~15-16 min per push (VS generator, everything from source); VS
+  generator + dependency cache 18.4 min cold / 11.7 min warm; Ninja + ccache 8.9-15.5 min cold (runners vary), **2.0
+  min warm** (configure 12 s, ccache 203/211 direct hits, build step 1.5 min). The hosted images alternate between
+  two default MSVC toolsets (14.51/14.52), so each has its own caches (both warm on main); pinning the side-by-side
+  14.44 does not help - its cl.exe differs per image (19.44.35229 / 19.44.35230).
 
 - **install.ps1 is for development, the MSI for releases.** Both use the same folder and Start menu entry
   "Xournal Studio (Win32)". `install.ps1` refuses while the MSI is installed (found by its UpgradeCode): replacing the
