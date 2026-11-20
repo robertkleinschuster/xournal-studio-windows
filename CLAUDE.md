@@ -110,6 +110,15 @@ installer\Build-Msi.ps1 -Version 0.2.0      # the MSI from .local-build\install-
 
 Workflow: after a change commit atomically, push and install (`install.ps1` refuses while the installed app runs).
 
+- **One build at a time, targeted builds** (user, 2026-11-20; simultaneous full builds in several worktrees cost CPU
+  and gave LNK1104 file-lock errors): `build.ps1`, `install.ps1` and `tools\with-build-lock.ps1 <command>` (for raw
+  `cmake --build`/`ctest`) hold a machine-wide named mutex `Global\XournalStudioBuild` (`tools/BuildLock.ps1`). A
+  second build waits and logs the holder (what, worktree, PID; `%LOCALAPPDATA%\XournalStudioBuildCache\build-lock-holder.txt`);
+  Windows releases it when the script ends (failure, Ctrl+C, killed process). Agents build only what they changed, so
+  the lock is held briefly: `.\build.ps1 -Target XournalTests -Tests '^Pdf'` (`-Target` = `cmake --target`, several
+  allowed; `-Tests` = `ctest -R`; with `-Target` and no `-Tests` no tests run; `-NoTests`). The full `.\build.ps1`
+  before a push and for install. Never build outside the lock.
+
 - **install.ps1 is for development, the MSI for releases.** Both use the same folder and Start menu entry
   "Xournal Studio (Win32)". `install.ps1` refuses while the MSI is installed (found by its UpgradeCode): replacing the
   files under Windows Installer's feet would let a repair or uninstall remove the development build. Installing the MSI
