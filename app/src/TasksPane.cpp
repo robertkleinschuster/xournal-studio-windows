@@ -195,7 +195,7 @@ namespace xournal::app
     // date and a link.
     void TasksPane::Edit(TaskRow const& row)
     {
-        std::wstring shown = TaskListView::EditableText(row.task);
+        std::wstring shown = TodoTxt::SetTag(TodoTxt::SetTag(row.task.description, L"due", std::nullopt), L"doc", std::nullopt);
         auto [document, page] = currentPage ? currentPage() : std::pair<std::optional<std::filesystem::path>, int>();
         auto values = TaskEditDialog::Show(window, { shown, row.task.Due(), row.link.has_value() }, row.linkText,
             document.has_value());
@@ -220,16 +220,12 @@ namespace xournal::app
         Change("edit task", [&](tasks::TaskFile& f) { return f.Replace(row.line, changed.ToString()); });
     }
 
-    // The text edited in place: due: and doc: (not part of the edited text) stay as they were.
+    // The text edited in place (TodoTxt::EditText): the priority read back, due: and doc: kept as they were.
     void TasksPane::Rename(TaskRow const& row, std::wstring const& text)
     {
         std::wstring typed(Trim(text));
-        if (typed.empty() || typed == TaskListView::EditableText(row.task)) return;
-        std::wstring description = typed;
-        if (auto due = row.task.Tag(L"due")) description = TodoTxt::SetTag(description, L"due", *due);
-        if (auto doc = row.task.Tag(L"doc")) description = TodoTxt::SetTag(description, L"doc", *doc);
-        TodoTask changed = row.task;
-        changed.description = description;
+        if (typed.empty() || typed == TodoTxt::EditText(row.task)) return;
+        TodoTask changed = TodoTxt::WithEditText(row.task, typed);
         Change("edit task in place", [&](tasks::TaskFile& f) { return f.Replace(row.line, changed.ToString()); });
     }
 

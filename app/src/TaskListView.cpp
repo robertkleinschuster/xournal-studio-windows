@@ -63,10 +63,6 @@ namespace xournal::app
         if (ListView_EnableGroupView(list, TRUE) < 0) ThrowLastError("ListView_EnableGroupView (tasks)");
     }
 
-    std::wstring TaskListView::EditableText(TodoTask const& task)
-    {
-        return TodoTxt::SetTag(TodoTxt::SetTag(task.description, L"due", std::nullopt), L"doc", std::nullopt);
-    }
 
     void TaskListView::Layout(int left, int top, int width, int height, int)
     {
@@ -190,13 +186,15 @@ namespace xournal::app
             auto const& info = reinterpret_cast<NMLVDISPINFOW const&>(note);
             TaskRow const* row = RowOfItem(info.item.iItem);
             if (!row || !renamed) return TRUE; // no edit
-            // The edit starts with the text as written (+projects, @contexts, other tags), not the shown title.
+            // The edit starts with the text as written (priority, +projects, @contexts, other tags), not the shown title.
             HWND edit = ListView_GetEditControl(list);
-            if (edit)
+            if (!edit)
             {
-                SetWindowTextW(edit, EditableText(row->task).c_str());
-                Edit_SetSel(edit, 0, -1);
+                LogError("tasks: in-place edit without the list's edit control (not started)");
+                return TRUE;
             }
+            if (!SetWindowTextW(edit, TodoTxt::EditText(row->task).c_str())) ThrowLastError("SetWindowText (task edit)");
+            Edit_SetSel(edit, 0, -1);
             Log(std::format("tasks: editing row {} in place", info.item.iItem));
             return FALSE;
         }

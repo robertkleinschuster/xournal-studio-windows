@@ -122,7 +122,6 @@ namespace xournal::app
             return ka > kb;
         });
         TaskRows result;
-        result.openCount = static_cast<int>(open.size());
         result.rows = std::move(open);
         if (withDone)
         {

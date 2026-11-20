@@ -330,6 +330,31 @@ namespace xournal
             return task;
         }
 
+        std::wstring EditText(TodoTask const& task)
+        {
+            std::wstring text = SetTag(SetTag(task.description, L"due", std::nullopt), L"doc", std::nullopt);
+            return !task.done && task.priority ? std::format(L"({}) {}", *task.priority, text) : text;
+        }
+
+        TodoTask WithEditText(TodoTask const& task, std::wstring_view text)
+        {
+            TodoTask changed = task;
+            std::wstring_view rest = Trim(text);
+            if (!task.done)
+            {
+                changed.priority.reset();
+                if (rest.size() >= 4 && rest[0] == L'(' && rest[1] >= L'A' && rest[1] <= L'Z' && rest[2] == L')' && rest[3] == L' ')
+                {
+                    changed.priority = rest[1];
+                    rest = Trim(rest.substr(4));
+                }
+            }
+            changed.description = rest;
+            if (auto due = task.Tag(L"due")) changed.description = SetTag(changed.description, L"due", *due);
+            if (auto doc = task.Tag(L"doc")) changed.description = SetTag(changed.description, L"doc", *doc);
+            return changed;
+        }
+
         std::wstring SetTag(std::wstring_view description, std::wstring_view key, std::optional<std::wstring> const& value)
         {
             std::wstring prefix = std::wstring(key) + L":";

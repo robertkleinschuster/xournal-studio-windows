@@ -83,4 +83,27 @@ namespace xournal::tests
         EXPECT_EQ(L"Prüfung GET 10:30 Hörsaal i13", task.Title());
         EXPECT_FALSE(task.Tag(L"10"));
     }
+
+    // The in-place edit: starts with the priority and without due:/doc:, reads the priority back the todo.txt way.
+    TEST(TodoTxt, EditTextCarriesThePriorityAndKeepsDueAndLink)
+    {
+        auto task = *TodoTxt::Parse(L"(A) 2026-11-06 Blatt 3 +Mathe due:2026-11-20 doc:Blatt%203.xopp#p2");
+        EXPECT_EQ(L"(A) Blatt 3 +Mathe", TodoTxt::EditText(task));
+
+        EXPECT_EQ(L"(B) 2026-11-06 Blatt 4 +Mathe due:2026-11-20 doc:Blatt%203.xopp#p2",
+            TodoTxt::WithEditText(task, L"(B) Blatt 4 +Mathe").ToString());
+        EXPECT_EQ(L"2026-11-06 Blatt 4 due:2026-11-20 doc:Blatt%203.xopp#p2",
+            TodoTxt::WithEditText(task, L"  Blatt 4 ").ToString());
+        EXPECT_EQ(L"(C) 2026-11-06 Neu due:2026-11-20 doc:Blatt%203.xopp#p2",
+            TodoTxt::WithEditText(*TodoTxt::Parse(L"2026-11-06 Alt due:2026-11-20 doc:Blatt%203.xopp#p2"), L"(C) Neu").ToString());
+        // Unchanged text: the same line.
+        EXPECT_EQ(task.ToString(), TodoTxt::WithEditText(task, TodoTxt::EditText(task)).ToString());
+    }
+
+    TEST(TodoTxt, EditTextOfADoneTaskIsTakenAsWritten)
+    {
+        auto task = *TodoTxt::Parse(L"x 2026-11-10 2026-11-06 Blatt 3 pri:A");
+        EXPECT_EQ(L"Blatt 3 pri:A", TodoTxt::EditText(task));
+        EXPECT_EQ(L"x 2026-11-10 2026-11-06 (B) Blatt 4", TodoTxt::WithEditText(task, L"(B) Blatt 4").ToString());
+    }
 }

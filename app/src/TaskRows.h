@@ -29,7 +29,6 @@ namespace xournal::app
     struct TaskRows
     {
         std::vector<TaskRow> rows;
-        int openCount = 0;
 
         static TaskRows From(std::vector<std::wstring> const& lines, std::filesystem::path const& taskFile, bool withDone);
     };

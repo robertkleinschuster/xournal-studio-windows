@@ -157,7 +157,7 @@ the window's parts to feature classes:
 - `TasksPane` (the Aufgaben tab, `<project>/todo.txt`): `NewTaskForm` (text box with cue banner, "Fällig am" date
   picker, Hinzufügen, link to the page in view) above a `TaskListView` - a comctl32 ListView in report view with the
   Explorer theme, column headers Aufgabe / Fällig, check boxes (done), groups Überfällig / Offen / Erledigt with counts,
-  info tips, in-place editing (F2; due: and doc: kept) - and "Erledigte anzeigen" below; `TaskEditDialog` edits all of
+  info tips, in-place editing (F2; the priority read back as todo.txt writes it, due: and doc: kept - `TodoTxt::EditText`/`WithEditText`) - and "Erledigte anzeigen" below; `TaskEditDialog` edits all of
   a task. Only the changed line is rewritten (`TaskFile`).
 - Logs: `XOURNAL_STUDIO_LOG` (InkPages' lines in `<log>.inkpages.log` beside it), errors always in
   `%LOCALAPPDATA%\XournalStudioForWindows\errors.log`; `XOURNAL_STUDIO_CONFIG_DIR` for tests.

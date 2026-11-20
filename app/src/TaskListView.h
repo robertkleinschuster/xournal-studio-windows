@@ -31,10 +31,6 @@ namespace xournal::app
         /// The parent forwards the list's WM_NOTIFY here.
         LRESULT OnNotify(NMHDR const& note);
 
-        /// The text a task's in-place edit starts with: its description without the due: and doc: tags (shown in the
-        /// due column and as the link).
-        static std::wstring EditableText(TodoTask const& task);
-
         /// The check box was switched (reported after the list's own notification: the handler may refill the list).
         std::function<void(TaskRow const&)> toggled;
         /// The text was edited in place (`text` as typed; reported after the list's notification, like toggled).

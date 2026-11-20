@@ -60,6 +60,14 @@ namespace xournal
         /// Sets (or with nothing removes) a key:value tag; an existing one keeps its place. The value is literal.
         std::wstring SetTag(std::wstring_view description, std::wstring_view key, std::optional<std::wstring> const& value);
 
+        /// The text an in-place edit starts with: the priority as todo.txt writes it ("(A) ", open tasks only) and the
+        /// description without the due: and doc: tags (shown apart as the due date and the link).
+        std::wstring EditText(TodoTask const& task);
+        /// The task with an edited EditText: an open task's priority read the todo.txt way ("(B) ..." sets it, no
+        /// "(X) " removes it), due: and doc: kept as they were, everything else (done, dates) unchanged. A done task's
+        /// text is taken as written (todo.txt gives done tasks no priority).
+        TodoTask WithEditText(TodoTask const& task, std::wstring_view text);
+
         std::optional<Date> ParseDate(std::wstring_view text);
         std::wstring FormatDate(Date date);
 
