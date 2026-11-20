@@ -5,13 +5,19 @@
 # user's desktop to watch or debug a test (tell the user first).
 #   UiTests\Run-AppTest.ps1 -Test UiTests\InkRoundTripTest.ps1
 #   -Build: the build folder below .local-build (default cmake); -Extra: more files for C:\sbx\data.
+#   -AppDir <folder>: the app from that folder instead (XournalStudio.exe and its DLLs, e.g. an installed or staged app).
+#   -FromCi [-Commit <rev>]: the app CI staged (the newest green run on main, or that commit's; tools\CiArtifact.ps1)
+#   - no local build; the same exe install.ps1 -FromCi installs.
 param(
     [Parameter(Mandatory)][string]$Test,
     [string]$Config = 'Release',
     [string]$Build = 'cmake',
     [string[]]$Extra = @(),
     [int]$TimeoutSeconds = 300,
-    [switch]$Show
+    [switch]$Show,
+    [string]$AppDir = '',
+    [switch]$FromCi,
+    [string]$Commit = ''
 )
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot
@@ -26,9 +32,16 @@ try {
     $app = Join-Path $repo '.local-build\sandbox-app'
     if (Test-Path $app) { Remove-Item -Recurse -Force $app }
     New-Item -ItemType Directory -Force $app | Out-Null
-    Copy-Item (Join-Path $repo ".local-build\$Build\app\$Config\XournalStudio.exe") $app
-    # The DLLs the build puts next to it (pdfium.dll: the PDF's text for search).
-    Get-ChildItem (Join-Path $repo ".local-build\$Build\app\$Config") -Filter *.dll | Copy-Item -Destination $app
+    $from = Join-Path $repo ".local-build\$Build\app\$Config"
+    if ($AppDir) { $from = $AppDir }
+    if ($FromCi) {
+        . (Join-Path $repo 'tools\CiArtifact.ps1')
+        $from = Join-Path $repo '.local-build\ci-app'
+        Get-XournalCiApp -Repo $repo -Commit $Commit -Destination $from | Out-Null
+    }
+    Copy-Item (Join-Path $from 'XournalStudio.exe') $app
+    # The DLLs next to it (pdfium.dll: the PDF's text for search).
+    Get-ChildItem $from -Filter *.dll | Copy-Item -Destination $app
     # One results folder per test: agents running different tests one after another keep each other's results.
     $work = Join-Path $env:TEMP ('xournal-native-sandbox-' + [IO.Path]::GetFileNameWithoutExtension($Test))
     $data = @((Join-Path $repo 'examples\Schaltungen.xopp'), (Join-Path $repo 'examples\Schaltungen.pdf')) + $Extra

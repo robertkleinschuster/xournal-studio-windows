@@ -1,17 +1,28 @@
 name: Build
 
-# Every push and pull request: build the C++/Win32 app (Release) and run its unit tests (build.ps1).
-# A tag v* builds the committed state as install.ps1 does (unit tests, Release build, staged with pdfium.dll and the
-# license texts), zips that layout and publishes it as a GitHub pre-release. Only the release job may write.
+# The integration build: agents push to main in bursts; CI builds the newest commit, runs the unit tests and uploads the
+# staged app (artifact app-<sha>: XournalStudio.exe, pdfium.dll, licenses\ - what install.ps1 installs), which
+# `install.ps1 -FromCi` and `UiTests\Run-AppTest.ps1 -FromCi` take instead of a local build.
+# - Batching: a newer push to the same branch cancels the running build (concurrency); tags are never cancelled.
+# - Docs-only pushes build nothing (paths-ignore).
+# - Third-party code comes from the dependency cache (cmake/DependencyCache.cmake), kept with actions/cache.
+# - Failures: the failing tests (names and output) and compiler errors are listed in the job summary (gh run view).
+# A tag v* also zips the staged app, builds the MSI and publishes a GitHub pre-release (the only job that may write).
 on:
   push:
     branches: [main]
     tags: ['v*']
+    paths-ignore: ['**.md', 'docs/**', 'examples/**/*.png', 'LICENSE*', '.gitignore', '.gitattributes']
   pull_request:
+    paths-ignore: ['**.md', 'docs/**', 'examples/**/*.png', 'LICENSE*', '.gitignore', '.gitattributes']
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
 
 jobs:
   build:
@@ -20,32 +31,119 @@ jobs:
     env:
       # Windows on the runner has only the en-US handwriting recognizer; the search test writes German words.
       XOURNAL_TEST_EXCLUDE: '^Search\.HandwritingIsRecognisedAndCached$'
+      # Main and tags build and stage the committed state as install.ps1 does, in a short path (MSBuild's file
+      # tracker fails beyond MAX_PATH); pull requests only build and test.
+      STAGE: ${{ github.ref == 'refs/heads/main' || github.ref_type == 'tag' }}
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: true
 
       # The runner's %TEMP% is an 8.3 short path (C:\Users\RUNNER~1\...), which the git tests' expected paths do not
       # match (libgit2 reports the long path); RUNNER_TEMP has long names only.
-      - name: Temp folder with long names
+      - name: Temp folder with long names, dependency cache key
+        id: deps
         shell: pwsh
         run: |
           "TEMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
           "TMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
+          "XOURNAL_DEPS_CACHE=$env:RUNNER_TEMP\xs-deps" >> $env:GITHUB_ENV
+          "XOURNAL_JOB_START=$((Get-Date).ToUniversalTime().ToString('o'))" >> $env:GITHUB_ENV
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          if (-not $vs) { throw 'Visual Studio not found (vswhere)' }
+          $msvc = (Get-Content "$vs\VC\Auxiliary\Build\Microsoft.VCToolsVersion.default.txt").Trim()
+          "msvc=$msvc" >> $env:GITHUB_OUTPUT
+
+      # The cache's folder names carry their own keys (pin, recipe, toolchain): a restored folder is only used when it
+      # matches, so a partial hit (restore-keys: same toolset, other pins) reuses the unchanged dependencies.
+      - name: Restore the dependency cache
+        id: deps-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}\xs-deps
+          key: xs-deps-${{ runner.os }}-msvc${{ steps.deps.outputs.msvc }}-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'pdf/Dependencies.cmake', 'services/git/Dependencies.cmake', 'pdftext/CMakeLists.txt', 'import/CMakeLists.txt') }}
+          restore-keys: xs-deps-${{ runner.os }}-msvc${{ steps.deps.outputs.msvc }}-
 
       - name: Build and unit tests
-        if: github.ref_type != 'tag'
+        if: env.STAGE != 'true'
         shell: pwsh
         run: .\build.ps1
 
-      # install.ps1 -SkipInstall: HEAD built in its own worktree, unit tests, staged in .local-build\install-stage
-      # (XournalStudio.exe, pdfium.dll, licenses\ with THIRD-PARTY.md) - the same layout install.ps1 installs.
+      # install.ps1 -SkipInstall: HEAD built in its own worktree, unit tests, staged in .local-build\install-stage.
       - name: Build, unit tests and stage
+        if: env.STAGE == 'true'
+        shell: pwsh
+        run: .\install.ps1 -SkipInstall -SourceDir (Join-Path $env:RUNNER_TEMP 's')
+
+      # Failed tests (CTest's JUnit file: names and output) and compiler errors (build.ps1's build log) for gh run view.
+      - name: Summary
+        if: always()
+        shell: pwsh
+        run: |
+          $summary = @()
+          $roots = @('.local-build', (Join-Path $env:RUNNER_TEMP 's\.local-build'))
+          foreach ($root in $roots) {
+              $log = Join-Path $root 'build-output.log'
+              if (Test-Path $log) {
+                  $errors = @(Select-String -Path $log -Pattern ': (fatal )?error [A-Z]+\d+' | ForEach-Object { $_.Line.Trim() } | Select-Object -Unique -First 30)
+                  if ($errors) { $summary += '### Build errors'; $summary += '```'; $summary += $errors; $summary += '```' }
+              }
+              $junit = Join-Path $root 'ctest-junit.xml'
+              if (Test-Path $junit) {
+                  [xml]$xml = Get-Content -Raw $junit
+                  $cases = @($xml.testsuite.testcase)
+                  $failed = @($cases | Where-Object { $_.status -eq 'fail' -or $_.failure })
+                  $summary += "### Unit tests: $($cases.Count - $failed.Count) of $($cases.Count) passed"
+                  foreach ($case in $failed) {
+                      $summary += "- **$($case.name)**"
+                      $out = "$($case.'system-out')".Trim()
+                      if ($out) { $summary += '```'; $summary += ($out -split "`n" | Select-Object -Last 40); $summary += '```' }
+                  }
+              }
+          }
+          if (-not $summary) { $summary = @('No build log or test results (the job stopped before the build; see its log).') }
+          $summary -join "`n" >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Keep the staged app
+        if: env.STAGE == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: app-${{ github.sha }}
+          path: .local-build/install-stage
+          retention-days: 5
+          if-no-files-found: error
+
+      # Only the folders this run used are kept (each configure touches its folders' last-used file); downloads are
+      # needed only to build, and come back when a pin changes.
+      - name: Save the dependency cache
+        if: always() && steps.deps-restore.outcome == 'success' && steps.deps-restore.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $root = $env:XOURNAL_DEPS_CACHE
+          if (-not (Test-Path $root)) { "no dependency cache folder"; exit 0 }
+          $start = [DateTime]::Parse($env:XOURNAL_JOB_START).ToUniversalTime()
+          $downloads = Join-Path $root 'downloads'
+          if (Test-Path $downloads) { Remove-Item -Recurse -Force $downloads }
+          foreach ($dir in Get-ChildItem $root -Directory) {
+              $stamp = Join-Path $dir.FullName 'last-used'
+              if (-not (Test-Path $stamp) -or (Get-Item $stamp).LastWriteTimeUtc -lt $start) {
+                  "not used by this run, left out: $($dir.Name)"
+                  Remove-Item -Recurse -Force $dir.FullName
+              }
+          }
+          Get-ChildItem $root -Directory | ForEach-Object { "kept: $($_.Name)" }
+      - name: Save the dependency cache (upload)
+        if: always() && steps.deps-restore.outcome == 'success' && steps.deps-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}\xs-deps
+          key: ${{ steps.deps-restore.outputs.cache-primary-key }}
+
+      - name: Release files (zip, MSI)
         if: github.ref_type == 'tag'
         shell: pwsh
         run: |
-          .\install.ps1 -SkipInstall -SourceDir (Join-Path $env:RUNNER_TEMP 's')
           $version = $env:GITHUB_REF_NAME.TrimStart('v')
           $stage = '.local-build\install-stage'
           Copy-Item THIRD-PARTY.md $stage
@@ -69,7 +167,7 @@ jobs:
 
       - name: Keep the release files
         if: github.ref_type == 'tag'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release
           path: |
@@ -86,7 +184,7 @@ jobs:
       contents: write
     steps:
       - name: Get the zip
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release
 

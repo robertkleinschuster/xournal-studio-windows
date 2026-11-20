@@ -15,22 +15,21 @@ set(XOURNAL_COMPILE_OPTIONS /W4 /WX /permissive- /EHsc /utf-8)
 set(XOURNAL_DEFINITIONS UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 
 include(FetchContent)
+# Third-party code is built once into a shared cache outside the build tree and reused by every worktree and CI run
+# (cmake/DependencyCache.cmake); each module's Dependencies.cmake holds its pins.
+include(cmake/DependencyCache.cmake)
 
-# zlib: Windows has no public gzip API. Only its sources are fetched (pinned release); they are compiled here into a
-# static library with the project's runtime, because zlib's own CMake setup builds a DLL too and predates the policies
-# this CMake needs.
-FetchContent_Declare(zlib
+# zlib: Windows has no public gzip API. The sources of the pinned release are compiled into a static library with the
+# project's runtime by a small wrapper project (cmake/deps/zlib), because zlib's own CMake setup builds a DLL too and
+# predates the policies this CMake needs.
+xournal_cached_dependency(zlib VERSION 1.3.1
     URL https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.gz
-    URL_HASH SHA256=9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23
-    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-    SOURCE_SUBDIR no-cmake-build)
-FetchContent_MakeAvailable(zlib)
-add_library(zlib STATIC
-    ${zlib_SOURCE_DIR}/adler32.c ${zlib_SOURCE_DIR}/crc32.c ${zlib_SOURCE_DIR}/deflate.c
-    ${zlib_SOURCE_DIR}/inffast.c ${zlib_SOURCE_DIR}/inflate.c ${zlib_SOURCE_DIR}/inftrees.c
-    ${zlib_SOURCE_DIR}/trees.c ${zlib_SOURCE_DIR}/zutil.c)
-target_include_directories(zlib SYSTEM PUBLIC ${zlib_SOURCE_DIR})
-target_compile_definitions(zlib PRIVATE _CRT_SECURE_NO_DEPRECATE _CRT_NONSTDC_NO_DEPRECATE)
+    SHA256 9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23
+    SOURCE_WRAPPER ${CMAKE_CURRENT_SOURCE_DIR}/cmake/deps/zlib
+    LICENSES LICENSE)
+add_library(zlib INTERFACE)
+target_include_directories(zlib SYSTEM INTERFACE ${zlib_PREFIX}/include)
+target_link_libraries(zlib INTERFACE ${zlib_PREFIX}/lib/zlib.lib)
 
 add_subdirectory(base)
 add_subdirectory(model)

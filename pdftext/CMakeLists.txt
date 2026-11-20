@@ -6,14 +6,12 @@
 #
 # PDFium 158.0.8125.0 (BSD-3-Clause; bundles FreeType, ICU, lcms, libjpeg-turbo, OpenJPEG, libpng, zlib, ... - their
 # licenses come along in licenses/pdfium) from bblanchon/pdfium-binaries, release chromium/8125 (2026-10-26).
-include(FetchContent)
-FetchContent_Declare(pdfium_binaries
+# Downloaded once into the dependency cache (cmake/DependencyCache.cmake).
+xournal_cached_dependency(pdfium VERSION 158.0.8125.0
     URL https://github.com/bblanchon/pdfium-binaries/releases/download/chromium%2F8125/pdfium-win-x64.tgz
-    URL_HASH SHA256=9A964261760CFF52570AABF038AB346D3A5034DD8B30D0D5FE8861235D356B8B
-    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-    SOURCE_SUBDIR no-cmake-build) # binaries and headers only
-FetchContent_MakeAvailable(pdfium_binaries)
-set(XOURNAL_PDFIUM_DIR ${pdfium_binaries_SOURCE_DIR} CACHE INTERNAL "")
+    SHA256 9A964261760CFF52570AABF038AB346D3A5034DD8B30D0D5FE8861235D356B8B
+    DOWNLOAD_ONLY) # binaries and headers only
+set(XOURNAL_PDFIUM_DIR ${pdfium_PREFIX} CACHE INTERNAL "")
 
 add_library(pdfium SHARED IMPORTED GLOBAL)
 set_target_properties(pdfium PROPERTIES

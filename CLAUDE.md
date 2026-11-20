@@ -118,6 +118,18 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   the lock is held briefly: `.\build.ps1 -Target XournalTests -Tests '^Pdf'` (`-Target` = `cmake --target`, several
   allowed; `-Tests` = `ctest -R`; with `-Target` and no `-Tests` no tests run; `-NoTests`). The full `.\build.ps1`
   before a push and for install. Never build outside the lock.
+- **Dependency cache** (`cmake/DependencyCache.cmake`): zlib, libjpeg-turbo, qpdf and libgit2 are built once per pin,
+  recipe, configuration and toolchain into `%LOCALAPPDATA%\XournalStudioBuildCache\<name>-<version>-<key>\<config>`
+  (root: `XOURNAL_DEPS_CACHE`); PDFium and protozero are downloaded once into `...\<name>-<version>-<key>\files`.
+  Every worktree, install.ps1's worktree and CI (actions/cache) reuse it. The key hashes URL, SHA-256, CMake arguments
+  (these name the prefixes of the dependencies they use), the cache module and compiler/generator/SDK, so a changed
+  pin or compiler gets a new folder. A dependency is built at configure time, under a file lock, into `<config>.tmp`
+  and renamed when it is installed; its logs `<config>-configure|build|install.log` sit next to it; a failure stops
+  the configure. Only `XOURNAL_DEPS_CONFIGS` are built (build.ps1 adds its `-Config`). build.ps1 configures only a new
+  tree or a new configuration (ZERO_CHECK re-runs CMake when a CMake file changed). Delete old key folders by hand.
+  GoogleTest is still built per tree (InkPages declares it; small). Locally (12 threads, 2026-11-20) filling
+  the cache once took 359 s (qpdf 237, libgit2 85, libjpeg-turbo 32, zlib 5); before, every fresh tree spent ~12 min
+  on third-party code (configure 104 s + 705 s).
 
 - **install.ps1 is for development, the MSI for releases.** Both use the same folder and Start menu entry
   "Xournal Studio (Win32)". `install.ps1` refuses while the MSI is installed (found by its UpgradeCode): replacing the
@@ -132,10 +144,19 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   shortcut, upgrade and a clean uninstall (in the sandbox every install spent ~2 min in Windows Installer's software
 restriction check of the unsigned package - "is not digitally signed", then permitted; run it with
 `-TimeoutSeconds 1200`). WiX 7 needs an EULA (OSMF) acceptance – a decision for the user.
-- **CI** (`.github/workflows/build.yml`, `windows-2025-vs2026`): every push and PR builds and runs the unit tests. A tag
-  `v*` runs `install.ps1 -SkipInstall`, builds the MSI and a portable zip of the staged folder (exe, pdfium.dll,
-  licenses\, THIRD-PARTY.md, README.txt), and a separate job (the only one with `contents: write`) creates the GitHub
-  pre-release "Xournal Studio (Win32) <version>".
+- **CI is the integration build** (`.github/workflows/build.yml`, `windows-2025-vs2026`; user, 2026-11-20): agents
+  push to main in bursts, CI builds and tests, local builds stay rare and targeted. A newer push to a branch cancels
+  the running build (`concurrency`; only the newest commit of a burst builds; tags are never cancelled); docs-only
+  pushes (`**.md`, `docs/**`, `examples/**/*.png`, ...) build nothing. Third-party code comes from the dependency cache
+  (actions/cache, restore keys for a partial hit; only folders the run used are saved). Tests run in parallel; the job
+  summary lists compiler errors and failed tests with their output: `gh run watch`, `gh run view <id>`,
+  `gh run view <id> --log-failed`. Every push to main (and every tag) runs `install.ps1 -SkipInstall` and uploads the
+  staged app as artifact `app-<sha>` (exe, pdfium.dll, licenses\; 5 days). Joint round: wait for the batch's run, send
+  errors to their owners, `.\install.ps1 -FromCi` (newest green main run; `-Commit <rev>` for one commit; same checks,
+  folder and start check, logs run and commit), `UiTests\Run-AppTest.ps1 -FromCi -Test ...` on the same exe
+  (`-AppDir <folder>` for any folder). A tag `v*` also builds the MSI and a portable zip (THIRD-PARTY.md, README.txt),
+  and a separate job (the only one with `contents: write`) creates the GitHub pre-release
+  "Xournal Studio (Win32) <version>". Actions are pinned by commit SHA.
 
 ## Architecture
 
