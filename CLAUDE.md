@@ -1,8 +1,10 @@
 # CLAUDE.md
 
 Guidance for Claude Code in this repository. Keep it current: add what is learned, remove what turns out wrong.
-Platform facts (Windows ink, Windows.Data.Pdf, sandbox, diagnostics) live in the user's global CLAUDE.md; the writing
-surface's facts in `external/InkPages/CLAUDE.md`. This file holds what is this app's own.
+Where facts live: general Windows facts (how to work on Microsoft tech, Windows.Data.Pdf, Windows Sandbox, synthetic
+input, GitHub runners, cdb, Segoe Fluent Icons) in the user's global CLAUDE.md; Windows ink, the Win32 ink presenter,
+DirectComposition, DirectManipulation, comctl32 toolbar, RichEdit and UI Automation in `external/InkPages/CLAUDE.md`.
+This file holds what is this app's own.
 
 ## What this is
 
@@ -13,7 +15,7 @@ port: features may work differently when a simpler or more Windows-native way ex
 
 History: GTK fork → C#/WinUI 3 app (2026-11-15 … 11-19; **tag `csharp-final`**, release v0.1.0; it stays installed on
 the user's machine in `%LOCALAPPDATA%\Programs\Xournal Studio for Windows` – never touch that folder or its data) →
-this C++/Win32 app (`docs/CPP-UMZUG.md`; moved from `native/` to the root on 2026-11-19, first release v0.2.0).
+this C++/Win32 app (plan and parity list: `docs/CPP-UMZUG.md`; first release v0.2.0).
 
 The user is a student on a Lenovo ThinkPad X13 Yoga Gen 4 (convertible, Wacom AES pen, 1920x1200 at 150 %,
 right-handed) who annotates lecture PDFs and solves exercises in a git-synced folder. Typical workflow (see
@@ -27,15 +29,18 @@ long formulas in several colors. For open pen/UI design questions, propose how O
   comctl32 v6 with visual styles (Windows 11 look), PerMonitorV2, DirectComposition/Direct2D/DirectWrite/WIC, Windows
   ink through the Win32 ink presenter (InkPages), DirectManipulation, C++/WinRT for WinRT APIs (Windows.Data.Pdf,
   InkAnalyzer); few dependencies, statically linked; fast start.
+- **Native elements – no Frankenstein** (user, 2026-11-19): the controls of Win32 in their default look (comctl32
+  menus/tree/toolbar/list, `TaskDialog`, common file dialogs, DirectManipulation for finger pan/zoom, Windows ink via
+  the Win32 ink presenter); no UI framework on top, no XAML islands, no rebuilt controls.
 - **Doctrine: Windows' APIs do the work, the app only wires them up correctly.** Every feature is built the way
   Microsoft builds it (docs, samples, the controls' own extension points). App code connects input, feedback, undo and
   the .xopp mapping – nothing more. When something seems to need own logic, first look for the API that does it; when
   an API is broken, find the root cause and stay as close to Microsoft's intended route as possible. Rebuilding
   existing code to get closer to this is welcome.
 - **No home-made solutions, no hacks.** Use what exists: Windows features/APIs and established libraries. Third-party
-  code only where Windows has nothing (zlib, qpdf, libgit2, protozero, PDFium – `THIRD-PARTY.md`), pinned. Do not work
-  around platform behavior (toggling input devices, hit-testing tricks, hooks, timers fighting the framework). If the
-  native way does not work, stop and report it with the options.
+  code only where Windows has nothing (zlib, libjpeg-turbo, qpdf, libgit2, protozero, PDFium – `THIRD-PARTY.md`),
+  pinned. Do not work around platform behavior (toggling input devices, hit-testing tricks, hooks, timers fighting the
+  framework). If the native way does not work, stop and report it with the options.
 - **Never swallow errors** (app code, handlers, experiments): every Windows/COM call is checked; failures throw
   `xournal::Error` (HRESULT + system text) and are logged where thrown. Before concluding "the platform does not
   raise X", prove the handler ran with a log line at its very start.
@@ -47,9 +52,6 @@ long formulas in several colors. For open pen/UI design questions, propose how O
 - **Never delete from files.** Everything read is written back, including elements/attributes the app does not
   understand or that other programs added (the XML tree keeps every element, attribute in order, text, comment and
   processing instruction; saving may add formatting whitespace only). Only the content the user changed is rewritten.
-- **Native elements – no Frankenstein** (user, 2026-11-19): the controls of Win32 in their default look (comctl32
-  menus/tree/toolbar/list, `TaskDialog`, common file dialogs, DirectManipulation for finger pan/zoom, Windows ink via
-  the Win32 ink presenter); no UI framework on top, no XAML islands, no rebuilt controls.
 - **Light only for now** (user, 2026-11-19): Win32 has no documented dark mode for comctl32 controls (Microsoft Learn
   "Support Dark and Light themes in Win32 apps" documents only detection and the dark title bar); half dark would be
   Frankenstein, the undocumented uxtheme routes a hack. Revisit once Microsoft documents it.
@@ -97,102 +99,97 @@ long formulas in several colors. For open pen/UI design questions, propose how O
   the left side is for the side pane (Dateien, Aufgaben, Seiten).
 - German UI texts; code, comments and commits in English.
 
+## Process (agreed with the user, 2026-11-20)
+
+- **Agents push to main, no PRs.** Commit atomically and only your own paths (`git commit -m ... -- <paths>`, never
+  `git add -A`: other agents work in the same tree); rebase right before pushing.
+- **CI is the integration build** (`.github/workflows/build.yml`): it builds and runs all unit tests for every push to
+  main. **Builds are batched:** agents push in bursts, CI builds only the newest commit (a newer push cancels the
+  running build); local builds stay rare.
+- **One build at a time** on the machine (CPU, LNK1104 file locks across worktrees): `build.ps1`, `install.ps1` and
+  `tools\with-build-lock.ps1 <command>` (for raw `cmake --build`/`ctest`) hold the named mutex `Global\XournalStudioBuild`
+  (`tools/BuildLock.ps1`); a second build waits and logs the holder (`%LOCALAPPDATA%\XournalStudioBuildCache\
+  build-lock-holder.txt`); Windows releases it when the script ends in any way. Never build outside the lock.
+- **Targeted tests for small changes:** build and test only what changed (`.\build.ps1 -Target XournalTests -Tests
+  '^Pdf'`), so the lock is held briefly; leave the full run to CI.
+- **UI tests run on GitHub** (`.github/workflows/ui-tests.yml`) after each green Build; the local sandbox is for
+  debugging a test and for `MsiTest`.
+- Joint round after a batch: wait for its CI run (`gh run watch`), send errors to their owners, install the CI build
+  (`.\install.ps1 -FromCi`), check the UI test summary.
+
 ## Build, test, install
 
 ```powershell
-git submodule update --init                 # InkPages (external/InkPages)
-.\build.ps1                                 # Visual Studio's CMake: Release build + unit tests (CTest + GoogleTest)
-.\install.ps1                               # HEAD in .local-build\install-source: tests, build, install to
-                                            # %LOCALAPPDATA%\Programs\Xournal Studio (Win32) + Start menu, start check
-UiTests\Run-AppTest.ps1 -Test UiTests\<Test>.ps1 -Extra <uiaprobe.exe>   # sandbox UI test (below)
-installer\Build-Msi.ps1 -Version 0.2.0      # the MSI from .local-build\install-stage (install.ps1 -SkipInstall)
+git submodule update --init                              # InkPages (external/InkPages)
+.\build.ps1 -Target XournalTests -Tests '^Xml'           # targeted: cmake --target (several allowed) + ctest -R;
+                                                         # -Target without -Tests runs no tests; -NoTests; -Config Debug
+.\build.ps1                                              # everything + all unit tests (rarely: CI does this)
+.\install.ps1 -FromCi                                    # install the newest green main run's app (-Commit <rev>)
+.\install.ps1                                            # build HEAD locally in .local-build\install-source, install
+gh workflow run ui-tests.yml -f tests=TasksTest,TextToolTest [--ref <branch>] [-f build_run=<id>]
+UiTests\Run-AppTest.ps1 -FromCi -Test UiTests\<Test>.ps1 -Extra <uiaprobe.exe>   # local sandbox, for debugging
+installer\Build-Msi.ps1 -Version 0.2.0                   # MSI from .local-build\install-stage (install.ps1 -SkipInstall)
 ```
 
-Workflow: after a change commit atomically, push and install (`install.ps1` refuses while the installed app runs).
-
-- **One build at a time, targeted builds** (user, 2026-11-20; simultaneous full builds in several worktrees cost CPU
-  and gave LNK1104 file-lock errors): `build.ps1`, `install.ps1` and `tools\with-build-lock.ps1 <command>` (for raw
-  `cmake --build`/`ctest`) hold a machine-wide named mutex `Global\XournalStudioBuild` (`tools/BuildLock.ps1`). A
-  second build waits and logs the holder (what, worktree, PID; `%LOCALAPPDATA%\XournalStudioBuildCache\build-lock-holder.txt`);
-  Windows releases it when the script ends (failure, Ctrl+C, killed process). Agents build only what they changed, so
-  the lock is held briefly: `.\build.ps1 -Target XournalTests -Tests '^Pdf'` (`-Target` = `cmake --target`, several
-  allowed; `-Tests` = `ctest -R`; with `-Target` and no `-Tests` no tests run; `-NoTests`). The full `.\build.ps1`
-  before a push and for install. Never build outside the lock.
+- `install.ps1` installs to `%LOCALAPPDATA%\Programs\Xournal Studio (Win32)` + Start menu entry, then a start check; it
+  refuses while the installed app runs and while the MSI is installed. `-FromCi` downloads the artifact `app-<sha>`
+  (`tools\CiArtifact.ps1`, gh) – same checks, folder and start check; it logs run and commit.
+- **Build system:** `build.ps1` configures `Ninja Multi-Config` (Visual Studio's ninja.exe) in the VS x64 developer
+  environment (`tools/VsDevEnv.ps1`; `with-build-lock.ps1` enters it too) and compiles the own code through ccache
+  4.14.2 (pinned, in the dependency cache; `XOURNAL_CCACHE`, `CMAKE_<LANG>_COMPILER_LAUNCHER`; `CCACHE_BASEDIR` = source
+  root, `CCACHE_NOHASHDIR`, `compiler_check=content` and the /showIncludes prefix of the installed MSVC language – a
+  German MSVC writes "Hinweis: Einlesen der Datei:" – so all worktrees share `%LOCALAPPDATA%\ccache` / `CCACHE_DIR`;
+  measured: a second worktree hits 100 %). Debug info `/Z7` (ccache cannot cache `/Zi`). Build folder
+  `.local-build\cmake` (outputs `app\<Config>`); an old Visual Studio-generator tree there is removed and reconfigured;
+  build.ps1 configures only a new tree or configuration. IDE: open the folder in Visual Studio (CMake).
 - **Dependency cache** (`cmake/DependencyCache.cmake`): zlib, libjpeg-turbo, qpdf and libgit2 are built once per pin,
   recipe, configuration and toolchain into `%LOCALAPPDATA%\XournalStudioBuildCache\<name>-<version>-<key>\<config>`
-  (root: `XOURNAL_DEPS_CACHE`); PDFium and protozero are downloaded once into `...\<name>-<version>-<key>\files`.
-  Every worktree, install.ps1's worktree and CI (actions/cache) reuse it. The key hashes URL, SHA-256, CMake arguments
-  (these name the prefixes of the dependencies they use), the cache module and compiler/generator/SDK, so a changed
-  pin or compiler gets a new folder. A dependency is built at configure time, under a file lock, into `<config>.tmp`
-  and renamed when it is installed; its logs `<config>-configure|build|install.log` sit next to it; a failure stops
-  the configure. Only `XOURNAL_DEPS_CONFIGS` are built (build.ps1 adds its `-Config`). build.ps1 configures only a new
-  tree or a new configuration (the build re-runs CMake when a CMake file changed). Delete old key folders by hand.
-  GoogleTest is still built per tree (InkPages declares it; small). Locally (12 threads, 2026-11-20) filling
-  the cache once took 359 s (qpdf 237, libgit2 85, libjpeg-turbo 32, zlib 5); before, every fresh tree spent ~12 min
-  on third-party code (configure 104 s + 705 s).
-- **Ninja + ccache** (2026-11-20): build.ps1 configures `Ninja Multi-Config` (Visual Studio's ninja.exe) in the VS x64
-  developer environment (`tools/VsDevEnv.ps1`, Microsoft's DevShell module; `tools\with-build-lock.ps1` enters it too)
-  and compiles the own code through ccache 4.14.2 (pinned, downloaded into the dependency cache; `XOURNAL_CCACHE`,
-  `CMAKE_<LANG>_COMPILER_LAUNCHER`, `CCACHE_BASEDIR` = the source root so all worktrees share
-  `%LOCALAPPDATA%\ccache` or `CCACHE_DIR`; also `CCACHE_NOHASHDIR`, `compiler_check=content` and the /showIncludes prefix
-  of the installed MSVC language - a German MSVC writes "Hinweis: Einlesen der Datei:", and without these every
-  worktree missed; measured: a second worktree hits 100 %, Ninja's header deps stay relative); Debug info `/Z7` (`CMAKE_MSVC_DEBUG_INFORMATION_FORMAT`; ccache cannot cache `/Zi`). The
-  build folder stays `.local-build\cmake` (outputs in `app\<Config>`); an old Visual Studio-generator tree there is
-  removed and configured again. For the IDE, open the folder in Visual Studio (CMake). Measured in CI (4-core
-  runner, 2026-11-20, whole job): old workflow ~15-16 min per push (VS generator, everything from source); VS
-  generator + dependency cache 18.4 min cold / 11.7 min warm; Ninja + ccache 8.9-15.5 min cold (runners vary), **2.0
-  min warm** (configure 12 s, ccache 203/211 direct hits, build step 1.5 min). The hosted images alternate between
-  two default MSVC toolsets (14.51/14.52), so each has its own caches (both warm on main); pinning the side-by-side
-  14.44 does not help - its cl.exe differs per image (19.44.35229 / 19.44.35230).
-
-- **install.ps1 is for development, the MSI for releases.** Both use the same folder and Start menu entry
-  "Xournal Studio (Win32)". `install.ps1` refuses while the MSI is installed (found by its UpgradeCode): replacing the
-  files under Windows Installer's feet would let a repair or uninstall remove the development build. Installing the MSI
-  over a folder install.ps1 wrote takes the folder over; uninstall then removes only the MSI's files.
+  (root `XOURNAL_DEPS_CACHE`); PDFium, protozero and ccache are downloaded once into `...\files`. The key hashes URL,
+  SHA-256, CMake arguments, the cache module and compiler/generator/SDK. Built at configure time under a file lock into
+  `<config>.tmp`, renamed when installed; logs `<config>-configure|build|install.log` beside it; a failure stops the
+  configure. Only `XOURNAL_DEPS_CONFIGS` are built. Delete old key folders by hand. GoogleTest is built per tree
+  (InkPages declares it). Filling the cache locally took 359 s (12 threads; qpdf 237, libgit2 85); before, every fresh
+  tree spent ~12 min on third-party code.
+- **CI details** (`build.yml`, `windows-2025-vs2026`, actions pinned by SHA): push to main, tags `v*`, by hand;
+  docs-only pushes (`**.md`, `docs/**`, `examples/**/*.png`, ...) build nothing; tags are never cancelled. Dependency
+  cache and ccache via actions/cache (saved also from cancelled runs). Tests run in parallel; the job summary lists
+  compiler errors and failed tests (`gh run view <id> [--log-failed]`). Every main push and tag runs `install.ps1
+  -SkipInstall` and uploads `app-<sha>` (exe, pdfium.dll, licenses\; 5 days). A tag also builds the MSI and a portable
+  zip (+ THIRD-PARTY.md, README.txt); a separate job (the only one with `contents: write`) creates the pre-release
+  "Xournal Studio (Win32) <version>". Measured (2026-11-20, 4-core runner, whole job): Ninja + ccache **2.0 min warm**
+  (configure 12 s, build 1.5 min), 8.9–15.5 min cold (was ~15–16 min per push). The hosted images alternate between two
+  default MSVC toolsets (14.51/14.52), each with its own caches; pinning 14.44 does not help (its cl.exe differs per
+  image). Runner quirks: `%TEMP%` is an 8.3 path, so the workflow points TEMP/TMP at `RUNNER_TEMP` (libgit2 reports long
+  paths; whether the app should compare paths independent of 8.3 names is open); only the en-US handwriting recognizer,
+  so `XOURNAL_TEST_EXCLUDE` (a CTest regex passed to `ctest -E`) leaves out `Search.HandwritingIsRecognisedAndCached`.
+- **install.ps1 is for development, the MSI for releases.** Both use the same folder and Start menu entry. Replacing
+  files under Windows Installer's feet would let a repair or uninstall remove the development build, hence the refusal;
+  installing the MSI over an install.ps1 folder takes it over, uninstall then removes only the MSI's files.
 - **MSI** (`installer/XournalStudio.wxs`, WiX Toolset 6.0.2 as a pinned .NET tool in `installer/dotnet-tools.json`):
   per-user, no admin rights, no dialogs (progress only), Start menu shortcut with the app icon, Apps & Features entry
-  (icon, version, publisher Robert Kleinschuster), fixed UpgradeCode + MajorUpgrade (a newer version replaces the old).
-  Uninstall removes exactly what it installed; settings, recovery copies and documents stay. Unsigned (no code-signing
-  certificate): SmartScreen warns on first run. ICE38/64/91 are suppressed (roaming-profile rules; it installs into
-  the local AppData); the sandbox test `UiTests/MsiTest.ps1` checks install (silent and with UI), start from the
-  shortcut, upgrade and a clean uninstall (in the sandbox every install spent ~2 min in Windows Installer's software
-restriction check of the unsigned package - "is not digitally signed", then permitted; run it with
-`-TimeoutSeconds 1200`). WiX 7 needs an EULA (OSMF) acceptance – a decision for the user.
-- **CI is the integration build** (`.github/workflows/build.yml`, `windows-2025-vs2026`; user, 2026-11-20): agents
-  push to main in bursts, CI builds and tests, local builds stay rare and targeted. A newer push to a branch cancels
-  the running build (`concurrency`; only the newest commit of a burst builds; tags are never cancelled); docs-only
-  pushes (`**.md`, `docs/**`, `examples/**/*.png`, ...) build nothing. Third-party code comes from the dependency cache
-  (actions/cache, restore keys for a partial hit; only folders the run used are saved). Tests run in parallel; the job
-  summary lists compiler errors and failed tests with their output: `gh run watch`, `gh run view <id>`,
-  `gh run view <id> --log-failed`. Every push to main (and every tag) runs `install.ps1 -SkipInstall` and uploads the
-  staged app as artifact `app-<sha>` (exe, pdfium.dll, licenses\; 5 days). Joint round: wait for the batch's run, send
-  errors to their owners, `.\install.ps1 -FromCi` (newest green main run; `-Commit <rev>` for one commit; same checks,
-  folder and start check, logs run and commit), `UiTests\Run-AppTest.ps1 -FromCi -Test ...` on the same exe
-  (`-AppDir <folder>` for any folder). A tag `v*` also builds the MSI and a portable zip (THIRD-PARTY.md, README.txt),
-  and a separate job (the only one with `contents: write`) creates the GitHub pre-release
-  "Xournal Studio (Win32) <version>". Actions are pinned by commit SHA.
+  (icon, version, publisher Robert Kleinschuster), fixed UpgradeCode + MajorUpgrade. Uninstall removes exactly what it
+  installed; settings, recovery copies and documents stay. Unsigned: SmartScreen warns on first run; in the sandbox
+  every install spent ~2 min in Windows Installer's software restriction check ("is not digitally signed", then
+  permitted) – run `MsiTest` with `-TimeoutSeconds 1200`. ICE38/64/91 suppressed (roaming-profile rules; it installs into
+  local AppData). WiX 7 needs an EULA (OSMF) acceptance – the user's decision.
 
 ## Architecture
 
 The modules, the ink layer contract and the app's classes are described in `README.md` (keep it current with the
 code). In short: `base ← model ← io ← pdf, pdftext, search, import, services/* ← app`; `tests/` per module.
 
-- **InkPages** (https://github.com/robertkleinschuster/InkPages, public, submodule `external/InkPages`; also used by the
-  MatheTrainer): the writing surface (`WritingSurface`, one ink presenter for the whole document, lazy pages
-  `load`/`store`, DirectManipulation), its toolbar and tools (pens, eraser, selection, shapes, ruler, text), undo, the
-  sandbox test kit. Library changes are made, committed and pushed in the InkPages repository, then the submodule
-  pointer is committed here. Only its library is built here; its demo and tests run in its own repository.
+- **InkPages** (https://github.com/robertkleinschuster/InkPages, public, submodule `external/InkPages`; MatheTrainer pins
+  its WinUI tag `winui-final`): the writing surface, its toolbar and tools, undo, the sandbox test kit. Library changes
+  are made, committed and pushed in the InkPages repository, then the submodule pointer is committed here. Only its
+  library is built here; its demo and tests run in its own repository.
 - `PageInkBridge`: lazy pages between InkPages and the model's `PageInk`; a stroke loaded from the file carries a key
   and is written back as its original element (moved/scaled by the key's transform, widths unchanged); key 0 = new ink.
   Xournal's width is the width at full pressure, Windows ink's size the width at half pressure (factor 1.75).
 
 ## Facts learned (keep)
 
-- **PDF rendering on the app's own D3D11 device** (`PdfPageRenderer`: `PdfCreateRenderer` +
-  `IPdfRendererNative::RenderPageToSurface`): `PdfPage.RenderToStreamAsync` keeps a static D3D11 device released only
-  at DLL detach, where the Intel Iris Xe driver hung process exit (C# app, debugged with cdb 2026-11-16).
-- **PDFs are loaded from memory**: a `PdfDocument` from a file keeps the file open (deleting the open document's PDF
-  failed with 0x80070005).
+- **PDF backgrounds:** rendered by `PdfPageRenderer` with `IPdfRendererNative` on the app's own D3D11 device and loaded
+  from memory (why: global CLAUDE.md, Windows.Data.Pdf – the static-device exit hang and the open file).
 - **Errors always land in `%LOCALAPPDATA%\XournalStudioForWindows\errors.log`**; the detailed log only with
   `XOURNAL_STUDIO_LOG` (InkPages' lines in `<log>.inkpages.log`). Settings: `settings-native.json` there (never the C#
   app's `settings.json`).
@@ -238,7 +235,7 @@ code). In short: `base ← model ← io ← pdf, pdftext, search, import, servic
   Nothing lost (coordinator's decision, 2026-11-20): the current versions of overwritten files go to the bin as copies
   first (`ProjectFiles::RecycleCopies`), and every step that can fail runs before the open document is reloaded.
   Colors only, no status letters (a TreeView shows none without drawing the items itself). Path containment everywhere
-  through `Paths::IsAtOrBelow`/`WithoutTrailingSeparator` (base) - one rule.
+  through `Paths::IsAtOrBelow`/`WithoutTrailingSeparator` (base) – one rule.
 - **Cut/copy/paste of files** in the tree (user, 2026-11-20; no drag & drop): CF_HDROP + "Preferred DropEffect" on the
   real clipboard (interoperates with File Explorer), copy/move with `IFileOperation` (the shell's conflict UI, undo).
   Moving the open document keeps it open: `MoveFiles` points it (and its PDF/pictures if moved) to the new place and
@@ -246,9 +243,12 @@ code). In short: `base ← model ← io ← pdf, pdftext, search, import, servic
   to relatively keep the old reference (as with File Explorer; the loader then looks next to the .xopp).
 - Tasks: only `<project folder>/todo.txt`; no reminders, no date words in quick add. Shown with comctl32 in its
   standard look (user, 2026-11-20: "nutze da die win32 komponenten passender"): a report-view ListView with column
-  headers, check boxes, groups Überfällig / Offen / Erledigt, info tips and in-place editing; the form above it in
-  Windows' control sizes.
+  headers, check boxes, groups Überfällig / Offen / Erledigt, info tips and in-place editing (F2); "Fällig am:" is a
+  check box with the date picker beside it; a double-click opens the edit dialog; the form above it in Windows' control
+  sizes.
 - The page in view is outlined in documents with more than one page.
+- The side pane is never narrower than its tabs need (280 DIP or the tab strip's measured width): comctl32's tab
+  padding does not grow with the DPI, the text does (at 96 DPI 280 px was too narrow).
 - **XmlLite writes LF as CR LF** in `WriteString`/`WriteWhitespace` (measured 2026-11-19): `XmlText` writes the pieces
   between line feeds through the writer and each LF with `WriteRaw` – texts and formatting keep LF as upstream writes.
 - **comctl32: `LVM_INSERTMARKHITTEST` answers -1 for every point of an `LVS_OWNERDATA` list** (measured with a probe
@@ -261,50 +261,34 @@ code). In short: `base ← model ← io ← pdf, pdftext, search, import, servic
 
 ## Testing
 
-- **Unit tests** (`tests/`, GoogleTest via CTest, run by `build.ps1`): every module, ported from the C# tests with the
-  same sample XML, plus a lossless round trip of `examples\*.xopp`; services tests in a single-threaded apartment.
-- **Sandbox UI tests run on a desktop of their own** (user, 2026-11-19): `UiTests\Run-AppTest.ps1 -Test
-  UiTests\<Test>.ps1` copies the build's exe, `examples\Schaltungen.*` and the files the test declares in a
-  `# Data: examples\X.pdf` comment line (`UiTests\TestData.ps1`, also used by `Run-CiTest.ps1`) and runs InkPages' runner
-  (`external/InkPages/UiTests/Run-SandboxTest.ps1`: `wsb connect` on a separate Win32 desktop – never the user's
-  screen; `-Show` puts it on the user's desktop to watch, tell the user first). The sandbox is shared: the runner
-  waits for the machine-wide mutex `Global\XournalStudioSandbox` (one test at a time across all worktrees, the holder
-  is logged) and refuses while `wsb list` is not empty. Results per test in
-  `%TEMP%\xournal-native-sandbox-<Test>\out` (screenshots, transcript, logs). In-sandbox scripts dot-source
-  `C:\sbx\TestKit.ps1`; comctl32 controls and menus are found with InkPages' `uiaprobe.exe` (pass it with `-Extra`).
-  Tests: `InkRoundTripTest`, `DocumentFlowsTest`, `PagesFlowTest`, `PagesPaneTest`, `TextToolTest`, `ClipboardTest`, `TasksTest`,
-  `RecoveryTest`, `ExplorerTest` (+ `New-TestRepository.ps1`: a bare upstream `remote.git` two commits ahead and one local commit -
-  the sync button's counts; restore, cut/copy/paste), `MsiTest` (the installer). Inside the sandbox:
-  PowerShell 5.1 (Add-Type = C# 5), 1514x900 at 144 DPI; synthetic pen input must hover ~100 ms before a press on the
-  selection, as a real pen does. Never name a function `Erase` in a test (PowerShell alias); write scripts with the
-  Write tool (shell heredocs turned `\t` in paths into tabs).
-- **UI tests on GitHub (standard since 2026-11-20, user's decision):** `.github/workflows/ui-tests.yml` runs every UI
-  test except `MsiTest` after each green Build of a push to main (`workflow_run`; docs-only pushes run no Build, so no
-  UI tests; a newer Build cancels running UI tests), one `windows-2025` job per test in parallel, with the Build's
-  artifact `app-<sha>` (no build) and `uiaprobe.exe` compiled only when its source changes (Actions cache). The
-  summary job lists PASS/FAIL per test with links to the artifact `ui-<Test>` (screenshots, transcript, app logs).
-  By hand: `gh workflow run ui-tests.yml [--ref <branch>] -f tests=TasksTest,TextToolTest [-f build_run=<id>]` (that
-  ref's test scripts against an existing app). `UiTests\Run-CiTest.ps1` lays out `C:\sbx` as the sandbox has it and
-  runs the script directly in the runner's interactive session – never run it on a developer machine. A job takes
-  ~1–2 min (setup ~20 s, test 30–90 s). Measured on the runner (2026-11-20): Windows Server 2025 (26100), runneradmin
-  in an interactive session, foreground/`SetForegroundWindow`, screenshots, `SendInput` and
-  `InjectSyntheticPointerInput` (pen) work; the Win32 ink presenter, DirectComposition/Direct2D (Hyper-V video, no
-  GPU) and Windows.Data.Pdf work; the screen is **1024x768 at 96 DPI** (the sandbox: 1514x900 at 144 DPI), so layout
-  that only fits at 150 % shows up there. Windows PowerShell 5.1 must be started with its own `PSModulePath` (from
-  pwsh it loaded pwsh's modules: `Get-FileHash` not found). The local sandbox stays for debugging a test.
-- **CI runner differences (2026-11-19):** the runner's `%TEMP%` is an 8.3 short path (`C:\Users\RUNNER~1\...`): the
-  git tests compared it with the long path libgit2 reports and failed – the workflow points TEMP/TMP at `RUNNER_TEMP`
-  (whether the app should compare paths independent of 8.3 names is open). The runner has only the en-US handwriting
-  recognizer ("Hallo Welt" → "Mo11@MelR"): `XOURNAL_TEST_EXCLUDE` (a CTest regex `build.ps1` passes to `ctest -E`)
-  leaves out `Search.HandwritingIsRecognisedAndCached` there.
-- A second `wsb start` right after `wsb stop` fails with CO_E_APPSINGLEUSE – wait for the old sandbox process.
+- **Unit tests** (`tests/`, GoogleTest via CTest): every module, ported from the C# tests with the same sample XML, plus
+  a lossless round trip of `examples\*.xopp`; services tests in a single-threaded apartment.
+- **UI tests on GitHub (standard since 2026-11-20, user's decision):** `ui-tests.yml` runs every `UiTests\*Test.ps1`
+  except `MsiTest` after each green Build of a push to main (`workflow_run`; no Build for docs-only pushes, so no UI
+  tests; a newer Build cancels running UI tests), one `windows-2025` job per test in parallel, with the Build's artifact
+  `app-<sha>` (no build) and `uiaprobe.exe` compiled only when its source changes (Actions cache). The summary job lists
+  PASS/FAIL per test with links to the artifact `ui-<Test>` (screenshots, transcript, app logs). A job takes ~1–2 min.
+  `UiTests\Run-CiTest.ps1` lays out `C:\sbx` as the sandbox has it and runs the script in the runner's interactive
+  session – never run it on a developer machine. The runner's screen is 1024x768 at 96 DPI (the sandbox: 1514x900 at
+  144 DPI), so layout that only fits at 150 % shows up there (what else the runner offers: global CLAUDE.md).
+- Tests: `InkRoundTripTest`, `DocumentFlowsTest`, `PagesFlowTest`, `PagesPaneTest`, `PdfNavigationTest`,
+  `TextToolTest`, `ClipboardTest`, `TasksTest`, `RecoveryTest`, `ExplorerTest` (+ `New-TestRepository.ps1`: a bare
+  upstream `remote.git` two commits ahead and one local commit – the sync button's counts; restore, cut/copy/paste),
+  `MsiTest` (the installer, sandbox only). A test declares extra files in a `# Data: examples\X.pdf` line
+  (`UiTests\TestData.ps1`, used by both runners); `examples\Schaltungen.*` always comes along. Scripts dot-source
+  `C:\sbx\TestKit.ps1` (InkPages); comctl32 controls and menus are found with InkPages' `uiaprobe.exe`.
+- **Local sandbox** (debugging, `MsiTest`): `UiTests\Run-AppTest.ps1 -Test UiTests\<Test>.ps1` (`-FromCi` = the CI
+  exe, `-AppDir <folder>`, else the local build) runs InkPages' runner on a desktop of its own (`-Show`: on the user's
+  desktop – tell the user first). One test at a time across all worktrees: it waits for the mutex
+  `Global\XournalStudioSandbox` (holder logged) and refuses while `wsb list` is not empty. Results in
+  `%TEMP%\xournal-native-sandbox-<Test>\out`.
 - Test hooks: `XOURNAL_STUDIO_CONFIG_DIR`, `XOURNAL_STUDIO_LOG`.
 - `examples/` holds sanitized real documents; never commit the user's own files (university material, personal data) –
   derive examples with `tools/make_examples.py` and check each page visually.
 
 ## Open work
 
-- The parity list and the remaining features are in `docs/CPP-UMZUG.md` (file associations, device test by
-  the user).
+- The parity list in `docs/CPP-UMZUG.md` (to be ticked off with commits), file associations (not built yet), the device
+  test by the user.
 - Questions for the user: an attached copy `<name>.xopp.bg.pdf` instead of appending to the original PDF (offered, not
   chosen); WiX 7 (EULA) vs. staying on WiX 6; a code-signing certificate.

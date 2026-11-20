@@ -26,17 +26,20 @@ Requires Windows 11 and Visual Studio 2026 with C++ (its CMake is used). Clone w
 `git submodule update --init`).
 
 ```powershell
-.\build.ps1            # configure (Visual Studio's CMake), build Release, run the unit tests (CTest + GoogleTest)
+.\build.ps1            # configure (Visual Studio's CMake, Ninja, ccache), build Release, run the unit tests
 .\build.ps1 -NoTests
+.\build.ps1 -Target XournalTests -Tests '^Xml'   # one target and the tests matching a CTest regex
 .\install.ps1          # the committed state (HEAD, built in a clean worktree): tests, Release build, install to
                        # %LOCALAPPDATA%\Programs\Xournal Studio (Win32) + Start menu entry "Xournal Studio (Win32)";
                        # then a start check. Refused while the installed app runs.
 .\install.ps1 -SkipInstall   # build and stage only (.local-build\install-stage)
+.\install.ps1 -FromCi       # install the app CI built for the newest green main run instead of building
 UiTests\Run-AppTest.ps1 -Test UiTests\TasksTest.ps1 -Extra <InkPages' uiaprobe.exe>   # a UI test in Windows Sandbox
 ```
 
-CI (`.github/workflows/build.yml`) builds and runs the unit tests on every push; a tag `v*` publishes the app as an MSI
-(see Installer) and a portable zip in a GitHub pre-release.
+CI (`.github/workflows/build.yml`) builds and runs the unit tests on every push to main (docs-only pushes excepted)
+and uploads the staged app; `.github/workflows/ui-tests.yml` then runs the UI tests on GitHub-hosted runners. A tag
+`v*` publishes the app as an MSI (see Installer) and a portable zip in a GitHub pre-release.
 
 ## Layout
 
@@ -44,13 +47,13 @@ CI (`.github/workflows/build.yml`) builds and runs the unit tests on every push;
 base/ model/ io/ pdf/ pdftext/ search/ import/ services/   the modules (static libraries, below)
 app/                the exe: window, menu, toolbar, side pane, feature classes
 tests/              unit tests (GoogleTest, CTest)
-UiTests/            sandbox UI tests (Run-AppTest.ps1 + test scripts; InkPages' runner and TestKit)
+UiTests/            UI tests (scripts; Run-CiTest.ps1 on GitHub runners, Run-AppTest.ps1 in Windows Sandbox)
 external/InkPages/  the writing surface and its tools (submodule; only its library is built here)
 examples/           sanitized example documents (unit tests round-trip them; UI tests use Schaltungen)
 docs/               the C++ migration plan (CPP-UMZUG.md)
-tools/              make_examples.py (derives examples/)
+tools/              make_examples.py (derives examples/), build lock, VS environment, CI artifact download
 installer/          the MSI (WiX source, Build-Msi.ps1, the pinned wix tool)
-.github/workflows/  CI: build + unit tests; releases on tags v*
+.github/workflows/  CI: build + unit tests, UI tests; releases on tags v*
 build.ps1 install.ps1 CMakeLists.txt
 ```
 
@@ -60,7 +63,7 @@ Each module is a static library with its own folder, public headers in `<module>
 internals in `<module>/src/`. The CMake link dependencies are the only allowed direction:
 
 ```
-base  <-  model  <-  io  <-  services: pdf, pdftext, search, import (later: git, clipboard, recovery, tasks)  <-  app (UI)
+base  <-  model  <-  io  <-  pdf, pdftext, search, import, services/ (project, git, tasks, recovery, settings)  <-  app (UI)
 ```
 
 | Module | Target | Job | Uses |
@@ -164,11 +167,12 @@ the window's parts to feature classes:
 - Logs: `XOURNAL_STUDIO_LOG` (InkPages' lines in `<log>.inkpages.log` beside it), errors always in
   `%LOCALAPPDATA%\XournalStudioForWindows\errors.log`; `XOURNAL_STUDIO_CONFIG_DIR` for tests.
 
-Sandbox tests (`UiTests/`, InkPages' runner and TestKit; `Run-AppTest.ps1` refuses while a sandbox runs and holds
-the machine-wide mutex `Global\XournalStudioSandbox`): `InkRoundTripTest` (write, move, undo, erase, save, reload: untouched strokes byte-identical,
+UI tests (`UiTests/`, InkPages' TestKit; on GitHub runners by `ui-tests.yml` after each green build, all but `MsiTest`;
+locally in Windows Sandbox with `Run-AppTest.ps1`, which refuses while a sandbox runs and holds the machine-wide mutex
+`Global\XournalStudioSandbox`): `InkRoundTripTest` (write, move, undo, erase, save, reload: untouched strokes byte-identical,
 moved ones shifted exactly), `DocumentFlowsTest` (PDF as a new document, the leave question, Save As with an attachment,
 export), `PagesFlowTest` (a text, the pictures, insert and delete a page with undo on another page, the toolbar's
-buttons by `uiaprobe`), `PagesPaneTest`, `TextToolTest`, `ClipboardTest`, `TasksTest`, `RecoveryTest`, `ExplorerTest`, `MsiTest` (the
+buttons by `uiaprobe`), `PagesPaneTest`, `PdfNavigationTest`, `TextToolTest`, `ClipboardTest`, `TasksTest`, `RecoveryTest`, `ExplorerTest`, `MsiTest` (the
 installer: silent and interactive install, start from the shortcut, upgrade, clean uninstall).
 
 ## Installer
