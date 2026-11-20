@@ -127,15 +127,21 @@ jobs:
           retention-days: 5
           if-no-files-found: error
 
-      # Saved only after a successful build: a cancelled or failed run may not have built every dependency, and an
-      # incomplete cache under the exact key would never be replaced. Only the folders this run used are kept (each
-      # configure touches its folders' last-used file); downloads are needed only to build.
+      # Pushes often cancel a running build (concurrency), so the caches are also saved from cancelled and failed runs -
+      # but the dependency cache only when it is complete: the configure builds every dependency, and a finished
+      # configure leaves build.ninja (an incomplete cache under the exact key would never be replaced). Only the
+      # folders this run used are kept (each configure touches its folders' last-used file); downloads are needed only
+      # to build.
       - name: Save the dependency cache
-        if: success() && steps.deps-restore.outputs.cache-hit != 'true'
+        id: deps-prune
+        if: always() && steps.deps-restore.outcome == 'success' && steps.deps-restore.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
+          $trees = @('.local-build\cmake', (Join-Path $env:RUNNER_TEMP 's\.local-build\cmake'))
+          if (-not ($trees | Where-Object { Test-Path (Join-Path $_ 'build.ninja') })) {
+              'the configure did not finish: the dependency cache may be incomplete and is not saved'; exit 0
+          }
           $root = $env:XOURNAL_DEPS_CACHE
-          if (-not (Test-Path $root)) { "no dependency cache folder"; exit 0 }
           $start = [DateTime]::Parse($env:XOURNAL_JOB_START).ToUniversalTime()
           $downloads = Join-Path $root 'downloads'
           if (Test-Path $downloads) { Remove-Item -Recurse -Force $downloads }
@@ -147,16 +153,17 @@ jobs:
               }
           }
           Get-ChildItem $root -Directory | ForEach-Object { "kept: $($_.Name)" }
+          'complete=true' >> $env:GITHUB_OUTPUT
       - name: Save the dependency cache (upload)
-        if: success() && steps.deps-restore.outputs.cache-hit != 'true'
+        if: always() && steps.deps-prune.outputs.complete == 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}\xs-deps
           key: ${{ steps.deps-restore.outputs.cache-primary-key }}
 
-      # Every result ccache stored is valid on its own, so also a failed build's cache is kept (not a cancelled one's).
+      # Every result ccache stored is valid on its own: kept also from cancelled and failed runs.
       - name: Save the compiler cache
-        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        if: always() && steps.deps.outcome == 'success'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}\ccache
