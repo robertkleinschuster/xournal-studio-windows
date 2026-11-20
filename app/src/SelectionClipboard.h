@@ -28,9 +28,21 @@ namespace xournal::app
         void Copy(inkpages::Clip const& clip);
         /// Offers the native copy command for an empty rectangle on a PDF page.
         void OfferPdfArea(int page, inkpages::RectF area, std::function<void(std::wstring)> failed);
+        bool DeferPaste(inkpages::PointF at);
         std::optional<inkpages::Clip> Paste(inkpages::PointF at);
 
     private:
+        struct PendingArea
+        {
+            struct PasteTarget
+            {
+                std::weak_ptr<XoppDocument> document;
+                std::weak_ptr<XoppPage> page;
+                inkpages::PointF point;
+            };
+            DWORD sequence = 0;
+            std::vector<PasteTarget> pastes;
+        };
         std::optional<inkpages::Clip> PasteClip(inkpages::PointF at);
         std::optional<inkpages::Clip> PastePicture(inkpages::PointF at);
         void AddPicturesLater(XmlElementPtr clip, DWORD sequence);
@@ -40,6 +52,7 @@ namespace xournal::app
         DocumentView& view;
         UINT clipFormat = 0;
         UINT pngFormat = 0;
+        std::shared_ptr<PendingArea> pendingArea;
         std::shared_ptr<bool> alive = std::make_shared<bool>(true); // background renders check it before they post back
     };
 }

@@ -218,11 +218,12 @@ Invoke-Test {
     if (-not (Select-String "$out\app.log" -Pattern 'clipboard: PDF area menu shown' -Quiet)) { throw 'no menu for the PDF rectangle' }
     [Inj]::Key(0x28)
     [Inj]::Key(0x0D)
+    [Inj]::Ctrl(0x56)
+    [Inj]::Ctrl(0x56)
     for ($i = 0; $i -lt 30 -and -not (Select-String "$out\app.log" -Pattern 'clipboard: PDF area copied' -Quiet); $i++) {
         Start-Sleep -Milliseconds 300
     }
     if (-not (Select-String "$out\app.log" -Pattern 'clipboard: PDF area copied' -Quiet)) { throw 'PDF rectangle was not copied' }
-    Ctrl 0x56 'V'
     $previousWrite = (Get-Item -LiteralPath $saved).LastWriteTimeUtc
     Ctrl 0x53 'S'
     for ($i = 0; $i -lt 20 -and (Get-Item -LiteralPath $saved).LastWriteTimeUtc -eq $previousWrite; $i++) {
@@ -233,9 +234,9 @@ Invoke-Test {
         $gzip = New-Object IO.Compression.GZipStream($stream, [IO.Compression.CompressionMode]::Decompress)
         $reader = New-Object IO.StreamReader($gzip, [Text.Encoding]::UTF8)
         try { [xml]$savedDoc = $reader.ReadToEnd() } finally { $reader.Dispose() }
-        $images = $savedDoc.SelectNodes('/xournal/page/layer/image')
-        if ($images.Count -ne 1 -or $images[0].InnerText.Trim() -notlike 'iVBORw0KGgo*') {
-            throw 'the PDF rectangle did not paste as an upstream PNG image'
+        $images = $savedDoc.SelectNodes('/xournal/page[4]/layer/image')
+        if ($images.Count -ne 2 -or @($images | Where-Object { $_.InnerText.Trim() -notlike 'iVBORw0KGgo*' }).Count) {
+            throw 'both paste requests must produce upstream PNG images on page 4'
         }
     } finally { $stream.Dispose() }
 

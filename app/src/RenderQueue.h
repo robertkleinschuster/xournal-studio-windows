@@ -21,6 +21,7 @@ namespace xournal::app
     {
     public:
         using Job = std::function<void(PdfPageRenderer&)>;
+        static constexpr int ThumbnailRank = 0x40000000;
 
         RenderQueue();
         ~RenderQueue();

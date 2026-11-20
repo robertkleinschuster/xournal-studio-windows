@@ -96,6 +96,25 @@ namespace xournal::app
             return Decode(data);
         }
 
+        std::shared_ptr<CpuBitmap> Downsample(CpuBitmap const& bitmap, UINT width, UINT height)
+        {
+            auto factory = Factory();
+            ComPtr<IWICBitmap> source;
+            Check("IWICImagingFactory::CreateBitmapFromMemory (thumbnail)", factory->CreateBitmapFromMemory(
+                bitmap.width, bitmap.height, GUID_WICPixelFormat32bppPBGRA, bitmap.width * 4,
+                static_cast<UINT>(bitmap.pixels.size()), const_cast<BYTE*>(bitmap.pixels.data()), &source));
+            ComPtr<IWICBitmapScaler> scaler;
+            Check("IWICImagingFactory::CreateBitmapScaler", factory->CreateBitmapScaler(&scaler));
+            Check("IWICBitmapScaler::Initialize", scaler->Initialize(source.Get(), width, height, WICBitmapInterpolationModeFant));
+            auto result = std::make_shared<CpuBitmap>();
+            result->width = width;
+            result->height = height;
+            result->pixels.resize(static_cast<std::size_t>(width) * height * 4);
+            Check("IWICBitmapScaler::CopyPixels", scaler->CopyPixels(nullptr, width * 4,
+                static_cast<UINT>(result->pixels.size()), result->pixels.data()));
+            return result;
+        }
+
         winrt::Windows::Data::Pdf::PdfDocument LoadPdf(std::span<std::uint8_t const> data)
         {
             using namespace winrt::Windows::Storage::Streams;

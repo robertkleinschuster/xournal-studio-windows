@@ -54,7 +54,9 @@ namespace xournal::app
     {
         if (underlay)
         {
-            underlay->Trim(surface.PageInView().value_or(0));
+            auto visible = surface.Visible();
+            auto drawing = visible.Inflated(visible.Width() / 2, visible.Height() / 2);
+            underlay->Trim(surface.PageInView().value_or(0), surface.Layout().PagesIn(drawing));
         }
         if (viewMoved) viewMoved();
     }
@@ -244,7 +246,7 @@ namespace xournal::app
         }
     }
 
-    void DocumentView::CaptureInk(std::function<void()> const& work)
+    void DocumentView::CaptureInk(std::function<void()> const& work, std::span<int const> pages)
     {
         auto bridge = bridges->Current();
         if (!bridge)
@@ -257,6 +259,7 @@ namespace xournal::app
         std::map<int, std::vector<inkpages::KeyedStroke>> current;
         for (int page : bridge->LivePages())
         {
+            if (!pages.empty() && std::ranges::find(pages, page) == pages.end()) continue;
             if (auto strokes = surface.StrokesOf(page))
             {
                 current[page] = std::move(*strokes);

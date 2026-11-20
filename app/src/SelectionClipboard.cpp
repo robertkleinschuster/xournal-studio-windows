@@ -14,7 +14,6 @@
 #include "xournal/model/XoppClip.h"
 #include "xournal/model/XoppImage.h"
 #include "xournal/pdf/ClipPicture.h"
-#include "xournal/pdf/PdfAreaRenderer.h"
 
 #include <algorithm>
 #include <cstring>
@@ -147,6 +146,7 @@ namespace xournal::app
             if (!EmptyClipboard()) ThrowLastError("EmptyClipboard");
             SetBytes(clipFormat, bytes);
         }
+        pendingArea.reset();
         Log(std::format("clipboard: {} strokes, {} pictures/texts copied ({} bytes)", clip.strokes.size(),
             elements.size() - clip.strokes.size(), bytes.size()));
         AddPicturesLater(xml, GetClipboardSequenceNumber());
@@ -164,7 +164,6 @@ namespace xournal::app
         double sx = size->width / content->Width(), sy = size->height / content->Height();
         Rect source{ area.left * sx, area.top * sy, area.Width() * sx, area.Height() * sy };
         Rect bounds{ 0, 0, area.Width(), area.Height() };
-        auto path = *document->PdfPath();
 
         struct Popup
         {
@@ -186,45 +185,92 @@ namespace xournal::app
         if (TrackPopupMenu(popup.menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, at.x, at.y, 0, owner, nullptr) != CopyArea
             || guard.expired()) return;
 
-        DWORD sequence = GetClipboardSequenceNumber();
-        UiQueue::RunInBackground("copy PDF area", [this, guard, path, pdfPage, source, bounds, sequence, failed] {
+        auto request = std::make_shared<PendingArea>();
+        request->sequence = GetClipboardSequenceNumber();
+        double scale = std::min(PicturePixelsPerPoint, 4096.0 / std::max(source.width, source.height));
+        background->RenderArea(pdfPage, page, source, scale, [this, guard, request, bounds, failed](
+            std::shared_ptr<CpuBitmap> picture, std::exception_ptr error) {
+            auto encodingFailed = [this, guard, request, failed] {
+                LogException("prepare PDF area for clipboard");
+                UiQueue::Post("copy PDF area failed", [this, guard, request, failed, error = ErrorText()] {
+                    if (guard.expired() || pendingArea != request) return;
+                    pendingArea.reset();
+                    failed(error);
+                });
+            };
             try
             {
-                HRESULT com = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-                if (FAILED(com)) ThrowHr("CoInitializeEx (PDF area)", com);
-                struct Uninit { ~Uninit() { CoUninitialize(); } } uninit;
-                double scale = std::min(PicturePixelsPerPoint, 4096.0 / std::max(source.width, source.height));
-                auto picture = pdf::PdfAreaRenderer(path).Render(pdfPage, source, scale);
-                auto image = XoppImage::Create(bounds, picture.png, picture.width, picture.height);
-                auto xml = io::SerializeXml(*XoppClip::Create(bounds, { image }));
-                auto dib = DibOnWhite(*Bitmaps::Decode(picture.png));
-                UiQueue::Post("copy PDF area", [this, guard, sequence, failed, xml = std::move(xml),
-                    png = std::move(picture.png), dib = std::move(dib)] {
-                    if (guard.expired() || GetClipboardSequenceNumber() != sequence) return;
+                if (error) std::rethrow_exception(error);
+                UiQueue::RunInBackground("encode PDF clipboard area", [this, guard, request, bounds, failed,
+                    picture = std::move(picture), encodingFailed] {
                     try
                     {
-                        OpenClipboardScope open(owner);
-                        if (!EmptyClipboard()) ThrowLastError("EmptyClipboard (PDF area)");
-                        SetBytes(clipFormat, xml);
-                        SetBytes(pngFormat, png);
-                        SetBytes(CF_DIB, dib);
-                        Log("clipboard: PDF area copied");
+                        Check("CoInitializeEx (PDF clipboard encoding)", CoInitializeEx(nullptr, COINIT_MULTITHREADED));
+                        struct Uninit { ~Uninit() { CoUninitialize(); } } uninit;
+                        auto png = Bitmaps::EncodePng(*picture);
+                        auto image = XoppImage::Create(bounds, png, static_cast<int>(picture->width), static_cast<int>(picture->height));
+                        auto xml = io::SerializeXml(*XoppClip::Create(bounds, { image }));
+                        auto dib = DibOnWhite(*picture);
+                        UiQueue::Post("copy PDF area", [this, guard, request, failed, xml = std::move(xml),
+                            png = std::move(png), dib = std::move(dib)] {
+                            if (guard.expired() || pendingArea != request) return;
+                            pendingArea.reset();
+                            try
+                            {
+                                {
+                                    OpenClipboardScope open(owner);
+                                    if (GetClipboardSequenceNumber() != request->sequence) return;
+                                    if (!EmptyClipboard()) ThrowLastError("EmptyClipboard (PDF area)");
+                                    SetBytes(clipFormat, xml);
+                                    SetBytes(pngFormat, png);
+                                    SetBytes(CF_DIB, dib);
+                                }
+                                Log("clipboard: PDF area copied");
+                                auto document = view.Document();
+                                if (!document) return;
+                                auto const& pages = document->Pages();
+                                for (auto const& target : request->pastes)
+                                {
+                                    if (target.document.lock() != document) continue;
+                                    auto page = target.page.lock();
+                                    auto it = std::ranges::find(pages, page);
+                                    if (!page || it == pages.end()) continue;
+                                    auto paper = surface.Layout().Page(static_cast<int>(it - pages.begin()));
+                                    surface.PasteAt({ paper.left + target.point.x, paper.top + target.point.y });
+                                }
+                            }
+                            catch (...)
+                            {
+                                LogException("copy PDF area to clipboard");
+                                failed(ErrorText());
+                            }
+                        });
                     }
-                    catch (...)
-                    {
-                        LogException("copy PDF area to clipboard");
-                        failed(ErrorText());
-                    }
+                    catch (...) { encodingFailed(); }
                 });
             }
             catch (...)
             {
-                LogException("render PDF area for clipboard");
-                UiQueue::Post("copy PDF area failed", [guard, failed, error = ErrorText()] {
-                    if (!guard.expired()) failed(error);
-                });
+                encodingFailed();
             }
         });
+        pendingArea = std::move(request);
+    }
+
+    bool SelectionClipboard::DeferPaste(inkpages::PointF at)
+    {
+        if (!pendingArea) return false;
+        if (GetClipboardSequenceNumber() != pendingArea->sequence)
+        {
+            pendingArea.reset();
+            return false;
+        }
+        if (auto page = surface.Layout().NearestPage(at))
+        {
+            auto paper = surface.Layout().Page(*page);
+            pendingArea->pastes.push_back({ view.Document(), view.PageAt(*page), { at.x - paper.left, at.y - paper.top } });
+        }
+        return true;
     }
 
     void SelectionClipboard::AddPicturesLater(XmlElementPtr clip, DWORD sequence)
@@ -239,6 +285,7 @@ namespace xournal::app
             UiQueue::Post("clipboard picture", [this, alive, sequence, png = std::move(picture.png), dib = std::move(dib)]
             {
                 if (alive.expired()) return;
+                if (pendingArea && pendingArea->sequence == sequence) return;
                 if (GetClipboardSequenceNumber() != sequence)
                 {
                     Log("clipboard: changed meanwhile - the copy's picture is not added");

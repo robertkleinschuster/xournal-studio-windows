@@ -130,9 +130,9 @@ namespace xournal::app
         pdf->Remap(map);
     }
 
-    void PageUnderlay::Trim(int focus)
+    void PageUnderlay::Trim(int focus, std::vector<int> const& drawing)
     {
-        pdf->Trim(focus, KeepPages);
+        pdf->Trim(focus, KeepPages, drawing);
     }
 
     void PageUnderlay::DrawBackground(int page, XoppPage const& content, ID2D1DeviceContext* dc, inkpages::RectF area,

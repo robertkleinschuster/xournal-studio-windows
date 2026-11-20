@@ -1,4 +1,5 @@
 #include "PdfPageRenderer.h"
+#include "Bitmaps.h"
 
 #include "xournal/base/Error.h"
 #include "xournal/base/Log.h"
@@ -37,6 +38,14 @@ namespace xournal::app
             renderer.Reset();
             return RenderOnce(page, width, height, transparent, source);
         }
+    }
+
+    std::shared_ptr<CpuBitmap> PdfPageRenderer::RenderThumbnail(winrt::Windows::Data::Pdf::PdfPage const& page,
+        UINT width, UINT height, bool transparent)
+    {
+        // Render fine strokes before reducing them to the actual thumbnail pixel grid.
+        constexpr UINT Supersample = 2;
+        return Bitmaps::Downsample(*Render(page, width * Supersample, height * Supersample, transparent), width, height);
     }
 
     void PdfPageRenderer::Shutdown()

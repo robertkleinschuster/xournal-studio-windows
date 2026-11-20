@@ -23,6 +23,7 @@
 #include <mutex>
 #include <optional>
 #include <set>
+#include <span>
 #include <vector>
 
 namespace xournal::app
@@ -83,7 +84,7 @@ namespace xournal::app
         /// The live pages' current strokes go into the document, then `work` runs with the document's lock held (UI
         /// thread; take the snapshot there). Throws when the ink cannot be read (InkPages' StrokesOf: timeout or ink-thread
         /// error) - then `work` does not run, and the save, copy or export it was for must fail visibly.
-        void CaptureInk(std::function<void()> const& work);
+        void CaptureInk(std::function<void()> const& work, std::span<int const> pages = {});
 
     private:
         void MarkCurrentPage(); // after the page count changed

@@ -42,7 +42,7 @@ namespace xournal::app
         std::shared_ptr<PdfBackground> Pdf() const { return pdf; }
 
         /// The page in view changed: far pages give back their bitmaps, near ones render first.
-        void Trim(int focus);
+        void Trim(int focus, std::vector<int> const& drawing);
 
         /// Marks a search hit on `page` (rectangles in page units) over everything else of the underlay; page -1: none.
         void SetHighlight(int page, std::vector<Rect> rects);

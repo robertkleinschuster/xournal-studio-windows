@@ -21,10 +21,11 @@ namespace xournal::app
         constexpr int ContentPerRound = 8;  // pages drawn per round (the next round follows when they are done)
         constexpr int KeepAround = 40;      // pages this far from the page in view keep their bitmaps
 
-        std::uint64_t ContentKey(std::uint64_t generation, int index)
+        std::uint64_t ContentKey(std::uint64_t generation)
         {
             // Thumbnail contents beside the screen's renders: bit 29 set.
-            return (generation << 32) | 0x20000000u | static_cast<std::uint32_t>(index & 0x0FFFFFFF);
+            static std::atomic_uint32_t request = 0;
+            return (generation << 32) | 0x20000000u | (++request & 0x0FFFFFFFu);
         }
     }
 
@@ -144,7 +145,7 @@ namespace xournal::app
                 view.CaptureInk([&]
                 {
                     for (int index : stale) snapshots.push_back(doc->Pages()[index]->Snapshot());
-                });
+                }, stale);
             }
             catch (...)
             {
@@ -187,10 +188,20 @@ namespace xournal::app
         SIZE size = ThumbnailSize(box, page->Height() / std::max(1.0, page->Width()));
         UINT width = static_cast<UINT>(size.cx), height = static_cast<UINT>(size.cy);
         bool transparent = page->IsPdf();
+        if (transparent && std::ranges::none_of(snapshot->Elements(L"layer"), [](auto const& layer) {
+            return !layer->Elements().empty();
+        }))
+        {
+            thumb.content.reset();
+            thumb.contentRunning = false;
+            if (updated) updated(index);
+            if (active) refresh.Start();
+            return;
+        }
         auto picture = page->BackgroundImagePath();
         std::uint64_t asked = generation;
         XoppPage const* id = page.get();
-        view.Queue().Submit(ContentKey(generation, index), index, std::format("thumbnail of page {}", index + 1),
+        view.Queue().Submit(ContentKey(generation), index, std::format("thumbnail of page {}", index + 1),
             [this, alive = std::weak_ptr<bool>(alive), asked, id, snapshot, picture, width, height, transparent](PdfPageRenderer& renderer)
         {
             std::shared_ptr<CpuBitmap> bitmap;
@@ -204,7 +215,7 @@ namespace xournal::app
                 auto pages = pdf::PagesOf(source, result);
                 auto bytes = pdf::ExportToMemory(pages, result);
                 auto document = Bitmaps::LoadPdf(bytes);
-                bitmap = renderer.Render(document.GetPage(0), width, height, transparent);
+                bitmap = renderer.RenderThumbnail(document.GetPage(0), width, height, transparent);
             }
             catch (...)
             {
@@ -220,7 +231,7 @@ namespace xournal::app
                 if (updated) updated(IndexOf(id));
                 if (active) refresh.Start(); // the next round of stale pages
             });
-        });
+        }, RenderQueue::ThumbnailRank);
     }
 
     void PageThumbnails::Trim(int focus)

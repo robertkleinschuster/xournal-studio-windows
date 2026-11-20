@@ -147,6 +147,7 @@ namespace xournal::app
         };
         surface->textEditingChanged = [this](bool) { textSelection->Clear(); };
         clipboard = std::make_unique<SelectionClipboard>(window, *surface, *view);
+        surface->deferPaste = [this](inkpages::PointF at) { return clipboard->DeferPaste(at); };
         surface->emptyRectangle = [this](int page, inkpages::RectF area)
         {
             auto failed = [this](std::wstring const& error) {
@@ -787,6 +788,7 @@ namespace xournal::app
             surface->tapped = nullptr;
             surface->mouseClaims = nullptr;
             surface->emptyRectangle = nullptr;
+            surface->deferPaste = nullptr;
             surface->firstPenStroke = nullptr;
             surface->mousePannedWithWriteTool = nullptr;
             surface->mouseGesture = nullptr;

@@ -35,6 +35,8 @@ namespace xournal::app
         /// scaled to `width` x `height`; nothing = the whole page.
         std::shared_ptr<CpuBitmap> Render(winrt::Windows::Data::Pdf::PdfPage const& page, UINT width, UINT height, bool transparent,
             std::optional<D2D_RECT_F> source = std::nullopt);
+        std::shared_ptr<CpuBitmap> RenderThumbnail(winrt::Windows::Data::Pdf::PdfPage const& page, UINT width, UINT height,
+            bool transparent);
 
         /// Releases the device (before the process ends; no rendering afterwards).
         void Shutdown();

@@ -71,6 +71,12 @@ namespace xournal::app
                 auto nearest = waiting.begin();
                 for (auto it = waiting.begin(); it != waiting.end(); ++it)
                 {
+                    bool thumbnail = it->second.rank >= ThumbnailRank, bestThumbnail = nearest->second.rank >= ThumbnailRank;
+                    if (thumbnail != bestThumbnail)
+                    {
+                        if (!thumbnail) nearest = it;
+                        continue;
+                    }
                     int distance = std::abs(it->second.page - focus), best = std::abs(nearest->second.page - focus);
                     if (distance < best || (distance == best && it->second.rank < nearest->second.rank))
                     {

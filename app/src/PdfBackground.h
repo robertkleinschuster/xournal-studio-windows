@@ -29,12 +29,14 @@
 
 #include <atomic>
 #include <filesystem>
+#include <exception>
 #include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <set>
+#include <tuple>
 
 namespace xournal::app
 {
@@ -56,13 +58,16 @@ namespace xournal::app
         /// the page cannot be rendered (logged) or the PDF is not loaded.
         void RenderPage(int pdfPage, UINT width, UINT height, int priorityPage,
             std::function<void(std::shared_ptr<CpuBitmap>)> done);
+        /// Explicit copy of an area from the loaded PDF. Completion runs on the render thread.
+        void RenderArea(int pdfPage, int documentPage, Rect area, double scale,
+            std::function<void(std::shared_ptr<CpuBitmap>, std::exception_ptr)> done);
 
         /// Pages were inserted, removed or moved: the document pages showing each PDF page follow.
         void Remap(inkpages::PageMap const& map);
 
         /// Lets go of previews of document pages farther than `keep` from `focus`, and of the tiles of pages not next to
         /// it (UI thread).
-        void Trim(int focus, int keep);
+        void Trim(int focus, int keep, std::vector<int> const& drawing);
 
         /// The PDF's outline and links once loaded (nothing before, or when they could not be read).
         std::shared_ptr<pdf::PdfNavigation const> Navigation() const;
@@ -80,6 +85,7 @@ namespace xournal::app
         bool Failed() const { return source->failed; }
 
     private:
+        using PageKey = std::tuple<int, float, float>; // PDF page, document page width and height
         // What the render thread needs: the loaded PDF (agile) and its navigation - nothing of the UI thread.
         struct Source
         {
@@ -96,32 +102,34 @@ namespace xournal::app
         {
             float pixelsPerUnit = 0;
             std::map<int, std::unique_ptr<DrawableBitmap>> done;
-            std::set<int> asked;
+            std::map<int, std::uint64_t> asked;
         };
 
         struct Rendered
         {
             std::unique_ptr<DrawableBitmap> preview;
             UINT previewWidth = 0;
-            UINT previewRequested = 0;    // width of the preview on its way (0: none)
+            std::uint64_t previewRequest = 0;
             Tiles tiles;                  // at the zoom drawn last
             Tiles placeholder;            // the zoom before, until the new zoom's tiles are there
             bool failed = false;          // the page could not be rendered (logged; not asked again)
             std::set<int> pages;          // document pages showing this PDF page
         };
 
-        void RequestPreview(int page, int pdfPage, PixelSize size);
-        void RequestTile(int page, int pdfPage, D2D1_SIZE_F size, float pixelsPerUnit, int index, pdf::PixelRect pixels, int rank);
-        void DropTiles(int pdfPage, std::set<int> const& indices);
-        void DrawTiles(ID2D1DeviceContext* dc, Tiles& tiles, D2D1_SIZE_F size, bool exact);
+        void RequestPreview(int page, PageKey key, PixelSize size);
+        void RequestTile(int page, PageKey key, float pixelsPerUnit, int index, pdf::PixelRect pixels, int rank);
+        void DropTiles(Tiles& tiles, std::set<int> const& indices);
+        void DropTiles(Tiles& tiles);
+        void DrawTiles(ID2D1DeviceContext* dc, Tiles& tiles, D2D1_SIZE_F size, bool shrunk, D2D1_RECT_F area);
+        std::uint64_t NextRequest();
         /// Draws the pages again once per batch of arrived renders (UI thread).
-        void Ready(int pdfPage);
+        void Ready(PageKey const& key);
 
         RenderQueue& queue;
         std::uint64_t generation;
         std::function<void(int)> ready;
         std::shared_ptr<Source> source = std::make_shared<Source>();
-        std::map<int, Rendered> rendered; // by PDF page (UI thread)
+        std::map<PageKey, Rendered> rendered; // UI thread
         std::map<int, Size> shownSizes;   // by PDF page, read once (UI thread)
         std::set<int> readyPages;         // pages with renders arrived since the last redraw
         bool readyPosted = false;

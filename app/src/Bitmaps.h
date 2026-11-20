@@ -24,6 +24,7 @@ namespace xournal::app
         std::shared_ptr<CpuBitmap> DecodeFile(std::filesystem::path const& file);
         /// A memory bitmap (premultiplied BGRA) as PNG with straight alpha (WIC).
         std::vector<std::uint8_t> EncodePng(CpuBitmap const& bitmap);
+        std::shared_ptr<CpuBitmap> Downsample(CpuBitmap const& bitmap, UINT width, UINT height);
 
         /// A PDF read into memory and opened by Windows.Data.Pdf (blocking: not on the UI thread).
         winrt::Windows::Data::Pdf::PdfDocument LoadPdf(std::span<std::uint8_t const> data);

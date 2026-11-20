@@ -2,6 +2,7 @@
 
 #include "UiQueue.h"
 
+#include "xournal/base/Error.h"
 #include "xournal/base/Log.h"
 #include "xournal/base/Text.h"
 #include "xournal/io/Files.h"
@@ -11,27 +12,19 @@
 #include <cmath>
 #include <cstdlib>
 #include <format>
+#include <utility>
 
 namespace xournal::app
 {
     namespace
     {
-        constexpr UINT PreviewWidth = 640; // the placeholder: ~15 ms to render, 2.3 MB for A4
+        constexpr UINT PreviewSide = 640;
         // Tiles: a render call costs ~10 ms on top of ~3 ms per million pixels (Intel Iris Xe, measured): a page of up to
         // 8 Mpx (A4 up to ~2.6x zoom at 150 %) is one tile (one call, kept while scrolling over the page); a larger one
         // is cut into 2048 px tiles, so only the area the sheet draws is rendered and held (A4 at 6x on 150 %: 72 Mpx).
         constexpr long long WholePageMax = 8'000'000;
         constexpr int TileSize = 2048;
         constexpr int SharpAround = 1;     // tiles stay for the page in view and its neighbours
-
-        // Render keys: the generation (document) in the high bits; below, a preview's: the PDF page; a tile's: bit 28,
-        // the PDF page (14 bits) and the tile's index (14 bits). Thumbnails use bits 29/30, pictures bit 31.
-        constexpr std::uint32_t TileBit = 0x10000000u;
-        std::uint64_t KeyOf(std::uint64_t generation, int pdfPage) { return (generation << 32) | static_cast<std::uint32_t>(pdfPage); }
-        std::uint64_t TileKey(std::uint64_t generation, int pdfPage, int index)
-        {
-            return (generation << 32) | TileBit | (static_cast<std::uint32_t>(pdfPage & 0x3FFF) << 14) | static_cast<std::uint32_t>(index & 0x3FFF);
-        }
 
         // Draws `bitmap` into `dest` (page units). Its memory copy may be gone and the device changed since: then the
         // bitmap is let go (false) and rendered again. 1:1 on the pixel grid: plain sampling; shrunk (a placeholder of
@@ -52,8 +45,14 @@ namespace xournal::app
         pdf::TileGrid GridOf(D2D1_SIZE_F size, float pixelsPerUnit)
         {
             int width = static_cast<int>(std::ceil(size.width * pixelsPerUnit)), height = static_cast<int>(std::ceil(size.height * pixelsPerUnit));
-            bool whole = static_cast<long long>(width) * height <= WholePageMax;
+            bool whole = std::max(width, height) <= 16384 && static_cast<long long>(width) * height <= WholePageMax;
             return { width, height, whole ? std::max(width, height) : TileSize };
+        }
+
+        pdf::PixelRect PixelsOf(D2D1_RECT_F area, float scale)
+        {
+            return { static_cast<int>(std::floor(area.left * scale)), static_cast<int>(std::floor(area.top * scale)),
+                static_cast<int>(std::ceil(area.right * scale)), static_cast<int>(std::ceil(area.bottom * scale)) };
         }
     }
 
@@ -68,11 +67,19 @@ namespace xournal::app
     {
     }
 
+    std::uint64_t PdfBackground::NextRequest()
+    {
+        // Bit 28 reserves background bitmap requests. Thumbnails and pictures use bits 29–31.
+        static std::atomic_uint32_t request = 0;
+        return (generation << 32) | 0x10000000u | (++request & 0x0FFFFFFFu);
+    }
+
     void PdfBackground::Load(std::filesystem::path const& pdf)
     {
         std::weak_ptr<PdfBackground> weak = weak_from_this(); // locked only on the UI thread
-        queue.Submit(KeyOf(generation, -1), -1000000, "load background PDF", [weak, source = source, pdf](PdfPageRenderer&)
+        queue.Submit(NextRequest(), -1000000, "load background PDF", [weak, source = source, pdf](PdfPageRenderer&)
         {
+            if (weak.expired()) return;
             try
             {
                 auto data = io::Files::ReadAll(pdf);
@@ -141,49 +148,61 @@ namespace xournal::app
 
     void PdfBackground::Draw(ID2D1DeviceContext* dc, int page, int pdfPage, D2D1_SIZE_F size, D2D1_RECT_F area, float pixelsPerUnit)
     {
-        Rendered& entry = rendered[pdfPage];
-        entry.pages.insert(page);
         if (!(pixelsPerUnit > 0) || !(size.width > 0) || !(size.height > 0)) return;
+        PageKey key{ pdfPage, size.width, size.height };
+        Rendered& entry = rendered[key];
+        entry.pages.insert(page);
         float s = pixelsPerUnit;
         bool asking = !entry.failed && !source->failed;
 
-        // The preview, scaled over the whole page.
-        DrawPart(dc, entry.preview, { 0, 0, size.width, size.height }, entry.previewWidth > size.width * s);
-        PixelSize preview = FitPixels(size.width, size.height, s, PreviewWidth);
-        if (asking && entry.previewWidth != preview.width && entry.previewRequested != preview.width)
-        {
-            RequestPreview(page, pdfPage, preview);
-        }
-
-        // A new zoom: the last zoom's tiles become the placeholder, their waiting renders are dropped.
+        // Reuse the previous grid when returning to its zoom. In-flight work still belongs to its original request.
         if (entry.tiles.pixelsPerUnit != s)
         {
-            DropTiles(pdfPage, entry.tiles.asked);
-            entry.tiles.asked.clear();
-            if (!entry.tiles.done.empty()) entry.placeholder = std::move(entry.tiles);
-            entry.tiles = Tiles{ s };
-        }
-        if (!entry.placeholder.done.empty() && entry.placeholder.pixelsPerUnit * size.width >= entry.previewWidth)
-        {
-            DrawTiles(dc, entry.placeholder, size, entry.placeholder.pixelsPerUnit > s);
+            DropTiles(entry.tiles);
+            if (entry.placeholder.pixelsPerUnit == s) std::swap(entry.tiles, entry.placeholder);
+            else
+            {
+                if (!entry.tiles.done.empty()) entry.placeholder = std::move(entry.tiles);
+                entry.tiles = Tiles{ s };
+            }
         }
 
         // The tiles of the drawn area; those it left give their bitmaps back.
         pdf::TileGrid grid = GridOf(size, s);
-        pdf::PixelRect pixels{ static_cast<int>(std::floor(area.left * s)), static_cast<int>(std::floor(area.top * s)),
-            static_cast<int>(std::ceil(area.right * s)), static_cast<int>(std::ceil(area.bottom * s)) };
-        std::vector<int> needed = grid.Covering(pixels);
+        std::vector<int> needed = grid.Covering(PixelsOf(area, s));
         std::set<int> neededSet(needed.begin(), needed.end());
         if (entry.pages.size() == 1) // a PDF page shown on several pages keeps the tiles of all their areas
         {
             std::erase_if(entry.tiles.done, [&](auto const& tile) { return !neededSet.contains(tile.first); });
             std::set<int> left;
-            for (int index : entry.tiles.asked)
+            for (auto const& [index, request] : entry.tiles.asked)
                 if (!neededSet.contains(index)) left.insert(index);
-            DropTiles(pdfPage, left);
-            for (int index : left) entry.tiles.asked.erase(index);
+            DropTiles(entry.tiles, left);
         }
-        DrawTiles(dc, entry.tiles, size, false);
+        bool complete = std::ranges::all_of(needed, [&](int index) { return entry.tiles.done.contains(index); });
+        if (complete)
+        {
+            DrawTiles(dc, entry.tiles, size, false, area);
+            complete = std::ranges::all_of(needed, [&](int index) { return entry.tiles.done.contains(index); });
+        }
+        if (!complete)
+        {
+            DrawPart(dc, entry.preview, { 0, 0, size.width, size.height }, entry.previewWidth > size.width * s);
+            float oldScale = entry.placeholder.pixelsPerUnit;
+            if (!entry.preview || oldScale * size.width >= entry.previewWidth)
+                DrawTiles(dc, entry.placeholder, size, oldScale > s, area);
+            DrawTiles(dc, entry.tiles, size, false, area);
+            // For a small page the sharp render is already cheap. For larger pages, render one fixed preview only
+            // when the old tiles do not cover the drawn area. A zoom change never resubmits that preview.
+            float previewScale = static_cast<float>(PreviewSide) / std::max(size.width, size.height);
+            if (asking && s > previewScale * 2 && !entry.preview && !entry.previewRequest)
+            {
+                bool covered = !entry.placeholder.done.empty() &&
+                    std::ranges::all_of(GridOf(size, oldScale).Covering(PixelsOf(area, oldScale)),
+                        [&](int index) { return entry.placeholder.done.contains(index); });
+                if (!covered) RequestPreview(page, key, FitPixels(size.width, size.height, previewScale, PreviewSide));
+            }
+        }
 
         int missing = 0;
         for (int index : needed)
@@ -192,37 +211,51 @@ namespace xournal::app
             ++missing;
             if (asking && !entry.tiles.asked.contains(index))
             {
-                RequestTile(page, pdfPage, size, s, index, grid.Rect(index), missing); // the area's middle first
+                RequestTile(page, key, s, index, grid.Rect(index), missing); // the area's middle first
             }
         }
-        if (missing == 0) entry.placeholder = {};
-        Log(std::format("pdf background: page {} at {:.3f} px/unit: preview {} of {} px, tiles {} of {} there", pdfPage + 1, s,
-            entry.previewWidth, preview.width, needed.size() - missing, needed.size()));
+        float oldScale = entry.placeholder.pixelsPerUnit;
+        if (missing == 0 && (entry.placeholder.done.size() > 1 || size.width * size.height * oldScale * oldScale > 2'000'000))
+            entry.placeholder = {};
     }
 
-    void PdfBackground::DrawTiles(ID2D1DeviceContext* dc, Tiles& tiles, D2D1_SIZE_F size, bool shrunk)
+    void PdfBackground::DrawTiles(ID2D1DeviceContext* dc, Tiles& tiles, D2D1_SIZE_F size, bool shrunk, D2D1_RECT_F area)
     {
+        if (tiles.done.empty()) return;
         float k = tiles.pixelsPerUnit;
         pdf::TileGrid grid = GridOf(size, k);
         for (auto& [index, bitmap] : tiles.done)
         {
             pdf::PixelRect r = grid.Rect(index);
-            DrawPart(dc, bitmap, { r.left / k, r.top / k, r.right / k, r.bottom / k }, shrunk);
+            D2D1_RECT_F dest{ r.left / k, r.top / k, r.right / k, r.bottom / k };
+            if (dest.left < area.right && dest.right > area.left && dest.top < area.bottom && dest.bottom > area.top)
+                DrawPart(dc, bitmap, dest, shrunk);
         }
         std::erase_if(tiles.done, [](auto const& tile) { return !tile.second; }); // let go after a device change: asked again
     }
 
-    void PdfBackground::DropTiles(int pdfPage, std::set<int> const& indices)
+    void PdfBackground::DropTiles(Tiles& tiles, std::set<int> const& indices)
     {
         if (indices.empty()) return;
         std::set<std::uint64_t> keys;
-        for (int index : indices) keys.insert(TileKey(generation, pdfPage, index));
+        for (int index : indices)
+        {
+            auto request = tiles.asked.extract(index);
+            if (!request.empty()) keys.insert(request.mapped());
+        }
         queue.Drop([&](std::uint64_t key) { return keys.contains(key); }); // one already running is dropped when it arrives
     }
 
-    void PdfBackground::Ready(int pdfPage)
+    void PdfBackground::DropTiles(Tiles& tiles)
     {
-        auto const& pages = rendered[pdfPage].pages;
+        std::set<int> indices;
+        for (auto const& [index, request] : tiles.asked) indices.insert(index);
+        DropTiles(tiles, indices);
+    }
+
+    void PdfBackground::Ready(PageKey const& key)
+    {
+        auto const& pages = rendered.at(key).pages;
         readyPages.insert(pages.begin(), pages.end());
         if (readyPosted) return;
         readyPosted = true;
@@ -238,13 +271,16 @@ namespace xournal::app
         });
     }
 
-    void PdfBackground::RequestPreview(int page, int pdfPage, PixelSize size)
+    void PdfBackground::RequestPreview(int page, PageKey key, PixelSize size)
     {
-        rendered[pdfPage].previewRequested = size.width;
+        int pdfPage = std::get<0>(key);
+        auto request = NextRequest();
+        rendered.at(key).previewRequest = request;
         std::weak_ptr<PdfBackground> weak = weak_from_this(); // locked only on the UI thread
-        queue.Submit(KeyOf(generation, pdfPage), page, std::format("render PDF page {} preview at {} px", pdfPage + 1, size.width),
-            [weak, source = source, pdfPage, size](PdfPageRenderer& renderer)
+        queue.Submit(request, page, std::format("render PDF page {} preview at {} px", pdfPage + 1, size.width),
+            [weak, source = source, key, request, pdfPage, size](PdfPageRenderer& renderer)
         {
+            if (weak.expired()) return;
             auto document = source->Document();
             std::shared_ptr<CpuBitmap> bitmap;
             bool failed = false;
@@ -266,31 +302,37 @@ namespace xournal::app
                 failed = true;
             }
             // Not loaded yet: the request is open again (it is asked once the PDF is there).
-            UiQueue::Post("pdf page preview rendered", [weak, pdfPage, size, bitmap, failed]
+            UiQueue::Post("pdf page preview rendered", [weak, key, request, size, bitmap, failed]
             {
                 auto self = weak.lock();
                 if (!self) return;
-                Rendered& entry = self->rendered[pdfPage];
-                if (entry.previewRequested == size.width) entry.previewRequested = 0;
+                auto it = self->rendered.find(key);
+                if (it == self->rendered.end() || it->second.previewRequest != request) return;
+                Rendered& entry = it->second;
+                entry.previewRequest = 0;
                 entry.failed = entry.failed || failed;
                 if (!bitmap) return;
                 entry.preview = std::make_unique<DrawableBitmap>(bitmap, false);
                 entry.previewWidth = size.width;
-                self->Ready(pdfPage);
+                self->Ready(key);
             });
         }, -1); // before the page's tiles: the placeholder comes first
     }
 
-    void PdfBackground::RequestTile(int page, int pdfPage, D2D1_SIZE_F size, float pixelsPerUnit, int index, pdf::PixelRect pixels,
+    void PdfBackground::RequestTile(int page, PageKey key, float pixelsPerUnit, int index, pdf::PixelRect pixels,
         int rank)
     {
-        rendered[pdfPage].tiles.asked.insert(index);
+        auto [pdfPage, pageWidth, pageHeight] = key;
+        D2D1_SIZE_F size{ pageWidth, pageHeight };
+        auto request = NextRequest();
+        rendered.at(key).tiles.asked.emplace(index, request);
         std::weak_ptr<PdfBackground> weak = weak_from_this(); // locked only on the UI thread
         UINT width = static_cast<UINT>(pixels.Width()), height = static_cast<UINT>(pixels.Height());
-        queue.Submit(TileKey(generation, pdfPage, index), page, std::format("render PDF page {} tile {}: {}x{} px at {:.3f} px/unit",
-            pdfPage + 1, index, width, height, pixelsPerUnit), [weak, source = source, pdfPage, size, pixelsPerUnit, index, pixels, width,
+        queue.Submit(request, page, std::format("render PDF page {} tile {}: {}x{} px at {:.3f} px/unit",
+            pdfPage + 1, index, width, height, pixelsPerUnit), [weak, source = source, key, request, pdfPage, size, pixelsPerUnit, index, pixels, width,
             height](PdfPageRenderer& renderer)
         {
+            if (weak.expired()) return;
             auto document = source->Document();
             std::shared_ptr<CpuBitmap> bitmap;
             bool failed = false;
@@ -312,17 +354,27 @@ namespace xournal::app
                     failed = true;
                 }
             }
-            UiQueue::Post("pdf page tile rendered", [weak, pdfPage, pixelsPerUnit, index, bitmap, failed]
+            else if (document)
+            {
+                LogError(std::format("pdf background: page {} asked, the PDF has {}", pdfPage + 1, document.PageCount()));
+                failed = true;
+            }
+            UiQueue::Post("pdf page tile rendered", [weak, key, request, index, bitmap, failed]
             {
                 auto self = weak.lock();
                 if (!self) return;
-                Rendered& entry = self->rendered[pdfPage];
+                auto it = self->rendered.find(key);
+                if (it == self->rendered.end()) return;
+                Rendered& entry = it->second;
+                auto asked = entry.tiles.asked.find(index);
+                if (asked == entry.tiles.asked.end() || asked->second != request) return;
+                entry.tiles.asked.erase(asked);
                 entry.failed = entry.failed || failed;
                 // Another zoom meanwhile, or the tile left the drawn area: not needed. Not loaded yet: asked again
                 // when the PDF is there.
-                if (entry.tiles.pixelsPerUnit != pixelsPerUnit || !entry.tiles.asked.erase(index) || !bitmap) return;
+                if (!bitmap) return;
                 entry.tiles.done[index] = std::make_unique<DrawableBitmap>(bitmap, false);
-                self->Ready(pdfPage);
+                self->Ready(key);
             });
         }, rank);
     }
@@ -330,8 +382,8 @@ namespace xournal::app
     void PdfBackground::RenderPage(int pdfPage, UINT width, UINT height, int priorityPage,
         std::function<void(std::shared_ptr<CpuBitmap>)> done)
     {
-        // Thumbnail keys beside the screen's PDF pages and pictures: bit 30 set.
-        std::uint64_t key = (generation << 32) | 0x40000000u | static_cast<std::uint32_t>(pdfPage);
+        // A page move changes the priority index while the request is waiting.
+        std::uint64_t key = NextRequest();
         queue.Submit(key, priorityPage, std::format("render PDF page {} for a thumbnail", pdfPage + 1),
             [source = source, pdfPage, width, height, done](PdfPageRenderer& renderer)
         {
@@ -341,7 +393,7 @@ namespace xournal::app
             {
                 try
                 {
-                    bitmap = renderer.Render(document.GetPage(static_cast<UINT>(pdfPage)), width, height, false);
+                    bitmap = renderer.RenderThumbnail(document.GetPage(static_cast<UINT>(pdfPage)), width, height, false);
                 }
                 catch (...)
                 {
@@ -349,38 +401,68 @@ namespace xournal::app
                 }
             }
             UiQueue::Post("pdf thumbnail rendered", [done, bitmap] { done(bitmap); });
-        });
+        }, RenderQueue::ThumbnailRank);
     }
 
     void PdfBackground::Remap(inkpages::PageMap const& map)
     {
+        readyPages = map.Apply(readyPages);
         for (auto& [pdfPage, entry] : rendered)
         {
             entry.pages = map.Apply(entry.pages);
         }
     }
 
-    void PdfBackground::Trim(int focus, int keep)
+    void PdfBackground::RenderArea(int pdfPage, int documentPage, Rect area, double scale,
+        std::function<void(std::shared_ptr<CpuBitmap>, std::exception_ptr)> done)
+    {
+        auto document = source->Document();
+        // An explicit copy may finish after the user opens another document.
+        queue.Submit(NextRequest() | (std::uint64_t{1} << 63), documentPage, "render PDF area for clipboard",
+            [document, pdfPage, area, scale, done = std::move(done)](PdfPageRenderer& renderer) {
+                std::shared_ptr<CpuBitmap> bitmap;
+                try
+                {
+                    if (!document || pdfPage < 0 || static_cast<UINT>(pdfPage) >= document.PageCount())
+                        ThrowInvalidData("PDF area: missing PDF page");
+                    constexpr double dip = 96.0 / 72.0;
+                    D2D1_RECT_F sourceRect{ static_cast<float>(area.x * dip), static_cast<float>(area.y * dip),
+                        static_cast<float>((area.x + area.width) * dip), static_cast<float>((area.y + area.height) * dip) };
+                    auto size = FitPixels(area.width, area.height, scale, 4096);
+                    bitmap = renderer.Render(document.GetPage(static_cast<UINT>(pdfPage)), size.width, size.height,
+                        true, sourceRect);
+                }
+                catch (...)
+                {
+                    done({}, std::current_exception());
+                    return;
+                }
+                done(std::move(bitmap), {});
+            }, -2);
+    }
+
+    void PdfBackground::Trim(int focus, int keep, std::vector<int> const& drawing)
     {
         queue.SetFocus(focus);
         for (auto& [pdfPage, entry] : rendered)
         {
+            bool drawn = std::any_of(drawing.begin(), drawing.end(), [&](int page) { return entry.pages.contains(page); });
+            if (drawn) continue;
             auto within = [&](int distance)
             {
                 return std::any_of(entry.pages.begin(), entry.pages.end(), [&](int page) { return std::abs(page - focus) <= distance; });
             };
             // A render that has not started when its page left the view is dropped.
-            if (!within(keep) && (entry.preview || entry.previewRequested))
+            if (!within(keep) && (entry.preview || entry.previewRequest))
             {
                 entry.preview.reset();
                 entry.previewWidth = 0;
-                entry.previewRequested = 0;
-                std::uint64_t key = KeyOf(generation, pdfPage);
-                queue.Drop([key](std::uint64_t k) { return k == key; });
+                auto request = std::exchange(entry.previewRequest, 0);
+                if (request) queue.Drop([request](std::uint64_t k) { return k == request; });
             }
             if (!within(SharpAround) && (!entry.tiles.done.empty() || !entry.tiles.asked.empty() || !entry.placeholder.done.empty()))
             {
-                DropTiles(pdfPage, entry.tiles.asked);
+                DropTiles(entry.tiles);
                 entry.tiles = {};
                 entry.placeholder = {};
             }
