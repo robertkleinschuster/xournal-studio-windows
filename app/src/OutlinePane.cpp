@@ -34,8 +34,10 @@ namespace xournal::app
         }
         window = CreateWindowExW(0, ClassName, L"", WS_CHILD | WS_CLIPCHILDREN, 0, 0, 0, 0, parent, nullptr, instance, this);
         if (!window) ThrowLastError("CreateWindowEx(outline pane)");
+        // TVS_LINESATROOT (only effective with TVS_HASLINES): the top-level entries get their expand chevron too - a single
+        // tap on it opens an entry, handy with the finger (user, 2026-11-20). The Explorer theme draws chevrons, no lines.
         tree = CreateWindowExW(0, WC_TREEVIEWW, L"Inhalt der PDF", WS_CHILD | WS_VISIBLE | WS_TABSTOP | TVS_HASBUTTONS |
-            TVS_SHOWSELALWAYS | TVS_FULLROWSELECT | TVS_INFOTIP, 0, 0, 0, 0, window,
+            TVS_HASLINES | TVS_LINESATROOT | TVS_SHOWSELALWAYS | TVS_FULLROWSELECT | TVS_INFOTIP, 0, 0, 0, 0, window,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(TreeId)), instance, nullptr);
         if (!tree) ThrowLastError("CreateWindowEx(outline tree)");
         HRESULT hr = SetWindowTheme(tree, L"Explorer", nullptr); // File Explorer's tree look

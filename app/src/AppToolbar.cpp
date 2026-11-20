@@ -79,8 +79,9 @@ namespace xournal::app
         inkpages::ToolChoices choices, AppToolbarActions actions)
     {
         std::vector<inkpages::ToolbarButton> buttons{
-            { CmdSave, GlyphSave, L"Speichern (Strg+S)", actions.save, L"Speichern" },
-            { CmdExportPdf, GlyphExport, L"Als PDF exportieren (Strg+E)", actions.exportPdf, L"Als PDF exportieren" },
+            // Save and Export at the toolbar's start, where apps put them (user, 2026-11-20).
+            { CmdSave, GlyphSave, L"Speichern (Strg+S)", actions.save, L"Speichern", {}, 20, false, true },
+            { CmdExportPdf, GlyphExport, L"Als PDF exportieren (Strg+E)", actions.exportPdf, L"Als PDF exportieren", {}, 20, false, true },
             { CmdInsertPage, 0, L"Seite einfügen (nach der Seite im Blick)", actions.insertPage, L"Seite einfügen", InsertPageIcon, 20, true },
             { CmdDeletePage, 0, L"Seite löschen", actions.deletePage, L"Seite löschen", DeletePageIcon, 20 },
         };
