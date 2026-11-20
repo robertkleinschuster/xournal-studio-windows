@@ -178,6 +178,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           BUILD_RUN: ${{ needs.plan.outputs.run }}
           SHA: ${{ needs.plan.outputs.sha }}
+          MATRIX_RESULT: ${{ needs.test.result }}
         run: |
           $repo = $env:GITHUB_REPOSITORY; $run = $env:GITHUB_RUN_ID
           $jobs = @(gh api "repos/$repo/actions/runs/$run/jobs?per_page=100" --jq '.jobs[] | {name, conclusion, html_url, started_at, completed_at}' | ForEach-Object { $_ | ConvertFrom-Json })
@@ -186,9 +187,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "gh api artifacts failed ($LASTEXITCODE)" }
           $lines = @("### UI tests of $($env:SHA.Substring(0, 7)) (app from [Build run $env:BUILD_RUN]($env:GITHUB_SERVER_URL/$repo/actions/runs/$env:BUILD_RUN))", '',
               '| Test | Result | Job time | Screenshots and logs |', '|---|---|---|---|')
-          $failed = 0
+          # The jobs endpoint can lag behind dependency evaluation. Use the matrix result for the workflow gate.
           foreach ($job in $jobs | Where-Object { $_.name -like '*Test' } | Sort-Object name) {
-              $result = switch ($job.conclusion) { 'success' { 'PASS' } 'failure' { $failed++; '**FAIL**' } default { $failed++; "$($job.conclusion)" } }
+              $result = switch ($job.conclusion) {
+                  'success' { 'PASS' }
+                  'failure' { '**FAIL**' }
+                  { !$_ } { if ($env:MATRIX_RESULT -eq 'success') { 'PASS' } else { 'Result pending in API' } }
+                  default { "$_" }
+              }
               $seconds = if ($job.completed_at -and $job.started_at) { [int]([DateTime]$job.completed_at - [DateTime]$job.started_at).TotalSeconds } else { 0 }
               $artifact = $artifacts | Where-Object { $_.name -eq "ui-$($job.name)" } | Select-Object -First 1
               $link = if ($artifact) { "[ui-$($job.name)]($env:GITHUB_SERVER_URL/$repo/actions/runs/$run/artifacts/$($artifact.id))" } else { 'none' }
@@ -196,4 +202,4 @@ jobs:
           }
           $lines -join "`n" >> $env:GITHUB_STEP_SUMMARY
           $lines -join "`n"
-          if ($failed) { throw "$failed UI test(s) failed" }
+          if ($env:MATRIX_RESULT -ne 'success') { throw "UI test matrix: $env:MATRIX_RESULT" }
