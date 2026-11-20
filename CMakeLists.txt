@@ -19,6 +19,31 @@ include(FetchContent)
 # (cmake/DependencyCache.cmake); each module's Dependencies.cmake holds its pins.
 include(cmake/DependencyCache.cmake)
 
+# Compiler cache for the project's own code (build.ps1 turns it on): ccache (pinned release, downloaded into the
+# dependency cache) as the compiler launcher - launchers work with the Ninja generators only. CCACHE_BASEDIR makes the
+# paths relative to the source root, so every worktree hits the same cache (ccache's default directory, or CCACHE_DIR).
+# Debug information embedded in the objects (/Z7): ccache cannot cache /Zi's shared PDB.
+set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "$<$<CONFIG:Debug,RelWithDebInfo>:Embedded>")
+option(XOURNAL_CCACHE "Compile the project's code through ccache (Ninja generators only)" OFF)
+if(XOURNAL_CCACHE)
+    if(NOT CMAKE_GENERATOR MATCHES "Ninja")
+        message(FATAL_ERROR "XOURNAL_CCACHE needs a Ninja generator (compiler launchers), not ${CMAKE_GENERATOR}")
+    endif()
+    xournal_cached_dependency(ccache VERSION 4.14.2
+        URL https://github.com/ccache/ccache/releases/download/v4.14.2/ccache-4.14.2-windows-x86_64.zip
+        SHA256 6993ce645e53192cec592ee23186200b574ac4c59097ecde8d9cfd681b47ae84
+        DOWNLOAD_ONLY)
+    # ccache settings for sharing between worktrees and CI machines: paths relative to the source root, the build
+    # folder not hashed, the compiler identified by its content (not its file time), and the /showIncludes prefix of
+    # the installed MSVC language (CMake detects it; a German MSVC writes "Hinweis: Einlesen der Datei:").
+    set(XOURNAL_CCACHE_LAUNCHER ${CMAKE_COMMAND} -E env CCACHE_BASEDIR=${CMAKE_SOURCE_DIR} CCACHE_NOHASHDIR=1
+        CCACHE_COMPILERCHECK=content "CCACHE_MSVC_DEP_PREFIX=${CMAKE_CL_SHOWINCLUDES_PREFIX}" ${ccache_PREFIX}/ccache.exe)
+    set(CMAKE_C_COMPILER_LAUNCHER ${XOURNAL_CCACHE_LAUNCHER})
+    set(CMAKE_CXX_COMPILER_LAUNCHER ${XOURNAL_CCACHE_LAUNCHER})
+    set(XOURNAL_CCACHE_EXE ${ccache_PREFIX}/ccache.exe CACHE INTERNAL "")
+    message(STATUS "ccache: ${XOURNAL_CCACHE_EXE}")
+endif()
+
 # zlib: Windows has no public gzip API. The sources of the pinned release are compiled into a static library with the
 # project's runtime by a small wrapper project (cmake/deps/zlib), because zlib's own CMake setup builds a DLL too and
 # predates the policies this CMake needs.

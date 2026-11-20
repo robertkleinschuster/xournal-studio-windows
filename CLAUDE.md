@@ -126,10 +126,22 @@ Workflow: after a change commit atomically, push and install (`install.ps1` refu
   pin or compiler gets a new folder. A dependency is built at configure time, under a file lock, into `<config>.tmp`
   and renamed when it is installed; its logs `<config>-configure|build|install.log` sit next to it; a failure stops
   the configure. Only `XOURNAL_DEPS_CONFIGS` are built (build.ps1 adds its `-Config`). build.ps1 configures only a new
-  tree or a new configuration (ZERO_CHECK re-runs CMake when a CMake file changed). Delete old key folders by hand.
+  tree or a new configuration (the build re-runs CMake when a CMake file changed). Delete old key folders by hand.
   GoogleTest is still built per tree (InkPages declares it; small). Locally (12 threads, 2026-11-20) filling
   the cache once took 359 s (qpdf 237, libgit2 85, libjpeg-turbo 32, zlib 5); before, every fresh tree spent ~12 min
   on third-party code (configure 104 s + 705 s).
+- **Ninja + ccache** (2026-11-20): build.ps1 configures `Ninja Multi-Config` (Visual Studio's ninja.exe) in the VS x64
+  developer environment (`tools/VsDevEnv.ps1`, Microsoft's DevShell module; `tools\with-build-lock.ps1` enters it too)
+  and compiles the own code through ccache 4.14.2 (pinned, downloaded into the dependency cache; `XOURNAL_CCACHE`,
+  `CMAKE_<LANG>_COMPILER_LAUNCHER`, `CCACHE_BASEDIR` = the source root so all worktrees share
+  `%LOCALAPPDATA%\ccache` or `CCACHE_DIR`; also `CCACHE_NOHASHDIR`, `compiler_check=content` and the /showIncludes prefix
+  of the installed MSVC language - a German MSVC writes "Hinweis: Einlesen der Datei:", and without these every
+  worktree missed; measured: a second worktree hits 100 %, Ninja's header deps stay relative); Debug info `/Z7` (`CMAKE_MSVC_DEBUG_INFORMATION_FORMAT`; ccache cannot cache `/Zi`). The
+  build folder stays `.local-build\cmake` (outputs in `app\<Config>`); an old Visual Studio-generator tree there is
+  removed and configured again. For the IDE, open the folder in Visual Studio (CMake). Measured in CI (4-core
+  runner, 2026-11-20): old workflow ~15-16 min per push (VS generator, everything from source); VS generator with the
+  dependency cache 18.4 min cold (third-party 5.8 min) / 11.7 min warm; Ninja with an empty ccache: third-party
+  2.5 min, own code 6.2-7.6 min.
 
 - **install.ps1 is for development, the MSI for releases.** Both use the same folder and Start menu entry
   "Xournal Studio (Win32)". `install.ps1` refuses while the MSI is installed (found by its UpgradeCode): replacing the
