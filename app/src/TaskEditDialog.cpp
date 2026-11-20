@@ -14,7 +14,7 @@ namespace xournal::app::TaskEditDialog
 {
     namespace
     {
-        enum ControlId : int { TextId = 100, DueId, LinkId };
+        enum ControlId : int { TextId = 100, DueId, LinkId, HasDueId };
         constexpr WORD ButtonClass = 0x0080, EditClass = 0x0081, StaticClass = 0x0082;
 
         // A DLGTEMPLATEEX in memory (the layout Windows documents for extended dialog templates).
@@ -91,17 +91,17 @@ namespace xournal::app::TaskEditDialog
                     auto* state = reinterpret_cast<State*>(lp);
                     SetWindowLongPtrW(dialog, DWLP_USER, lp);
                     SetDlgItemTextW(dialog, TextId, state->values.text.c_str());
+                    // "Fällig am:" checked = a due date (the picker shows it); unchecked = none (the picker, disabled,
+                    // shows today for when the box gets checked).
                     HWND due = GetDlgItem(dialog, DueId);
                     if (state->values.due)
                     {
                         SYSTEMTIME day{ static_cast<WORD>(state->values.due->year), static_cast<WORD>(state->values.due->month), 0,
                             static_cast<WORD>(state->values.due->day) };
-                        DateTime_SetSystemtime(due, GDT_VALID, &day);
+                        if (!DateTime_SetSystemtime(due, GDT_VALID, &day)) LogError("task edit dialog: due date not shown");
                     }
-                    else
-                    {
-                        DateTime_SetSystemtime(due, GDT_NONE, nullptr);
-                    }
+                    CheckDlgButton(dialog, HasDueId, state->values.due ? BST_CHECKED : BST_UNCHECKED);
+                    EnableWindow(due, state->values.due.has_value());
                     HWND link = GetDlgItem(dialog, LinkId);
                     if (!state->linkText.empty())
                     {
@@ -133,12 +133,18 @@ namespace xournal::app::TaskEditDialog
                         state->values.text = std::wstring(Trim(value));
                         SYSTEMTIME chosen{};
                         state->values.due.reset();
-                        if (DateTime_GetSystemtime(GetDlgItem(dialog, DueId), &chosen) == GDT_VALID)
+                        if (IsDlgButtonChecked(dialog, HasDueId) == BST_CHECKED &&
+                            DateTime_GetSystemtime(GetDlgItem(dialog, DueId), &chosen) == GDT_VALID)
                         {
                             state->values.due = Date{ chosen.wYear, chosen.wMonth, chosen.wDay };
                         }
                         state->values.link = Button_GetCheck(GetDlgItem(dialog, LinkId)) == BST_CHECKED;
                         EndDialog(dialog, IDOK);
+                        return TRUE;
+                    }
+                    if (LOWORD(wp) == HasDueId && HIWORD(wp) == BN_CLICKED)
+                    {
+                        EnableWindow(GetDlgItem(dialog, DueId), IsDlgButtonChecked(dialog, HasDueId) == BST_CHECKED);
                         return TRUE;
                     }
                     if (LOWORD(wp) == IDCANCEL)
@@ -160,14 +166,15 @@ namespace xournal::app::TaskEditDialog
 
     std::optional<Values> Show(HWND owner, Values const& values, std::wstring const& linkText, bool canLink)
     {
-        Template dialog(L"Aufgabe bearbeiten", 240, 108, 7);
+        Template dialog(L"Aufgabe bearbeiten", 240, 104, 7);
         dialog.Item(SS_LEFT, 7, 7, 226, 9, -1, StaticClass, nullptr, L"&Aufgabe");
         dialog.Item(WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL, 7, 18, 226, 14, TextId, EditClass, nullptr, L"");
-        dialog.Item(SS_LEFT, 7, 38, 226, 9, -1, StaticClass, nullptr, L"&Fällig am");
-        dialog.Item(WS_TABSTOP | DTS_SHORTDATEFORMAT | DTS_SHOWNONE, 7, 49, 110, 14, DueId, 0, DATETIMEPICK_CLASSW, L"");
-        dialog.Item(WS_TABSTOP | BS_AUTOCHECKBOX, 7, 69, 226, 10, LinkId, ButtonClass, nullptr, L"Mit dieser Seite &verknüpfen");
-        dialog.Item(WS_TABSTOP | BS_DEFPUSHBUTTON, 129, 87, 50, 14, IDOK, ButtonClass, nullptr, L"Speichern");
-        dialog.Item(WS_TABSTOP | BS_PUSHBUTTON, 183, 87, 50, 14, IDCANCEL, ButtonClass, nullptr, L"Abbrechen");
+        // Windows' dialog layout: a check box "Fällig am:" with the date picker beside it (enabled while checked).
+        dialog.Item(WS_TABSTOP | BS_AUTOCHECKBOX, 7, 41, 56, 10, HasDueId, ButtonClass, nullptr, L"&Fällig am:");
+        dialog.Item(WS_TABSTOP | DTS_SHORTDATEFORMAT, 65, 39, 90, 14, DueId, 0, DATETIMEPICK_CLASSW, L"");
+        dialog.Item(WS_TABSTOP | BS_AUTOCHECKBOX, 7, 60, 226, 10, LinkId, ButtonClass, nullptr, L"Mit dieser Seite &verknüpfen");
+        dialog.Item(WS_TABSTOP | BS_DEFPUSHBUTTON, 129, 83, 50, 14, IDOK, ButtonClass, nullptr, L"Speichern");
+        dialog.Item(WS_TABSTOP | BS_PUSHBUTTON, 183, 83, 50, 14, IDCANCEL, ButtonClass, nullptr, L"Abbrechen");
         State state{ values, linkText, canLink };
         INT_PTR result = DialogBoxIndirectParamW(GetModuleHandleW(nullptr), dialog.Get(), owner, Proc,
             reinterpret_cast<LPARAM>(&state));

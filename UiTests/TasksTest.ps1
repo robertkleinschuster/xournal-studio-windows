@@ -1,6 +1,7 @@
 ﻿# The Aufgaben tab in Windows Sandbox: the todo.txt shown (groups Überfällig / Offen, open by due date), a new task
-# added with Enter, a task completed with its check box (only its line changes, the file keeps CRLF), a task's text
-# edited in place (F2), a task edited with the dialog, a task deleted from the context menu.
+# added with Enter and a due date ("Fällig am:" check box), a task completed with its check box (only its line changes,
+# the file keeps CRLF), a task's text edited in place (F2), a task edited with the dialog (context menu; a double-click
+# opens it too), a task deleted from the context menu.
 #   UiTests\Run-AppTest.ps1 -Test UiTests\TasksTest.ps1 -Extra D:\src\InkPages\.local-build\tools\uiaprobe.exe
 . C:\sbx\TestKit.ps1
 
@@ -53,7 +54,10 @@ Invoke-Test {
     }
     & C:\sbx\data\uiaprobe.exe XournalStudioWindow | Out-File "$out\uia-tree.txt" -Encoding utf8
 
-    # 1. A new task: typed into the box, Enter adds it at the end of the file.
+    # 1. A new task: typed into the box, Enter adds it at the end of the file - with a due date: the check box
+    # "Fällig am:" enables the date picker beside it (today), the task gets due:<today>; adding unchecks it again.
+    ClickAt 'XournalStudioWindow' 'llig am' | Out-Null
+    Shot '01b-due-date-row'
     # The box by its control id (20, UI Automation's id of a Win32 control; it has no name, only a cue banner).
     $cond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::AutomationIdProperty, '20')
     $box = [System.Windows.Automation.AutomationElement]::RootElement.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $cond)
@@ -63,6 +67,8 @@ Invoke-Test {
     [System.Windows.Forms.SendKeys]::SendWait('Neue Übung abgeben'); Start-Sleep -Milliseconds 300
     [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
     WaitFor 'add' { (Lines) -match 'Neue Übung abgeben' }
+    $today = Get-Date -Format 'yyyy-MM-dd'
+    if ((Lines) -notmatch "Neue Übung abgeben due:$today") { throw "the new task has no due:$today" }
     "after add: $(Lines)"
     Shot '02-added'
 
@@ -85,7 +91,7 @@ Invoke-Test {
     [System.Windows.Forms.SendKeys]::SendWait('^a'); Start-Sleep -Milliseconds 200
     [System.Windows.Forms.SendKeys]::SendWait('Blatt 4 abgeben {+}ET'); Start-Sleep -Milliseconds 300
     [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
-    WaitFor 'edit in place' { (Lines) -match '(?m)^\d{4}-\d\d-\d\d Blatt 4 abgeben \+ET\r$' }
+    WaitFor 'edit in place' { (Lines) -match "(?m)^\d{4}-\d\d-\d\d Blatt 4 abgeben \+ET due:$today\r$" }
     "after the edit in place: $(Lines)"
 
     # 3. Edit a task (Bearbeiten: the text without its due: tag, the date in the picker): a new text, the date kept.
@@ -98,6 +104,17 @@ Invoke-Test {
     [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
     WaitFor 'edit' { (Lines) -match '(?m)^2026-11-15 Bald erledigt \+GET due:2026-01-01\r$' }
     "after edit: $(Lines)"
+
+    # 3b. A double-click on a row opens the same dialog (Abbrechen: nothing changes).
+    $before = Lines
+    $row = At 'XournalStudioWindow' 'Bald erledigt'
+    [Inj]::ClickPixel($row[0], $row[1]); Start-Sleep -Milliseconds 80; [Inj]::ClickPixel($row[0], $row[1])
+    Start-Sleep -Milliseconds 800
+    At '#32770' 'Speichern' | Out-Null   # the dialog "Aufgabe bearbeiten"
+    Shot '04b-double-click-dialog'
+    [Inj]::Key(0x1B); Start-Sleep -Milliseconds 600   # Escape = Abbrechen
+    if ((Lines) -ne $before) { throw 'cancelling the dialog changed todo.txt' }
+    "double-click opened the dialog"
 
     # 4. Delete a task from its context menu (asked first).
     RightClickAt 'XournalStudioWindow' 'ter f' | Out-Null

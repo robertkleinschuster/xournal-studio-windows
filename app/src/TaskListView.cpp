@@ -36,7 +36,7 @@ namespace xournal::app
                 text += std::format(L"\nErledigt am {:02}.{:02}.{}", row.task.completed->day, row.task.completed->month,
                     row.task.completed->year);
             }
-            if (row.link) text += L"\nDoppelklick öffnet die verknüpfte Seite.";
+            if (row.link) text += L"\nDie verknüpfte Seite öffnet das Kontextmenü.";
             return text;
         }
     }
@@ -239,9 +239,12 @@ namespace xournal::app
             return TRUE;
         }
         case NM_DBLCLK:
-            if (TaskRow const* row = RowOfItem(reinterpret_cast<NMITEMACTIVATE const&>(note).iItem); row && opened)
+            // A double-click (mouse or pen) on a row edits the task (the dialog: text, due date, link) - after the
+            // list's own notification, since the change refills the list.
+            if (TaskRow const* row = RowOfItem(reinterpret_cast<NMITEMACTIVATE const&>(note).iItem); row && editRequested)
             {
-                opened(*row);
+                Log(std::format("tasks: double-click on row {}", reinterpret_cast<NMITEMACTIVATE const&>(note).iItem));
+                UiQueue::Post("tasks: edit", [this, copy = *row] { editRequested(copy); });
             }
             return 0;
         case NM_RCLICK:

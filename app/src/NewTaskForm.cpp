@@ -10,7 +10,7 @@
 
 namespace xournal::app
 {
-    NewTaskForm::NewTaskForm(HWND parent, int firstId) : addId(firstId + 3)
+    NewTaskForm::NewTaskForm(HWND parent, int firstId) : addId(firstId + 3), hasDueId(firstId + 4)
     {
         text = ChildControls::Create(parent, WC_EDITW, L"", WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, firstId);
         Edit_SetCueBannerTextFocused(text, L"Neue Aufgabe (Eingabe fügt hinzu)", TRUE);
@@ -18,9 +18,11 @@ namespace xournal::app
         {
             ThrowLastError("SetWindowSubclass(new task)");
         }
-        dueLabel = ChildControls::Create(parent, WC_STATICW, L"Fällig am:", SS_LEFT | SS_CENTERIMAGE, 0);
-        due = ChildControls::Create(parent, DATETIMEPICK_CLASSW, L"", WS_TABSTOP | DTS_SHORTDATEFORMAT | DTS_SHOWNONE, firstId + 1);
-        DateTime_SetSystemtime(due, GDT_NONE, nullptr); // no due date until one is chosen
+        // Windows' pattern for an optional date: a check box "Fällig am:" and the date picker beside it, enabled while
+        // the box is checked (unchecked = no due date).
+        hasDue = ChildControls::Create(parent, WC_BUTTONW, L"Fällig am:", WS_TABSTOP | BS_AUTOCHECKBOX, hasDueId);
+        due = ChildControls::Create(parent, DATETIMEPICK_CLASSW, L"", WS_TABSTOP | DTS_SHORTDATEFORMAT, firstId + 1);
+        EnableWindow(due, FALSE);
         linkPage = ChildControls::Create(parent, WC_BUTTONW, L"Mit dieser Seite verknüpfen", WS_TABSTOP | BS_AUTOCHECKBOX, firstId + 2);
         addButton = ChildControls::Create(parent, WC_BUTTONW, L"Hinzufügen", WS_TABSTOP | BS_PUSHBUTTON, addId);
     }
@@ -40,8 +42,8 @@ namespace xournal::app
         int y = top, height = px(23), gap = px(7);
         MoveWindow(text, left, y, width, height, TRUE);
         y += height + gap;
-        int labelWidth = px(64), addWidth = px(84);
-        MoveWindow(dueLabel, left, y, labelWidth, height, TRUE);
+        int labelWidth = px(80), addWidth = px(84);
+        MoveWindow(hasDue, left, y, labelWidth, height, TRUE);
         MoveWindow(due, left + labelWidth, y, width - labelWidth - addWidth - gap, height, TRUE);
         MoveWindow(addButton, left + width - addWidth, y, addWidth, height, TRUE);
         y += height + gap;
@@ -51,7 +53,7 @@ namespace xournal::app
 
     void NewTaskForm::Show(bool shown)
     {
-        for (HWND control : { text, dueLabel, due, linkPage, addButton })
+        for (HWND control : { text, hasDue, due, linkPage, addButton })
         {
             ShowWindow(control, shown ? SW_SHOW : SW_HIDE);
         }
@@ -71,7 +73,7 @@ namespace xournal::app
         GetWindowTextW(text, entry.text.data(), length + 1);
         entry.text.resize(static_cast<size_t>(length));
         SYSTEMTIME chosen{};
-        if (DateTime_GetSystemtime(due, &chosen) == GDT_VALID)
+        if (Button_GetCheck(hasDue) == BST_CHECKED && DateTime_GetSystemtime(due, &chosen) == GDT_VALID)
         {
             entry.due = Date{ chosen.wYear, chosen.wMonth, chosen.wDay };
         }
@@ -82,12 +84,21 @@ namespace xournal::app
     void NewTaskForm::Clear()
     {
         SetWindowTextW(text, L"");
-        DateTime_SetSystemtime(due, GDT_NONE, nullptr);
+        Button_SetCheck(hasDue, BST_UNCHECKED);
+        EnableWindow(due, FALSE);
+        SYSTEMTIME today{};
+        GetLocalTime(&today);
+        if (!DateTime_SetSystemtime(due, GDT_VALID, &today)) LogError("tasks: the date picker kept its date");
         Button_SetCheck(linkPage, BST_UNCHECKED);
     }
 
     bool NewTaskForm::OnCommand(int id)
     {
+        if (id == hasDueId)
+        {
+            EnableWindow(due, Button_GetCheck(hasDue) == BST_CHECKED);
+            return true;
+        }
         if (id != addId)
         {
             return false;

@@ -51,7 +51,7 @@ namespace xournal::app
         list = std::make_unique<TaskListView>(window, ListId);
         list->toggled = [this](TaskRow const& row) { Toggle(row); };
         list->renamed = [this](TaskRow const& row, std::wstring const& text) { Rename(row, text); };
-        list->opened = [this](TaskRow const& row) { Open(row); };
+        list->editRequested = [this](TaskRow const& row) { Edit(row); };
         list->menuRequested = [this](TaskRow const& row, POINT screen) { ShowMenu(row, screen); };
         showDoneBox = ChildControls::Create(window, WC_BUTTONW, L"Erledigte anzeigen", WS_TABSTOP | BS_AUTOCHECKBOX, ShowDoneId);
         noFile = ChildControls::Create(window, WC_STATICW, L"", SS_LEFT, 0);
