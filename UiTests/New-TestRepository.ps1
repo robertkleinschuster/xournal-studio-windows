@@ -19,6 +19,10 @@ Set-Content (Join-Path $work 'todo.txt') "2026-11-15 Erste Aufgabe due:2026-11-2
 # (Not named "Git": PowerShell would call the function itself for "git".)
 function Invoke-Git { & git.exe -C $work @args; if ($LASTEXITCODE) { throw "git $args failed ($LASTEXITCODE)" } }
 Invoke-Git init --quiet
+# Git for Windows sets core.autocrlf=true in its system config (C:\Program Files\Git\etc\gitconfig), which libgit2 reads
+# on the user's machine. The sandbox has no Git: without the setting in the repository itself, every text file written
+# with CRLF here would count as modified there (index LF, working tree CRLF).
+Invoke-Git config core.autocrlf true
 Invoke-Git -c user.name=Test -c user.email=test@example.com add -A
 Invoke-Git -c user.name=Test -c user.email=test@example.com commit --quiet -m start
 Invoke-Git config user.name Test
