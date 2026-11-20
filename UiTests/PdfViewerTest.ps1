@@ -43,7 +43,9 @@ function Ctrl($k, $label) { [Inj]::Ctrl($k); Start-Sleep -Milliseconds 1200; "ct
 function Key($k) { [Inj]::Key($k); Start-Sleep -Milliseconds 1000; "key 0x{0:X}" -f $k }
 function Alt($k, $label) { [ViewerInput]::Alt($k); Start-Sleep -Milliseconds 1200; "alt+$label" }
 $script:log = "$out\app.log"
-function LogCount($pattern) { if (-not (Test-Path $script:log)) { return 0 }; @(Get-Content $script:log | Where-Object { $_ -match $pattern }).Count }
+# The app's log and InkPages' lines beside it (<log>.inkpages.log: keys, pan, places).
+function LogLines { foreach ($f in $script:log, "$($script:log).inkpages.log") { if (Test-Path $f) { Get-Content $f } } }
+function LogCount($pattern) { @(LogLines | Where-Object { $_ -match $pattern }).Count }
 # Waits until the log has the line `$times` times.
 function Expect($pattern, $what, $times = 1) {
     for ($i = 0; $i -lt 20 -and (LogCount $pattern) -lt $times; $i++) { Start-Sleep -Milliseconds 500 }
@@ -60,7 +62,7 @@ function ExpectPage($page, $what) {
     if ((StatusPage) -ne $page) { throw "status bar on page $(StatusPage), expected $page`: $what" }
     "ok: $what (Seite $page)"
 }
-function KeyLines { Get-Content $script:log | Where-Object { $_ -match 'viewport: key|viewer: key' } | Select-Object -Last 4 }
+function KeyLines { LogLines | Where-Object { $_ -match 'viewport: key|viewer: key' } | Select-Object -Last 4 }
 
 # A PDF written by hand: objects, then the cross-reference table with their byte offsets.
 function New-TestPdf($file) {
