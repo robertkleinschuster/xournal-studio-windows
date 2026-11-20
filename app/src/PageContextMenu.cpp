@@ -35,6 +35,8 @@ namespace xournal::app::PageContextMenu
             { CmdCut, L"&Ausschneiden\tStrg+X", state.selection },
             { CmdCopy, L"&Kopieren\tStrg+C", state.selection || state.textSelection },
             { CmdPaste, L"&Einfügen\tStrg+V" },
+            { CmdDuplicate, L"&Duplizieren\tStrg+D", state.selection },
+            { CmdDelete, L"&Löschen\tEntf", state.selection },
             { CmdSelectAll, L"Alles a&uswählen\tStrg+A" },
             { CmdClearSelection, L"Auswahl auf&heben\tEsc", state.selection || state.textSelection },
             {},

@@ -60,12 +60,19 @@ long formulas in several colors. For open pen/UI design questions, propose how O
   files and folders in the explorer tree with the shell's system image list; messages with the system's
   info/warning/error icons (`TaskDialog`, `SIID_*`); toasts in Windows 11 InfoBar colors.
 - **Pen, finger, mouse** (user, 2026-11-20): only the pen writes. Finger and touchpad gestures pan (with inertia) and zoom
-  the sheet. A left mouse drag in Auswählen selects; with other tools it selects PDF text through ink or pans.
-  A right drag lassos with any tool. The mouse moves/scales the current selection and a click beside it clears it.
-  In Auswählen a finger tap selects an object and a drag on the selection moves or scales it. A second contact
-  hands the gesture to DirectManipulation for panning and zooming. A finger tap with Text places or edits a text.
-  A mouse click or finger tap follows a PDF link. The pen operates every
-  control (controls in normal mouse size, not finger size).
+  the sheet. Touchpad pointer movement, clicks and drags follow the mouse column.
+
+  | Tool | Pen | Mouse and touchpad pointer | Finger |
+  | --- | --- | --- | --- |
+  | Pen, highlighter, shapes, eraser | Writes, draws or erases | Left drag selects PDF text through ink or pans | Pan and zoom, tap a link, hold on PDF text to select its word and offer Kopieren |
+  | Auswählen | Lasso or rectangle | Left drag uses the current selection mode | Tap selects a stroke, picture or text, drag on its frame moves or scales it |
+  | Text | Tap places or edits a text | Click places or edits, drag outside the editor follows viewer behavior | Tap places or edits, drag pans |
+
+  Right mouse drag lassos with every tool. Right click opens the native context menu. Pen and mouse can move or
+  scale a selection with every tool. A click beside it or Esc clears it. In Auswählen a second finger during a
+  selection drag returns both contacts to DirectManipulation. Mouse clicks and finger taps follow PDF links in the
+  viewer. The Text tool takes its clicks and taps. System cursors show the mouse's action on the page. The pen
+  operates every control in its normal mouse size.
 - **Pen buttons:** eraser end / eraser button erases with any tool (exact or whole strokes, following the toggle).
   Barrel button (user, 2026-11-15/16): hold barrel = lasso, always, with every tool and without switching the toolbar;
   a barrel drag inside the selection moves it, on a corner handle scales it, a barrel tap clears it. The tip hovering

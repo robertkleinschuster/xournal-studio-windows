@@ -24,6 +24,8 @@ namespace xournal::tests
         EXPECT_FALSE(settings.projectFolder);
         EXPECT_FALSE(settings.paneOpen);
         EXPECT_FALSE(settings.doneTasksShown);
+        EXPECT_FALSE(settings.penHasWritten);
+        EXPECT_FALSE(settings.mouseHintShown);
         EXPECT_TRUE(settings.toolChoices.empty());
         EXPECT_TRUE(settings.documentPositions.empty());
     }
@@ -39,6 +41,8 @@ namespace xournal::tests
         settings.paneOpen = true;
         settings.paneTab = 2;
         settings.doneTasksShown = true;
+        settings.penHasWritten = true;
+        settings.mouseHintShown = true;
         settings.toolChoices = "pens=1:0.85,3:2.26;eraser=7";
         settings.documentPositions[L"C:\\Uni\\Blatt.xopp"] = { 3, -12.5, 140.25, 1.5 };
         settings.RememberRecent(temp / L"b.xopp");
@@ -56,6 +60,8 @@ namespace xournal::tests
         EXPECT_TRUE(read.paneOpen);
         EXPECT_EQ(2, read.paneTab);
         EXPECT_TRUE(read.doneTasksShown);
+        EXPECT_TRUE(read.penHasWritten);
+        EXPECT_TRUE(read.mouseHintShown);
         EXPECT_EQ(settings.toolChoices, read.toolChoices);
         // Positions by path, case ignored like Windows.
         ASSERT_TRUE(read.documentPositions.contains(L"c:\\uni\\blatt.xopp"));
