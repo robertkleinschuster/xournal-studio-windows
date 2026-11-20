@@ -39,18 +39,23 @@ namespace xournal::app
     /// narrower instead of not at all. At least 1 x 1.
     PixelSize FitPixels(double width, double height, double pixelsPerUnit, UINT maxWidth);
 
-    /// A memory bitmap and its copy on the drawing device (made on first use; again when the device changes).
+    /// A memory bitmap and its copy on the drawing device (made on first use; again when the device changes). With
+    /// `keepPixels` false the memory copy is let go once uploaded (large PDF renders: half the memory); a device change
+    /// then leaves nothing to draw (On returns nullptr) and the owner renders it again.
     class DrawableBitmap
     {
     public:
-        explicit DrawableBitmap(std::shared_ptr<CpuBitmap> pixels) : pixels(std::move(pixels)) {}
+        explicit DrawableBitmap(std::shared_ptr<CpuBitmap> pixels, bool keepPixels = true)
+            : pixels(std::move(pixels)), width(this->pixels->width), height(this->pixels->height), keepPixels(keepPixels) {}
 
-        UINT Width() const { return pixels->width; }
-        UINT Height() const { return pixels->height; }
+        UINT Width() const { return width; }
+        UINT Height() const { return height; }
         ID2D1Bitmap* On(ID2D1DeviceContext* dc);
 
     private:
         std::shared_ptr<CpuBitmap> pixels;
+        UINT width, height;
+        bool keepPixels;
         Microsoft::WRL::ComPtr<ID2D1Bitmap> uploaded;
         Microsoft::WRL::ComPtr<ID2D1Device> device;
     };

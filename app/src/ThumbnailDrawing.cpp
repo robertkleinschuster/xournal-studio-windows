@@ -28,7 +28,6 @@ namespace xournal::app
             HDC memory = CreateCompatibleDC(dc);
             HGDIOBJ old = SelectObject(memory, section);
             BLENDFUNCTION blend{ AC_SRC_OVER, 0, 255, AC_SRC_ALPHA };
-            SetStretchBltMode(dc, HALFTONE);
             if (!AlphaBlend(dc, area.left, area.top, area.right - area.left, area.bottom - area.top, memory, 0, 0,
                     static_cast<int>(bitmap.width), static_cast<int>(bitmap.height), blend))
             {
@@ -40,19 +39,63 @@ namespace xournal::app
         }
     }
 
-    void DrawPageThumbnail(HDC dc, RECT const& area, double aspect, CpuBitmap const* background, CpuBitmap const* content)
+    SIZE ThumbnailSize(SIZE box, double aspect)
     {
-        int width = area.right - area.left, height = area.bottom - area.top;
-        int pageHeight = std::min(height, static_cast<int>(std::lround(width * aspect)));
-        int pageWidth = std::min(width, static_cast<int>(std::lround(pageHeight / aspect)));
-        RECT page{ area.left + (width - pageWidth) / 2, area.top + (height - pageHeight) / 2, 0, 0 };
-        page.right = page.left + pageWidth;
-        page.bottom = page.top + pageHeight;
+        if (!(aspect > 0)) aspect = 1.4142;
+        LONG width = box.cx, height = std::lround(box.cx * aspect);
+        if (height > box.cy)
+        {
+            height = box.cy;
+            width = std::lround(box.cy / aspect);
+        }
+        return { std::max(1L, width), std::max(1L, height) };
+    }
+
+    HIMAGELIST CreateSlotImages(SIZE slot)
+    {
+        // A mask that is transparent everywhere: an image of alpha 0 alone is drawn black (an image list takes a 32-bit
+        // image without any alpha as opaque).
+        HIMAGELIST images = ImageList_Create(slot.cx, slot.cy, ILC_COLOR32 | ILC_MASK, 1, 0);
+        if (!images) ThrowLastError("ImageList_Create (thumbnail slot)");
+        HDC screen = GetDC(nullptr);
+        HBITMAP color = CreateCompatibleBitmap(screen, slot.cx, slot.cy);
+        ReleaseDC(nullptr, screen);
+        HBITMAP mask = CreateBitmap(slot.cx, slot.cy, 1, 1, nullptr);
+        bool made = color && mask;
+        if (made)
+        {
+            HDC dc = CreateCompatibleDC(nullptr);
+            HGDIOBJ old = SelectObject(dc, mask);
+            made = PatBlt(dc, 0, 0, slot.cx, slot.cy, WHITENESS) != FALSE; // 1 = transparent
+            SelectObject(dc, old);
+            DeleteDC(dc);
+        }
+        int added = made ? ImageList_Add(images, color, mask) : -1;
+        DWORD error = GetLastError();
+        if (color) DeleteObject(color);
+        if (mask) DeleteObject(mask);
+        if (added < 0)
+        {
+            ImageList_Destroy(images);
+            SetLastError(error);
+            ThrowLastError("thumbnail slot image");
+        }
+        return images;
+    }
+
+    void DrawPageThumbnail(HDC dc, RECT const& area, SIZE box, double aspect, CpuBitmap const* background, CpuBitmap const* content)
+    {
+        SIZE size = ThumbnailSize(box, aspect);
+        RECT page{ area.left + (area.right - area.left - size.cx) / 2, area.top + (area.bottom - area.top - size.cy) / 2, 0, 0 };
+        page.right = page.left + size.cx;
+        page.bottom = page.top + size.cy;
         FillRect(dc, &page, static_cast<HBRUSH>(GetStockObject(WHITE_BRUSH)));
         if (background) Blend(dc, *background, page);
         if (content) Blend(dc, *content, page);
+        RECT frame = page;
+        InflateRect(&frame, 1, 1); // around the page, not over its edge
         HBRUSH border = CreateSolidBrush(RGB(0xC8, 0xC8, 0xC8));
-        FrameRect(dc, &page, border);
+        FrameRect(dc, &frame, border);
         DeleteObject(border);
     }
 }

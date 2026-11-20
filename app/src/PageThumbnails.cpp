@@ -1,6 +1,7 @@
 #include "PageThumbnails.h"
 
 #include "Bitmaps.h"
+#include "ThumbnailDrawing.h"
 #include "UiQueue.h"
 
 #include "xournal/base/Log.h"
@@ -27,8 +28,8 @@ namespace xournal::app
         }
     }
 
-    PageThumbnails::PageThumbnails(DocumentView& view, inkpages::WritingSurface& surface, UINT pixelWidth)
-        : view(view), surface(surface), pixelWidth(pixelWidth), refresh("page thumbnails", Settle, [this] { Refresh(); })
+    PageThumbnails::PageThumbnails(DocumentView& view, inkpages::WritingSurface& surface)
+        : view(view), surface(surface), refresh("page thumbnails", Settle, [this] { Refresh(); })
     {
     }
 
@@ -45,6 +46,13 @@ namespace xournal::app
             layers.content = it->second.content;
         }
         return layers;
+    }
+
+    void PageThumbnails::SetBox(SIZE size)
+    {
+        if (size.cx == box.cx && size.cy == box.cy) return;
+        box = size;
+        Reset(); // rendered at the new size
     }
 
     void PageThumbnails::SetActive(bool shown)
@@ -101,7 +109,7 @@ namespace xournal::app
     void PageThumbnails::Refresh()
     {
         auto doc = view.Document();
-        if (!active || !doc) return;
+        if (!active || !doc || box.cx <= 0 || box.cy <= 0) return;
         int count = static_cast<int>(doc->Pages().size());
         int focus = std::clamp(surface.PageInView().value_or(0), 0, std::max(0, count - 1));
         std::vector<int> order(count);
@@ -157,10 +165,10 @@ namespace xournal::app
     void PageThumbnails::RequestBackground(int index, XoppPage const& page, std::shared_ptr<XoppPage> const& key)
     {
         thumbs[key.get()].backgroundTried = true; // a page the PDF cannot render is not tried again on every change
-        UINT height = static_cast<UINT>(std::lround(pixelWidth * page.Height() / std::max(1.0, page.Width())));
+        SIZE size = ThumbnailSize(box, page.Height() / std::max(1.0, page.Width()));
         std::uint64_t asked = generation;
         XoppPage const* id = key.get();
-        view.Pdf()->RenderPage(page.PdfPageIndex(), pixelWidth, std::max<UINT>(1, height), index,
+        view.Pdf()->RenderPage(page.PdfPageIndex(), static_cast<UINT>(size.cx), static_cast<UINT>(size.cy), index,
             [this, alive = std::weak_ptr<bool>(alive), asked, id](std::shared_ptr<CpuBitmap> bitmap)
         {
             if (alive.expired() || asked != generation) return;
@@ -176,8 +184,8 @@ namespace xournal::app
         Thumb& thumb = thumbs[page.get()];
         thumb.contentStale = false;
         thumb.contentRunning = true;
-        UINT width = pixelWidth;
-        UINT height = std::max<UINT>(1, static_cast<UINT>(std::lround(pixelWidth * page->Height() / std::max(1.0, page->Width()))));
+        SIZE size = ThumbnailSize(box, page->Height() / std::max(1.0, page->Width()));
+        UINT width = static_cast<UINT>(size.cx), height = static_cast<UINT>(size.cy);
         bool transparent = page->IsPdf();
         auto picture = page->BackgroundImagePath();
         std::uint64_t asked = generation;

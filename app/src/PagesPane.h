@@ -49,6 +49,7 @@ namespace xournal::app
         void CreateBar();
         void Layout();
         void UpdateSizes();
+        SIZE Box() const; // the thumbnails' box in an item's image slot
         void UpdateButtons();
         void MoveBy(int index, int delta);
         int Selected() const;

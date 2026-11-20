@@ -14,6 +14,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace xournal::app
@@ -30,15 +31,18 @@ namespace xournal::app
     {
     public:
         /// The page at `width` x `height` pixels, on white (or on nothing when `transparent`). Device loss: retried once
-        /// on a new device.
-        std::shared_ptr<CpuBitmap> Render(winrt::Windows::Data::Pdf::PdfPage const& page, UINT width, UINT height, bool transparent);
+        /// on a new device. `source`: only that part of the page (DIPs of PdfPage.Size, PDF_RENDER_PARAMS.SourceRect)
+        /// scaled to `width` x `height`; nothing = the whole page.
+        std::shared_ptr<CpuBitmap> Render(winrt::Windows::Data::Pdf::PdfPage const& page, UINT width, UINT height, bool transparent,
+            std::optional<D2D_RECT_F> source = std::nullopt);
 
         /// Releases the device (before the process ends; no rendering afterwards).
         void Shutdown();
 
     private:
         void EnsureDevice();
-        std::shared_ptr<CpuBitmap> RenderOnce(winrt::Windows::Data::Pdf::PdfPage const& page, UINT width, UINT height, bool transparent);
+        std::shared_ptr<CpuBitmap> RenderOnce(winrt::Windows::Data::Pdf::PdfPage const& page, UINT width, UINT height, bool transparent,
+            std::optional<D2D_RECT_F> source);
 
         Microsoft::WRL::ComPtr<ID3D11Device> device;
         Microsoft::WRL::ComPtr<ID3D11DeviceContext> context;

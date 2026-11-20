@@ -23,8 +23,9 @@ namespace xournal::app
         int around = 0;      // the document's page the new pages go before or after (0-based)
         std::wstring where;  // what happens to the document's PDF
         std::function<double(int index)> aspect;  // a source page's height / width
-        /// Renders a source page's thumbnail; `done` runs on the UI thread (nothing: it could not be rendered).
-        std::function<void(int index, std::function<void(std::shared_ptr<CpuBitmap>)> done)> render;
+        /// Renders a source page's thumbnail at `pixels` (the size it is drawn at); `done` runs on the UI thread
+        /// (nothing: it could not be rendered).
+        std::function<void(int index, SIZE pixels, std::function<void(std::shared_ptr<CpuBitmap>)> done)> render;
     };
 
     struct InsertPagesChoice

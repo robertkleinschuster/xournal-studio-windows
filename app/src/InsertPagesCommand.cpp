@@ -26,8 +26,6 @@ namespace xournal::app
 {
     namespace
     {
-        constexpr UINT ThumbnailPixels = 120;
-
         // Render keys of the dialog's thumbnails: their own generation range (one per dialog).
         std::atomic<std::uint64_t> dialogs{ 0xF0000000 };
 
@@ -183,14 +181,13 @@ namespace xournal::app
             }
             return source->pdfSizes[i].height / std::max(1.0, source->pdfSizes[i].width);
         };
-        request.render = [this, source](int i, std::function<void(std::shared_ptr<CpuBitmap>)> done)
+        request.render = [this, source](int i, SIZE pixels, std::function<void(std::shared_ptr<CpuBitmap>)> done)
         {
             // On the render thread: the page's PDF page, and for a document's page what lies on it drawn over it.
             XmlElementPtr snapshot;
             std::optional<std::filesystem::path> picture;
             bool pdfPage = false;
             int pdfIndex = i;
-            double aspect;
             if (source->document)
             {
                 auto const& page = source->document->Pages()[i];
@@ -198,14 +195,12 @@ namespace xournal::app
                 picture = page->BackgroundImagePath();
                 pdfPage = page->IsPdf();
                 pdfIndex = page->PdfPageIndex();
-                aspect = page->Height() / std::max(1.0, page->Width());
             }
             else
             {
                 pdfPage = true;
-                aspect = source->pdfSizes[i].height / std::max(1.0, source->pdfSizes[i].width);
             }
-            UINT width = ThumbnailPixels, height = std::max<UINT>(1, static_cast<UINT>(std::lround(ThumbnailPixels * aspect)));
+            UINT width = static_cast<UINT>(std::max(1L, pixels.cx)), height = static_cast<UINT>(std::max(1L, pixels.cy));
             view.Queue().Submit((source->keys << 32) | static_cast<std::uint32_t>(i), i, std::format("insert dialog thumbnail {}", i + 1),
                 [source, snapshot, picture, pdfPage, pdfIndex, width, height, done](PdfPageRenderer& renderer)
             {

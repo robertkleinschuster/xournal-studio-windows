@@ -1,13 +1,16 @@
 #include "Bitmaps.h"
 
 #include "xournal/base/Error.h"
+#include "xournal/base/Log.h"
 #include "xournal/io/Files.h"
 
 #include <shlwapi.h>
 #include <wincodec.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <format>
 
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Storage.Streams.h>
@@ -126,11 +129,16 @@ namespace xournal::app
         dc->GetDevice(&current);
         if (!uploaded || current != device)
         {
+            if (!pixels) return nullptr; // let go after the upload; the device changed since
             D2D1_BITMAP_PROPERTIES properties{ { DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED }, 96, 96 };
             uploaded.Reset();
+            auto start = std::chrono::steady_clock::now();
             Check("ID2D1DeviceContext::CreateBitmap (underlay)", dc->CreateBitmap({ pixels->width, pixels->height },
                 pixels->pixels.data(), pixels->width * 4, properties, &uploaded));
             device = current;
+            Log(std::format("bitmap upload: {}x{} px in {} ms", pixels->width, pixels->height,
+                std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count()));
+            if (!keepPixels) pixels.reset();
         }
         return uploaded.Get();
     }

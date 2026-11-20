@@ -22,6 +22,7 @@ add_library(XournalPdf STATIC
     src/PageFrame.cpp
     src/PdfNavigation.cpp
     src/PdfPlaces.cpp
+    src/RenderTiles.cpp
 )
 target_include_directories(XournalPdf PUBLIC include PRIVATE src)
 target_compile_options(XournalPdf PRIVATE ${XOURNAL_COMPILE_OPTIONS})

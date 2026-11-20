@@ -14,11 +14,11 @@ namespace xournal::app
         Stop();
     }
 
-    void RenderQueue::Submit(std::uint64_t key, int page, std::string name, Job job)
+    void RenderQueue::Submit(std::uint64_t key, int page, std::string name, Job job, int rank)
     {
         {
             std::scoped_lock guard(mutex);
-            waiting[key] = { page, std::move(name), std::move(job) };
+            waiting[key] = { page, rank, std::move(name), std::move(job) };
         }
         wake.notify_one();
     }
@@ -71,7 +71,8 @@ namespace xournal::app
                 auto nearest = waiting.begin();
                 for (auto it = waiting.begin(); it != waiting.end(); ++it)
                 {
-                    if (std::abs(it->second.page - focus) < std::abs(nearest->second.page - focus))
+                    int distance = std::abs(it->second.page - focus), best = std::abs(nearest->second.page - focus);
+                    if (distance < best || (distance == best && it->second.rank < nearest->second.rank))
                     {
                         nearest = it;
                     }

@@ -11,6 +11,7 @@
 
 #include <wrl/client.h>
 
+#include <chrono>
 #include <format>
 #include <set>
 #include <variant>
@@ -99,6 +100,7 @@ namespace xournal::app
         }
 
 
+        auto const processStart = std::chrono::steady_clock::now();
         constexpr int KeepPages = 6; // bitmaps of pages this far from the page in view stay
     }
 
@@ -133,7 +135,8 @@ namespace xournal::app
         pdf->Trim(focus, KeepPages);
     }
 
-    void PageUnderlay::DrawBackground(int page, XoppPage const& content, ID2D1DeviceContext* dc, float pixelsPerUnit)
+    void PageUnderlay::DrawBackground(int page, XoppPage const& content, ID2D1DeviceContext* dc, inkpages::RectF area,
+        float pixelsPerUnit)
     {
         D2D1_SIZE_F size{ static_cast<float>(content.Width()), static_cast<float>(content.Height()) };
         bool pdfPage = content.IsPdf(), picture = content.IsImageBackground();
@@ -144,7 +147,7 @@ namespace xournal::app
         dc->FillRectangle({ 0, 0, size.width, size.height }, brush.Get());
         if (pdfPage)
         {
-            pdf->Draw(dc, page, content.PdfPageIndex(), size, pixelsPerUnit);
+            pdf->Draw(dc, page, content.PdfPageIndex(), size, { area.left, area.top, area.right, area.bottom }, pixelsPerUnit);
             return;
         }
         if (picture)
@@ -209,6 +212,22 @@ namespace xournal::app
 
     void PageUnderlay::Draw(int page, XoppPage const& content, ID2D1DeviceContext* dc, inkpages::RectF area, float pixelsPerUnit)
     {
+        auto start = std::chrono::steady_clock::now();
+        struct Timing
+        {
+            std::chrono::steady_clock::time_point start;
+            int page;
+            inkpages::RectF area;
+            float pixelsPerUnit;
+            ~Timing()
+            {
+                auto now = std::chrono::steady_clock::now();
+                Log(std::format("underlay: page {} drawn ({:.0f}x{:.0f} units at {:.3f} px/unit) in {} ms, t={} ms", page + 1,
+                    area.right - area.left, area.bottom - area.top, pixelsPerUnit,
+                    std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count(),
+                    std::chrono::duration_cast<std::chrono::milliseconds>(now - processStart).count()));
+            }
+        } timing{ start, page, area, pixelsPerUnit };
         ClipGuard clip(dc, area);
         D2D1_MATRIX_3X2_F pageTransform;
         dc->GetTransform(&pageTransform);
@@ -225,7 +244,7 @@ namespace xournal::app
             }
             dc->SetTransform(pageTransform); // an element that threw while placed by its own transform
         };
-        guarded("background", [&] { DrawBackground(page, content, dc, pixelsPerUnit); });
+        guarded("background", [&] { DrawBackground(page, content, dc, area, pixelsPerUnit); });
         auto factory = FactoryOf(dc);
         std::set<XmlElement const*> drawnSet;
         for (auto const& e : content.DrawnStrokes()) drawnSet.insert(e.get());

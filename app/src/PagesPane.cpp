@@ -98,19 +98,21 @@ namespace xournal::app
         ChildControls::UseMessageFont(bar);
         SendMessageW(bar, TB_AUTOSIZE, 0, 0);
 
-        // One blank image of an A4 thumbnail's size gives every item its place; the thumbnail is drawn over it.
+        // One transparent image of an A4 thumbnail's size gives every item its place; the page is drawn over it, fitted
+        // into the slot less a margin, and its layers are rendered at exactly that size.
         thumbWidth = Scaled(ThumbWidthDip, window);
         thumbHeight = static_cast<int>(std::lround(thumbWidth * 1.4142));
-        HIMAGELIST created = ImageList_Create(thumbWidth, thumbHeight, ILC_COLOR32, 1, 0);
-        if (!created) ThrowLastError("ImageList_Create (pages)");
-        HDC screen = GetDC(nullptr);
-        HBITMAP blank = CreateCompatibleBitmap(screen, thumbWidth, thumbHeight);
-        ReleaseDC(nullptr, screen);
-        ImageList_Add(created, blank, nullptr);
-        DeleteObject(blank);
+        HIMAGELIST created = CreateSlotImages({ thumbWidth, thumbHeight });
         ListView_SetImageList(list, created, LVSIL_NORMAL);
         if (images) ImageList_Destroy(images);
         images = created;
+        thumbnails.SetBox(Box());
+    }
+
+    SIZE PagesPane::Box() const
+    {
+        int margin = Scaled(4, window);
+        return { thumbWidth - 2 * margin, thumbHeight - 2 * margin };
     }
 
     void PagesPane::Layout()
@@ -188,7 +190,7 @@ namespace xournal::app
     void PagesPane::DrawThumbnail(HDC dc, RECT const& area, int index)
     {
         auto layers = thumbnails.Of(index);
-        DrawPageThumbnail(dc, area, layers.aspect, layers.background.get(), layers.content.get());
+        DrawPageThumbnail(dc, area, Box(), layers.aspect, layers.background.get(), layers.content.get());
     }
 
     LRESULT PagesPane::OnCustomDraw(NMLVCUSTOMDRAW& draw)
@@ -205,7 +207,6 @@ namespace xournal::app
             RECT icon{ LVIR_ICON };
             if (ListView_GetItemRect(list, index, &icon, LVIR_ICON))
             {
-                InflateRect(&icon, -Scaled(4, window), -Scaled(4, window));
                 DrawThumbnail(draw.nmcd.hdc, icon, index);
             }
             return CDRF_DODEFAULT;

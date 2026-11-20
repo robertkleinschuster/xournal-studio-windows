@@ -25,8 +25,11 @@ namespace xournal::app
     class PageThumbnails
     {
     public:
-        /// `pixelWidth`: a thumbnail's width in pixels.
-        PageThumbnails(DocumentView& view, inkpages::WritingSurface& surface, UINT pixelWidth);
+        PageThumbnails(DocumentView& view, inkpages::WritingSurface& surface);
+
+        /// The box (pixels) a page is fitted into (ThumbnailSize): the layers are rendered at exactly that size, anew
+        /// when it changes (another DPI). Nothing is rendered before the box is set.
+        void SetBox(SIZE box);
 
         struct Layers
         {
@@ -67,7 +70,7 @@ namespace xournal::app
 
         DocumentView& view;
         inkpages::WritingSurface& surface;
-        UINT pixelWidth;
+        SIZE box{};
         bool active = false;
         std::uint64_t generation = 0; // a new document's results are not mixed with the old one's
         std::map<XoppPage const*, Thumb> thumbs;

@@ -27,6 +27,7 @@ namespace xournal::app
             HWND dialog = nullptr;
             HWND list = nullptr;
             HIMAGELIST images = nullptr;
+            SIZE box{}; // a thumbnail's box in the item's image slot (pixels)
         };
 
         int Scaled(int dip, HWND window) { return MulDiv(dip, static_cast<int>(GetDpiForWindow(window)), 96); }
@@ -55,13 +56,9 @@ namespace xournal::app
             if (FAILED(hr)) LogError(std::format("insert dialog: theme not set: {}", DescribeHr(hr)));
             ListView_SetExtendedListViewStyle(state.list, LVS_EX_CHECKBOXES | LVS_EX_DOUBLEBUFFER);
             int width = Scaled(ThumbWidthDip, dialog), height = static_cast<int>(std::lround(width * 1.4142));
-            state.images = ImageList_Create(width, height, ILC_COLOR32, 1, 0);
-            if (!state.images) ThrowLastError("ImageList_Create (insert dialog)");
-            HDC screen = GetDC(nullptr);
-            HBITMAP blank = CreateCompatibleBitmap(screen, width, height);
-            ReleaseDC(nullptr, screen);
-            ImageList_Add(state.images, blank, nullptr);
-            DeleteObject(blank);
+            state.images = CreateSlotImages({ width, height });
+            int margin = Scaled(3, dialog);
+            state.box = { width - 2 * margin, height - 2 * margin };
             ListView_SetImageList(state.list, state.images, LVSIL_NORMAL);
 
             state.thumbnails.resize(r.count);
@@ -81,7 +78,8 @@ namespace xournal::app
             {
                 std::weak_ptr<bool> alive = state.alive;
                 DialogState* target = &state;
-                r.render(i, [alive, target, i](std::shared_ptr<CpuBitmap> bitmap)
+                SIZE pixels = ThumbnailSize(state.box, r.aspect ? r.aspect(i) : 1.4142);
+                r.render(i, pixels, [alive, target, i](std::shared_ptr<CpuBitmap> bitmap)
                 {
                     if (alive.expired() || !bitmap) return; // the dialog closed meanwhile, or the page cannot be shown
                     target->thumbnails[i] = std::move(bitmap);
@@ -128,9 +126,8 @@ namespace xournal::app
                     RECT icon{ LVIR_ICON };
                     if (index < static_cast<int>(state.thumbnails.size()) && ListView_GetItemRect(state.list, index, &icon, LVIR_ICON))
                     {
-                        InflateRect(&icon, -Scaled(3, state.dialog), -Scaled(3, state.dialog));
                         double aspect = state.request.aspect ? state.request.aspect(index) : 1.4142;
-                        DrawPageThumbnail(draw.nmcd.hdc, icon, aspect, state.thumbnails[index].get(), nullptr);
+                        DrawPageThumbnail(draw.nmcd.hdc, icon, state.box, aspect, state.thumbnails[index].get(), nullptr);
                     }
                 }
                 SetWindowLongPtrW(state.dialog, DWLP_MSGRESULT, result);

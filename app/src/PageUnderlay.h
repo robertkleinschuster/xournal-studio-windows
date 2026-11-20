@@ -52,7 +52,7 @@ namespace xournal::app
         int TextSelectionPage() const { return textSelection.page; }
 
     private:
-        void DrawBackground(int page, XoppPage const& content, ID2D1DeviceContext* dc, float pixelsPerUnit);
+        void DrawBackground(int page, XoppPage const& content, ID2D1DeviceContext* dc, inkpages::RectF area, float pixelsPerUnit);
         void DrawPicture(int page, XmlElementPtr const& picture, ID2D1DeviceContext* dc, float pixelsPerUnit);
         struct Mark
         {

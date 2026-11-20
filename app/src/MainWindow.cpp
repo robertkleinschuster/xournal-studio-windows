@@ -305,9 +305,7 @@ namespace xournal::app
 
     void MainWindow::CreatePagesPane()
     {
-        constexpr int ThumbWidthDip = 150; // as PagesPane draws them
-        thumbnails = std::make_unique<PageThumbnails>(*view, *surface,
-            static_cast<UINT>(MulDiv(ThumbWidthDip, static_cast<int>(GetDpiForWindow(window)), 96)));
+        thumbnails = std::make_unique<PageThumbnails>(*view, *surface); // the pane sets their size
         pagesPane = std::make_unique<PagesPane>(pane->Window(), *thumbnails);
         pane->SetPagesContent(pagesPane->Window());
         thumbnails->updated = [this](int index) { pagesPane->Redraw(index); };
