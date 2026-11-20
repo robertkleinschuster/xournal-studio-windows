@@ -84,7 +84,7 @@ Invoke-Test {
     for ($i = 0; $i -lt 5; $i++) { [Inj]::Ctrl(0xBD); Start-Sleep -Milliseconds 400 }
     Start-Sleep 4
     Shot '02-all-pages-pictures'
-    Ctrl 0x30 '0'
+    Ctrl 0x32 '2'  # Seitenbreite (Strg+0 is Ganze Seite since the viewer commands)
     Start-Sleep 2
 
     # A stroke on page 1, then a page inserted after it: the stroke's undo/redo still works.
