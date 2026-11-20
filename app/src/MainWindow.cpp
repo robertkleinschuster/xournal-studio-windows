@@ -141,6 +141,18 @@ namespace xournal::app
         surface->mouseGesture = [this](inkpages::MouseGesture const& gesture) { textSelection->Gesture(gesture); };
         surface->textEditingChanged = [this](bool) { textSelection->Clear(); };
         clipboard = std::make_unique<SelectionClipboard>(window, *surface, *view);
+        surface->emptyRectangle = [this](int page, inkpages::RectF area)
+        {
+            auto failed = [this](std::wstring const& error) {
+                Message(std::format(L"PDF-Bereich konnte nicht kopiert werden: {}", error), ToastKind::Error);
+            };
+            try { clipboard->OfferPdfArea(page, area, failed); }
+            catch (...)
+            {
+                LogException("offer PDF area copy");
+                failed(ErrorText());
+            }
+        };
         surface->copyToClipboard = [this](inkpages::Clip const& clip)
         {
             try
@@ -754,6 +766,7 @@ namespace xournal::app
             // The feature classes that hold the surface go before it (the view takes its callbacks back).
             surface->tapped = nullptr;
             surface->mouseClaims = nullptr;
+            surface->emptyRectangle = nullptr;
             surface->mouseGesture = nullptr;
             surface->selectionChanged = nullptr;
             surface->textEditingChanged = nullptr;

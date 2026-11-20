@@ -160,6 +160,8 @@ the window's parts to feature classes:
   its own mark in `PageUnderlay`), copied as CF_UNICODETEXT with Strg+C / Bearbeiten -> Kopieren; read-only, one page.
   A click beside, Escape (Bearbeiten -> Auswahl aufheben), an ink selection, editing a text, a page
   operation or another document clears it. The PDF's text is read on the thread pool once the PDF is loaded.
+- In Auswählen → Rechteck, a rectangle with no selected objects on a PDF page offers **PDF-Bereich als Bild kopieren**.
+  The clipboard holds an upstream PNG image at the original page size and also offers PNG and CF_DIB to other apps.
 - `PdfExportCommand` (Datei -> Als PDF exportieren with the pdf module), `PageCommands` (Seite einfügen: a graph page of
   the size of the page in view after it; Seite löschen: asked, cannot be undone, the last page stays; Seite nach oben /
   nach unten: one place, the view follows). Page operations keep the ink's undo history (InkPages'

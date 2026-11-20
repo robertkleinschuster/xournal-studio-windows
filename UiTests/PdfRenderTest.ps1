@@ -101,6 +101,8 @@ Invoke-Test {
     New-RenderPdf 'C:\work\Render.pdf' 75
     $env:XOURNAL_STUDIO_CONFIG_DIR = "$out\config"
     $env:XOURNAL_STUDIO_LOG = "$out\app.log"
+    New-Item -ItemType Directory -Force $env:XOURNAL_STUDIO_CONFIG_DIR | Out-Null
+    Set-Content "$out\config\settings-native.json" '{"toolChoices":"select=1"}' -Encoding Ascii
     Start-TestApp 'XournalStudio.exe' '"C:\work\Render.pdf"'
     Shot '01-open-fit-width'
     Memory 'opened'
@@ -184,6 +186,36 @@ Invoke-Test {
         Shot "11-page$n-zoomed"
     }
     Memory 'end'
+
+    Mark 'copy a PDF rectangle as a picture'
+    Ctrl 0x32 '2'
+    Click ("Ausw" + [char]0x00E4 + "hlen")
+    [Inj]::MouseDrag(@($cx - 55, $cy - 45, $cx + 55, $cy + 45))
+    Start-Sleep -Milliseconds 700
+    [Inj]::Key(0x28)
+    [Inj]::Key(0x0D)
+    for ($i = 0; $i -lt 30 -and -not (Select-String "$out\app.log" -Pattern 'clipboard: PDF area copied' -Quiet); $i++) {
+        Start-Sleep -Milliseconds 300
+    }
+    if (-not (Select-String "$out\app.log" -Pattern 'clipboard: PDF area copied' -Quiet)) { throw 'PDF rectangle was not copied' }
+    Ctrl 0x56 'V'
+    Ctrl 0x53 'S'
+    Start-Sleep 1
+    $saved = 'C:\work\Snapshot.xopp'
+    [Inj]::Ctrl(0x41)
+    [Inj]::TypeText($saved)
+    [Inj]::Key(0x0D)
+    Start-Sleep 2
+    $stream = [IO.File]::OpenRead($saved)
+    try {
+        $gzip = New-Object IO.Compression.GZipStream($stream, [IO.Compression.CompressionMode]::Decompress)
+        $reader = New-Object IO.StreamReader($gzip, [Text.Encoding]::UTF8)
+        try { [xml]$savedDoc = $reader.ReadToEnd() } finally { $reader.Dispose() }
+        $images = $savedDoc.SelectNodes('/xournal/page/layer/image')
+        if ($images.Count -ne 1 -or $images[0].InnerText.Trim() -notlike 'iVBORw0KGgo*') {
+            throw 'the PDF rectangle did not paste as an upstream PNG image'
+        }
+    } finally { $stream.Dispose() }
 
     'pdf render: done'
 }

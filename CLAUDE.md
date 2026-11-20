@@ -266,6 +266,9 @@ code). In short: `base ← model ← io ← pdf, pdftext, search, import, servic
 - **Clipboard** (`SelectionClipboard`): own format "Xournal Studio Clip" = a `<clip>` of upstream elements as XML (app
   internal, never in a file); PNG + CF_DIB for other apps; pictures of other apps paste as `<image>`; otherwise Windows
   ink's clipboard (InkPages).
+- **Copy a PDF area:** Auswählen → Rechteck. If the rectangle selects no objects, its portion on the PDF page where
+  the drag began offers the native menu command "PDF-Bereich als Bild kopieren". Windows.Data.Pdf renders that portion
+  to PNG, and pasting writes an upstream `<image>` at the selected size.
 
 ## Testing
 
