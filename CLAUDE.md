@@ -253,7 +253,8 @@ code). In short: `base ← model ← io ← pdf, pdftext, search, import, servic
   UiTests\<Test>.ps1` copies the build's exe and `examples\Schaltungen.*` and runs InkPages' runner
   (`external/InkPages/UiTests/Run-SandboxTest.ps1`: `wsb connect` on a separate Win32 desktop – never the user's
   screen; `-Show` puts it on the user's desktop to watch, tell the user first). The sandbox is shared: the runner
-  refuses while `wsb list` is not empty or `.local-build\sandbox.lock` exists. Results per test in
+  waits for the machine-wide mutex `Global\XournalStudioSandbox` (one test at a time across all worktrees, the holder
+  is logged) and refuses while `wsb list` is not empty. Results per test in
   `%TEMP%\xournal-native-sandbox-<Test>\out` (screenshots, transcript, logs). In-sandbox scripts dot-source
   `C:\sbx\TestKit.ps1`; comctl32 controls and menus are found with InkPages' `uiaprobe.exe` (pass it with `-Extra`).
   Tests: `InkRoundTripTest`, `DocumentFlowsTest`, `PagesFlowTest`, `PagesPaneTest`, `TextToolTest`, `ClipboardTest`, `TasksTest`,

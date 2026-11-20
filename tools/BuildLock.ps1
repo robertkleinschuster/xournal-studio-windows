@@ -1,21 +1,19 @@
-# Machine-wide build lock: one build at a time across all worktrees (build.ps1, install.ps1). A named mutex
-# (Global\XournalStudioBuild): Windows releases it when its process ends, also on Ctrl+C or a crash; the same thread
-# may enter it again (install.ps1 holds it while it runs the worktree's build.ps1). Who holds it is written to
-# <dependency cache root>\build-lock-holder.txt, so a waiting build can say whom it waits for.
+# Machine-wide locks across all worktrees: named mutexes, which Windows releases when their process ends (also on
+# Ctrl+C or a crash); the same thread may enter one again (install.ps1 holds the build lock while it runs the
+# worktree's build.ps1). Who holds a lock is written to <dependency cache root>\<lock>-holder.txt, so a waiting script
+# can say whom it waits for.
+#   Global\XournalStudioBuild    build-lock     one build at a time (build.ps1, install.ps1, tools\with-build-lock.ps1)
+#   Global\XournalStudioSandbox  sandbox-lock   one sandbox UI test at a time (UiTests\Run-AppTest.ps1)
 #   . (Join-Path $PSScriptRoot 'tools\BuildLock.ps1')
 #   $lock = Enter-XournalBuildLock 'build.ps1 in D:\xsui'
 #   try { ... } finally { Exit-XournalBuildLock $lock }
 
-function Get-XournalBuildLockHolderFile {
+function Enter-XournalMachineLock([string]$MutexName, [string]$Lock, [string]$What) {
     $root = $env:XOURNAL_DEPS_CACHE
     if (-not $root) { $root = Join-Path $env:LOCALAPPDATA 'XournalStudioBuildCache' }
     New-Item -ItemType Directory -Force $root | Out-Null
-    Join-Path $root 'build-lock-holder.txt'
-}
-
-function Enter-XournalBuildLock([string]$What) {
-    $holderFile = Get-XournalBuildLockHolderFile
-    $mutex = New-Object System.Threading.Mutex($false, 'Global\XournalStudioBuild')
+    $holderFile = Join-Path $root "$Lock-holder.txt"
+    $mutex = New-Object System.Threading.Mutex($false, $MutexName)
     $acquired = $false
     $shown = $null
     $started = Get-Date
@@ -24,7 +22,7 @@ function Enter-XournalBuildLock([string]$What) {
         try { $acquired = $mutex.WaitOne(2000) }
         catch [System.Threading.AbandonedMutexException] {
             $acquired = $true # the mutex is ours; its previous holder ended without releasing it
-            Write-Host "build lock: the previous holder ended without releasing it ($($_.Exception.Message))"
+            Write-Host "${Lock}: the previous holder ended without releasing it ($($_.Exception.Message))"
         }
         if (-not $acquired) {
             $holder = 'unknown holder'
@@ -32,15 +30,20 @@ function Enter-XournalBuildLock([string]$What) {
                 try { $holder = (Get-Content -Raw $holderFile).Trim() }
                 catch { $holder = "unknown holder ($holderFile not readable: $($_.Exception.Message))" }
             }
-            if ($holder -ne $shown) { Write-Host "build lock: waiting for $holder"; $shown = $holder }
+            if ($holder -ne $shown) { Write-Host "${Lock}: waiting for $holder"; $shown = $holder }
         }
     }
-    if ($shown) { Write-Host ("build lock: acquired after {0:n0} s" -f ((Get-Date) - $started).TotalSeconds) }
+    if ($shown) { Write-Host ("${Lock}: acquired after {0:n0} s" -f ((Get-Date) - $started).TotalSeconds) }
     Set-Content -Encoding utf8 $holderFile "$What (PID $PID, since $(Get-Date -Format s))"
     $mutex
 }
 
-function Exit-XournalBuildLock($Mutex) {
+function Exit-XournalMachineLock($Mutex) {
     $Mutex.ReleaseMutex()
     $Mutex.Dispose()
 }
+
+function Enter-XournalBuildLock([string]$What) { Enter-XournalMachineLock 'Global\XournalStudioBuild' 'build-lock' $What }
+function Exit-XournalBuildLock($Mutex) { Exit-XournalMachineLock $Mutex }
+function Enter-XournalSandboxLock([string]$What) { Enter-XournalMachineLock 'Global\XournalStudioSandbox' 'sandbox-lock' $What }
+function Exit-XournalSandboxLock($Mutex) { Exit-XournalMachineLock $Mutex }

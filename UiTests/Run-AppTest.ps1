@@ -1,8 +1,8 @@
 # Runs a UI test of the native app in Windows Sandbox with InkPages' runner and TestKit (external/InkPages/UiTests):
 # the app from the build, examples\Schaltungen.xopp (+ its PDF) as data. The sandbox is shared with other agents: the
-# test only starts when no sandbox runs (`wsb list` empty), and holds .local-build\sandbox.lock (repository root) while
-# it runs. The sandbox window opens on a desktop of its own (InkPages' runner), never on the user's; -Show opens it on the
-# user's desktop to watch or debug a test (tell the user first).
+# test holds the machine-wide mutex Global\XournalStudioSandbox (one test at a time across all worktrees) and starts
+# only when no sandbox runs (`wsb list` empty). The sandbox window opens on a desktop of its own (InkPages' runner),
+# never on the user's; -Show opens it on the user's desktop to watch or debug a test (tell the user first).
 #   UiTests\Run-AppTest.ps1 -Test UiTests\InkRoundTripTest.ps1
 #   -Build: the build folder below .local-build (default cmake); -Extra: more files for C:\sbx\data.
 #   -AppDir <folder>: the app from that folder instead (XournalStudio.exe and its DLLs, e.g. an installed or staged app).
@@ -21,14 +21,13 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot
-$lock = Join-Path $repo '.local-build\sandbox.lock'
-
-$running = (wsb list) | Where-Object { $_ -and $_.Trim() }
-if ($running) { throw "a sandbox is running already (wsb list): $running" }
-if (Test-Path $lock) { throw "the sandbox is in use: $lock ($(Get-Content $lock -Raw))" }
-New-Item -ItemType Directory -Force (Split-Path $lock) | Out-Null
-Set-Content $lock "native app test $Test, pid $PID, $(Get-Date -Format s)"
+# One sandbox test at a time on this machine, across all worktrees (named mutex Global\XournalStudioSandbox,
+# tools\BuildLock.ps1): a second test waits and names the holder. A sandbox started some other way still refuses.
+. (Join-Path $repo 'tools\BuildLock.ps1')
+$lock = Enter-XournalSandboxLock "Run-AppTest $Test in $repo"
 try {
+    $running = (wsb list) | Where-Object { $_ -and $_.Trim() }
+    if ($running) { throw "a sandbox is running already (wsb list): $running" }
     $app = Join-Path $repo '.local-build\sandbox-app'
     if (Test-Path $app) { Remove-Item -Recurse -Force $app }
     New-Item -ItemType Directory -Force $app | Out-Null
@@ -49,5 +48,5 @@ try {
         -Work $work -TimeoutSeconds $TimeoutSeconds -Show:$Show
 }
 finally {
-    Remove-Item $lock -Force
+    Exit-XournalSandboxLock $lock
 }

@@ -164,7 +164,7 @@ the window's parts to feature classes:
   `%LOCALAPPDATA%\XournalStudioForWindows\errors.log`; `XOURNAL_STUDIO_CONFIG_DIR` for tests.
 
 Sandbox tests (`UiTests/`, InkPages' runner and TestKit; `Run-AppTest.ps1` refuses while a sandbox runs and holds
-`.local-build\sandbox.lock`): `InkRoundTripTest` (write, move, undo, erase, save, reload: untouched strokes byte-identical,
+the machine-wide mutex `Global\XournalStudioSandbox`): `InkRoundTripTest` (write, move, undo, erase, save, reload: untouched strokes byte-identical,
 moved ones shifted exactly), `DocumentFlowsTest` (PDF as a new document, the leave question, Save As with an attachment,
 export), `PagesFlowTest` (a text, the pictures, insert and delete a page with undo on another page, the toolbar's
 buttons by `uiaprobe`), `PagesPaneTest`, `TextToolTest`, `ClipboardTest`, `TasksTest`, `RecoveryTest`, `ExplorerTest`, `MsiTest` (the

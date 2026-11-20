@@ -46,8 +46,8 @@ if (-not $SkipInstall) { Assert-NotRunning; Assert-NoMsi }
 if ($FromCi) {
     # The staged app of the newest green CI run of that commit (tools\CiArtifact.ps1), instead of a local build.
     . (Join-Path $repo 'tools\CiArtifact.ps1')
-    $run = Get-XournalCiApp -Repo $repo -Commit $Commit -Destination $stage
-    $installed = "CI run $($run.databaseId) of $($run.headSha.Substring(0, 7)) ($($run.url))"
+    $app = Get-XournalCiApp -Repo $repo -Commit $Commit -Destination $stage
+    $installed = "CI artifact $($app.ArtifactId) of run $($app.RunId), commit $($app.HeadSha.Substring(0, 7)) ($($app.Url))"
 }
 else {
     # One build at a time on this machine (tools\BuildLock.ps1): held from the checkout to the staged files; the
