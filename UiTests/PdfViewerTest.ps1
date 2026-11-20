@@ -168,6 +168,10 @@ Invoke-Test {
     Expect 'viewer: pan ended' 'the pan ended'
     Shot '07-panned'
 
+    # A left drag in the margin pans with a writing tool active.
+    [Inj]::MouseDrag(@(20, 440, 20, 240))
+    Expect 'viewer: left-button pan' 'the left button pans in the margin'
+
     # The pages' context menu.
     [Inj]::MoveMouse(400, 300)
     [ViewerInput]::Button(0x8, 0); [ViewerInput]::Button(0x10, 0); Start-Sleep 1

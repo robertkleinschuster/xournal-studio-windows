@@ -104,7 +104,7 @@ Invoke-Test {
     Shot '04-undone'
 
     # 3. the selection: a mouse lasso around the text selects it, a drag moves it 60 DIPs right
-    [Inj]::MouseDrag(@(130, 270, 420, 270, 420, 345, 130, 345, 130, 270)); Start-Sleep -Milliseconds 800
+    [Inj]::RightMouseDrag(@(130, 270, 420, 270, 420, 345, 130, 345, 130, 270)); Start-Sleep -Milliseconds 800
     Shot '05-selected'
     [Inj]::MouseDrag(@(170, 300, 230, 300)); Start-Sleep -Milliseconds 800
     Shot '06-moved'

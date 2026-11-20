@@ -59,9 +59,10 @@ long formulas in several colors. For open pen/UI design questions, propose how O
   path icons in the same style only where no documented glyph fits (glyph list: `~/.claude/docs/segoe-fluent-icons.txt`);
   files and folders in the explorer tree with the shell's system image list; messages with the system's
   info/warning/error icons (`TaskDialog`, `SIID_*`); toasts in Windows 11 InfoBar colors.
-- **Pen, finger, mouse** (user, 2026-11-19): only the pen writes. Finger and touchpad pan (with inertia) and zoom the
-  sheet, never draw. The mouse never writes: a mouse drag selects (like Auswählen), moves/scales the selection, a click
-  beside it clears it, a click on a link follows it; links in a PDF also follow a finger tap. The pen operates every
+- **Pen, finger, mouse** (user, 2026-11-20): only the pen writes. Finger and touchpad gestures pan (with inertia) and zoom
+  the sheet. A left mouse drag in Auswählen selects; with other tools it selects PDF text through ink or pans.
+  A right drag lassos with any tool. The mouse moves/scales the current selection and a click beside it clears it.
+  A mouse click or finger tap follows a PDF link. The pen operates every
   control (controls in normal mouse size, not finger size).
 - **Pen buttons:** eraser end / eraser button erases with any tool (exact or whole strokes, following the toggle).
   Barrel button (user, 2026-11-15/16): hold barrel = lasso, always, with every tool and without switching the toolbar;

@@ -108,14 +108,17 @@ Invoke-Test {
     if ($piece.Length -lt 3 -or -not $Word.Contains($piece) -or $piece -eq $Word) { throw "the drag copied '$piece', not a piece of '$Word'" }
     if ((InkCount 'mouse: selection drag begins') -gt 0) { throw 'a drag on the PDF''s text made a lasso' }
 
-    # 3. Ink over the text: a mouse drag starting on it selects the ink (lasso), not the text.
+    # 3. A left drag selects PDF text through ink. A right drag lassos the ink.
     [Inj]::Key(0x1B); Start-Sleep -Milliseconds 400
     Stroke ($x - 150) $lineY ($x + 150) $lineY
     Shot '05-ink-over-text'
     $texts = AppCount 'pdf text selection: \d+ characters on page'
-    [Inj]::MouseDrag((L $x $lineY ($x + 40) ($lineY + 80) ($x - 200) ($lineY + 80) ($x - 200) ($lineY - 40) ($x + 200) ($lineY - 40))); Start-Sleep -Milliseconds 1200
+    [Inj]::MouseDrag((L $x $lineY ($x + 60) $lineY)); Start-Sleep -Milliseconds 800
+    if ((AppCount 'pdf text selection: \d+ characters on page') -le $texts) { throw 'the text under the ink was not selected' }
+    [Inj]::Key(0x1B); Start-Sleep -Milliseconds 400
+    $texts = AppCount 'pdf text selection: \d+ characters on page'
+    [Inj]::RightMouseDrag((L $x $lineY ($x + 40) ($lineY + 80) ($x - 200) ($lineY + 80) ($x - 200) ($lineY - 40) ($x + 200) ($lineY - 40))); Start-Sleep -Milliseconds 1200
     Shot '06-ink-selected'
-    if ((InkCount 'mouse: ink at the press') -lt 1) { throw 'the press on ink was not recognised as ink' }
     if ((InkCount 'mouse: selection drag begins') -lt 1) { throw 'the drag on ink made no lasso' }
     if ((AppCount 'pdf text selection: \d+ characters on page') -ne $texts) { throw 'the drag on ink selected the PDF''s text' }
     'pdf text selection: passed'

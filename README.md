@@ -13,7 +13,8 @@ a delay-loaded DLL. Licenses: [THIRD-PARTY.md](THIRD-PARTY.md). The earlier C#/W
 
 - Pen: Windows ink (pressure, eraser end, barrel button = lasso), pen and highlighter presets, exact or whole-stroke
   eraser, selection (lasso/rectangle: move, scale, copy, delete, across pages), shapes and shape recognition, the
-  Windows ruler, a text tool, undo/redo. Finger and touchpad pan and zoom; the mouse selects - only the pen writes.
+  Windows ruler, a text tool, undo/redo. Only the pen writes. Finger and touchpad gestures pan and zoom. The mouse
+  pans on a left drag outside PDF text, lassos on a right drag and uses the active selection mode in Auswählen.
 - Documents: PDF backgrounds (PDF opened as a new document), all Xournal++ backgrounds, pictures, texts, PDF export,
   pages inserted (blank, from a PDF or another document), moved and deleted, iPad (PencilKit) markup import.
 - Side pane: the project folder (git colors, sync), todo.txt tasks, page thumbnails, the PDF's outline, search
@@ -154,10 +155,10 @@ the window's parts to feature classes:
   5 minutes; a failure only logged, the button shows "↓?"; a starting sync cancels it through libgit2's progress
   callbacks), so the button can show the commits to pull.
 - `PdfTextSelection`: the mouse selects the background PDF's text (InkPages' `mouseClaims`/`mouseGesture`: a drag that
-  starts on the PDF's text with no ink, picture or text there; a double click = the word, a triple click = the line,
+  starts on the PDF's text, including under ink; a double click = the word, a triple click = the line,
   dragging on extends), marked in the system's selection color like the search hit (`DocumentView::MarkTextSelection`,
   its own mark in `PageUnderlay`), copied as CF_UNICODETEXT with Strg+C / Bearbeiten -> Kopieren; read-only, one page.
-  A click beside, Escape (Bearbeiten -> Auswahl aufheben), an ink selection, a tool change, editing a text, a page
+  A click beside, Escape (Bearbeiten -> Auswahl aufheben), an ink selection, editing a text, a page
   operation or another document clears it. The PDF's text is read on the thread pool once the PDF is loaded.
 - `PdfExportCommand` (Datei -> Als PDF exportieren with the pdf module), `PageCommands` (Seite einfügen: a graph page of
   the size of the page in view after it; Seite löschen: asked, cannot be undone, the last page stays; Seite nach oben /

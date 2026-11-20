@@ -179,7 +179,6 @@ namespace xournal::app
         {
             settings.toolChoices = choices.Serialize();
             SaveSettings();
-            textSelection->Clear(); // another tool (or its settings)
         };
 
         pane = std::make_unique<SidePane>(window, [this](std::wstring const& text, ToastKind kind) { Message(text, kind); });
