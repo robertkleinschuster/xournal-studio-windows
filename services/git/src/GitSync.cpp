@@ -22,30 +22,6 @@ namespace xournal::git
             throw Error(message, E_FAIL);
         }
 
-        std::wstring Workdir(git_repository* repo)
-        {
-            char const* workdir = git_repository_workdir(repo);
-            if (!workdir)
-            {
-                ThrowMessage("git: the repository has no working directory (bare)");
-            }
-            return FromUtf8(workdir);
-        }
-
-        path FullPath(git_repository* repo, char const* relative)
-        {
-            return Paths::Full(Workdir(repo) + FromUtf8(relative));
-        }
-
-        std::wstring WithoutTrailingSeparator(std::wstring p)
-        {
-            while (p.size() > 3 && (p.back() == L'\\' || p.back() == L'/'))
-            {
-                p.pop_back();
-            }
-            return p;
-        }
-
         Reference Head(git_repository* repo)
         {
             git_reference* head = nullptr;
@@ -399,7 +375,7 @@ namespace xournal::git
         {
             return std::nullopt;
         }
-        return WithoutTrailingSeparator(Paths::Full(FromUtf8(workdir)).native());
+        return Paths::WithoutTrailingSeparator(FromUtf8(workdir));
     }
 
     StatusMap GitSync::GetStatus(path const& root)
@@ -424,13 +400,13 @@ namespace xournal::git
     StatusMap GitSync::WithFolders(StatusMap const& status, path const& root)
     {
         StatusMap all = status;
-        std::wstring top = WithoutTrailingSeparator(Paths::Full(root).native());
+        std::wstring top = Paths::WithoutTrailingSeparator(root).native();
         for (auto const& [file, fileState] : status)
         {
             // Folders: modified > new; a rename or deletion in them shows as modified.
             FileState state = fileState == FileState::Renamed || fileState == FileState::Deleted ? FileState::Modified : fileState;
             for (path dir = path(file).parent_path();
-                dir.native().size() > top.size() && StartsWithIgnoreCase(dir.native(), top);
+                dir.native().size() > top.size() && Paths::IsAtOrBelow(dir, top);
                 dir = dir.parent_path())
             {
                 auto [it, added] = all.try_emplace(dir.native(), state);

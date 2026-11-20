@@ -2,6 +2,7 @@
 
 #include "xournal/base/Error.h"
 #include "xournal/base/Log.h"
+#include "xournal/base/Paths.h"
 #include "xournal/base/Text.h"
 
 #include <windows.h>
@@ -134,17 +135,11 @@ namespace xournal::project
         for (auto const& file : files)
         {
             // Below the root, case ignored like the file system (git's and the settings' spelling may differ).
-            std::wstring base = root.path.native();
-            while (!base.empty() && (base.back() == L'\\' || base.back() == L'/'))
-            {
-                base.pop_back();
-            }
-            std::wstring const& full = file.native();
-            if (full.size() <= base.size() + 1 || !StartsWithIgnoreCase(full, base) || full[base.size()] != L'\\')
+            if (!Paths::IsAtOrBelow(file, root.path) || Paths::Same(file, root.path))
             {
                 continue;
             }
-            std::filesystem::path relative = full.substr(base.size() + 1);
+            std::filesystem::path relative = Paths::Relative(root.path, file);
             ProjectEntry* folder = &root;
             std::filesystem::path at = root.path;
             std::vector<std::filesystem::path> parts(relative.begin(), relative.end());

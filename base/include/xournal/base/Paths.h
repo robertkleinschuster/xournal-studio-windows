@@ -16,6 +16,12 @@ namespace xournal::Paths
     /// The same file as Windows names it (full paths, ignoring case).
     bool Same(path const& a, path const& b);
 
+    /// The full path without a separator at its end; a root keeps its own ("C:\", "\\server\share\").
+    path WithoutTrailingSeparator(path const& p);
+
+    /// `p` is `item` or lies in the folder `item` (full paths, case ignored, whole names only: "UEbung" is not in "UE").
+    bool IsAtOrBelow(path const& p, path const& item);
+
     /// The folder of a file's full path.
     path DirectoryOf(path const& file);
 

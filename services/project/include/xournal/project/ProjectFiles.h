@@ -52,6 +52,12 @@ namespace xournal::project::ProjectFiles
     /// The same for several items in one operation (nothing to do for none).
     void Recycle(std::vector<path> const& items, HWND owner = nullptr);
 
+    /// Puts a copy of each file into the recycle bin, the files themselves stay: copied under the same name into a
+    /// temporary folder, recycled from there (one operation), the folder removed. Before content is overwritten (a
+    /// discard), so the current version can always be taken back from the bin. Throws when any copy fails - then
+    /// nothing was recycled.
+    void RecycleCopies(std::vector<path> const& files, HWND owner = nullptr);
+
     /// Where one item of a Transfer went.
     struct Transferred
     {

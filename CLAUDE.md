@@ -199,8 +199,11 @@ code). In short: `base ← model ← io ← pdf, pdftext, search, import, servic
   at most every 5 minutes (time check, no timer); a sync counts as a fetch; a failed fetch is logged and shows "↓?".
 - **Explorer git** (user, 2026-11-20, like IDEs): deleted files of the last commit stay in the tree, red and struck
   through; Änderungen verwerfen on a file or folder: tracked files back from HEAD (deleted ones restored), new files to
-  the recycle bin, after a question naming the files. Colors only, no status letters (a TreeView shows none without
-  drawing the items itself).
+  the recycle bin, after a question naming the files; a staged rename = old path restored, new path to the bin.
+  Nothing lost (coordinator's decision, 2026-11-20): the current versions of overwritten files go to the bin as copies
+  first (`ProjectFiles::RecycleCopies`), and every step that can fail runs before the open document is reloaded.
+  Colors only, no status letters (a TreeView shows none without drawing the items itself). Path containment everywhere
+  through `Paths::IsAtOrBelow`/`WithoutTrailingSeparator` (base) - one rule.
 - **Cut/copy/paste of files** in the tree (user, 2026-11-20; no drag & drop): CF_HDROP + "Preferred DropEffect" on the
   real clipboard (interoperates with File Explorer), copy/move with `IFileOperation` (the shell's conflict UI, undo).
   Moving the open document keeps it open: `MoveFiles` points it (and its PDF/pictures if moved) to the new place and

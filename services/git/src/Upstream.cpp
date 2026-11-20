@@ -16,6 +16,8 @@ namespace xournal::git
         struct Callbacks
         {
             CredentialProvider const* credentials = nullptr;
+            std::function<bool()> const* cancelled = nullptr;
+            bool stopped = false; // a progress callback stopped the transfer because `cancelled` said so
             std::exception_ptr error;
             std::string rejected; // a reference the remote refused to update, with its reason
         };
@@ -49,12 +51,46 @@ namespace xournal::git
             return 0;
         }
 
+        // libgit2's documented way to cancel a transfer: a progress callback returns non-zero.
+        int Progress(Callbacks& callbacks)
+        {
+            try
+            {
+                if (callbacks.cancelled && *callbacks.cancelled && (*callbacks.cancelled)())
+                {
+                    callbacks.stopped = true;
+                    return GIT_EUSER;
+                }
+                return 0;
+            }
+            catch (...)
+            {
+                callbacks.error = std::current_exception();
+                return GIT_EUSER;
+            }
+        }
+
+        int TransferProgress(git_indexer_progress const*, void* payload)
+        {
+            return Progress(*static_cast<Callbacks*>(payload));
+        }
+
+        int SidebandProgress(char const*, int, void* payload)
+        {
+            return Progress(*static_cast<Callbacks*>(payload));
+        }
+
         void SetUp(git_remote_callbacks& remoteCallbacks, Callbacks& callbacks)
         {
             remoteCallbacks.payload = &callbacks;
             if (callbacks.credentials && *callbacks.credentials)
             {
                 remoteCallbacks.credentials = AcquireCredential;
+            }
+            if (callbacks.cancelled && *callbacks.cancelled)
+            {
+                remoteCallbacks.transfer_progress = TransferProgress;
+                remoteCallbacks.sideband_progress = SidebandProgress;
             }
         }
 
@@ -65,6 +101,11 @@ namespace xournal::git
             {
                 LogException(std::format("git {}", step), callbacks.error);
                 std::rethrow_exception(callbacks.error);
+            }
+            if (result < 0 && callbacks.stopped)
+            {
+                Log(std::format("git {}: cancelled", step)); // asked for, not a failure
+                throw Error(std::format("git {}: cancelled", step), E_ABORT);
             }
             Check(step, result);
         }
@@ -110,9 +151,9 @@ namespace xournal::git
         return Remote(remote);
     }
 
-    void upstream::Fetch(git_remote* remote, CredentialProvider const& credentials)
+    void upstream::Fetch(git_remote* remote, CredentialProvider const& credentials, std::function<bool()> const& cancelled)
     {
-        Callbacks callbacks{ &credentials };
+        Callbacks callbacks{ &credentials, &cancelled };
         git_fetch_options options = GIT_FETCH_OPTIONS_INIT;
         SetUp(options.callbacks, callbacks);
         CheckWithCallbacks("fetch", git_remote_fetch(remote, nullptr, &options, nullptr), callbacks);
@@ -158,7 +199,7 @@ namespace xournal::git
         return divergence;
     }
 
-    bool GitSync::Fetch(path const& root, CredentialProvider const& credentials)
+    bool GitSync::Fetch(path const& root, CredentialProvider const& credentials, std::function<bool()> const& cancelled)
     {
         std::lock_guard network(upstream::NetworkLock());
         Library library;
@@ -169,7 +210,7 @@ namespace xournal::git
             return false;
         }
         Remote remote = upstream::RemoteOf(repo.get(), branch->first.get());
-        upstream::Fetch(remote.get(), credentials);
+        upstream::Fetch(remote.get(), credentials, cancelled);
         return true;
     }
 }

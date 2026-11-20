@@ -5,6 +5,7 @@
 
 #include <git2.h>
 
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -57,4 +58,10 @@ namespace xournal::git::git2
     int Check(std::string_view step, int result);
 
     Repository Open(std::wstring const& path);
+
+    /// The working directory (with a separator at its end, as libgit2 gives it); a bare repository is thrown.
+    std::wstring Workdir(git_repository* repo);
+
+    /// The full Windows path of a path relative to the working directory, as git names it ('/' separators).
+    std::filesystem::path FullPath(git_repository* repo, char const* relative);
 }

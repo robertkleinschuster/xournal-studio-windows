@@ -34,6 +34,27 @@ namespace xournal::Paths
         return EqualsIgnoreCase(Full(a).native(), Full(b).native());
     }
 
+    path WithoutTrailingSeparator(path const& p)
+    {
+        std::wstring full = Full(p).native();
+        while (full.size() > 1 && (full.back() == L'\\' || full.back() == L'/') && path(full).root_path().native() != full)
+        {
+            full.pop_back();
+        }
+        return full;
+    }
+
+    bool IsAtOrBelow(path const& p, path const& item)
+    {
+        std::wstring full = WithoutTrailingSeparator(p).native(), at = WithoutTrailingSeparator(item).native();
+        if (EqualsIgnoreCase(full, at))
+        {
+            return true;
+        }
+        bool rootItem = !at.empty() && (at.back() == L'\\' || at.back() == L'/'); // a drive root holds everything on it
+        return full.size() > at.size() && StartsWithIgnoreCase(full, at) && (rootItem || full[at.size()] == L'\\');
+    }
+
     path DirectoryOf(path const& file)
     {
         return Full(file).parent_path();

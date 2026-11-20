@@ -26,16 +26,6 @@ namespace xournal::project::ProjectFiles
     {
         std::string Name(path const& p) { return ToUtf8(p.native()); }
 
-        std::wstring FullTrimmed(path const& p)
-        {
-            std::wstring full = Paths::Full(p).native();
-            while (full.size() > 1 && (full.back() == L'\\' || full.back() == L'/') && full[full.size() - 2] != L':')
-            {
-                full.pop_back();
-            }
-            return full;
-        }
-
         // Collects where the shell put each item it copied or moved (IFileOperationProgressSink, the documented way to
         // learn the names it chose on a conflict). The other notifications need nothing.
         class TransferSink : public Microsoft::WRL::RuntimeClass<Microsoft::WRL::RuntimeClassFlags<Microsoft::WRL::ClassicCom>,
@@ -110,7 +100,7 @@ namespace xournal::project::ProjectFiles
     std::vector<Transferred> Transfer(std::vector<path> const& items, path const& folder, bool move, HWND owner)
     {
         std::string step = std::format("{} {} item(s) to {}", move ? "move" : "copy", items.size(), Name(folder));
-        std::wstring target = FullTrimmed(folder);
+        std::wstring target = Paths::WithoutTrailingSeparator(folder).native();
         ComPtr<IShellItem> destination;
         Check(step + " (SHCreateItemFromParsingName)",
             SHCreateItemFromParsingName(target.c_str(), nullptr, IID_PPV_ARGS(&destination)));
@@ -119,7 +109,7 @@ namespace xournal::project::ProjectFiles
         std::vector<std::wstring> beside, elsewhere;
         for (path const& item : items)
         {
-            std::wstring source = FullTrimmed(item);
+            std::wstring source = Paths::WithoutTrailingSeparator(item).native();
             bool sameFolder = Paths::Same(path(source).parent_path(), target);
             if (move && sameFolder)
             {
@@ -134,11 +124,12 @@ namespace xournal::project::ProjectFiles
         {
             ThrowHr(step + " (progress sink)", E_OUTOFMEMORY);
         }
+        // True when the user cancelled: the rest of the paste does not run either.
         auto perform = [&](std::vector<std::wstring> const& sources, DWORD extraFlags)
         {
             if (sources.empty())
             {
-                return;
+                return false;
             }
             ComPtr<IFileOperation> operation;
             Check(step + " (CoCreateInstance FileOperation)",
@@ -164,12 +155,17 @@ namespace xournal::project::ProjectFiles
             if (hr == HRESULT_FROM_WIN32(ERROR_CANCELLED) || hr == COPYENGINE_E_USER_CANCELLED)
             {
                 Log(std::format("{}: cancelled by the user", step));
-                return;
+                return true;
             }
             Check(step, hr);
+            BOOL aborted = FALSE;
+            Check(step + " (GetAnyOperationsAborted)", operation->GetAnyOperationsAborted(&aborted));
+            return aborted != FALSE;
         };
-        perform(beside, FOF_RENAMEONCOLLISION);
-        perform(elsewhere, 0);
+        if (!perform(beside, FOF_RENAMEONCOLLISION))
+        {
+            perform(elsewhere, 0);
+        }
         return sink->Done();
     }
 }

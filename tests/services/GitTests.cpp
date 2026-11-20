@@ -276,6 +276,8 @@ namespace xournal::tests
         std::ranges::sort(plan.remove);
         EXPECT_EQ((std::vector<path>{ a / L"UE" / L"Teil" / L"weg.xopp", a / L"UE" / L"blatt.xopp" }), plan.restore);
         EXPECT_EQ((std::vector<path>{ a / L"UE" / L"added.xopp", a / L"UE" / L"neu.xopp" }), plan.remove);
+        EXPECT_EQ(std::vector<path>{ a / L"UE" / L"blatt.xopp" }, plan.overwritten); // the deleted one is not on disk
+        EXPECT_TRUE(plan.unstage.empty());
 
         GitSync::Discard(a, plan);
 
@@ -286,6 +288,68 @@ namespace xournal::tests
         EXPECT_EQ(FileState::New, status.at((a / L"UE" / L"added.xopp").native())); // unstaged: untracked now
         EXPECT_EQ(FileState::New, status.at((a / L"UE" / L"neu.xopp").native()));
         EXPECT_EQ(4u, status.size());
+    }
+
+    TEST_F(Repos, AStagedFileDeletedOnDiskIsOnlyUnstaged)
+    {
+        auto [a, b] = TwoClones();
+        WriteBytes(a / L"added.xopp", "added");
+        Stage(a, "added.xopp");
+        std::filesystem::remove(a / L"added.xopp");
+
+        DiscardPlan plan = GitSync::PlanDiscard(a, a);
+        EXPECT_TRUE(plan.remove.empty()); // nothing on disk to recycle
+        EXPECT_EQ(std::vector<path>{ a / L"added.xopp" }, plan.unstage);
+        GitSync::Discard(a, plan);
+
+        EXPECT_TRUE(GitSync::GetStatus(a).empty());
+    }
+
+    TEST_F(Repos, DiscardingARenameRestoresTheOldPath)
+    {
+        auto [a, b] = TwoClones();
+        std::filesystem::rename(a / L"start.xopp", a / L"neu.xopp"); // renamed and staged, as git mv does
+        git_repository* repo = nullptr;
+        Ok(git_repository_open(&repo, Utf8(a).c_str()));
+        git_index* index = nullptr;
+        Ok(git_repository_index(&index, repo));
+        Ok(git_index_remove_bypath(index, "start.xopp"));
+        Ok(git_index_add_bypath(index, "neu.xopp"));
+        Ok(git_index_write(index));
+        git_index_free(index);
+        git_repository_free(repo);
+        ASSERT_EQ(FileState::Renamed, GitSync::GetStatus(a).at((a / L"neu.xopp").native()));
+
+        DiscardPlan plan = GitSync::PlanDiscard(a, a / L"neu.xopp");
+        EXPECT_EQ(std::vector<path>{ a / L"start.xopp" }, plan.restore);
+        EXPECT_TRUE(plan.overwritten.empty());
+        EXPECT_EQ(std::vector<path>{ a / L"neu.xopp" }, plan.remove);
+        GitSync::Discard(a, plan);
+
+        EXPECT_EQ("start", ReadText(a / L"start.xopp"));
+        StatusMap status = GitSync::GetStatus(a);
+        EXPECT_EQ(1u, status.size()); // the new name is untracked now; the app recycles it
+        EXPECT_EQ(FileState::New, status.at((a / L"neu.xopp").native()));
+    }
+
+    TEST_F(Repos, AFetchCanBeCancelled)
+    {
+        auto [a, b] = TwoClones();
+        WriteBytes(a / L"a.xopp", "a");
+        GitSync::Sync(a, {}, L"PC-A", Now); // something to transfer
+
+        try
+        {
+            GitSync::Fetch(b, {}, [] { return true; });
+            FAIL() << "the fetch was not cancelled";
+        }
+        catch (Error const& e)
+        {
+            EXPECT_EQ(E_ABORT, e.Code());
+        }
+        EXPECT_EQ((Divergence{ 0, 0 }), GitSync::GetDivergence(b)); // the references stay as they were
+        EXPECT_TRUE(GitSync::Fetch(b, {}, [] { return false; }));
+        EXPECT_EQ((Divergence{ 0, 1 }), GitSync::GetDivergence(b));
     }
 
     TEST_F(Repos, SyncCommitsPushesAndPulls)

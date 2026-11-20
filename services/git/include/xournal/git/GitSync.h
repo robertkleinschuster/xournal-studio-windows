@@ -36,15 +36,21 @@ namespace xournal::git
 
     using StatusMap = std::map<std::wstring, FileState, LessIgnoreCase>;
 
-    /// What "Änderungen verwerfen" does for a file or folder (full paths, git's letter case): files of the last commit get
-    /// its content back (modified ones) or come back (deleted ones); new files - not in the last commit - have nothing
-    /// to go back to and go to the recycle bin (the app's part; Discard takes them out of the index only).
+    /// What "Änderungen verwerfen" does for a file or folder (full paths, git's letter case). A rename (in the index) is
+    /// its old path restored and its new path removed.
     struct DiscardPlan
     {
+        /// Files of the last commit: they get its content back (modified ones) or come back (deleted ones).
         std::vector<path> restore;
+        /// Of those, the ones on disk now: their current content is overwritten (the app keeps a copy in the bin).
+        std::vector<path> overwritten;
+        /// New files on disk - not in the last commit: nothing to go back to, they go to the recycle bin (the app's
+        /// part; Discard takes them out of the index).
         std::vector<path> remove;
+        /// New files that are only in the index (deleted on disk): Discard takes them out of the index, nothing else.
+        std::vector<path> unstage;
 
-        bool Empty() const { return restore.empty() && remove.empty(); }
+        bool Empty() const { return restore.empty() && remove.empty() && unstage.empty(); }
     };
 
     /// A user name and password (or token) for an HTTPS remote.
@@ -116,16 +122,18 @@ namespace xournal::git
 
         /// Fetches the remote of HEAD's upstream branch: only the remote-tracking references change, never the working
         /// tree, the index or a local branch. False (nothing fetched) when there is no upstream branch. A fetch and a sync
-        /// of this process never run at the same time (the later one waits).
-        bool Fetch(path const& root, CredentialProvider const& credentials);
+        /// of this process never run at the same time (the later one waits). `cancelled` is asked during the transfer
+        /// (libgit2's progress callbacks); once it says yes the fetch stops with an Error of code E_ABORT and the
+        /// references stay as they were (libgit2 updates them only after the transfer).
+        bool Fetch(path const& root, CredentialProvider const& credentials, std::function<bool()> const& cancelled = {});
 
         /// What discarding the changes of `item` - a file, or a folder with everything in it - would do (ignoring case
         /// like Windows). Empty when it has no changes.
         DiscardPlan PlanDiscard(path const& root, path const& item);
 
         /// Carries out the git part of a plan: the `restore` files get their content of the last commit (HEAD) back, in
-        /// the index too (git checkout HEAD -- files; deleted ones come back); the `remove` files are taken out of the
-        /// index if they were added there (their files stay - recycling them is the caller's).
+        /// the index too (git checkout HEAD -- files; deleted ones come back); the `remove` and `unstage` files are taken
+        /// out of the index if they were added there (files on disk stay - recycling them first is the caller's).
         void Discard(path const& root, DiscardPlan const& plan);
     }
 }

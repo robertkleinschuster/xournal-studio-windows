@@ -7,6 +7,7 @@
 
 #include "xournal/git/GitSync.h"
 
+#include <functional>
 #include <mutex>
 
 namespace xournal::git::upstream
@@ -19,7 +20,8 @@ namespace xournal::git::upstream
     git2::Remote RemoteOf(git_repository* repo, git_reference* head);
 
     /// Fetches the remote's configured refspecs: only remote-tracking references change, never the working tree.
-    void Fetch(git_remote* remote, CredentialProvider const& credentials);
+    /// `cancelled` (may be empty) is asked by the progress callbacks; yes stops the fetch (Error, E_ABORT).
+    void Fetch(git_remote* remote, CredentialProvider const& credentials, std::function<bool()> const& cancelled = {});
 
     /// Pushes `head` to its upstream branch; a reference the remote rejects is thrown.
     void Push(git_repository* repo, git_remote* remote, git_reference* head, CredentialProvider const& credentials);

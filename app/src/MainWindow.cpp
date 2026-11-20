@@ -420,7 +420,11 @@ namespace xournal::app
     void MainWindow::OnSyncStateChanged()
     {
         pane->SetSyncing(sync->IsSyncing());
-        if (!sync->IsSyncing())
+        if (sync->IsSyncing())
+        {
+            remoteFetch->Cancel(); // the sync fetches itself; it would wait behind a slow background fetch
+        }
+        else
         {
             projectExplorer->Refresh();
         }

@@ -88,6 +88,22 @@ namespace xournal::tests
         EXPECT_TRUE(root.children[1].isFolder);
     }
 
+    // One rule for "is this in that folder" across the explorer, git discard and moves (base's Paths).
+    TEST(Paths, AtOrBelowMeansWholeNamesIgnoringCase)
+    {
+        EXPECT_TRUE(Paths::IsAtOrBelow(L"C:\\Uni\\UE\\blatt.xopp", L"C:\\Uni\\UE"));
+        EXPECT_TRUE(Paths::IsAtOrBelow(L"C:\\Uni\\UE\\blatt.xopp", L"c:\\uni\\ue\\"));
+        EXPECT_TRUE(Paths::IsAtOrBelow(L"C:\\Uni\\UE", L"C:\\Uni\\UE\\"));
+        EXPECT_TRUE(Paths::IsAtOrBelow(L"C:\\Uni\\UE\\Teil\\a.pdf", L"C:\\Uni"));
+        EXPECT_TRUE(Paths::IsAtOrBelow(L"C:\\Uni\\x", L"C:\\"));
+        EXPECT_FALSE(Paths::IsAtOrBelow(L"C:\\Uni\\UEbung.xopp", L"C:\\Uni\\UE"));
+        EXPECT_FALSE(Paths::IsAtOrBelow(L"C:\\Uni", L"C:\\Uni\\UE"));
+        EXPECT_FALSE(Paths::IsAtOrBelow(L"D:\\Uni\\UE", L"C:\\Uni"));
+        EXPECT_EQ(path(L"C:\\Uni\\UE"), Paths::WithoutTrailingSeparator(L"C:\\Uni\\UE\\\\"));
+        EXPECT_EQ(path(L"C:\\Uni\\UE"), Paths::WithoutTrailingSeparator(L"C:/Uni/UE/"));
+        EXPECT_EQ(path(L"C:\\"), Paths::WithoutTrailingSeparator(L"C:\\"));
+    }
+
     TEST(ProjectTree, DeletedFilesAreAddedAtTheirPlace)
     {
         TempFolder temp;

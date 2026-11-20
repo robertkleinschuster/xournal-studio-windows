@@ -45,17 +45,6 @@ namespace xournal::project::ProjectFiles
             }
             ThrowHr(std::format("attributes of {}", Name(p)), HRESULT_FROM_WIN32(error));
         }
-
-        // The full path without a separator at its end (a root such as "C:\" keeps it).
-        std::wstring FullTrimmed(path const& p)
-        {
-            std::wstring full = Paths::Full(p).native();
-            while (full.size() > 1 && (full.back() == L'\\' || full.back() == L'/') && full[full.size() - 2] != L':')
-            {
-                full.pop_back();
-            }
-            return full;
-        }
     }
 
     std::optional<std::wstring> ValidateName(std::wstring_view name)
@@ -104,13 +93,7 @@ namespace xournal::project::ProjectFiles
 
     bool IsAtOrBelow(std::optional<path> const& p, path const& item)
     {
-        if (!p)
-        {
-            return false;
-        }
-        std::wstring full = Paths::Full(*p).native(), at = FullTrimmed(item);
-        return EqualsIgnoreCase(full, at) ||
-            (StartsWithIgnoreCase(full, at) && full.size() > at.size() && (full[at.size()] == L'\\' || at.back() == L'\\'));
+        return p && Paths::IsAtOrBelow(*p, item);
     }
 
     path MapRenamed(path const& p, path const& item, path const& renamed)
@@ -119,8 +102,8 @@ namespace xournal::project::ProjectFiles
         {
             return p;
         }
-        std::wstring full = Paths::Full(p).native(), at = FullTrimmed(item);
-        return FullTrimmed(renamed) + full.substr(at.size());
+        std::wstring full = Paths::WithoutTrailingSeparator(p).native(), at = Paths::WithoutTrailingSeparator(item).native();
+        return Paths::WithoutTrailingSeparator(renamed).native() + full.substr(at.size());
     }
 
     std::wstring NewName(path const& p, bool isFolder, std::wstring_view editedName)
@@ -130,7 +113,7 @@ namespace xournal::project::ProjectFiles
 
     std::wstring EditableName(path const& p, bool isFolder)
     {
-        return isFolder ? path(FullTrimmed(p)).filename().native() : p.stem().native();
+        return isFolder ? path(Paths::WithoutTrailingSeparator(p)).filename().native() : p.stem().native();
     }
 
     bool SamePath(std::optional<path> const& a, std::optional<path> const& b)
@@ -140,7 +123,7 @@ namespace xournal::project::ProjectFiles
 
     path Rename(path const& item, std::wstring_view newName)
     {
-        path from = FullTrimmed(item);
+        path from = Paths::WithoutTrailingSeparator(item);
         path to = from.parent_path() / newName;
         if (!MoveFileExW(from.c_str(), to.c_str(), 0))
         {
@@ -187,7 +170,7 @@ namespace xournal::project::ProjectFiles
         {
             ComPtr<IShellItem> shellItem;
             Check(std::format("{} (SHCreateItemFromParsingName {})", step, Name(item)),
-                SHCreateItemFromParsingName(FullTrimmed(item).c_str(), nullptr, IID_PPV_ARGS(&shellItem)));
+                SHCreateItemFromParsingName(Paths::WithoutTrailingSeparator(item).c_str(), nullptr, IID_PPV_ARGS(&shellItem)));
             Check(step + " (DeleteItem)", operation->DeleteItem(shellItem.Get(), nullptr));
         }
         Check(step, operation->PerformOperations());
@@ -197,5 +180,58 @@ namespace xournal::project::ProjectFiles
         {
             ThrowHr(step + " (declined)", E_ABORT);
         }
+    }
+
+    void RecycleCopies(std::vector<path> const& files, HWND owner)
+    {
+        if (files.empty())
+        {
+            return;
+        }
+        wchar_t temp[MAX_PATH + 1]{};
+        DWORD length = GetTempPathW(MAX_PATH + 1, temp);
+        if (length == 0 || length > MAX_PATH)
+        {
+            ThrowLastError("GetTempPath");
+        }
+        path folder = path(temp) / std::format(L"XournalStudio-Fassungen-{}-{}", GetCurrentProcessId(), GetTickCount64());
+        if (!CreateDirectoryW(folder.c_str(), nullptr))
+        {
+            ThrowLastError(std::format("create folder {}", Name(folder)));
+        }
+        struct Cleanup
+        {
+            path folder;
+            ~Cleanup()
+            {
+                std::error_code error;
+                std::filesystem::remove_all(folder, error);
+                if (error)
+                {
+                    LogError(std::format("remove {}: {}", ToUtf8(folder.native()), error.message()));
+                }
+            }
+        } cleanup{ folder };
+        std::vector<path> copies;
+        for (size_t i = 0; i < files.size(); i++)
+        {
+            path target = folder;
+            if (Exists(folder / files[i].filename()))
+            {
+                // Two files of the same name: each copy keeps its name in a folder of its own.
+                target = folder / std::to_wstring(i);
+                if (!CreateDirectoryW(target.c_str(), nullptr))
+                {
+                    ThrowLastError(std::format("create folder {}", Name(target)));
+                }
+            }
+            target /= files[i].filename();
+            if (!CopyFileW(Paths::Full(files[i]).c_str(), target.c_str(), TRUE))
+            {
+                ThrowLastError(std::format("copy {} for the recycle bin", Name(files[i])));
+            }
+            copies.push_back(target);
+        }
+        Recycle(copies, owner);
     }
 }

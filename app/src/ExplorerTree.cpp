@@ -11,6 +11,7 @@
 #include <uxtheme.h>
 #include <windowsx.h>
 
+#include <cstring>
 #include <format>
 
 namespace xournal::app
@@ -282,11 +283,10 @@ namespace xournal::app
                 if (!node->missing) TreeView_EditLabel(tree, item);
                 return;
             }
-            bool needsFile = command != ExplorerCommand::Discard && command != ExplorerCommand::CopyPath &&
-                command != ExplorerCommand::Paste;
+            bool needsFile = command != ExplorerCommand::Discard && command != ExplorerCommand::CopyPath;
             if (node->missing && needsFile)
             {
-                return; // a deleted file can only be restored
+                return; // a deleted item can only be restored (its context menu offers nothing else either)
             }
             Request(command, *node);
         }
@@ -403,11 +403,39 @@ namespace xournal::app
         }
     }
 
+    // The tree's font struck through, made again whenever the tree's font changed (a new font after a DPI change or a
+    // setting) - checked once per paint.
+    void ExplorerTree::UpdateStruckFont()
+    {
+        LOGFONTW font{};
+        auto current = reinterpret_cast<HFONT>(SendMessageW(tree, WM_GETFONT, 0, 0));
+        if (!GetObjectW(current ? current : static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT)), sizeof(font), &font))
+        {
+            LogError("explorer: the tree's font is not readable (deleted items shown without strike-through)");
+            return;
+        }
+        font.lfStrikeOut = TRUE;
+        if (struckFont && std::memcmp(&font, &struckFrom, sizeof(font)) == 0)
+        {
+            return;
+        }
+        HFONT made = CreateFontIndirectW(&font);
+        if (!made)
+        {
+            LogError("explorer: CreateFontIndirect failed (deleted items shown without strike-through)");
+            return;
+        }
+        if (struckFont) DeleteObject(struckFont);
+        struckFont = made;
+        struckFrom = font;
+    }
+
     LRESULT ExplorerTree::CustomDraw(NMTVCUSTOMDRAW& draw)
     {
         switch (draw.nmcd.dwDrawStage)
         {
         case CDDS_PREPAINT:
+            UpdateStruckFont();
             return CDRF_NOTIFYITEMDRAW;
         case CDDS_ITEMPREPAINT:
         {
@@ -425,20 +453,7 @@ namespace xournal::app
                     draw.clrText = GitColor(git::FileState::Deleted);
                     if (!struckFont)
                     {
-                        LOGFONTW font{};
-                        auto current = reinterpret_cast<HFONT>(SendMessageW(tree, WM_GETFONT, 0, 0));
-                        if (!GetObjectW(current ? current : static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT)), sizeof(font), &font))
-                        {
-                            LogError("explorer: the tree's font is not readable (deleted items shown without strike-through)");
-                            return CDRF_DODEFAULT;
-                        }
-                        font.lfStrikeOut = TRUE;
-                        struckFont = CreateFontIndirectW(&font);
-                        if (!struckFont)
-                        {
-                            LogError("explorer: CreateFontIndirect failed (deleted items shown without strike-through)");
-                            return CDRF_DODEFAULT;
-                        }
+                        return CDRF_DODEFAULT; // not available (logged): the color alone
                     }
                     SelectObject(draw.nmcd.hdc, struckFont);
                     return CDRF_NEWFONT;

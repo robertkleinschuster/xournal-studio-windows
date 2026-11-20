@@ -145,7 +145,8 @@ the window's parts to feature classes:
   Kopieren/Einfügen with Strg+X/C/V in the tree - moved files the open document uses are followed by
   `DocumentSession::MoveFiles`, also its own file, so the next save writes the references from the new place).
   `SyncController` syncs; `RemoteFetch` fetches in the background (start, folder change, window activated at most every
-  5 minutes; a failure only logged, the button shows "↓?"), so the button can show the commits to pull.
+  5 minutes; a failure only logged, the button shows "↓?"; a starting sync cancels it through libgit2's progress
+  callbacks), so the button can show the commits to pull.
 - `PdfExportCommand` (Datei -> Als PDF exportieren with the pdf module), `PageCommands` (Seite einfügen: a graph page of
   the size of the page in view after it; Seite löschen: asked, cannot be undone, the last page stays; Seite nach oben /
   nach unten: one place, the view follows). Page operations keep the ink's undo history (InkPages'

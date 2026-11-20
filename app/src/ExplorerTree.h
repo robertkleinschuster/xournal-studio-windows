@@ -89,6 +89,7 @@ namespace xournal::app
         void Request(ExplorerCommand command, Node const& node, std::wstring newName = {});
         void ShowMenu(Node const& node, bool onItem, POINT screen);
         LRESULT CustomDraw(NMTVCUSTOMDRAW& draw);
+        void UpdateStruckFont();
         int Icon(std::wstring const& name, bool folder, bool open);
         static bool HasOwnIcon(project::ProjectEntry const& entry);
 
@@ -100,5 +101,6 @@ namespace xournal::app
         std::optional<ProjectSnapshot> deferred;                       // arrived while a name was being edited
         std::map<std::wstring, int, LessIgnoreCase> icons;             // system image list index per type
         HFONT struckFont = nullptr;                                    // the tree's font struck through (deleted items)
+        LOGFONTW struckFrom{};                                         // what it was made from
     };
 }

@@ -274,9 +274,10 @@ namespace xournal::app
     }
 
     // "Änderungen verwerfen" of a file or a folder with everything in it, after asking (naming the files): files of the
-    // last commit get its content back or come back when deleted (git), new files go to the recycle bin. If the open
-    // document uses one of them, its unsaved changes go too (said in the question; no save question - saving would
-    // only be overwritten) and it is opened again from the restored files.
+    // last commit get its content back or come back when deleted (git) - their current versions go to the recycle bin
+    // as copies -, new files go to the recycle bin. If the open document uses one of them, its unsaved changes go too
+    // (said in the question; no save question - saving would only be overwritten) and it is opened again from the
+    // restored files.
     void ExplorerCommands::Discard(std::filesystem::path const& item)
     {
         auto root = tree.Snapshot().gitRoot; // a deleted item (or its folder) is not on disk to look from
@@ -293,7 +294,7 @@ namespace xournal::app
         auto doc = session.Document();
         auto open = doc ? (doc->FilePath() ? doc->FilePath() : doc->PdfPath()) : std::nullopt;
         bool affected = false;
-        for (auto const* files : { &plan.restore, &plan.remove })
+        for (auto const* files : { &plan.restore, &plan.remove, &plan.unstage })
         {
             for (auto const& file : *files) affected = affected || (doc && doc->Uses(file));
         }
@@ -313,6 +314,10 @@ namespace xournal::app
             }
         };
         list(plan.restore, L"Bekommen den Stand des letzten Commits (der letzten Synchronisierung) zurück:");
+        if (!plan.overwritten.empty())
+        {
+            text += L"Die jetzigen Fassungen kommen in den Papierkorb.\n";
+        }
         list(plan.remove, L"Neu seit dem letzten Commit – kommen in den Papierkorb:");
         if (affected) session.EndTextEditing(); // a text being typed counts among the unsaved changes
         if (affected && session.IsModified())
@@ -323,17 +328,17 @@ namespace xournal::app
         {
             return;
         }
+        // Files first, the open document last: whatever fails (a copy, the bin declined or a locked file, git) throws
+        // before the document is touched - it stays open with its changes. Each step only hands content to the bin
+        // before the next one overwrites or removes it, so nothing is lost on the way.
+        project::ProjectFiles::RecycleCopies(plan.overwritten, owner); // the current versions, to take back from the bin
+        project::ProjectFiles::Recycle(plan.remove, owner);
+        git::GitSync::Discard(*root, plan);
         if (affected)
         {
-            // Left before the checkout: nothing can save it over the restored file meanwhile, and if opening it again
-            // fails, the old state is not left open to be saved later.
-            session.ShowNew();
-        }
-        project::ProjectFiles::Recycle(plan.remove, owner); // first: declined (too big for the bin), nothing is changed
-        git::GitSync::Discard(*root, plan);
-        if (affected && open && Paths::FileExists(*open))
-        {
-            session.Load(*open);
+            // Opened again from the restored files (its unsaved changes go, as the question said).
+            if (open && Paths::FileExists(*open)) session.Load(*open);
+            else session.ShowNew();
         }
     }
 
