@@ -1,10 +1,11 @@
 #pragma once
 
 // The side pane's "Seiten" tab (the C# PagesPane): the document's pages as thumbnails, one below the other, in a
-// comctl32 ListView (icon view; one item per page with text and image by callback - not LVS_OWNERDATA, whose insert
-// mark hit test finds nothing; the thumbnails are drawn in custom draw from PageThumbnails). A tap goes to the page; the selected page follows the page in view. The context menu inserts a blank
-// page before/after, pages of a PDF or document, moves up/down, deletes (asked by the window); a drag moves a page
-// (the ListView's insert mark shows where). The pane only asks: the window carries the actions out.
+// comctl32 ListView (icon view; one item per page with text and image by callback; the thumbnails are drawn in custom
+// draw from PageThumbnails). A tap goes to the page; the selected page follows the page in view. A comctl32 toolbar
+// above the list moves the selected page up or down ("Nach oben" / "Nach unten", disabled at the first / last page);
+// the context menu inserts a blank page before/after, pages of a PDF or document, moves up/down, deletes (asked by the
+// window). The pane only asks: the window carries the actions out.
 
 #include "PageThumbnails.h"
 
@@ -45,20 +46,21 @@ namespace xournal::app
         LRESULT OnCustomDraw(NMLVCUSTOMDRAW& draw);
         void DrawThumbnail(HDC dc, RECT const& area, int index);
         void ShowMenu(int index, POINT screen);
+        void CreateBar();
         void Layout();
         void UpdateSizes();
+        void UpdateButtons();
+        void MoveBy(int index, int delta);
         int Selected() const;
-        // Drag to move: the insert mark follows the pointer; the drop moves the page there.
-        void DragMove(POINT client);
-        void DragDrop();
 
         HWND window = nullptr;
+        HWND bar = nullptr;              // Nach oben / Nach unten
         HWND list = nullptr;
-        HIMAGELIST images = nullptr; // one blank image: gives the items their size (the thumbnails are drawn over it)
+        HIMAGELIST images = nullptr;     // one blank image: gives the items their size (the thumbnails are drawn over it)
+        HIMAGELIST barImages = nullptr;  // the toolbar's glyphs
         PageThumbnails& thumbnails;
         int count = 0;
-        bool selecting = false;      // a selection set in code: no navigation
-        int dragFrom = -1;
+        bool selecting = false;          // a selection set in code: no navigation
         int thumbWidth = 0, thumbHeight = 0;
     };
 }

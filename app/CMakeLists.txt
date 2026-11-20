@@ -20,6 +20,7 @@ add_executable(XournalStudio WIN32
     src/TaskEditDialog.cpp
     src/TasksPane.cpp
     src/ChildControls.cpp
+    src/GlyphImages.cpp
     src/RecoveryCopies.cpp
     src/DelayedAction.cpp
     src/Questions.cpp

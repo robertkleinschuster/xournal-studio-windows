@@ -52,4 +52,23 @@ namespace xournal::app
             view.RemovePage(page);
         }
     }
+
+    void PageCommands::Move(int from, int to)
+    {
+        int count = view.PageCount();
+        if (from < 0 || to < 0 || from >= count || to >= count || from == to) return;
+        view.MovePage(from, to);
+        surface.ScrollToPage(to);
+    }
+
+    bool PageCommands::CanMoveCurrent(int delta) const
+    {
+        int to = Current() + delta;
+        return view.PageCount() > 1 && to >= 0 && to < view.PageCount();
+    }
+
+    void PageCommands::MoveCurrent(int delta)
+    {
+        if (CanMoveCurrent(delta)) Move(Current(), Current() + delta);
+    }
 }

@@ -1,6 +1,7 @@
 # The pages pane, inserting pages of another PDF, and the iPad import (Windows Sandbox):
 #   - Seiten tab: thumbnails of all pages (screenshot); a tap on a thumbnail goes to the page;
-#   - the context menu inserts a blank page after page 1; a mouse drag moves it to the end; delete it again (asked);
+#   - the context menu inserts a blank page after page 1; the pane's Nach oben / Nach unten buttons and Seite > Seite
+#     nach oben move it (disabled at the first page);
 #   - Seiten aus PDF oder Dokument einfügen: Grenzwerte.pdf's pages appended to the document's PDF (checked: new pages
 #     refer to PDF pages after the original ones);
 #   - Datei > PDF mit iPad-Anmerkungen importieren with a PDF without Apple markup (the flow: pickers, the PDF beside the
@@ -77,16 +78,31 @@ Invoke-Test {
     "after inserting: $($pages.Count) pages, page 2: $($pages[1].type)"
     if ($pages.Count -ne $original.Count + 1 -or $pages[1].type -ne 'solid') { throw 'the blank page is not after page 1' }
 
-    # Drag the new page 2 above page 1 (the insert mark shows where): then the blank page is the first.
-    $from = Dip (Probe 'Seite 2')
-    $onto = Dip (Probe 'Seite 1')
-    [Inj]::MouseDrag((L $from[0] $from[1] ($from[0] + 2) ($from[1] - 20) $onto[0] ($onto[1] - 60)))
-    Start-Sleep 2
-    Shot '03-dragged-to-the-top'
-    Ctrl 0x53 'S'
+    # The pane's toolbar moves the selected page (the new page 2, in view): Nach oben makes it the first; there Nach oben
+    # is disabled (a click changes nothing); Nach unten brings it back; the Seite menu moves the page in view up again.
+    function Order { Ctrl 0x53 'S' | Out-Null; (Pages $file | ForEach-Object { $_.type }) -join ',' }
+    $p2 = Probe 'Seite 2'
+    [Inj]::ClickPixel($p2[0], $p2[1]); Start-Sleep 2
+    $up = Probe 'Nach oben'
+    [Inj]::ClickPixel($up[0], $up[1]); Start-Sleep 2
+    Shot '03-moved-to-the-top'
+    $order = Order; "after Nach oben: $order"
     $pages = Pages $file
-    "after the drag: $(($pages | ForEach-Object { $_.type }) -join ',')"
-    if ($pages[0].type -ne 'solid' -or $pages[1].type -ne $original[0].type) { throw 'the drag did not move the blank page to the top' }
+    if ($pages[0].type -ne 'solid' -or $pages[1].type -ne $original[0].type) { throw 'Nach oben did not move the blank page to the top' }
+    [Inj]::ClickPixel($up[0], $up[1]); Start-Sleep 2
+    $again = Order; "after Nach oben at the first page: $again"
+    if ($again -ne $order) { throw 'Nach oben moved the first page' }
+    $down = Probe 'Nach unten'
+    [Inj]::ClickPixel($down[0], $down[1]); Start-Sleep 2
+    Shot '03-moved-down'
+    "after Nach unten: $(Order)"
+    $pages = Pages $file
+    if ($pages[1].type -ne 'solid' -or $pages[0].type -ne $original[0].type) { throw 'Nach unten did not move the blank page back' }
+    [System.Windows.Forms.SendKeys]::SendWait('%s'); Start-Sleep -Milliseconds 600   # Seite
+    [System.Windows.Forms.SendKeys]::SendWait('o'); Start-Sleep 2                    # Seite nach &oben
+    "after Seite > Seite nach oben: $(Order)"
+    $pages = Pages $file
+    if ($pages[0].type -ne 'solid') { throw 'Seite nach oben (menu) did not move the page in view' }
 
     # Pages of Grenzwerte.pdf, all, after the page in view: appended to Schaltungen.pdf.
     $p1 = Probe 'Seite 1'

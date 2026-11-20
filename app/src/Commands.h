@@ -32,6 +32,8 @@ namespace xournal::app
         CmdInsertPage = 300,
         CmdInsertFromFile,
         CmdDeletePage,
+        CmdMovePageUp,
+        CmdMovePageDown,
         // Ansicht
         CmdTogglePane = 400,
         CmdFitWidth,

@@ -272,7 +272,11 @@ namespace xournal::app
         pagesPane->goTo = [this](int index) { surface->ScrollToPage(index); };
         pagesPane->insertBlank = [this](int index) { pageCommands->InsertBlankAt(index); };
         pagesPane->insertFromFile = [this](int index) { insertCommand->Insert(index); };
-        pagesPane->move = [this](int from, int to) { view->MovePage(from, to); };
+        pagesPane->move = [this](int from, int to)
+        {
+            pageCommands->Move(from, to);
+            pagesPane->Select(to); // the selection follows the page (the view does already)
+        };
         pagesPane->remove = [this](int index) { pageCommands->DeleteAt(index); };
     }
 
@@ -343,6 +347,8 @@ namespace xournal::app
             menu.Enable(command, selection);
         }
         menu.Enable(CmdSync, !sync->IsSyncing());
+        menu.Enable(CmdMovePageUp, pageCommands->CanMoveCurrent(-1));
+        menu.Enable(CmdMovePageDown, pageCommands->CanMoveCurrent(1));
     }
 
     void MainWindow::OpenFolder()
@@ -419,6 +425,8 @@ namespace xournal::app
         case CmdInsertFromFile: insertCommand->Insert(surface->PageInView().value_or(0)); break;
         case CmdImportPdf: importCommand->Import(); break;
         case CmdDeletePage: pageCommands->DeleteCurrent(); break;
+        case CmdMovePageUp: pageCommands->MoveCurrent(-1); break;
+        case CmdMovePageDown: pageCommands->MoveCurrent(1); break;
         case CmdOpenFolder: OpenFolder(); break;
         case CmdSync: sync->Sync(projectExplorer->Folder()); break;
         case CmdExit: PostMessageW(window, WM_CLOSE, 0, 0); break;

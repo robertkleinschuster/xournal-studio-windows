@@ -85,7 +85,9 @@ long formulas in several colors. For open pen/UI design questions, propose how O
   button follow it. User: "wichtig ist dass er robust funktioniert".
 - **Pages stay** (user, 2026-11-16): pages as the file has them (upstream keeps every element on one page, sizes and
   backgrounds differ); strokes belong to the page of their first point and are split at the page boundary; a selection
-  moves across pages.
+  moves across pages. **Pages are moved with buttons, not drag and drop** (user, 2026-11-20: "drag and drop ist schlecht
+  zum seiten verschieben"): Nach oben / Nach unten in the Seiten pane's toolbar, Seite → Seite nach oben / unten, the
+  pane's context menu; disabled at the first / last page; selection and view follow the page.
 - **Little custom code, strictly encapsulated; no monster classes** (user, 2026-11-15): small classes with one job (a
   few hundred lines at most); `MainWindow` only wires the window's parts to feature classes. Logic without UI goes into
   the modules where the unit tests reach it. Module dependencies only in the direction the README shows.

@@ -107,6 +107,9 @@ namespace xournal::app
             { CmdInsertPage, L"Seite &einfügen" },
             { CmdInsertFromFile, L"Seiten aus &PDF oder Dokument einfügen…" },
             {},
+            { CmdMovePageUp, L"Seite nach &oben" },
+            { CmdMovePageDown, L"Seite nach &unten" },
+            {},
             { CmdDeletePage, L"Seite &löschen" },
         }, keys), L"&Seite");
         AddPopup(bar, Popup({

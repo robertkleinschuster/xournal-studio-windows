@@ -139,8 +139,13 @@ the window's parts to feature classes:
   clipboard still holds the copy). Paste: the own format, else another app's picture (PNG, else a DIB) as a new
   `<image>`, else InkPages pastes Windows ink.
 - `PdfExportCommand` (Datei -> Als PDF exportieren with the pdf module), `PageCommands` (Seite einfügen: a graph page of
-  the size of the page in view after it; Seite löschen: asked, cannot be undone, the last page stays). Page operations
-  keep the ink's undo history (InkPages' `InsertPages`/`RemovePage`); the app's per-page data follows the same `PageMap`.
+  the size of the page in view after it; Seite löschen: asked, cannot be undone, the last page stays; Seite nach oben /
+  nach unten: one place, the view follows). Page operations keep the ink's undo history (InkPages'
+  `InsertPages`/`RemovePage`/`MovePage`); the app's per-page data follows the same `PageMap`.
+- `PagesPane` (the Seiten tab): the pages as thumbnails in a comctl32 ListView (icon view, custom draw from
+  `PageThumbnails`); a small comctl32 toolbar above it, "Nach oben" / "Nach unten" with Segoe Fluent Icons glyphs
+  (`GlyphImages`), moves the selected page (no drag and drop: the user found it bad for moving pages); its context menu
+  inserts, moves and deletes pages.
 - Logs: `XOURNAL_STUDIO_LOG` (InkPages' lines in `<log>.inkpages.log` beside it), errors always in
   `%LOCALAPPDATA%\XournalStudioForWindows\errors.log`; `XOURNAL_STUDIO_CONFIG_DIR` for tests.
 
