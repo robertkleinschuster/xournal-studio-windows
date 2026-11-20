@@ -10,6 +10,7 @@
 #include "xournal/base/Text.h"
 #include "xournal/git/GitSync.h"
 #include "xournal/io/DocumentFile.h"
+#include "xournal/project/FileClipboard.h"
 #include "xournal/project/ProjectFiles.h"
 
 #include <shellapi.h>
@@ -51,6 +52,9 @@ namespace xournal::app
             case ExplorerCommand::Delete: return L"Löschen fehlgeschlagen";
             case ExplorerCommand::ShowInExplorer: return L"Im Explorer anzeigen fehlgeschlagen";
             case ExplorerCommand::CopyPath: return L"Kopieren fehlgeschlagen";
+            case ExplorerCommand::Cut: return L"Ausschneiden fehlgeschlagen";
+            case ExplorerCommand::Copy: return L"Kopieren fehlgeschlagen";
+            case ExplorerCommand::Paste: return L"Einfügen fehlgeschlagen";
             default: return L"Öffnen fehlgeschlagen";
             }
         }
@@ -85,7 +89,8 @@ namespace xournal::app
             return;
         }
         bool changesFiles = request.command != ExplorerCommand::Open && request.command != ExplorerCommand::ShowInExplorer &&
-            request.command != ExplorerCommand::CopyPath;
+            request.command != ExplorerCommand::CopyPath && request.command != ExplorerCommand::Cut &&
+            request.command != ExplorerCommand::Copy;
         if (changesFiles && sync.RefusedWhileSyncing(L"Das Ändern von Dateien und Ordnern"))
         {
             return;
@@ -102,6 +107,9 @@ namespace xournal::app
             case ExplorerCommand::Discard: Discard(request.path); break;
             case ExplorerCommand::ShowInExplorer: ShowInExplorer(request.path); break;
             case ExplorerCommand::CopyPath: CopyPath(request.path); break;
+            case ExplorerCommand::Cut: PutOnClipboard(request.path, true); break;
+            case ExplorerCommand::Copy: PutOnClipboard(request.path, false); break;
+            case ExplorerCommand::Paste: Paste(folder); break;
             case ExplorerCommand::Rename: break; // above
             }
         }
@@ -265,27 +273,53 @@ namespace xournal::app
         project::ProjectFiles::Recycle(item, owner);
     }
 
-    // Gives exactly this file its committed content back (git), after asking. If the open document shows it, its unsaved
-    // changes go too (said in the question; no save question - saving would only be overwritten) and it is opened again
-    // from the restored files.
-    void ExplorerCommands::Discard(std::filesystem::path const& file)
+    // "Änderungen verwerfen" of a file or a folder with everything in it, after asking (naming the files): files of the
+    // last commit get its content back or come back when deleted (git), new files go to the recycle bin. If the open
+    // document uses one of them, its unsaved changes go too (said in the question; no save question - saving would
+    // only be overwritten) and it is opened again from the restored files.
+    void ExplorerCommands::Discard(std::filesystem::path const& item)
     {
-        auto root = git::GitSync::FindRoot(file);
+        auto root = tree.Snapshot().gitRoot; // a deleted item (or its folder) is not on disk to look from
         if (!root)
         {
-            return; // only modified files offer it, and those lie in a repository
+            return; // only items with changes offer it, and those lie in a repository
+        }
+        git::DiscardPlan plan = git::GitSync::PlanDiscard(*root, item);
+        if (plan.Empty())
+        {
+            messages(std::format(L"„{}“ hat keine Änderungen.", NameOf(item)), ToastKind::Info);
+            return;
         }
         auto doc = session.Document();
-        bool affected = doc && doc->Uses(file);
         auto open = doc ? (doc->FilePath() ? doc->FilePath() : doc->PdfPath()) : std::nullopt;
-        std::wstring text = L"Die Datei bekommt wieder den Stand des letzten Commits (der letzten Synchronisierung). Was "
-            L"seitdem an ihr geändert wurde, geht verloren.";
+        bool affected = false;
+        for (auto const* files : { &plan.restore, &plan.remove })
+        {
+            for (auto const& file : *files) affected = affected || (doc && doc->Uses(file));
+        }
+        std::wstring text;
+        auto list = [&text](std::vector<std::filesystem::path> const& files, wchar_t const* heading)
+        {
+            if (files.empty()) return;
+            text += std::format(L"{}{}\n", text.empty() ? L"" : L"\n", heading);
+            constexpr size_t Shown = 8;
+            for (size_t i = 0; i < files.size() && i < Shown; i++)
+            {
+                text += L"  " + NameOf(files[i]) + L"\n";
+            }
+            if (files.size() > Shown)
+            {
+                text += std::format(L"  … und {} weitere\n", files.size() - Shown);
+            }
+        };
+        list(plan.restore, L"Bekommen den Stand des letzten Commits (der letzten Synchronisierung) zurück:");
+        list(plan.remove, L"Neu seit dem letzten Commit – kommen in den Papierkorb:");
         if (affected) session.EndTextEditing(); // a text being typed counts among the unsaved changes
         if (affected && session.IsModified())
         {
-            text += L" Auch die ungespeicherten Änderungen im offenen Dokument gehen verloren.";
+            text += L"\nAuch die ungespeicherten Änderungen im offenen Dokument gehen verloren.";
         }
-        if (!Questions::Confirm(owner, std::format(L"Änderungen an „{}“ verwerfen?", NameOf(file)), text, L"Verwerfen"))
+        if (!Questions::Confirm(owner, std::format(L"Änderungen an „{}“ verwerfen?", NameOf(item)), text, L"Verwerfen"))
         {
             return;
         }
@@ -295,10 +329,53 @@ namespace xournal::app
             // fails, the old state is not left open to be saved later.
             session.ShowNew();
         }
-        git::GitSync::Discard(*root, file);
-        if (affected && open)
+        project::ProjectFiles::Recycle(plan.remove, owner); // first: declined (too big for the bin), nothing is changed
+        git::GitSync::Discard(*root, plan);
+        if (affected && open && Paths::FileExists(*open))
         {
             session.Load(*open);
+        }
+    }
+
+    // Ausschneiden / Kopieren: the item on the Windows clipboard as File Explorer puts files there.
+    void ExplorerCommands::PutOnClipboard(std::filesystem::path const& item, bool move)
+    {
+        project::FileClipboard::Put(owner, { Paths::Full(item) }, move);
+        messages(move ? std::format(L"Ausgeschnitten: {} – mit Einfügen in einen Ordner verschieben.", NameOf(item))
+                      : std::format(L"Kopiert: {}", NameOf(item)), ToastKind::Success);
+    }
+
+    // Einfügen: the files on the clipboard (from here or File Explorer) copied or - after Ausschneiden - moved into the
+    // folder by the shell (its conflict questions, undoable in File Explorer). Moved files the open document uses (its
+    // own file, its PDF, picture backgrounds, folders holding them) are followed: the document refers to them at their
+    // new place and counts as changed (MoveFiles, as for a rename).
+    void ExplorerCommands::Paste(std::filesystem::path const& folder)
+    {
+        auto content = project::FileClipboard::Get(owner);
+        if (!content || content->files.empty())
+        {
+            messages(L"In der Zwischenablage sind keine Dateien.", ToastKind::Info);
+            return;
+        }
+        auto done = project::ProjectFiles::Transfer(content->files, folder, content->move, owner);
+        if (content->move)
+        {
+            for (auto const& [from, to] : done)
+            {
+                auto doc = session.Document();
+                if (doc && doc->Uses(from))
+                {
+                    session.MoveFiles(from, to);
+                }
+            }
+            if (!done.empty())
+            {
+                project::FileClipboard::Clear(owner); // the files are no longer where the clipboard says
+            }
+        }
+        if (!done.empty())
+        {
+            tree.Select(done.front().to);
         }
     }
 

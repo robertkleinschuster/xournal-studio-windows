@@ -1,10 +1,11 @@
 #pragma once
 
 // The project folder as a TreeView (comctl32, File Explorer's theme and the shell's system icons): every file and folder
-// of a ProjectSnapshot, files and folders with git changes colored (new green, modified blue; lighter on a dark window
-// background). It keeps the
-// open folders and the selection across refreshes. It only shows and asks: what the user wants (open, the context
-// menu's commands, F2/Entf/Strg+Umschalt+C, a renamed label) goes to `requested`; ExplorerCommands carries it out.
+// of a ProjectSnapshot, files and folders with git changes colored as code editors' git views do (new green, modified
+// blue, deleted red and struck through - deleted files of the last commit stay listed at their place so they can be
+// restored; lighter on a dark window background). It keeps the open folders and the selection across refreshes. It
+// only shows and asks: what the user wants (open, the context menu's commands, F2/Entf/Strg+Umschalt+C and - routed by
+// the window - Strg+X/C/V, a renamed label) goes to `requested`; ExplorerCommands carries it out.
 
 #include "ProjectSnapshot.h"
 
@@ -28,9 +29,12 @@ namespace xournal::app
         NewFolder,
         Rename,        // with the new name, from the label edit
         Delete,
-        Discard,
+        Discard,       // a file, or a folder with everything in it
         ShowInExplorer,
         CopyPath,
+        Cut,
+        Copy,
+        Paste,         // into the folder, or the file's folder
     };
 
     struct ExplorerRequest
@@ -45,6 +49,7 @@ namespace xournal::app
     {
     public:
         ExplorerTree(HWND parent, int id);
+        ~ExplorerTree();
         ExplorerTree(ExplorerTree const&) = delete;
         ExplorerTree& operator=(ExplorerTree const&) = delete;
 
@@ -60,7 +65,8 @@ namespace xournal::app
         /// Starts editing the label of this item (rename), e.g. a document just created.
         void BeginRename(std::filesystem::path const& p);
 
-        /// The selected item's request for `command` (nothing selected: nothing happens).
+        /// The selected item's request for `command` (nothing selected: nothing happens, but Paste goes into the project
+        /// folder).
         void RequestForSelection(ExplorerCommand command);
 
         std::function<void(ExplorerRequest const&)> requested;
@@ -74,6 +80,7 @@ namespace xournal::app
         {
             std::filesystem::path path;
             bool isFolder = false;
+            bool missing = false; // deleted, shown to be restored
         };
 
         void Add(HTREEITEM parent, project::ProjectEntry const& entry);
@@ -81,7 +88,7 @@ namespace xournal::app
         HTREEITEM Find(std::filesystem::path const& p) const;
         void Request(ExplorerCommand command, Node const& node, std::wstring newName = {});
         void ShowMenu(Node const& node, bool onItem, POINT screen);
-        LRESULT CustomDraw(NMTVCUSTOMDRAW& draw) const;
+        LRESULT CustomDraw(NMTVCUSTOMDRAW& draw);
         int Icon(std::wstring const& name, bool folder, bool open);
         static bool HasOwnIcon(project::ProjectEntry const& entry);
 
@@ -92,5 +99,6 @@ namespace xournal::app
         std::optional<std::filesystem::path> pendingSelection;
         std::optional<ProjectSnapshot> deferred;                       // arrived while a name was being edited
         std::map<std::wstring, int, LessIgnoreCase> icons;             // system image list index per type
+        HFONT struckFont = nullptr;                                    // the tree's font struck through (deleted items)
     };
 }

@@ -48,7 +48,9 @@ namespace xournal::app
     {
         delayed.Cancel();
         ++*generation;
-        tree.Show(ProjectSnapshot::Read(folder));
+        ProjectSnapshot snapshot = ProjectSnapshot::Read(folder);
+        syncStatus = snapshot.sync;
+        tree.Show(std::move(snapshot));
         if (refreshed) refreshed();
     }
 
@@ -64,6 +66,7 @@ namespace xournal::app
                 auto latest = current.lock();
                 if (latest && *latest == mine) // still wanted, and this object still exists
                 {
+                    syncStatus = snapshot->sync;
                     tree.Show(std::move(*snapshot));
                     if (refreshed) refreshed();
                 }

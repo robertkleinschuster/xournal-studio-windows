@@ -76,6 +76,10 @@ namespace xournal::app
     void DocumentSession::MoveFiles(std::filesystem::path const& item, std::filesystem::path const& renamed)
     {
         if (!doc) return;
+        if (project::ProjectFiles::IsAtOrBelow(doc->FilePath(), item))
+        {
+            doc->SetFilePath(project::ProjectFiles::MapRenamed(*doc->FilePath(), item, renamed));
+        }
         if (project::ProjectFiles::IsAtOrBelow(doc->PdfPath(), item))
         {
             doc->MovePdf(project::ProjectFiles::MapRenamed(*doc->PdfPath(), item, renamed));

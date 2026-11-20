@@ -27,6 +27,10 @@ namespace xournal::app
             {
                 return dark ? RGB(0x6C, 0xCB, 0x5F) : RGB(0x10, 0x7C, 0x10);
             }
+            if (state == git::FileState::Deleted)
+            {
+                return dark ? RGB(0xFF, 0x99, 0xA4) : RGB(0xC4, 0x2B, 0x1C);
+            }
             return dark ? RGB(0x60, 0xCD, 0xFF) : RGB(0x00, 0x5F, 0xB8);
         }
 
@@ -55,6 +59,9 @@ namespace xournal::app
             MenuDiscard,
             MenuShowInExplorer,
             MenuCopyPath,
+            MenuCut,
+            MenuCopy,
+            MenuPaste,
         };
     }
 
@@ -89,6 +96,11 @@ namespace xournal::app
         {
             TreeView_SetImageList(tree, images, TVSIL_NORMAL);
         }
+    }
+
+    ExplorerTree::~ExplorerTree()
+    {
+        if (struckFont) DeleteObject(struckFont);
     }
 
     bool ExplorerTree::HasFocus() const
@@ -135,7 +147,7 @@ namespace xournal::app
 
     void ExplorerTree::Add(HTREEITEM parent, project::ProjectEntry const& entry)
     {
-        nodes.push_back({ entry.path, entry.isFolder });
+        nodes.push_back({ entry.path, entry.isFolder, entry.missing });
         std::wstring name = entry.Name();
         TVINSERTSTRUCTW insert{};
         insert.hParent = parent;
@@ -145,7 +157,7 @@ namespace xournal::app
         insert.itemex.pszText = name.data();
         insert.itemex.lParam = static_cast<LPARAM>(nodes.size() - 1);
         insert.itemex.cChildren = entry.children.empty() ? 0 : 1;
-        insert.itemex.iImage = insert.itemex.iSelectedImage = HasOwnIcon(entry) ? ShellIcon(entry.path.native(), false, false, true)
+        insert.itemex.iImage = insert.itemex.iSelectedImage = HasOwnIcon(entry) && !entry.missing ? ShellIcon(entry.path.native(), false, false, true)
             : Icon(name, entry.isFolder, false);
         insert.itemex.iExpandedImage = entry.isFolder ? Icon(name, true, true) : 0;
         HTREEITEM item = TreeView_InsertItem(tree, &insert);
@@ -267,10 +279,20 @@ namespace xournal::app
         {
             if (command == ExplorerCommand::Rename)
             {
-                TreeView_EditLabel(tree, item);
+                if (!node->missing) TreeView_EditLabel(tree, item);
                 return;
             }
+            bool needsFile = command != ExplorerCommand::Discard && command != ExplorerCommand::CopyPath &&
+                command != ExplorerCommand::Paste;
+            if (node->missing && needsFile)
+            {
+                return; // a deleted file can only be restored
+            }
             Request(command, *node);
+        }
+        else if (command == ExplorerCommand::Paste && snapshot.folder)
+        {
+            Request(command, { *snapshot.folder, true });
         }
     }
 
@@ -289,24 +311,29 @@ namespace xournal::app
             }
         };
         auto separator = [&] { AppendMenuW(menu, MF_SEPARATOR, 0, nullptr); };
+        bool onFile = onItem && !node.missing; // a deleted item is not on disk: it can only be restored
         if (onItem && !node.isFolder)
         {
-            add(MenuOpen, L"Ö&ffnen");
+            add(MenuOpen, L"Ö&ffnen", onFile);
             separator();
         }
-        add(MenuNewDocument, L"Neues &Dokument");
-        add(MenuNewFolder, L"Neuer O&rdner");
+        add(MenuNewDocument, L"Neues &Dokument", !node.missing);
+        add(MenuNewFolder, L"Neuer O&rdner", !node.missing);
+        separator();
+        if (onItem)
+        {
+            add(MenuCut, L"&Ausschneiden\tStrg+X", onFile);
+            add(MenuCopy, L"&Kopieren\tStrg+C", onFile);
+        }
+        add(MenuPaste, L"&Einfügen\tStrg+V", !node.missing && IsClipboardFormatAvailable(CF_HDROP));
         if (onItem)
         {
             separator();
-            add(MenuRename, L"&Umbenennen\tF2");
-            add(MenuDelete, L"&Löschen\tEntf");
-            if (!node.isFolder)
-            {
-                add(MenuDiscard, L"Änderungen &verwerfen", snapshot.StateOf(node.path) == git::FileState::Modified);
-            }
+            add(MenuRename, L"&Umbenennen\tF2", onFile);
+            add(MenuDelete, L"&Löschen\tEntf", onFile);
+            add(MenuDiscard, L"Änderungen &verwerfen", snapshot.StateOf(node.path) != git::FileState::Unchanged);
             separator();
-            add(MenuShowInExplorer, L"Im &Explorer anzeigen");
+            add(MenuShowInExplorer, L"Im &Explorer anzeigen", onFile);
             add(MenuCopyPath, L"Als &Pfad kopieren\tStrg+Umschalt+C");
         }
         UINT chosen = static_cast<UINT>(TrackPopupMenuEx(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, screen.x, screen.y,
@@ -323,6 +350,9 @@ namespace xournal::app
         case MenuDiscard: Request(ExplorerCommand::Discard, target); break;
         case MenuShowInExplorer: Request(ExplorerCommand::ShowInExplorer, target); break;
         case MenuCopyPath: Request(ExplorerCommand::CopyPath, target); break;
+        case MenuCut: Request(ExplorerCommand::Cut, target); break;
+        case MenuCopy: Request(ExplorerCommand::Copy, target); break;
+        case MenuPaste: Request(ExplorerCommand::Paste, target); break;
         default: break; // closed without a choice
         }
     }
@@ -373,7 +403,7 @@ namespace xournal::app
         }
     }
 
-    LRESULT ExplorerTree::CustomDraw(NMTVCUSTOMDRAW& draw) const
+    LRESULT ExplorerTree::CustomDraw(NMTVCUSTOMDRAW& draw)
     {
         switch (draw.nmcd.dwDrawStage)
         {
@@ -388,6 +418,30 @@ namespace xournal::app
                 if (state != git::FileState::Unchanged)
                 {
                     draw.clrText = GitColor(state);
+                }
+                if (nodes[index].missing)
+                {
+                    // Deleted: struck through in the deleted color (custom draw's documented font change).
+                    draw.clrText = GitColor(git::FileState::Deleted);
+                    if (!struckFont)
+                    {
+                        LOGFONTW font{};
+                        auto current = reinterpret_cast<HFONT>(SendMessageW(tree, WM_GETFONT, 0, 0));
+                        if (!GetObjectW(current ? current : static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT)), sizeof(font), &font))
+                        {
+                            LogError("explorer: the tree's font is not readable (deleted items shown without strike-through)");
+                            return CDRF_DODEFAULT;
+                        }
+                        font.lfStrikeOut = TRUE;
+                        struckFont = CreateFontIndirectW(&font);
+                        if (!struckFont)
+                        {
+                            LogError("explorer: CreateFontIndirect failed (deleted items shown without strike-through)");
+                            return CDRF_DODEFAULT;
+                        }
+                    }
+                    SelectObject(draw.nmcd.hdc, struckFont);
+                    return CDRF_NEWFONT;
                 }
             }
             return CDRF_DODEFAULT;
@@ -420,7 +474,7 @@ namespace xournal::app
         }
         case NM_DBLCLK:
         case NM_RETURN:
-            if (Node const* node = NodeOf(TreeView_GetSelection(tree)); node && !node->isFolder)
+            if (Node const* node = NodeOf(TreeView_GetSelection(tree)); node && !node->isFolder && !node->missing)
             {
                 Request(ExplorerCommand::Open, *node);
                 return TRUE;
@@ -446,7 +500,7 @@ namespace xournal::app
         {
             auto const& info = reinterpret_cast<NMTVDISPINFOW const&>(header);
             Node const* node = NodeOf(info.item.hItem);
-            if (!node)
+            if (!node || node->missing)
             {
                 return TRUE; // no editing
             }

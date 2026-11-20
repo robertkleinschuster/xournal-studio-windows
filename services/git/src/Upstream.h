@@ -1,0 +1,26 @@
+#pragma once
+
+// The upstream branch's remote for this module: fetch and push with the app's credential provider (exceptions never
+// cross libgit2's C frames: a callback's error is kept and thrown after the call). Internal.
+
+#include "LibGit2.h"
+
+#include "xournal/git/GitSync.h"
+
+#include <mutex>
+
+namespace xournal::git::upstream
+{
+    /// Held for every network operation (fetch, sync): a background fetch and a sync never update the same references at
+    /// the same time.
+    std::mutex& NetworkLock();
+
+    /// The remote the branch `head` tracks (branch.<name>.remote).
+    git2::Remote RemoteOf(git_repository* repo, git_reference* head);
+
+    /// Fetches the remote's configured refspecs: only remote-tracking references change, never the working tree.
+    void Fetch(git_remote* remote, CredentialProvider const& credentials);
+
+    /// Pushes `head` to its upstream branch; a reference the remote rejects is thrown.
+    void Push(git_repository* repo, git_remote* remote, git_reference* head, CredentialProvider const& credentials);
+}

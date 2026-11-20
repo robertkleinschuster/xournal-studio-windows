@@ -21,6 +21,7 @@
 #include "PdfOutline.h"
 #include "ProjectExplorer.h"
 #include "RecoveryCopies.h"
+#include "RemoteFetch.h"
 #include "SidePane.h"
 #include "SyncController.h"
 #include "Toast.h"
@@ -70,6 +71,7 @@ namespace xournal::app
         void CreateProjectParts();
         void SetProjectFolder(std::optional<std::filesystem::path> const& folder);
         void OnSyncStateChanged();
+        void UpdateSyncButton();
         void RememberWindow();
         void SaveSettings();
         void Message(std::wstring const& text, ToastKind kind);
@@ -96,6 +98,7 @@ namespace xournal::app
         std::unique_ptr<DocumentSearch> search;
         std::unique_ptr<SearchPane> searchPane;
         std::unique_ptr<SyncController> sync;
+        std::unique_ptr<RemoteFetch> remoteFetch;
         std::unique_ptr<ProjectExplorer> projectExplorer;
         std::unique_ptr<ExplorerCommands> explorerCommands;
         std::unique_ptr<RecoveryCopies> recovery;

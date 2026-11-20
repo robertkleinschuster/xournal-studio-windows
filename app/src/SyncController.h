@@ -41,6 +41,8 @@ namespace xournal::app
 
         /// A sync started or ended (menu, button, explorer refresh).
         std::function<void()> stateChanged;
+        /// A sync ended; true when it succeeded (it fetched, so the server's state is fresh).
+        std::function<void(bool succeeded)> finished;
 
     private:
         void Finish(git::SyncResult const& result);

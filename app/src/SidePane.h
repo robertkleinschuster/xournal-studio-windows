@@ -11,6 +11,7 @@
 
 #include <functional>
 #include <memory>
+#include <string>
 
 namespace xournal::app
 {
@@ -30,6 +31,8 @@ namespace xournal::app
         std::function<void()> syncRequested;
         /// While a sync runs the button says so and waits.
         void SetSyncing(bool syncing);
+        /// The button's text when no sync runs ("Synchronisieren   3  ↑1  ↓2") and its tooltip (one fact per line).
+        void SetSyncStatus(std::wstring text, std::wstring const& details);
 
         /// The Seiten tab's content (a child window of this pane), in place of its placeholder.
         void SetPagesContent(HWND content);
@@ -54,6 +57,9 @@ namespace xournal::app
         HWND window = nullptr;
         HWND tabs = nullptr;
         HWND syncButton = nullptr;
+        HWND syncTip = nullptr;
+        std::wstring syncText = L"Synchronisieren";
+        bool syncing = false;
         HWND pagesContent = nullptr; // a placeholder until the window puts the pages pane in
         HWND searchContent = nullptr;
         HWND outlineContent = nullptr;

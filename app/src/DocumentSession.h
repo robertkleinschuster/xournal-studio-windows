@@ -43,9 +43,9 @@ namespace xournal::app
         void Load(std::filesystem::path const& file);
         /// Shows a restored recovery copy: it counts as changed (unsaved) until it is saved.
         void ShowRecovered(std::shared_ptr<XoppDocument> restored);
-        /// `item` (a file or folder the document uses: its PDF, a picture background, a folder holding them) was renamed
-        /// to `renamed`: the document refers to them there and counts as changed, so the next save writes the new
-        /// references (and leaving it asks).
+        /// `item` (a file or folder the document uses: its own file, its PDF, a picture background, a folder holding them)
+        /// was renamed or moved to `renamed`: the document refers to them there - and is the file there - and counts as
+        /// changed, so the next save writes the references from the new place (and leaving it asks).
         void MoveFiles(std::filesystem::path const& item, std::filesystem::path const& renamed);
         /// "Meine als Kopie speichern…": a copy with its own attachments; the document stays as it is.
         bool SaveCopy();

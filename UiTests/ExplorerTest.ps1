@@ -1,7 +1,9 @@
 ﻿# The explorer with the open document in Windows Sandbox: discard the changes of the open document (git: committed
 # content back, opened again), rename the open document with F2 (the leave question, then opened from its new place),
 # delete the open document's PDF (to the recycle bin; the document is left), a new folder named in place, Als Pfad
-# kopieren. The repository comes from the host (New-TestRepository.ps1: the sandbox has no git).
+# kopieren; the sync button's git status (changed files, commits to push and to pull after the start's fetch); a deleted
+# file shown struck through and restored with Änderungen verwerfen; Kopieren/Ausschneiden/Einfügen of files. The
+# repository comes from the host (New-TestRepository.ps1: the sandbox has no git).
 #   UiTests\Run-AppTest.ps1 -Test UiTests\ExplorerTest.ps1 -Extra (UiTests\New-TestRepository.ps1),
 #       D:\src\InkPages\.local-build\tools\uiaprobe.exe
 . C:\sbx\TestKit.ps1
@@ -43,6 +45,30 @@ function MenuOnRow($row, $item) {
     Start-Sleep -Milliseconds 600
     "menu $row -> $item"
 }
+# The sync button's text (a comctl32 button: its window text, read with Win32).
+Add-Type @"
+using System;
+using System.Text;
+using System.Runtime.InteropServices;
+public static class SyncButton {
+    delegate bool EnumProc(IntPtr hwnd, IntPtr lp);
+    [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr parent, EnumProc proc, IntPtr lp);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr hwnd, StringBuilder text, int max);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr hwnd, StringBuilder text, int max);
+    public static string Text(IntPtr main) {
+        string found = null;
+        EnumChildWindows(main, delegate (IntPtr h, IntPtr lp) {
+            StringBuilder c = new StringBuilder(64), t = new StringBuilder(256);
+            GetClassName(h, c, 64); GetWindowText(h, t, 256);
+            if (c.ToString() == "Button" && t.ToString().StartsWith("Synchronis")) { found = t.ToString(); return false; }
+            return true;
+        }, IntPtr.Zero);
+        return found;
+    }
+}
+"@
+function SyncText { [SyncButton]::Text($script:p.MainWindowHandle) }
+
 function WaitFor($what, [scriptblock]$condition) {
     for ($i = 0; $i -lt 20 -and -not (& $condition); $i++) { Start-Sleep -Milliseconds 500 }
     if (-not (& $condition)) { Shot "failed-$what"; throw "timed out: $what" }
@@ -51,6 +77,7 @@ function WaitFor($what, [scriptblock]$condition) {
 Invoke-Test {
     $work = 'C:\work'
     Expand-Archive 'C:\sbx\data\work.zip' $work
+    Move-Item "$work\remote.git" 'C:\remote.git'   # the upstream (New-TestRepository.ps1)
     attrib +h "$work\.git"
     New-Item -ItemType Directory -Force "$out\config" | Out-Null
     Set-Content "$out\config\settings-native.json" '{"paneOpen":true,"paneTab":0,"projectFolder":"C:\\work"}'
@@ -64,10 +91,17 @@ Invoke-Test {
     At 'XournalStudioWindow' 'test.xopp' | Out-Null   # the tree shows the folder
     Shot '01-explorer'
 
+    # 0. The sync button: one local commit to push, two on the server after the start's fetch, no changed file.
+    $up = [char]0x2191; $down = [char]0x2193
+    WaitFor 'sync status' { (SyncText) -eq "Synchronisieren   ${up}1  ${down}2" }
+    "sync button: $(SyncText)"
+
     # 1. Discard: a stroke, saved (modified in git: blue), then Änderungen verwerfen -> the committed content, reopened.
     Stroke 600 300 850 330
     [Inj]::Ctrl(0x53); Start-Sleep 3   # Strg+S
     "saved: $(Hash "$work\test.xopp")"
+    WaitFor 'sync status with a changed file' { (SyncText) -eq "Synchronisieren   1  ${up}1  ${down}2" }
+    "sync button: $(SyncText)"
     Shot '02-modified-blue'
     MenuOnRow 'test.xopp' 'verwerfen'
     Shot '03-discard-question'
@@ -149,6 +183,30 @@ Invoke-Test {
     if (Test-Path "$work\Teil 2") { throw 'the new folder landed in the project folder' }
     "after new folder in UE: $((Get-ChildItem "$work\UE" | ForEach-Object Name) -join ', ')"
     Shot '12-folder-in-subfolder'
+
+    # 8. A deleted file stays in the tree (struck through) and comes back with Änderungen verwerfen.
+    Remove-Item "$work\UE\blatt.txt"
+    Start-Sleep 2
+    At 'XournalStudioWindow' 'blatt.txt' | Out-Null
+    Shot '13-deleted-shown'
+    MenuOnRow 'blatt.txt' 'verwerfen'
+    Shot '14-restore-question'
+    ClickAnywhere 'Verwerfen'
+    WaitFor 'restore' { Test-Path "$work\UE\blatt.txt" }
+    "restored: $(Get-Content "$work\UE\blatt.txt")"
+
+    # 9. Kopieren and Einfügen into a folder; Ausschneiden and Einfügen (Strg+X / Strg+V in the tree) moves.
+    MenuOnRow 'todo.txt' 'Kopieren'
+    MenuOnRow 'Teil 2' 'Einf'
+    WaitFor 'copy' { Test-Path "$work\UE\Teil 2\todo.txt" }
+    if (-not (Test-Path "$work\todo.txt")) { throw 'the copy took the original away' }
+    ClickAt 'XournalStudioWindow' 'lokal.txt' | Out-Null
+    [Inj]::Ctrl(0x58); Start-Sleep -Milliseconds 600   # Strg+X
+    ClickAt 'XournalStudioWindow' 'bung 1' | Out-Null
+    [Inj]::Ctrl(0x56)                                  # Strg+V
+    WaitFor 'move' { (Test-Path "$work\Übung 1\lokal.txt") -and -not (Test-Path "$work\lokal.txt") }
+    "after copy and move: files $(Files)"
+    Shot '15-pasted'
 
     Get-Content "$out\config\errors.log" -ErrorAction SilentlyContinue | ForEach-Object { "errors.log: $_" }
 }

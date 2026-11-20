@@ -161,10 +161,17 @@ namespace xournal::project::ProjectFiles
 
     void Recycle(path const& item, HWND owner)
     {
-        std::string step = std::format("move {} to the recycle bin", Name(item));
-        ComPtr<IShellItem> shellItem;
-        Check(step + " (SHCreateItemFromParsingName)",
-            SHCreateItemFromParsingName(FullTrimmed(item).c_str(), nullptr, IID_PPV_ARGS(&shellItem)));
+        Recycle(std::vector<path>{ item }, owner);
+    }
+
+    void Recycle(std::vector<path> const& items, HWND owner)
+    {
+        if (items.empty())
+        {
+            return;
+        }
+        std::string step = items.size() == 1 ? std::format("move {} to the recycle bin", Name(items.front()))
+                                             : std::format("move {} items to the recycle bin", items.size());
         ComPtr<IFileOperation> operation;
         Check(step + " (CoCreateInstance FileOperation)",
             CoCreateInstance(CLSID_FileOperation, nullptr, CLSCTX_ALL, IID_PPV_ARGS(&operation)));
@@ -176,7 +183,13 @@ namespace xournal::project::ProjectFiles
         {
             Check(step + " (SetOwnerWindow)", operation->SetOwnerWindow(owner));
         }
-        Check(step + " (DeleteItem)", operation->DeleteItem(shellItem.Get(), nullptr));
+        for (path const& item : items)
+        {
+            ComPtr<IShellItem> shellItem;
+            Check(std::format("{} (SHCreateItemFromParsingName {})", step, Name(item)),
+                SHCreateItemFromParsingName(FullTrimmed(item).c_str(), nullptr, IID_PPV_ARGS(&shellItem)));
+            Check(step + " (DeleteItem)", operation->DeleteItem(shellItem.Get(), nullptr));
+        }
         Check(step, operation->PerformOperations());
         BOOL aborted = FALSE;
         Check(step + " (GetAnyOperationsAborted)", operation->GetAnyOperationsAborted(&aborted));

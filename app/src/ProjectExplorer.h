@@ -7,6 +7,7 @@
 #include "DelayedAction.h"
 #include "ExplorerTree.h"
 
+#include "xournal/git/SyncStatus.h"
 #include "xournal/project/FolderWatcher.h"
 
 #include <filesystem>
@@ -31,7 +32,11 @@ namespace xournal::app
         /// Reads the folder now, on the UI thread (after a command, so the tree shows its result at once).
         void RefreshNow();
 
-        /// After the tree showed a new reading of the folder (e.g. the tasks pane reads its todo.txt again).
+        /// The repository's counts of the latest reading (changed files, commits to push and to pull).
+        git::SyncStatus const& SyncStatus() const { return syncStatus; }
+
+        /// After the tree showed a new reading of the folder (e.g. the tasks pane reads its todo.txt again, the sync
+        /// button shows the counts).
         std::function<void()> refreshed;
 
     private:
@@ -39,6 +44,7 @@ namespace xournal::app
 
         ExplorerTree& tree;
         std::optional<std::filesystem::path> folder;
+        git::SyncStatus syncStatus;
         std::unique_ptr<project::FolderWatcher> watcher;
         DelayedAction delayed;
         std::shared_ptr<std::uint64_t> generation = std::make_shared<std::uint64_t>(0); // UI thread

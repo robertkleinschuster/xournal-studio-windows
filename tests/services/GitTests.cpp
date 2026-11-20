@@ -5,10 +5,12 @@
 
 #include "xournal/git/GitCredentials.h"
 #include "xournal/git/GitSync.h"
+#include "xournal/git/SyncStatus.h"
 
 #include <git2.h>
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <format>
 
 namespace xournal::tests
@@ -202,18 +204,88 @@ namespace xournal::tests
         WriteBytes(a / L"other.xopp", "new");
         Stage(a, "start.xopp"); // staged changes go too
 
-        GitSync::Discard(a, a / L"start.xopp");
+        DiscardPlan plan = GitSync::PlanDiscard(a, a / L"start.xopp");
+        EXPECT_EQ(std::vector<path>{ a / L"start.xopp" }, plan.restore);
+        EXPECT_TRUE(plan.remove.empty());
+        GitSync::Discard(a, plan);
 
         EXPECT_EQ("start", ReadText(a / L"start.xopp"));
         EXPECT_EQ("new", ReadText(a / L"other.xopp")); // nothing else touched
         EXPECT_FALSE(GitSync::GetStatus(a).contains((a / L"start.xopp").native()));
         // Letter case on disk differs from the commit (Windows ignores it, git trees do not).
         WriteBytes(a / L"start.xopp", "changed again");
-        GitSync::Discard(a, a / L"START.xopp");
+        GitSync::Discard(a, GitSync::PlanDiscard(a, a / L"START.xopp"));
         EXPECT_EQ("start", ReadText(a / L"start.xopp"));
-        // A file the last commit does not have cannot go back.
-        EXPECT_THROW(GitSync::Discard(a, a / L"other.xopp"), Error);
-        EXPECT_TRUE(std::filesystem::exists(a / L"other.xopp"));
+        // A file the last commit does not have has nothing to go back to: it is to be removed (by the app).
+        plan = GitSync::PlanDiscard(a, a / L"other.xopp");
+        EXPECT_TRUE(plan.restore.empty());
+        EXPECT_EQ(std::vector<path>{ a / L"other.xopp" }, plan.remove);
+        GitSync::Discard(a, plan);
+        EXPECT_TRUE(std::filesystem::exists(a / L"other.xopp")); // the git part leaves the file alone
+        EXPECT_TRUE(GitSync::PlanDiscard(a, a / L"nothing.xopp").Empty());
+    }
+
+    TEST_F(Repos, DeletedFilesAreShownAndComeBack)
+    {
+        auto [a, b] = TwoClones();
+        std::filesystem::create_directories(a / L"UE");
+        WriteBytes(a / L"UE" / L"blatt.xopp", "blatt");
+        WriteBytes(a / L"UE" / L"weg.xopp", "weg");
+        GitSync::Sync(a, {}, L"PC-A", Now);
+        std::filesystem::remove(a / L"UE" / L"weg.xopp");      // deleted in the working tree
+        std::filesystem::remove(a / L"start.xopp");
+        git_repository* repo = nullptr;                         // and one staged as deleted
+        Ok(git_repository_open(&repo, Utf8(a).c_str()));
+        git_index* index = nullptr;
+        Ok(git_repository_index(&index, repo));
+        Ok(git_index_remove_bypath(index, "start.xopp"));
+        Ok(git_index_write(index));
+        git_index_free(index);
+        git_repository_free(repo);
+
+        StatusMap status = GitSync::GetStatus(a);
+        EXPECT_EQ(FileState::Deleted, status.at((a / L"UE" / L"weg.xopp").native()));
+        EXPECT_EQ(FileState::Deleted, status.at((a / L"start.xopp").native()));
+        EXPECT_EQ(FileState::Modified, GitSync::WithFolders(status, a).at((a / L"UE").native()));
+
+        GitSync::Discard(a, GitSync::PlanDiscard(a, a / L"UE" / L"weg.xopp"));
+        GitSync::Discard(a, GitSync::PlanDiscard(a, a / L"start.xopp"));
+
+        EXPECT_EQ("weg", ReadText(a / L"UE" / L"weg.xopp"));
+        EXPECT_EQ("start", ReadText(a / L"start.xopp"));
+        EXPECT_TRUE(GitSync::GetStatus(a).empty());
+    }
+
+    TEST_F(Repos, DiscardingAFolderCoversEverythingInIt)
+    {
+        auto [a, b] = TwoClones();
+        std::filesystem::create_directories(a / L"UE" / L"Teil");
+        WriteBytes(a / L"UE" / L"blatt.xopp", "blatt");
+        WriteBytes(a / L"UE" / L"Teil" / L"weg.xopp", "weg");
+        GitSync::Sync(a, {}, L"PC-A", Now);
+        WriteBytes(a / L"UE" / L"blatt.xopp", "changed");
+        std::filesystem::remove(a / L"UE" / L"Teil" / L"weg.xopp");
+        WriteBytes(a / L"UE" / L"neu.xopp", "new");
+        WriteBytes(a / L"UE" / L"added.xopp", "added");
+        Stage(a, "UE/added.xopp");
+        WriteBytes(a / L"start.xopp", "outside"); // not in the folder
+        WriteBytes(a / L"UEbung.xopp", "a sibling whose name starts like the folder");
+
+        DiscardPlan plan = GitSync::PlanDiscard(a, a / L"ue");
+        std::ranges::sort(plan.restore);
+        std::ranges::sort(plan.remove);
+        EXPECT_EQ((std::vector<path>{ a / L"UE" / L"Teil" / L"weg.xopp", a / L"UE" / L"blatt.xopp" }), plan.restore);
+        EXPECT_EQ((std::vector<path>{ a / L"UE" / L"added.xopp", a / L"UE" / L"neu.xopp" }), plan.remove);
+
+        GitSync::Discard(a, plan);
+
+        EXPECT_EQ("blatt", ReadText(a / L"UE" / L"blatt.xopp"));
+        EXPECT_EQ("weg", ReadText(a / L"UE" / L"Teil" / L"weg.xopp"));
+        EXPECT_EQ("outside", ReadText(a / L"start.xopp"));
+        StatusMap status = GitSync::GetStatus(a);
+        EXPECT_EQ(FileState::New, status.at((a / L"UE" / L"added.xopp").native())); // unstaged: untracked now
+        EXPECT_EQ(FileState::New, status.at((a / L"UE" / L"neu.xopp").native()));
+        EXPECT_EQ(4u, status.size());
     }
 
     TEST_F(Repos, SyncCommitsPushesAndPulls)
@@ -296,6 +368,88 @@ namespace xournal::tests
         };
         EXPECT_NO_THROW(GitSync::Sync(a, provider, L"PC-A", Now));
         EXPECT_FALSE(asked);
+    }
+
+    TEST_F(Repos, DivergenceCountsCommitsToPushAndToPullAfterAFetch)
+    {
+        auto [a, b] = TwoClones();
+        EXPECT_EQ((Divergence{ 0, 0 }), GitSync::GetDivergence(b));
+
+        WriteBytes(a / L"a.xopp", "a");
+        GitSync::Sync(a, {}, L"PC-A", Now); // one commit on the server
+        WriteBytes(b / L"b.xopp", "b");
+        WriteBytes(b / L"start.xopp", "changed in b");
+        EXPECT_EQ(2u, GitSync::GetStatus(b).size()); // the changed files a sync would commit
+
+        EXPECT_EQ((Divergence{ 0, 0 }), GitSync::GetDivergence(b)); // the server's commit is not fetched yet
+        EXPECT_TRUE(GitSync::Fetch(b, {}));
+        EXPECT_EQ((Divergence{ 0, 1 }), GitSync::GetDivergence(b));
+        // The fetch touched neither the working tree nor the branch.
+        EXPECT_FALSE(std::filesystem::exists(b / L"a.xopp"));
+        EXPECT_EQ("changed in b", ReadText(b / L"start.xopp"));
+        EXPECT_EQ(2u, GitSync::GetStatus(b).size());
+        EXPECT_EQ("start", Head(b).summary);
+
+        // A local commit that is not pushed yet.
+        git_repository* repo = nullptr;
+        Ok(git_repository_open(&repo, Utf8(b).c_str()));
+        git_reference* head = nullptr;
+        Ok(git_repository_head(&head, repo));
+        git_commit* parent = nullptr;
+        Ok(git_commit_lookup(&parent, repo, git_reference_target(head)));
+        git_tree* tree = nullptr;
+        Ok(git_commit_tree(&tree, parent));
+        git_signature* sig = nullptr;
+        Ok(git_signature_now(&sig, "Test", "test@example.com"));
+        git_oid id{};
+        git_commit const* parents[] = { parent };
+        Ok(git_commit_create(&id, repo, "HEAD", sig, sig, nullptr, "local\n", tree, 1, parents));
+        git_signature_free(sig);
+        git_tree_free(tree);
+        git_commit_free(parent);
+        git_reference_free(head);
+        git_repository_free(repo);
+
+        EXPECT_EQ((Divergence{ 1, 1 }), GitSync::GetDivergence(b));
+    }
+
+    TEST_F(Repos, NoUpstreamMeansNothingToCountOrFetch)
+    {
+        path lone = temp / L"lone";
+        git_repository* repo = nullptr;
+        Ok(git_repository_init(&repo, Utf8(lone).c_str(), 0));
+        git_repository_free(repo);
+        EXPECT_EQ(std::nullopt, GitSync::GetDivergence(lone)); // unborn HEAD
+        EXPECT_FALSE(GitSync::Fetch(lone, {}));
+    }
+
+    TEST_F(Repos, FetchFromAMissingRemoteThrows)
+    {
+        auto [a, b] = TwoClones();
+        std::filesystem::rename(temp / L"remote.git", temp / L"moved.git");
+        EXPECT_THROW(GitSync::Fetch(b, {}), Error);
+        EXPECT_EQ((Divergence{ 0, 0 }), GitSync::GetDivergence(b)); // the last known state stays
+    }
+
+    TEST(SyncStatus, ButtonShowsWhatIsPendingLikeCodeEditors)
+    {
+        EXPECT_EQ(L"Synchronisieren", SyncStatus{}.ButtonText());
+        EXPECT_EQ(L"Synchronisieren", (SyncStatus{ true, 0, Divergence{ 0, 0 } }.ButtonText()));
+        EXPECT_EQ(L"Synchronisieren   3  ↑1  ↓2", (SyncStatus{ true, 3, Divergence{ 1, 2 } }.ButtonText()));
+        EXPECT_EQ(L"Synchronisieren   ↓2", (SyncStatus{ true, 0, Divergence{ 0, 2 } }.ButtonText()));
+        EXPECT_EQ(L"Synchronisieren   1  ↓?", (SyncStatus{ true, 1, Divergence{ 0, 2 }, false }.ButtonText()));
+        EXPECT_EQ(L"Synchronisieren   4", (SyncStatus{ true, 4, std::nullopt }.ButtonText()));
+    }
+
+    TEST(SyncStatus, DetailsSayItInWords)
+    {
+        EXPECT_EQ(L"Alles synchronisiert.", (SyncStatus{ true, 0, Divergence{ 0, 0 } }.Details()));
+        EXPECT_EQ(L"3 geänderte Dateien\n1 Commit zu senden\n2 Commits zu holen",
+            (SyncStatus{ true, 3, Divergence{ 1, 2 } }.Details()));
+        EXPECT_EQ(L"1 geänderte Datei\nStand des Servers unbekannt (Abruf fehlgeschlagen).",
+            (SyncStatus{ true, 1, Divergence{ 0, 0 }, false }.Details()));
+        EXPECT_NE(std::wstring::npos, (SyncStatus{ true, 0, std::nullopt }.Details().find(L"Kein Upstream-Zweig")));
+        EXPECT_NE(std::wstring::npos, SyncStatus{}.Details().find(L"Kein Git-Repository"));
     }
 
     TEST(GitCredentials, TargetsAreGitForWindowsNames)

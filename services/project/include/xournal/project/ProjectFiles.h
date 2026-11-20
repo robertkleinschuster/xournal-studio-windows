@@ -10,6 +10,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace xournal::project::ProjectFiles
 {
@@ -48,4 +49,20 @@ namespace xournal::project::ProjectFiles
     /// `owner`) before an item that does not fit the recycle bin would be deleted for good; declined, nothing is deleted
     /// and this throws (E_ABORT). Call on a thread with a single-threaded apartment (IFileOperation requires it).
     void Recycle(path const& item, HWND owner = nullptr);
+    /// The same for several items in one operation (nothing to do for none).
+    void Recycle(std::vector<path> const& items, HWND owner = nullptr);
+
+    /// Where one item of a Transfer went.
+    struct Transferred
+    {
+        path from;
+        path to;
+    };
+
+    /// Copies or moves files and folders into `folder` with the shell (IFileOperation), as File Explorer's paste does:
+    /// Windows' own progress and name-conflict questions (owned by `owner`), undoable in File Explorer; a copy into the
+    /// item's own folder gets a new name ("Name - Kopie"); moving an item into its own folder does nothing. Returns where
+    /// each item went (the user may have skipped some or chosen other names). Throws on failure; cancelled by the
+    /// user, it returns what was done until then. Single-threaded apartment required.
+    std::vector<Transferred> Transfer(std::vector<path> const& items, path const& folder, bool move, HWND owner = nullptr);
 }

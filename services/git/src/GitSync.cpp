@@ -1,6 +1,7 @@
 #include "xournal/git/GitSync.h"
 
 #include "LibGit2.h"
+#include "Upstream.h"
 
 #include "xournal/base/Log.h"
 #include "xournal/base/Paths.h"
@@ -15,63 +16,6 @@ namespace xournal::git
 
     namespace
     {
-        // What the libgit2 callbacks of one fetch or push report back (exceptions never cross libgit2's C frames).
-        struct Callbacks
-        {
-            CredentialProvider const* credentials = nullptr;
-            std::exception_ptr error;
-            std::string rejected; // a reference the remote refused to update, with its reason
-        };
-
-        int AcquireCredential(git_credential** out, char const* url, char const* userName, unsigned int allowed, void* payload)
-        {
-            auto& callbacks = *static_cast<Callbacks*>(payload);
-            if ((allowed & GIT_CREDENTIAL_USERPASS_PLAINTEXT) == 0)
-            {
-                return GIT_PASSTHROUGH;
-            }
-            try
-            {
-                Credential credential = (*callbacks.credentials)(url, userName ? userName : "");
-                return git_credential_userpass_plaintext_new(out, credential.userName.c_str(), credential.password.c_str());
-            }
-            catch (...)
-            {
-                callbacks.error = std::current_exception();
-                return GIT_EUSER;
-            }
-        }
-
-        int PushUpdateReference(char const* refName, char const* status, void* payload)
-        {
-            if (status)
-            {
-                auto& callbacks = *static_cast<Callbacks*>(payload);
-                callbacks.rejected += std::format("{}{}: {}", callbacks.rejected.empty() ? "" : ", ", refName, status);
-            }
-            return 0;
-        }
-
-        void SetUp(git_remote_callbacks& remoteCallbacks, Callbacks& callbacks)
-        {
-            remoteCallbacks.payload = &callbacks;
-            if (callbacks.credentials && *callbacks.credentials)
-            {
-                remoteCallbacks.credentials = AcquireCredential;
-            }
-        }
-
-        // A libgit2 call that may have failed inside a callback: the callback's own error is the real one.
-        void CheckWithCallbacks(std::string_view step, int result, Callbacks const& callbacks)
-        {
-            if (result < 0 && callbacks.error)
-            {
-                LogException(std::format("git {}", step), callbacks.error);
-                std::rethrow_exception(callbacks.error);
-            }
-            Check(step, result);
-        }
-
         [[noreturn]] void ThrowMessage(std::string const& message)
         {
             LogError(message);
@@ -130,9 +74,13 @@ namespace xournal::git
                 return FileState::Renamed;
             }
             if (s & (GIT_STATUS_WT_MODIFIED | GIT_STATUS_INDEX_MODIFIED | GIT_STATUS_WT_TYPECHANGE |
-                GIT_STATUS_INDEX_TYPECHANGE | GIT_STATUS_WT_DELETED | GIT_STATUS_INDEX_DELETED))
+                GIT_STATUS_INDEX_TYPECHANGE))
             {
                 return FileState::Modified;
+            }
+            if (s & (GIT_STATUS_WT_DELETED | GIT_STATUS_INDEX_DELETED))
+            {
+                return FileState::Deleted;
             }
             return FileState::Unchanged;
         }
@@ -410,85 +358,6 @@ namespace xournal::git
             }
             return files;
         }
-
-        void Push(git_repository* repo, git_remote* remote, Tracking const& t, CredentialProvider const& credentials)
-        {
-            Buffer merge;
-            Check("upstream of branch", git_branch_upstream_merge(&merge.buf, repo, git_reference_name(t.head.get())));
-            std::string spec = std::format("{}:{}", git_reference_name(t.head.get()), merge.Text());
-            char* specs[] = { spec.data() };
-            git_strarray refspecs{ specs, 1 };
-            Callbacks callbacks{ &credentials };
-            git_push_options options = GIT_PUSH_OPTIONS_INIT;
-            SetUp(options.callbacks, callbacks);
-            options.callbacks.push_update_reference = PushUpdateReference;
-            CheckWithCallbacks("push", git_remote_push(remote, &refspecs, &options), callbacks);
-            if (!callbacks.rejected.empty())
-            {
-                ThrowMessage(std::format("git push rejected: {}", callbacks.rejected));
-            }
-        }
-
-        // The file's path in the commit: as given, or with other letter case (the file system and the status ignore
-        // case, git's trees do not). Nothing when it is not there, or when several names differ only in case.
-        std::optional<std::string> CommittedPath(git_repository* repo, git_tree* root, std::string const& relative)
-        {
-            git_tree_entry* exact = nullptr;
-            if (git_tree_entry_bypath(&exact, root, relative.c_str()) == 0)
-            {
-                bool blob = git_tree_entry_type(exact) == GIT_OBJECT_BLOB;
-                git_tree_entry_free(exact);
-                if (blob)
-                {
-                    return relative;
-                }
-            }
-            std::wstring wide = FromUtf8(relative);
-            std::vector<std::wstring_view> parts = Split(wide, L'/');
-            std::vector<Tree> trees; // keeps the subtrees the entries belong to
-            git_tree* current = root;
-            std::string committed;
-            for (size_t i = 0; i < parts.size(); i++)
-            {
-                git_tree_entry const* match = nullptr;
-                size_t matches = 0;
-                for (size_t e = 0, n = git_tree_entrycount(current); e < n; e++)
-                {
-                    git_tree_entry const* entry = git_tree_entry_byindex(current, e);
-                    std::wstring name = FromUtf8(git_tree_entry_name(entry));
-                    if (name == parts[i])
-                    {
-                        match = entry;
-                        matches = 1;
-                        break;
-                    }
-                    if (EqualsIgnoreCase(name, parts[i]))
-                    {
-                        match = entry;
-                        matches++;
-                    }
-                }
-                if (!match || matches != 1)
-                {
-                    return std::nullopt; // never guess which content is meant
-                }
-                committed += (committed.empty() ? "" : "/") + std::string(git_tree_entry_name(match));
-                git_object_t type = git_tree_entry_type(match);
-                if (i + 1 == parts.size())
-                {
-                    return type == GIT_OBJECT_BLOB ? std::optional(committed) : std::nullopt;
-                }
-                if (type != GIT_OBJECT_TREE)
-                {
-                    return std::nullopt;
-                }
-                git_tree* child = nullptr;
-                Check("look up tree", git_tree_lookup(&child, repo, git_tree_entry_id(match)));
-                trees.emplace_back(child);
-                current = child;
-            }
-            return std::nullopt;
-        }
     }
 
     SyncConflict::SyncConflict(std::string const& message) : Error(message, E_ABORT) {}
@@ -558,7 +427,8 @@ namespace xournal::git
         std::wstring top = WithoutTrailingSeparator(Paths::Full(root).native());
         for (auto const& [file, fileState] : status)
         {
-            FileState state = fileState == FileState::Renamed ? FileState::Modified : fileState; // folders: modified > new
+            // Folders: modified > new; a rename or deletion in them shows as modified.
+            FileState state = fileState == FileState::Renamed || fileState == FileState::Deleted ? FileState::Modified : fileState;
             for (path dir = path(file).parent_path();
                 dir.native().size() > top.size() && StartsWithIgnoreCase(dir.native(), top);
                 dir = dir.parent_path())
@@ -575,6 +445,7 @@ namespace xournal::git
 
     SyncResult GitSync::Sync(path const& root, CredentialProvider const& credentials, std::wstring const& machineName, Moment now)
     {
+        std::lock_guard network(upstream::NetworkLock());
         Library library;
         Repository repo = Open(root.native());
         Track(repo.get()); // no upstream branch: nothing is committed
@@ -588,17 +459,8 @@ namespace xournal::git
             result.committed = true;
         }
 
-        Buffer remoteName;
-        Check("remote of upstream", git_branch_upstream_remote(&remoteName.buf, repo.get(), git_reference_name(Head(repo.get()).get())));
-        git_remote* rawRemote = nullptr;
-        Check("look up remote", git_remote_lookup(&rawRemote, repo.get(), remoteName.Text().c_str()));
-        Remote remote(rawRemote);
-        {
-            Callbacks callbacks{ &credentials };
-            git_fetch_options options = GIT_FETCH_OPTIONS_INIT;
-            SetUp(options.callbacks, callbacks);
-            CheckWithCallbacks("fetch", git_remote_fetch(remote.get(), nullptr, &options, nullptr), callbacks);
-        }
+        Remote remote = upstream::RemoteOf(repo.get(), Head(repo.get()).get());
+        upstream::Fetch(remote.get(), credentials);
 
         Tracking tracking = Track(repo.get());
         git_oid before = tracking.local;
@@ -618,34 +480,9 @@ namespace xournal::git
         }
         if (tracking.ahead > 0)
         {
-            Push(repo.get(), remote.get(), tracking, credentials);
+            upstream::Push(repo.get(), remote.get(), tracking.head.get(), credentials);
             result.pushed = true;
         }
         return result;
-    }
-
-    void GitSync::Discard(path const& root, path const& file)
-    {
-        Library library;
-        Repository repo = Open(root.native());
-        std::string relative = ToUtf8(Paths::WithForwardSlashes(Paths::Relative(Workdir(repo.get()), file)));
-        git_oid headId{};
-        if (git_reference_name_to_id(&headId, repo.get(), "HEAD") < 0)
-        {
-            ThrowMessage("Das Repository hat noch keinen Commit.");
-        }
-        Commit head = LookupCommit(repo.get(), &headId);
-        Tree tree = TreeOf(head.get());
-        std::optional<std::string> committed = CommittedPath(repo.get(), tree.get(), relative);
-        if (!committed)
-        {
-            ThrowMessage(std::format("„{}“ ist im letzten Commit nicht enthalten.", relative));
-        }
-        char* paths[] = { committed->data() };
-        git_checkout_options checkout = GIT_CHECKOUT_OPTIONS_INIT;
-        checkout.checkout_strategy = GIT_CHECKOUT_FORCE | GIT_CHECKOUT_DISABLE_PATHSPEC_MATCH;
-        checkout.paths = { paths, 1 };
-        Check(std::format("discard {}", relative),
-            git_checkout_tree(repo.get(), reinterpret_cast<git_object const*>(head.get()), &checkout));
     }
 }

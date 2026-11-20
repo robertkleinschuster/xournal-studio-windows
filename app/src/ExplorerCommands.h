@@ -1,8 +1,9 @@
 #pragma once
 
-// Carries out what the explorer asks for - open, new document/folder, rename, delete, discard changes, show in File
-// Explorer, copy as path - taking care of the open document when it is affected (the leave question before it is left;
-// reopened from its new place after a rename; left before its file is deleted or given its committed content back).
+// Carries out what the explorer asks for - open, new document/folder, rename, delete, discard changes, cut/copy/paste,
+// show in File Explorer, copy as path - taking care of the open document when it is affected (the leave question before
+// it is left; reopened from its new place after a rename; following its files when they are moved; left before its
+// file is deleted or given its committed content back).
 // Each command acts on exactly the item it was given. Nothing that changes files runs during a sync.
 
 #include "DocumentSession.h"
@@ -45,7 +46,9 @@ namespace xournal::app
         void NewFolder(std::filesystem::path const& folder);
         void Rename(std::filesystem::path const& item, bool isFolder, std::wstring const& edited);
         void Delete(std::filesystem::path const& item, bool isFolder);
-        void Discard(std::filesystem::path const& file);
+        void Discard(std::filesystem::path const& item);
+        void PutOnClipboard(std::filesystem::path const& item, bool move);
+        void Paste(std::filesystem::path const& folder);
         void ShowInExplorer(std::filesystem::path const& item);
         void CopyPath(std::filesystem::path const& item);
         std::optional<std::wstring> NameError(std::filesystem::path const& folder, std::wstring const& name,

@@ -193,6 +193,19 @@ code). In short: `base ← model ← io ← pdf, pdftext, search, import, servic
 - Git (libgit2): sign-in = the credential Git Credential Manager / wincred stores in the Windows Credential Manager
   (generic `git:https://host`, GCM as UTF-8, wincred as UTF-16); the app never asks for credentials itself. Sync =
   commit all, fetch, rebase or fast-forward, push; a conflict is aborted.
+- **Sync button status** (user, 2026-11-20, like VS Code's sync item): "Synchronisieren   3  ↑1  ↓2" = changed files
+  (what a sync commits), commits to push, commits to pull as of the last fetch; tooltip in words. Counted with every
+  explorer refresh; a background fetch (remote-tracking refs only) at start, on folder change and on window activation
+  at most every 5 minutes (time check, no timer); a sync counts as a fetch; a failed fetch is logged and shows "↓?".
+- **Explorer git** (user, 2026-11-20, like IDEs): deleted files of the last commit stay in the tree, red and struck
+  through; Änderungen verwerfen on a file or folder: tracked files back from HEAD (deleted ones restored), new files to
+  the recycle bin, after a question naming the files. Colors only, no status letters (a TreeView shows none without
+  drawing the items itself).
+- **Cut/copy/paste of files** in the tree (user, 2026-11-20; no drag & drop): CF_HDROP + "Preferred DropEffect" on the
+  real clipboard (interoperates with File Explorer), copy/move with `IFileOperation` (the shell's conflict UI, undo).
+  Moving the open document keeps it open: `MoveFiles` points it (and its PDF/pictures if moved) to the new place and
+  marks it changed, so saving writes the PDF reference from there. Closed .xopp files moved away from a PDF they refer
+  to relatively keep the old reference (as with File Explorer; the loader then looks next to the .xopp).
 - Tasks: only `<project folder>/todo.txt`; no reminders, no date words in quick add. Shown with comctl32 in its
   standard look (user, 2026-11-20: "nutze da die win32 komponenten passender"): a report-view ListView with column
   headers, check boxes, groups Überfällig / Offen / Erledigt, info tips and in-place editing; the form above it in
@@ -220,7 +233,8 @@ code). In short: `base ← model ← io ← pdf, pdftext, search, import, servic
   `%TEMP%\xournal-native-sandbox-<Test>\out` (screenshots, transcript, logs). In-sandbox scripts dot-source
   `C:\sbx\TestKit.ps1`; comctl32 controls and menus are found with InkPages' `uiaprobe.exe` (pass it with `-Extra`).
   Tests: `InkRoundTripTest`, `DocumentFlowsTest`, `PagesFlowTest`, `PagesPaneTest`, `TextToolTest`, `ClipboardTest`, `TasksTest`,
-  `RecoveryTest`, `ExplorerTest` (+ `New-TestRepository.ps1`), `MsiTest` (the installer). Inside the sandbox:
+  `RecoveryTest`, `ExplorerTest` (+ `New-TestRepository.ps1`: a bare upstream `remote.git` two commits ahead and one local commit -
+  the sync button's counts; restore, cut/copy/paste), `MsiTest` (the installer). Inside the sandbox:
   PowerShell 5.1 (Add-Type = C# 5), 1514x900 at 144 DPI; synthetic pen input must hover ~100 ms before a press on the
   selection, as a real pen does. Never name a function `Erase` in a test (PowerShell alias); write scripts with the
   Write tool (shell heredocs turned `\t` in paths into tabs).

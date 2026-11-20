@@ -16,6 +16,7 @@ namespace xournal::project
         std::filesystem::path path;
         bool isFolder = false;
         std::vector<ProjectEntry> children; // folders first, then files, each in NameOrder
+        bool missing = false;               // not on disk (AddMissing: a deleted file git can restore, or its folder)
 
         std::wstring Name() const { return path.filename().native(); }
     };
@@ -30,5 +31,10 @@ namespace xournal::project
         /// The folder and everything below it. A folder that cannot be read (access denied, gone) is logged and shown
         /// empty.
         ProjectEntry Read(std::filesystem::path const& folder);
+
+        /// Adds files that are not on disk (deleted files of the last commit) at their place below `root`, marked
+        /// missing, with the folders on the way that are gone too; files outside `root` or already listed are left
+        /// out. Keeps the order of Read.
+        void AddMissing(ProjectEntry& root, std::vector<std::filesystem::path> const& files);
     }
 }

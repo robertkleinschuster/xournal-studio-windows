@@ -88,6 +88,22 @@ namespace xournal::app
             ThrowLastError("CreateWindowEx(sync button)");
         }
         UseMessageFont(syncButton);
+        syncTip = CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASSW, nullptr, WS_POPUP | TTS_ALWAYSTIP | TTS_NOPREFIX,
+            CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, window, nullptr, instance, nullptr);
+        if (!syncTip)
+        {
+            ThrowLastError("CreateWindowEx(sync tooltip)");
+        }
+        TTTOOLINFOW tool{ sizeof(tool) };
+        tool.uFlags = TTF_IDISHWND | TTF_SUBCLASS;
+        tool.hwnd = window;
+        tool.uId = reinterpret_cast<UINT_PTR>(syncButton);
+        tool.lpszText = const_cast<wchar_t*>(L"Synchronisieren");
+        if (!SendMessageW(syncTip, TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&tool)))
+        {
+            ThrowLastError("TTM_ADDTOOL(sync button)");
+        }
+        SendMessageW(syncTip, TTM_SETMAXTIPWIDTH, 0, MulDiv(320, static_cast<int>(GetDpiForWindow(window)), 96)); // lines
         tasks = std::make_unique<TasksPane>(window, std::move(messages));
         pagesContent = Placeholder(window, L"Seitenübersicht folgt.");
         UseMessageFont(pagesContent);
@@ -186,10 +202,30 @@ namespace xournal::app
         SetWindowPos(syncButton, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
     }
 
-    void SidePane::SetSyncing(bool syncing)
+    void SidePane::SetSyncing(bool value)
     {
-        SetWindowTextW(syncButton, syncing ? L"Synchronisiert …" : L"Synchronisieren");
+        syncing = value;
+        SetWindowTextW(syncButton, syncing ? L"Synchronisiert …" : syncText.c_str());
         EnableWindow(syncButton, !syncing);
+    }
+
+    void SidePane::SetSyncStatus(std::wstring text, std::wstring const& details)
+    {
+        syncText = std::move(text);
+        if (!syncing)
+        {
+            SetWindowTextW(syncButton, syncText.c_str());
+        }
+        TTTOOLINFOW tool{ sizeof(tool) };
+        tool.hwnd = window;
+        tool.uId = reinterpret_cast<UINT_PTR>(syncButton);
+        std::wstring lines; // the tooltip breaks lines at "\r\n"
+        for (wchar_t c : details)
+        {
+            lines += c == L'\n' ? std::wstring(L"\r\n") : std::wstring(1, c);
+        }
+        tool.lpszText = lines.data(); // copied by the tooltip
+        SendMessageW(syncTip, TTM_UPDATETIPTEXTW, 0, reinterpret_cast<LPARAM>(&tool));
     }
 
     LRESULT SidePane::Handle(UINT message, WPARAM wp, LPARAM lp)

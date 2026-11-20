@@ -30,9 +30,22 @@ namespace xournal::git
         Modified,
         /// Shown as modified, but its path is new (a rename): there is no committed content to go back to.
         Renamed,
+        /// In the last commit, but deleted (on disk or in the index): it can be restored. Folders show it as modified.
+        Deleted,
     };
 
     using StatusMap = std::map<std::wstring, FileState, LessIgnoreCase>;
+
+    /// What "Änderungen verwerfen" does for a file or folder (full paths, git's letter case): files of the last commit get
+    /// its content back (modified ones) or come back (deleted ones); new files - not in the last commit - have nothing
+    /// to go back to and go to the recycle bin (the app's part; Discard takes them out of the index only).
+    struct DiscardPlan
+    {
+        std::vector<path> restore;
+        std::vector<path> remove;
+
+        bool Empty() const { return restore.empty() && remove.empty(); }
+    };
 
     /// A user name and password (or token) for an HTTPS remote.
     struct Credential
@@ -62,6 +75,15 @@ namespace xournal::git
         bool pushed = false;
     };
 
+    /// How the branch and its upstream branch differ, as of the last fetch: commits to push and commits to pull.
+    struct Divergence
+    {
+        size_t ahead = 0;
+        size_t behind = 0;
+
+        bool operator==(Divergence const&) const = default;
+    };
+
     /// The rebase onto the remote's commits conflicted and was aborted (the local commit stays). E_ABORT.
     class SyncConflict : public Error
     {
@@ -74,8 +96,8 @@ namespace xournal::git
         /// The working directory of the repository containing `p` (without a trailing separator), or nothing.
         std::optional<path> FindRoot(path const& p);
 
-        /// New and modified (also deleted, renamed) files of the repository by full path. Deleted files are not shown in
-        /// the explorer, but they mark their folders as modified (WithFolders).
+        /// New, modified, renamed and deleted files of the repository by full path. The explorer shows deleted files at
+        /// their place (to restore them); they mark their folders as modified (WithFolders).
         StatusMap GetStatus(path const& root);
 
         /// Adds the folders below `root` that contain changes: modified when anything in them is modified, renamed or
@@ -87,10 +109,23 @@ namespace xournal::git
         /// empty (remotes that need no sign-in).
         SyncResult Sync(path const& root, CredentialProvider const& credentials, std::wstring const& machineName, Moment now);
 
-        /// Discards the local changes of one file: it gets its content of the last commit (HEAD) back, in the index too
-        /// (git checkout HEAD -- file). The committed path is found ignoring case like Windows, but never guessed among
-        /// several names that differ only in case. Throws when the file is not in the last commit (a new file has
-        /// nothing to go back to).
-        void Discard(path const& root, path const& file);
+        /// Commits HEAD's branch has that its upstream branch has not (ahead) and the other way round (behind), from the
+        /// local references (no network: "behind" is as of the last fetch). Nothing when HEAD is unborn, detached or has
+        /// no upstream branch.
+        std::optional<Divergence> GetDivergence(path const& root);
+
+        /// Fetches the remote of HEAD's upstream branch: only the remote-tracking references change, never the working
+        /// tree, the index or a local branch. False (nothing fetched) when there is no upstream branch. A fetch and a sync
+        /// of this process never run at the same time (the later one waits).
+        bool Fetch(path const& root, CredentialProvider const& credentials);
+
+        /// What discarding the changes of `item` - a file, or a folder with everything in it - would do (ignoring case
+        /// like Windows). Empty when it has no changes.
+        DiscardPlan PlanDiscard(path const& root, path const& item);
+
+        /// Carries out the git part of a plan: the `restore` files get their content of the last commit (HEAD) back, in
+        /// the index too (git checkout HEAD -- files; deleted ones come back); the `remove` files are taken out of the
+        /// index if they were added there (their files stay - recycling them is the caller's).
+        void Discard(path const& root, DiscardPlan const& plan);
     }
 }

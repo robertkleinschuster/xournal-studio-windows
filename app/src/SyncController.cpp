@@ -144,6 +144,7 @@ namespace xournal::app
             UiQueue::Post("sync finished", [this, result, error]
             {
                 SetSyncing(false);
+                if (finished) finished(!error);
                 if (!error)
                 {
                     Finish(*result);

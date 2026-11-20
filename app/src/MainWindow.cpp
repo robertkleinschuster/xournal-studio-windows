@@ -342,9 +342,10 @@ namespace xournal::app
         bool selection = surface->HasSelection();
         menu.Enable(CmdUndo, surface->CanUndo());
         menu.Enable(CmdRedo, surface->CanRedo());
+        bool tree = pane->Explorer().HasFocus(); // Strg+X/C, Entf act on the tree's files then
         for (int command : { CmdCut, CmdCopy, CmdDuplicate, CmdDelete })
         {
-            menu.Enable(command, selection);
+            menu.Enable(command, selection || (tree && command != CmdDuplicate));
         }
         menu.Enable(CmdSync, !sync->IsSyncing());
         menu.Enable(CmdMovePageUp, pageCommands->CanMoveCurrent(-1));
@@ -369,11 +370,18 @@ namespace xournal::app
         auto messages = [this](std::wstring const& text, ToastKind kind) { Message(text, kind); };
         sync = std::make_unique<SyncController>(window, *session, messages);
         sync->stateChanged = [this] { OnSyncStateChanged(); };
+        sync->finished = [this](bool succeeded) { remoteFetch->SyncEnded(succeeded); };
+        remoteFetch = std::make_unique<RemoteFetch>();
+        remoteFetch->fetched = [this] { projectExplorer->Refresh(); }; // the fetch wrote only inside .git (not watched)
         session->refusedWhileSyncing = [this](std::wstring const& what) { return sync->RefusedWhileSyncing(what); };
         session->saveDeferredWhileSyncing = [this] { return sync->DeferSave(); };
 
         projectExplorer = std::make_unique<ProjectExplorer>(pane->Explorer());
-        projectExplorer->refreshed = [this] { pane->Tasks().Reload(); };
+        projectExplorer->refreshed = [this]
+        {
+            pane->Tasks().Reload();
+            UpdateSyncButton();
+        };
         explorerCommands = std::make_unique<ExplorerCommands>(window, *session, *sync, *projectExplorer, pane->Explorer(), messages);
         explorerCommands->focusDocument = [this] { SetFocus(surface->Window()); };
         explorerCommands->scrollToPage = [this](int page) { surface->ScrollToPage(page); };
@@ -399,6 +407,14 @@ namespace xournal::app
     {
         projectExplorer->SetFolder(folder);
         pane->Tasks().SetFolder(folder);
+        remoteFetch->SetFolder(folder);
+    }
+
+    void MainWindow::UpdateSyncButton()
+    {
+        git::SyncStatus status = projectExplorer->SyncStatus();
+        status.remoteKnown = remoteFetch->RemoteKnown();
+        pane->SetSyncStatus(status.ButtonText(), status.Details());
     }
 
     void MainWindow::OnSyncStateChanged()
@@ -432,9 +448,19 @@ namespace xournal::app
         case CmdExit: PostMessageW(window, WM_CLOSE, 0, 0); break;
         case CmdUndo: surface->Undo(); break;
         case CmdRedo: surface->Redo(); break;
-        case CmdCut: surface->Cut(); break;
-        case CmdCopy: surface->Copy(); break;
-        case CmdPaste: surface->Paste(); break;
+        // Strg+X/C/V in the explorer tree are its files'.
+        case CmdCut:
+            if (pane->Explorer().HasFocus()) pane->Explorer().RequestForSelection(ExplorerCommand::Cut);
+            else surface->Cut();
+            break;
+        case CmdCopy:
+            if (pane->Explorer().HasFocus()) pane->Explorer().RequestForSelection(ExplorerCommand::Copy);
+            else surface->Copy();
+            break;
+        case CmdPaste:
+            if (pane->Explorer().HasFocus()) pane->Explorer().RequestForSelection(ExplorerCommand::Paste);
+            else surface->Paste();
+            break;
         case CmdDuplicate: surface->Duplicate(); break;
         case CmdDelete:
             if (pane->Explorer().HasFocus()) pane->Explorer().RequestForSelection(ExplorerCommand::Delete); // Entf in the tree
@@ -519,6 +545,7 @@ namespace xournal::app
             else if (projectExplorer)
             {
                 projectExplorer->Refresh(); // files may have changed in another app
+                if (remoteFetch) remoteFetch->FetchIfDue(); // and the server (at most every few minutes)
             }
             break; // and the default handling (focus)
         case WM_INITMENUPOPUP:
@@ -537,6 +564,7 @@ namespace xournal::app
             // The parts go before the window's children do (the surface's ink thread hands its last pages back).
             recovery.reset();
             explorerCommands.reset();
+            remoteFetch.reset();
             projectExplorer.reset();
             sync.reset();
             // The feature classes that hold the surface go before it (the view takes its callbacks back).

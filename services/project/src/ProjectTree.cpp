@@ -124,4 +124,46 @@ namespace xournal::project
     {
         return { folder, true, ReadChildren(folder) };
     }
+
+    void ProjectTree::AddMissing(ProjectEntry& root, std::vector<std::filesystem::path> const& files)
+    {
+        auto before = [](ProjectEntry const& a, ProjectEntry const& b)
+        {
+            return a.isFolder != b.isFolder ? a.isFolder : CompareNames(a.Name(), b.Name()) < 0;
+        };
+        for (auto const& file : files)
+        {
+            // Below the root, case ignored like the file system (git's and the settings' spelling may differ).
+            std::wstring base = root.path.native();
+            while (!base.empty() && (base.back() == L'\\' || base.back() == L'/'))
+            {
+                base.pop_back();
+            }
+            std::wstring const& full = file.native();
+            if (full.size() <= base.size() + 1 || !StartsWithIgnoreCase(full, base) || full[base.size()] != L'\\')
+            {
+                continue;
+            }
+            std::filesystem::path relative = full.substr(base.size() + 1);
+            ProjectEntry* folder = &root;
+            std::filesystem::path at = root.path;
+            std::vector<std::filesystem::path> parts(relative.begin(), relative.end());
+            for (size_t i = 0; i < parts.size(); i++)
+            {
+                at /= parts[i];
+                bool isFolder = i + 1 < parts.size();
+                auto& children = folder->children;
+                auto found = std::ranges::find_if(children, [&](ProjectEntry const& e)
+                {
+                    return e.isFolder == isFolder && EqualsIgnoreCase(e.Name(), parts[i].native());
+                });
+                if (found == children.end())
+                {
+                    ProjectEntry entry{ at, isFolder, {}, true };
+                    found = children.insert(std::ranges::upper_bound(children, entry, before), std::move(entry));
+                }
+                folder = &*found;
+            }
+        }
+    }
 }

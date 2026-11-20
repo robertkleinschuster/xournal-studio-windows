@@ -3,6 +3,8 @@
 #include "TestSupport.h"
 
 #include "xournal/base/Error.h"
+#include "xournal/base/Paths.h"
+#include "xournal/project/FileClipboard.h"
 #include "xournal/project/FolderWatcher.h"
 #include "xournal/project/ProjectFiles.h"
 #include "xournal/project/ProjectTree.h"
@@ -12,6 +14,7 @@
 #include <windows.h>
 
 #include <atomic>
+#include <cstring>
 #include <chrono>
 #include <thread>
 
@@ -83,6 +86,72 @@ namespace xournal::tests
         EXPECT_TRUE(ue.children[0].isFolder);
         EXPECT_TRUE(ue.children[0].children.empty());
         EXPECT_TRUE(root.children[1].isFolder);
+    }
+
+    TEST(ProjectTree, DeletedFilesAreAddedAtTheirPlace)
+    {
+        TempFolder temp;
+        Touch(temp, L"UE/blatt1.xopp");
+        Touch(temp, L"UE/blatt3.xopp");
+        ProjectEntry root = ProjectTree::Read(temp.Path());
+
+        std::wstring upper = temp.Path().native();
+        for (wchar_t& c : upper) c = static_cast<wchar_t>(towupper(c)); // git may spell the root otherwise
+        ProjectTree::AddMissing(root, { temp / L"UE" / L"blatt2.xopp", path(upper) / L"UE" / L"Alt" / L"weg.pdf",
+            temp / L"UE" / L"blatt1.xopp", temp.Path().parent_path() / L"outside.xopp", temp / L"top.xopp" });
+
+        EXPECT_EQ((std::vector<std::wstring>{ L"UE", L"top.xopp" }), Names(root.children));
+        EXPECT_TRUE(root.children[1].missing);
+        ProjectEntry const& ue = root.children[0];
+        EXPECT_FALSE(ue.missing);
+        EXPECT_EQ((std::vector<std::wstring>{ L"Alt", L"blatt1.xopp", L"blatt2.xopp", L"blatt3.xopp" }), Names(ue.children));
+        EXPECT_TRUE(ue.children[0].isFolder);
+        EXPECT_TRUE(ue.children[0].missing);
+        EXPECT_EQ((std::vector<std::wstring>{ L"weg.pdf" }), Names(ue.children[0].children));
+        EXPECT_FALSE(ue.children[1].missing); // on disk: listed once
+        EXPECT_TRUE(ue.children[2].missing);
+    }
+
+    TEST(FileClipboard, DropBlockIsWhatFileExplorerReads)
+    {
+        std::vector<path> files{ L"C:\\Uni\\GET\\blatt1.xopp", L"C:\\Uni\\Übung 2" };
+        std::vector<std::uint8_t> block = FileClipboard::DropBlock(files);
+        HGLOBAL memory = GlobalAlloc(GMEM_MOVEABLE, block.size());
+        ASSERT_NE(nullptr, memory);
+        std::memcpy(GlobalLock(memory), block.data(), block.size());
+        GlobalUnlock(memory);
+
+        EXPECT_EQ(files, FileClipboard::FilesOf(static_cast<HDROP>(memory)));
+        GlobalFree(memory);
+    }
+
+    TEST(ProjectFiles, TransferCopiesAndMovesLikeFileExplorer)
+    {
+        TempFolder temp;
+        Touch(temp, L"UE/blatt1.xopp");
+        Touch(temp, L"UE/Teil/a.pdf");
+        std::filesystem::create_directories(temp / L"Ziel");
+
+        auto copied = ProjectFiles::Transfer({ temp / L"UE" / L"blatt1.xopp", temp / L"UE" / L"Teil" }, temp / L"Ziel", false);
+        ASSERT_EQ(2u, copied.size());
+        EXPECT_TRUE(std::filesystem::exists(temp / L"Ziel" / L"blatt1.xopp"));
+        EXPECT_TRUE(std::filesystem::exists(temp / L"Ziel" / L"Teil" / L"a.pdf"));
+        EXPECT_TRUE(std::filesystem::exists(temp / L"UE" / L"blatt1.xopp")); // a copy leaves the original
+
+        // A copy beside the original gets a new name; nothing is overwritten.
+        auto beside = ProjectFiles::Transfer({ temp / L"UE" / L"blatt1.xopp" }, temp / L"UE", false);
+        ASSERT_EQ(1u, beside.size());
+        EXPECT_TRUE(Paths::Same(temp / L"UE" / L"blatt1.xopp", beside[0].from));
+        EXPECT_FALSE(Paths::Same(beside[0].from, beside[0].to));
+        EXPECT_TRUE(std::filesystem::exists(beside[0].to));
+
+        auto moved = ProjectFiles::Transfer({ temp / L"UE" / L"Teil" }, temp.Path(), true);
+        ASSERT_EQ(1u, moved.size());
+        EXPECT_TRUE(Paths::Same(temp / L"Teil", moved[0].to));
+        EXPECT_TRUE(std::filesystem::exists(temp / L"Teil" / L"a.pdf"));
+        EXPECT_FALSE(std::filesystem::exists(temp / L"UE" / L"Teil"));
+        // Moving into the folder it is in does nothing.
+        EXPECT_TRUE(ProjectFiles::Transfer({ temp / L"Teil" }, temp.Path(), true).empty());
     }
 
     TEST(ProjectTree, NamesAreSortedAsFileExplorerSortsThem)
