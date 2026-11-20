@@ -11,6 +11,7 @@
 #include <fpdfview.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <format>
 
 namespace xournal::pdftext
@@ -30,10 +31,10 @@ namespace xournal::pdftext
         constexpr int ContextChars = 40;
 
         // A loaded page and its text page, closed on every exit. Call with the PDFium lock held.
-        class OpenPage
+        class LoadedPage
         {
         public:
-            OpenPage(FPDF_DOCUMENT doc, int index)
+            LoadedPage(FPDF_DOCUMENT doc, int index)
             {
                 page = FPDF_LoadPage(doc, index);
                 if (!page) ThrowInvalidData(std::format("PDF text: page {}: {}", index + 1, detail::LastPdfiumError()));
@@ -54,13 +55,13 @@ namespace xournal::pdftext
                 pdf::PdfBox visible{ box.left, box.bottom, box.right, box.top };
                 frame = pdf::PageFrame::Of(visible, visible, static_cast<long long>(FPDFPage_GetRotation(page)) * 90);
             }
-            ~OpenPage()
+            ~LoadedPage()
             {
                 FPDFText_ClosePage(text);
                 FPDF_ClosePage(page);
             }
-            OpenPage(OpenPage const&) = delete;
-            OpenPage& operator=(OpenPage const&) = delete;
+            LoadedPage(LoadedPage const&) = delete;
+            LoadedPage& operator=(LoadedPage const&) = delete;
 
             FPDF_PAGE page = nullptr;
             FPDF_TEXTPAGE text = nullptr;
@@ -158,7 +159,7 @@ namespace xournal::pdftext
     {
         if (page < 0 || page >= impl->pages) ThrowInvalidData(std::format("PDF text: page {} of {}", page + 1, impl->pages));
         std::lock_guard lock(PdfiumLock());
-        OpenPage open(impl->doc, page);
+        LoadedPage open(impl->doc, page);
         return open.frame.Shown();
     }
 
@@ -166,7 +167,7 @@ namespace xournal::pdftext
     {
         if (page < 0 || page >= impl->pages) ThrowInvalidData(std::format("PDF text: page {} of {}", page + 1, impl->pages));
         std::lock_guard lock(PdfiumLock());
-        OpenPage open(impl->doc, page);
+        LoadedPage open(impl->doc, page);
         auto units = UnitsOf(open.text);
         PageText result{ std::move(units.text), {} };
         result.boxes.reserve(units.charIndex.size());
@@ -191,7 +192,7 @@ namespace xournal::pdftext
         std::wstring needle(query); // PDFium wants it null-terminated (FPDF_WIDESTRING = UTF-16LE)
         unsigned long flags = (options.matchCase ? FPDF_MATCHCASE : 0) | (options.wholeWord ? FPDF_MATCHWHOLEWORD : 0);
         std::lock_guard lock(PdfiumLock());
-        OpenPage open(impl->doc, page);
+        LoadedPage open(impl->doc, page);
         Units units;
         bool unitsRead = false;
         FPDF_SCHHANDLE search = FPDFText_FindStart(open.text, reinterpret_cast<FPDF_WIDESTRING>(needle.c_str()), flags, 0);
@@ -238,7 +239,7 @@ namespace xournal::pdftext
     struct TextPage::Impl
     {
         std::shared_ptr<void const> document;   // the document (TextDocument::Impl), open while the page is
-        std::unique_ptr<OpenPage> page;                    // closed under the lock (TextPage's destructor)
+        std::unique_ptr<LoadedPage> page;                    // closed under the lock (TextPage's destructor)
     };
 
     namespace
@@ -263,7 +264,7 @@ namespace xournal::pdftext
         auto open = std::make_unique<TextPage::Impl>();
         open->document = impl;
         std::lock_guard lock(PdfiumLock());
-        open->page = std::make_unique<OpenPage>(impl->doc, page);
+        open->page = std::make_unique<LoadedPage>(impl->doc, page);
         return std::make_unique<TextPage>(std::move(open));
     }
 
