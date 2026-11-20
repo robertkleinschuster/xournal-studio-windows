@@ -108,10 +108,16 @@ namespace xournal::app
             if (thumbnails) thumbnails->PagesChanged();
             if (pagesPane) pagesPane->SetCount(view->PageCount());
             if (search) search->PagesChanged();
+            textSelection->Clear();
         };
         // Set before the toolbar: it chains these handlers.
         surface->historyChanged = [this] { if (session) session->NoteEdit(); UpdateTitle(); UpdateCommands(); };
-        surface->selectionChanged = [] {};
+        // The mouse selects the PDF's text (a drag on it, double/triple click); a selection of ink clears it.
+        textSelection = std::make_unique<PdfTextSelection>(window, *view);
+        surface->selectionChanged = [this] { textSelection->Clear(); };
+        surface->mouseClaims = [this](int page, inkpages::PointF point) { return textSelection->TextAt(page, point); };
+        surface->mouseGesture = [this](inkpages::MouseGesture const& gesture) { textSelection->Gesture(gesture); };
+        surface->textEditingChanged = [this](bool) { textSelection->Clear(); };
         clipboard = std::make_unique<SelectionClipboard>(window, *surface, *view);
         surface->copyToClipboard = [this](inkpages::Clip const& clip)
         {
@@ -151,6 +157,7 @@ namespace xournal::app
         {
             settings.toolChoices = choices.Serialize();
             SaveSettings();
+            textSelection->Clear(); // another tool (or its settings)
         };
 
         pane = std::make_unique<SidePane>(window, [this](std::wstring const& text, ToastKind kind) { Message(text, kind); });
@@ -165,8 +172,16 @@ namespace xournal::app
         // The background PDF's outline (Gliederung) and links: a mouse click or finger tap follows a link.
         links = std::make_unique<PdfLinks>(window, *surface, *view);
         outline = std::make_unique<PdfOutline>(*pane, *view, *links);
-        view->pdfLoaded = [this] { outline->Update(); };
-        surface->tapped = [this](int page, inkpages::PointF point, inkpages::PointerKind) { links->Tapped(page, point); };
+        view->pdfLoaded = [this]
+        {
+            outline->Update();
+            textSelection->PdfLoaded();
+        };
+        surface->tapped = [this](int page, inkpages::PointF point, inkpages::PointerKind)
+        {
+            textSelection->Clear(); // a click beside it
+            links->Tapped(page, point);
+        };
         CreateSearch();
         toast = std::make_unique<Toast>(window);
         CreateProjectParts();
@@ -265,6 +280,7 @@ namespace xournal::app
         {
             if (outline) outline->Update(); // the new document's PDF is not loaded yet: the tab goes until it is
             if (search) search->DocumentShown();
+            textSelection->DocumentShown();
             thumbnails->Reset();
             pagesPane->SetCount(view->PageCount());
             pagesPane->Select(surface->PageInView().value_or(0));
@@ -342,13 +358,15 @@ namespace xournal::app
     void MainWindow::UpdateMenu()
     {
         bool selection = surface->HasSelection();
+        bool text = textSelection->HasSelection(); // read-only: copied, never cut or deleted
         menu.Enable(CmdUndo, surface->CanUndo());
         menu.Enable(CmdRedo, surface->CanRedo());
         bool tree = pane->Explorer().HasFocus(); // Strg+X/C, Entf act on the tree's files then
         for (int command : { CmdCut, CmdCopy, CmdDuplicate, CmdDelete })
         {
-            menu.Enable(command, selection || (tree && command != CmdDuplicate));
+            menu.Enable(command, selection || (tree && command != CmdDuplicate) || (text && command == CmdCopy && !tree));
         }
+        menu.Enable(CmdClearSelection, selection || text);
         menu.Enable(CmdSync, !sync->IsSyncing());
         menu.Enable(CmdMovePageUp, pageCommands->CanMoveCurrent(-1));
         menu.Enable(CmdMovePageDown, pageCommands->CanMoveCurrent(1));
@@ -461,6 +479,7 @@ namespace xournal::app
             break;
         case CmdCopy:
             if (pane->Explorer().HasFocus()) pane->Explorer().RequestForSelection(ExplorerCommand::Copy);
+            else if (textSelection->HasSelection()) CopyPdfText();
             else surface->Copy();
             break;
         case CmdPaste:
@@ -473,6 +492,10 @@ namespace xournal::app
             else surface->DeleteSelection();
             break;
         case CmdSelectAll: surface->SelectAll(); break;
+        case CmdClearSelection:
+            surface->ClearSelection();
+            textSelection->Clear();
+            break;
         case CmdTogglePane: SetPaneOpen(!settings.paneOpen); SaveSettings(); break;
         case CmdFind: ShowSearch(); break;
         case CmdFindNext: if (search->Hits().empty()) ShowSearch(); else search->Next(); break;
@@ -483,6 +506,19 @@ namespace xournal::app
         default:
             Log(std::format("command {} is not available yet", command)); // disabled in the menu; an accelerator may still come
             break;
+        }
+    }
+
+    void MainWindow::CopyPdfText()
+    {
+        try
+        {
+            textSelection->Copy();
+        }
+        catch (...)
+        {
+            LogException("clipboard: copy the PDF's text");
+            Message(std::format(L"Kopieren fehlgeschlagen: {}", ErrorText()), ToastKind::Error);
         }
     }
 
@@ -575,6 +611,10 @@ namespace xournal::app
             sync.reset();
             // The feature classes that hold the surface go before it (the view takes its callbacks back).
             surface->tapped = nullptr;
+            surface->mouseClaims = nullptr;
+            surface->mouseGesture = nullptr;
+            surface->selectionChanged = nullptr;
+            surface->textEditingChanged = nullptr;
             view->pdfLoaded = nullptr;
             search.reset();
             searchPane.reset();
@@ -588,6 +628,7 @@ namespace xournal::app
             exportCommand.reset();
             session.reset();
             view.reset();
+            textSelection.reset(); // after the view: its handlers call it
             toolbar.reset();
             surface.reset();
             PostQuitMessage(0);

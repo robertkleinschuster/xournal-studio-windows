@@ -25,6 +25,7 @@ namespace xournal::app
         CmdDuplicate,
         CmdDelete,
         CmdSelectAll,
+        CmdClearSelection,
         CmdFind,
         CmdFindNext,
         CmdFindPrevious,

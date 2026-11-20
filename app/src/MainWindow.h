@@ -16,6 +16,7 @@
 #include "PdfImportCommand.h"
 #include "DocumentSearch.h"
 #include "PdfLinks.h"
+#include "PdfTextSelection.h"
 #include "SearchPane.h"
 #include "SelectionClipboard.h"
 #include "PdfOutline.h"
@@ -75,6 +76,7 @@ namespace xournal::app
         void RememberWindow();
         void SaveSettings();
         void Message(std::wstring const& text, ToastKind kind);
+        void CopyPdfText(); // Strg+C with the PDF's text selected (a failure shown)
         bool Close();
 
         HWND window = nullptr;
@@ -94,6 +96,7 @@ namespace xournal::app
         std::unique_ptr<PageThumbnails> thumbnails;
         std::unique_ptr<PagesPane> pagesPane;
         std::unique_ptr<PdfLinks> links;
+        std::unique_ptr<PdfTextSelection> textSelection;
         std::unique_ptr<PdfOutline> outline;
         std::unique_ptr<DocumentSearch> search;
         std::unique_ptr<SearchPane> searchPane;

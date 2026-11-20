@@ -248,26 +248,34 @@ namespace xournal::app
                 }
             }
         }
-        if (page == highlightPage)
+        if (page == highlight.page)
         {
-            guarded("the search hit", [&] { DrawHighlight(dc); });
+            guarded("the search hit", [&] { DrawMark(dc, highlight); });
+        }
+        if (page == textSelection.page)
+        {
+            guarded("the selected PDF text", [&] { DrawMark(dc, textSelection); });
         }
     }
 
     void PageUnderlay::SetHighlight(int page, std::vector<Rect> rects)
     {
-        highlightPage = page;
-        highlightRects = std::move(rects);
+        highlight = { page, std::move(rects) };
     }
 
-    void PageUnderlay::DrawHighlight(ID2D1DeviceContext* dc)
+    void PageUnderlay::SetTextSelection(int page, std::vector<Rect> rects)
+    {
+        textSelection = { page, std::move(rects) };
+    }
+
+    void PageUnderlay::DrawMark(ID2D1DeviceContext* dc, Mark const& mark)
     {
         // The system's selection color, see-through so the text stays readable (as a text marker over the page).
         COLORREF color = GetSysColor(COLOR_HIGHLIGHT);
         ComPtr<ID2D1SolidColorBrush> brush;
-        Check("CreateSolidColorBrush (search hit)", dc->CreateSolidColorBrush(D2D1::ColorF(GetRValue(color) / 255.0f,
+        Check("CreateSolidColorBrush (mark)", dc->CreateSolidColorBrush(D2D1::ColorF(GetRValue(color) / 255.0f,
             GetGValue(color) / 255.0f, GetBValue(color) / 255.0f, 0.35f), &brush));
-        for (auto const& r : highlightRects)
+        for (auto const& r : mark.rects)
         {
             dc->FillRectangle(D2D1::RectF(static_cast<float>(r.Left()) - 1, static_cast<float>(r.Top()) - 1,
                 static_cast<float>(r.Right()) + 1, static_cast<float>(r.Bottom()) + 1), brush.Get());

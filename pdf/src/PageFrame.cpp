@@ -29,6 +29,19 @@ namespace xournal::pdf
         }
     }
 
+    Point PageFrame::ToUserSpace(Point shown) const
+    {
+        double u = shown.x, v = shown.y; // the unrotated box's point from its top left
+        switch (rotate)
+        {
+        case 90: u = shown.y; v = height - shown.x; break;
+        case 180: u = width - shown.x; v = height - shown.y; break;
+        case 270: u = width - shown.y; v = shown.x; break;
+        default: break;
+        }
+        return { x1 + u, y1 + height - v };
+    }
+
     Rect PageFrame::Area(PdfBox const& r) const
     {
         auto a = FromUserSpace(std::min(r.llx, r.urx), std::min(r.lly, r.ury));

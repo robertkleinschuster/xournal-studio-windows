@@ -30,6 +30,8 @@ namespace xournal::pdf
         Point FromTopLeft(double u, double v) const;
         /// A point in PDF user space on the shown page.
         Point FromUserSpace(double x, double y) const { return FromTopLeft(x - x1, y1 + height - y); }
+        /// A point of the shown page in PDF user space (the inverse of FromUserSpace: hit-testing the PDF's content).
+        Point ToUserSpace(Point shown) const;
         /// A rectangle in PDF user space on the shown page.
         Rect Area(PdfBox const& r) const;
     };

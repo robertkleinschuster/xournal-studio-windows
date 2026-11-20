@@ -46,12 +46,20 @@ namespace xournal::app
 
         /// Marks a search hit on `page` (rectangles in page units) over everything else of the underlay; page -1: none.
         void SetHighlight(int page, std::vector<Rect> rects);
-        int HighlightedPage() const { return highlightPage; }
+        int HighlightedPage() const { return highlight.page; }
+        /// Marks the mouse's selection of the PDF's text the same way (its own mark beside the search hit's).
+        void SetTextSelection(int page, std::vector<Rect> rects);
+        int TextSelectionPage() const { return textSelection.page; }
 
     private:
         void DrawBackground(int page, XoppPage const& content, ID2D1DeviceContext* dc, float pixelsPerUnit);
         void DrawPicture(int page, XmlElementPtr const& picture, ID2D1DeviceContext* dc, float pixelsPerUnit);
-        void DrawHighlight(ID2D1DeviceContext* dc);
+        struct Mark
+        {
+            int page = -1;
+            std::vector<Rect> rects;
+        };
+        static void DrawMark(ID2D1DeviceContext* dc, Mark const& mark);
 
         RenderQueue& queue;
         std::uint64_t generation;
@@ -61,7 +69,7 @@ namespace xournal::app
         std::shared_ptr<PictureBitmaps> bitmaps;
         TextDrawing texts;
         FilePictures const& pictures;
-        int highlightPage = -1;
-        std::vector<Rect> highlightRects;
+        Mark highlight;     // the search hit
+        Mark textSelection; // the PDF's text selected with the mouse
     };
 }

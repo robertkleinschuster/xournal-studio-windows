@@ -98,6 +98,7 @@ namespace xournal::app
             { CmdDelete, L"&Löschen", L"Entf", 0, VK_DELETE },
             {},
             { CmdSelectAll, L"Alles a&uswählen", L"Strg+A", Ctrl, 'A' },
+            { CmdClearSelection, L"Auswahl auf&heben", L"Esc", 0, VK_ESCAPE },
             {},
             { CmdFind, L"&Suchen…", L"Strg+F", Ctrl, 'F' },
             { CmdFindNext, L"&Weitersuchen", L"F3", 0, VK_F3 },

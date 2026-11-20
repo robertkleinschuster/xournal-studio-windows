@@ -17,7 +17,8 @@ a delay-loaded DLL. Licenses: [THIRD-PARTY.md](THIRD-PARTY.md). The earlier C#/W
 - Documents: PDF backgrounds (PDF opened as a new document), all Xournal++ backgrounds, pictures, texts, PDF export,
   pages inserted (blank, from a PDF or another document), moved and deleted, iPad (PencilKit) markup import.
 - Side pane: the project folder (git colors, sync), todo.txt tasks, page thumbnails, the PDF's outline, search
-  (Strg+F: PDF text, texts and handwriting); PDF links follow a mouse click or finger tap.
+  (Strg+F: PDF text, texts and handwriting); PDF links follow a mouse click or finger tap; the mouse selects the PDF's
+  text (drag, double click = word, triple click = line) for Strg+C.
 - Saving only by choice (the leave question), recovery copies of unsaved changes.
 
 ## Build, test, install
@@ -77,7 +78,7 @@ base  <-  model  <-  io  <-  pdf, pdftext, search, import, services/ (project, g
 | `services/tasks` | `XournalTasks` | `TaskFile` (todo.txt line edits, re-read before each change, line endings/encoding/final newline kept, ANSI refused) | io |
 | `services/recovery` | `XournalRecovery` | `Recovery` (copy + info JSON with the writing process' id and start time in `<app folder>\Recovery-native` - apart from the C# app's `Recovery` folder, so neither app sees the other's copies; abandoned = that process is gone; recycle bin under a readable name), `Autosave` (ordered write/delete queue on a worker; the app's UI decides when) | io, project; Windows.Data.Json |
 | `services/settings` | `XournalSettings` | `Settings` (`settings-native.json` with Windows.Data.Json, unknown keys kept; never the C# app's settings.json): window, last file, project folder, pane, done tasks shown, tool choices (InkPages' serialized string), document positions per file | io; Windows.Data.Json |
-| `pdftext` | `XournalPdfText` | PDF text and search (`TextDocument` from the PDF's bytes: `Text(page)` = text + a box per character, `Find`/`FindAll` = hits with one rect per line and a context snippet, case/whole word, cancellable; places in `pdf::PageFrame`'s shown coordinates). PDFium is loaded on first use (`Available()`); a missing or broken `pdfium.dll` is logged and only disables search. Every PDFium call is serialized process-wide. An exe that links it calls `xournal_deploy_pdfium(<target>)` (DLL + `licenses/pdfium` next to it). Measured, 500 pages of text: open 0.4 ms, `Text` 1.3 ms/page, `FindAll` ~0.6 s (1.2 ms/page) - off the UI thread. | pdf; PDFium 158.0.8125.0 (DLL, bblanchon/pdfium-binaries, delay-loaded), delayimp |
+| `pdftext` | `XournalPdfText` | PDF text and search (`TextDocument` from the PDF's bytes: `Text(page)` = text + a box per character, `Find`/`FindAll` = hits with one rect per line and a context snippet, case/whole word, cancellable; `OpenPage` = a `TextPage` kept open for the mouse's selection: PDFium's character at a point, a range's rectangles and text, word and line around a character; places in `pdf::PageFrame`'s shown coordinates). PDFium is loaded on first use (`Available()`); a missing or broken `pdfium.dll` is logged and only disables search. Every PDFium call is serialized process-wide. An exe that links it calls `xournal_deploy_pdfium(<target>)` (DLL + `licenses/pdfium` next to it). Measured, 500 pages of text: open 0.4 ms, `Text` 1.3 ms/page, `FindAll` ~0.6 s (1.2 ms/page) - off the UI thread. | pdf; PDFium 158.0.8125.0 (DLL, bblanchon/pdfium-binaries, delay-loaded), delayimp |
 | `search` | `XournalSearch` | Strg+F over the whole document, no UI: `PrepareSearch` (snapshot, on the ink thread) + `Search` (any thread but an STA; hits page by page, cancellable) over the PDF's text (pdftext), the file's texts (measured on `pdf::TextBoxLayout`, the export's layout) and handwriting recognised by Windows (InkAnalyzer; strokes built with InkStrokeBuilder; `HandwritingCache` keyed by the page's strokes, memory only; `RecognizeAll` warms it in the background). Hits: kind, page, rects in page units (PDF shown coordinates scaled to the page), context. Matching German, the Windows way (`FindNLSStringEx` de-DE: ä = Ä, ß = SS ignoring case; whitespace and line breaks match one space). Measured: recognition ~1-2 s per page of synthetic handwriting (glyph outlines; 234 strokes). | pdftext; DirectWrite, Windows.UI.Input.Inking(.Analysis), NLS |
 | `import` | `XournalImport` | The iPad import (Datei -> PDF mit iPad-Anmerkungen importieren; port of the C# `PdfMarkupImport`, `AppleMarkup`, `PencilKitDrawing`): `Prepare` splits an annotated PDF into the PDF without Apple's markup plus .xopp elements - PencilKit strokes (erased pieces with masks and ranges, transforms, width factors 0.4 pen / 1.2 marker), `/FreeText` as `<text>`, every other shown annotation as a picture; `RenderPictures` renders those with the pdf module's `PdfAreaRenderer` (Windows.Data.Pdf, transparent); `CreateDocument`. Annotations read with qpdf; the NSKeyedArchiver binary plist by `src/BinaryPlist` (no small permissive C++ library: libplist is LGPL, others need Boost). | pdf; protozero 1.8.2 (BSD-2, header-only protobuf decoder), qpdf, crypt32 (base64) |
 | `app` | `XournalStudio` (exe) | The window and its feature classes (see "The app" below): menu, InkPages' writing surface and toolbar, side pane, messages, document session, the ink bridge, the page underlay, PDF export, page commands; the services' panes and controllers | all modules above; InkPages (submodule `external/InkPages`, only its library is built here); comctl32 v6, Direct2D/DirectWrite, Direct3D 11, WIC, Windows.Data.Pdf |
@@ -150,6 +151,12 @@ the window's parts to feature classes:
   `SyncController` syncs; `RemoteFetch` fetches in the background (start, folder change, window activated at most every
   5 minutes; a failure only logged, the button shows "↓?"; a starting sync cancels it through libgit2's progress
   callbacks), so the button can show the commits to pull.
+- `PdfTextSelection`: the mouse selects the background PDF's text (InkPages' `mouseClaims`/`mouseGesture`: a drag that
+  starts on the PDF's text with no ink, picture or text there; a double click = the word, a triple click = the line,
+  dragging on extends), marked in the system's selection color like the search hit (`DocumentView::MarkTextSelection`,
+  its own mark in `PageUnderlay`), copied as CF_UNICODETEXT with Strg+C / Bearbeiten -> Kopieren; read-only, one page.
+  A click beside, Escape (Bearbeiten -> Auswahl aufheben), an ink selection, a tool change, editing a text, a page
+  operation or another document clears it. The PDF's text is read on the thread pool once the PDF is loaded.
 - `PdfExportCommand` (Datei -> Als PDF exportieren with the pdf module), `PageCommands` (Seite einfügen: a graph page of
   the size of the page in view after it; Seite löschen: asked, cannot be undone, the last page stays; Seite nach oben /
   nach unten: one place, the view follows). Page operations keep the ink's undo history (InkPages'
@@ -172,7 +179,7 @@ locally in Windows Sandbox with `Run-AppTest.ps1`, which refuses while a sandbox
 `Global\XournalStudioSandbox`): `InkRoundTripTest` (write, move, undo, erase, save, reload: untouched strokes byte-identical,
 moved ones shifted exactly), `DocumentFlowsTest` (PDF as a new document, the leave question, Save As with an attachment,
 export), `PagesFlowTest` (a text, the pictures, insert and delete a page with undo on another page, the toolbar's
-buttons by `uiaprobe`), `PagesPaneTest`, `PdfNavigationTest`, `TextToolTest`, `ClipboardTest`, `TasksTest`, `RecoveryTest`, `ExplorerTest`, `MsiTest` (the
+buttons by `uiaprobe`), `PagesPaneTest`, `PdfNavigationTest`, `PdfTextSelectTest`, `TextToolTest`, `ClipboardTest`, `TasksTest`, `RecoveryTest`, `ExplorerTest`, `MsiTest` (the
 installer: silent and interactive install, start from the shortcut, upgrade, clean uninstall).
 
 ## Installer

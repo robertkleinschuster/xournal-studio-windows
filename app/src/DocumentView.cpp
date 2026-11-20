@@ -174,6 +174,15 @@ namespace xournal::app
         if (page >= 0 && page != before) surface.InvalidatePage(page);
     }
 
+    void DocumentView::MarkTextSelection(int page, std::vector<Rect> rects)
+    {
+        if (!underlay) return;
+        int before = underlay->TextSelectionPage();
+        underlay->SetTextSelection(page, std::move(rects));
+        if (before >= 0) surface.InvalidatePage(before);
+        if (page >= 0 && page != before) surface.InvalidatePage(page);
+    }
+
     void DocumentView::ReloadPdf()
     {
         auto doc = Document();

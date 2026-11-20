@@ -209,4 +209,60 @@ namespace xournal::tests
                     bytes.size(), doc.PageCount(), ms(t0, t1), ms(t1, t2) / doc.PageCount(), chars, ms(t2, t3), hits, ms(t2, t3) / doc.PageCount());
         EXPECT_EQ(hits, 500u * 40u);
     }
+
+    // The mouse's text selection: a character at a point, word, line, rectangles and text of a range.
+    TEST(PdfText, PageKeptOpenForSelection)
+    {
+        TextDocument doc(SamplePdf());
+        auto all = doc.Text(0);
+        auto page = doc.OpenPage(0);
+        EXPECT_EQ(page->CharCount(), static_cast<int>(all.text.size())); // (BMP only: one unit per character)
+        auto at = static_cast<int>(all.text.find(L"erste") + 2);         // the s of "erste"
+        Rect box = all.boxes[static_cast<size_t>(at)];
+        auto hit = page->CharAt({ box.x + box.width / 2, box.y + box.height / 2 }, 1);
+        ASSERT_TRUE(hit.has_value());
+        EXPECT_EQ(*hit, at);
+        EXPECT_FALSE(page->CharAt({ 500, 400 }, 1).has_value()) << "no text there";
+
+        auto word = page->WordAt(at);
+        EXPECT_EQ(page->Text(word), L"erste");
+        auto line = page->LineAt(at);
+        EXPECT_EQ(page->Text(line), L"Das ist die erste");
+        auto first = static_cast<int>(all.text.find(L"ist"));
+        EXPECT_EQ(page->Text(RangeBetween(at, first)), L"ist die ers") << "either order, both ends included";
+
+        auto rects = page->Rects(word);
+        ASSERT_EQ(rects.size(), 1u);
+        EXPECT_LE(rects[0].x, box.x + 0.5);
+        EXPECT_GE(rects[0].Right(), box.Right() - 0.5);
+        auto across = static_cast<int>(all.text.find(L"zweite"));
+        EXPECT_EQ(page->Rects(RangeBetween(at, across)).size(), 2u) << "one rectangle per line";
+        EXPECT_TRUE(page->Rects({ at, 0 }).empty());
+        EXPECT_THROW(page->Text({ at, 1000 }), Error);
+    }
+
+    TEST(PdfText, CharAtOnARotatedCroppedPage)
+    {
+        TextDocument doc(SamplePdf());
+        auto all = doc.Text(1);
+        auto at = all.text.find(L'd');
+        ASSERT_NE(at, std::wstring::npos);
+        Rect box = all.boxes[at];
+        auto page = doc.OpenPage(1);
+        auto hit = page->CharAt({ box.x + box.width / 2, box.y + box.height / 2 }, 1);
+        ASSERT_TRUE(hit.has_value());
+        EXPECT_EQ(*hit, static_cast<int>(at));
+        EXPECT_EQ(page->Text(page->WordAt(*hit)), L"Gedreht");
+    }
+
+    TEST(PdfText, AnOpenPageKeepsItsDocument)
+    {
+        std::unique_ptr<TextPage> page;
+        {
+            TextDocument doc(SamplePdf());
+            page = doc.OpenPage(0);
+        }
+        EXPECT_GT(page->CharCount(), 0) << "the document closes with its last page";
+        EXPECT_THROW(TextDocument(SamplePdf()).OpenPage(3), Error);
+    }
 }

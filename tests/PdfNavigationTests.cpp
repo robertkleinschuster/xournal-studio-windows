@@ -115,6 +115,18 @@ namespace xournal::tests
         EXPECT_EQ(plain.Area(PdfBox{ 100, 742, 200, 792 }), (Rect{ 100, 50, 100, 50 }));
     }
 
+    TEST(PdfPageFrame, ToUserSpaceIsTheInverseAtEveryRotation)
+    {
+        for (long long rotate : { 0, 90, 180, 270 })
+        {
+            auto frame = PageFrame::Of(PdfBox{ 36, 36, 559, 806 }, PdfBox{ 0, 0, 595, 842 }, rotate);
+            Point user{ 100, 700 };
+            Point back = frame.ToUserSpace(frame.FromUserSpace(user.x, user.y));
+            EXPECT_NEAR(back.x, user.x, 1e-9) << rotate;
+            EXPECT_NEAR(back.y, user.y, 1e-9) << rotate;
+        }
+    }
+
     TEST(PdfNavigation, NestedOutlineWithNamedDestinations)
     {
         NavigationPdf doc;

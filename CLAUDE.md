@@ -247,6 +247,13 @@ code). In short: `base ← model ← io ← pdf, pdftext, search, import, servic
   check box with the date picker beside it; a double-click opens the edit dialog; the form above it in Windows' control
   sizes.
 - The page in view is outlined in documents with more than one page.
+- **PDF text with the mouse** (user, 2026-11-20: "dass die maus pdf text auswählen kann ... in die zwischenablage"):
+  `PdfTextSelection` on InkPages' `mouseClaims`/`mouseGesture` (a drag or double/triple click InkPages hands over where
+  no ink, picture, text or selection frame lies; a single click stays InkPages' - links, Text tool). PDFium does the
+  geometry (`pdftext::TextPage`: `FPDFText_GetCharIndexAtPos`, `CountRects`/`GetRect`, `GetText`); word = up to spaces
+  and line breaks, line = up to PDFium's line breaks. Read-only (Ausschneiden/Löschen ignore it), one page. Escape =
+  Bearbeiten -> Auswahl aufheben (clears an ink selection too). The I-beam over text belongs to the hover-cursor hook,
+  not to `mouseClaims`.
 - The side pane is never narrower than its tabs need (280 DIP or the tab strip's measured width): comctl32's tab
   padding does not grow with the DPI, the text does (at 96 DPI 280 px was too narrow).
 - **XmlLite writes LF as CR LF** in `WriteString`/`WriteWhitespace` (measured 2026-11-19): `XmlText` writes the pieces
@@ -272,6 +279,7 @@ code). In short: `base ← model ← io ← pdf, pdftext, search, import, servic
   session – never run it on a developer machine. The runner's screen is 1024x768 at 96 DPI (the sandbox: 1514x900 at
   144 DPI), so layout that only fits at 150 % shows up there (what else the runner offers: global CLAUDE.md).
 - Tests: `InkRoundTripTest`, `DocumentFlowsTest`, `PagesFlowTest`, `PagesPaneTest`, `PdfNavigationTest`,
+  `PdfTextSelectTest` (a generated PDF: double click = word on the clipboard, a drag = a piece, a drag on ink = lasso),
   `TextToolTest`, `ClipboardTest`, `TasksTest`, `RecoveryTest`, `ExplorerTest` (+ `New-TestRepository.ps1`: a bare
   upstream `remote.git` two commits ahead and one local commit – the sync button's counts; restore, cut/copy/paste),
   `MsiTest` (the installer, sandbox only). A test declares extra files in a `# Data: examples\X.pdf` line

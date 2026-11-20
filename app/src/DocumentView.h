@@ -72,6 +72,9 @@ namespace xournal::app
 
         /// Marks a search hit (page units of `page`) on its page; page -1 takes the mark away.
         void Highlight(int page, std::vector<Rect> rects);
+        /// Marks the mouse's selection of the PDF's text (page units of `page`) as the search hit is marked; page -1 takes
+        /// it away.
+        void MarkTextSelection(int page, std::vector<Rect> rects);
 
         /// The live pages' current strokes go into the document, then `work` runs with the document's lock held (UI
         /// thread; take the snapshot there). Throws when the ink cannot be read (InkPages' StrokesOf: timeout or ink-thread

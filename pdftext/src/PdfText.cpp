@@ -127,9 +127,10 @@ namespace xournal::pdftext
         std::vector<std::uint8_t> data; // PDFium reads from it while the document is open
         FPDF_DOCUMENT doc = nullptr;
         int pages = 0;
+        ~Impl();
     };
 
-    TextDocument::TextDocument(std::span<std::uint8_t const> pdf) : impl(std::make_unique<Impl>())
+    TextDocument::TextDocument(std::span<std::uint8_t const> pdf) : impl(std::make_shared<Impl>())
     {
         if (!detail::EnsurePdfium())
         {
@@ -142,13 +143,13 @@ namespace xournal::pdftext
         impl->pages = FPDF_GetPageCount(impl->doc);
     }
 
-    TextDocument::~TextDocument()
+    TextDocument::~TextDocument() = default; // the document closes with its last page (Impl's destructor)
+
+    TextDocument::Impl::~Impl()
     {
-        if (impl && impl->doc)
-        {
-            std::lock_guard lock(PdfiumLock());
-            FPDF_CloseDocument(impl->doc);
-        }
+        if (!doc) return;
+        std::lock_guard lock(PdfiumLock());
+        FPDF_CloseDocument(doc);
     }
 
     int TextDocument::PageCount() const { return impl->pages; }
@@ -230,5 +231,120 @@ namespace xournal::pdftext
             onPage(page, Find(page, query, options)); // the lock is held per page only
         }
         return true;
+    }
+
+    // ---- a page kept open for the mouse's text selection
+
+    struct TextPage::Impl
+    {
+        std::shared_ptr<void const> document;   // the document (TextDocument::Impl), open while the page is
+        std::unique_ptr<OpenPage> page;                    // closed under the lock (TextPage's destructor)
+    };
+
+    namespace
+    {
+        bool IsBreak(unsigned int c) { return c == L'\r' || c == L'\n'; }
+        bool IsSpace(unsigned int c) { return IsBreak(c) || c == L' ' || c == L'\t' || c == 0xA0 || c == 0xFFFE || c == 2 || c == 0; }
+
+        void CheckRange(int count, CharRange range)
+        {
+            if (range.first < 0 || range.count < 0 || range.first + range.count > count)
+            {
+                ThrowInvalidData(std::format("PDF text: characters {}+{} of {}", range.first, range.count, count));
+            }
+        }
+    }
+
+    CharRange RangeBetween(int a, int b) { return { std::min(a, b), std::abs(a - b) + 1 }; }
+
+    std::unique_ptr<TextPage> TextDocument::OpenPage(int page) const
+    {
+        if (page < 0 || page >= impl->pages) ThrowInvalidData(std::format("PDF text: page {} of {}", page + 1, impl->pages));
+        auto open = std::make_unique<TextPage::Impl>();
+        open->document = impl;
+        std::lock_guard lock(PdfiumLock());
+        open->page = std::make_unique<OpenPage>(impl->doc, page);
+        return std::make_unique<TextPage>(std::move(open));
+    }
+
+    TextPage::TextPage(std::unique_ptr<Impl> opened) : impl(std::move(opened)) {}
+
+    TextPage::~TextPage()
+    {
+        std::lock_guard lock(PdfiumLock());
+        impl->page.reset(); // before the document may close (it locks again)
+    }
+
+    int TextPage::CharCount() const
+    {
+        std::lock_guard lock(PdfiumLock());
+        return FPDFText_CountChars(impl->page->text);
+    }
+
+    std::optional<int> TextPage::CharAt(Point shown, double tolerance) const
+    {
+        std::lock_guard lock(PdfiumLock());
+        Point at = impl->page->frame.ToUserSpace(shown);
+        int index = FPDFText_GetCharIndexAtPos(impl->page->text, at.x, at.y, tolerance, tolerance);
+        if (index == -3) ThrowInvalidData("PDF text: the character at a point cannot be found");
+        return index >= 0 ? std::optional(index) : std::nullopt;
+    }
+
+    std::vector<Rect> TextPage::Rects(CharRange range) const
+    {
+        std::lock_guard lock(PdfiumLock());
+        CheckRange(FPDFText_CountChars(impl->page->text), range);
+        std::vector<Rect> rects;
+        if (range.count == 0) return rects;
+        int count = FPDFText_CountRects(impl->page->text, range.first, range.count);
+        for (int i = 0; i < count; ++i)
+        {
+            double left = 0, top = 0, right = 0, bottom = 0;
+            if (!FPDFText_GetRect(impl->page->text, i, &left, &top, &right, &bottom))
+            {
+                ThrowInvalidData(std::format("PDF text: rectangle {} of characters {}+{}", i, range.first, range.count));
+            }
+            rects.push_back(impl->page->frame.Area(pdf::PdfBox{ left, bottom, right, top }));
+        }
+        return rects;
+    }
+
+    std::wstring TextPage::Text(CharRange range) const
+    {
+        std::lock_guard lock(PdfiumLock());
+        CheckRange(FPDFText_CountChars(impl->page->text), range);
+        if (range.count == 0) return {};
+        // [doc fpdf_text.h] the buffer holds count characters plus the terminator; characters beyond the BMP take two
+        // UTF-16 units, so room for twice as many.
+        std::vector<unsigned short> buffer(static_cast<size_t>(range.count) * 2 + 1);
+        int written = FPDFText_GetText(impl->page->text, range.first, range.count, buffer.data());
+        if (written <= 0) return {};
+        return std::wstring(reinterpret_cast<wchar_t const*>(buffer.data()), static_cast<size_t>(written - 1));
+    }
+
+    CharRange TextPage::WordAt(int index) const
+    {
+        std::lock_guard lock(PdfiumLock());
+        FPDF_TEXTPAGE text = impl->page->text;
+        int count = FPDFText_CountChars(text);
+        CheckRange(count, { index, 1 });
+        if (IsSpace(FPDFText_GetUnicode(text, index))) return { index, 1 };
+        int first = index, last = index;
+        while (first > 0 && !IsSpace(FPDFText_GetUnicode(text, first - 1))) --first;
+        while (last + 1 < count && !IsSpace(FPDFText_GetUnicode(text, last + 1))) ++last;
+        return { first, last - first + 1 };
+    }
+
+    CharRange TextPage::LineAt(int index) const
+    {
+        std::lock_guard lock(PdfiumLock());
+        FPDF_TEXTPAGE text = impl->page->text;
+        int count = FPDFText_CountChars(text);
+        CheckRange(count, { index, 1 });
+        int first = index, last = index;
+        while (first > 0 && !IsBreak(FPDFText_GetUnicode(text, first - 1))) --first;
+        while (last + 1 < count && !IsBreak(FPDFText_GetUnicode(text, last + 1))) ++last;
+        while (last > first && IsSpace(FPDFText_GetUnicode(text, last))) --last; // a break or space at its end: not part of it
+        return { first, last - first + 1 };
     }
 }

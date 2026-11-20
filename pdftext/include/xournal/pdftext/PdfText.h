@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <span>
 #include <stop_token>
 #include <string>
@@ -46,6 +47,47 @@ namespace xournal::pdftext
         std::wstring context;      // the hit with some text around it, line breaks as spaces
     };
 
+    /// A range of a page's characters (PDFium's character indices).
+    struct CharRange
+    {
+        int first = 0;
+        int count = 0;
+        bool operator==(CharRange const&) const = default;
+    };
+
+    /// One page's text kept open for selecting it with the mouse: PDFium's character at a point, the rectangles and the
+    /// text of a range (PDFium's own: FPDFText_GetCharIndexAtPos, FPDFText_CountRects/GetRect, FPDFText_GetText), the
+    /// word and line around a character. Shown coordinates. Made by TextDocument::OpenPage; it keeps the document open.
+    class TextPage
+    {
+    public:
+        ~TextPage();
+        TextPage(TextPage const&) = delete;
+        TextPage& operator=(TextPage const&) = delete;
+
+        int CharCount() const;
+        /// The character at a point or within `tolerance` points of it; nothing where there is no text.
+        std::optional<int> CharAt(Point shown, double tolerance) const;
+        /// The rectangles of a range, one per run of a line (as PDFium merges them).
+        std::vector<Rect> Rects(CharRange range) const;
+        /// The text of a range as PDFium extracts it (line breaks as CR LF).
+        std::wstring Text(CharRange range) const;
+        /// The word around a character: the characters up to the next space or line break on either side (the
+        /// character itself when it is a space).
+        CharRange WordAt(int index) const;
+        /// The line around a character: up to the line breaks PDFium puts between lines.
+        CharRange LineAt(int index) const;
+
+        struct Impl;
+        explicit TextPage(std::unique_ptr<Impl> impl);
+
+    private:
+        std::unique_ptr<Impl> impl;
+    };
+
+    /// The range from one character to another, both included, in either order.
+    CharRange RangeBetween(int a, int b);
+
     class TextDocument
     {
     public:
@@ -71,8 +113,12 @@ namespace xournal::pdftext
         bool FindAll(std::wstring_view query, FindOptions options,
                      std::function<void(int page, std::vector<Hit> hits)> const& onPage, std::stop_token stop = {}) const;
 
+        /// A page kept open for selecting its text (its calls are serialized with every PDFium call). Throws
+        /// xournal::Error when the page cannot be read.
+        std::unique_ptr<TextPage> OpenPage(int page) const;
+
     private:
         struct Impl;
-        std::unique_ptr<Impl> impl;
+        std::shared_ptr<Impl> impl; // shared with the pages kept open
     };
 }
