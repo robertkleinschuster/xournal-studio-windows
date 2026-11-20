@@ -250,7 +250,8 @@ code). In short: `base ← model ← io ← pdf, pdftext, search, import, servic
 - **Unit tests** (`tests/`, GoogleTest via CTest, run by `build.ps1`): every module, ported from the C# tests with the
   same sample XML, plus a lossless round trip of `examples\*.xopp`; services tests in a single-threaded apartment.
 - **Sandbox UI tests run on a desktop of their own** (user, 2026-11-19): `UiTests\Run-AppTest.ps1 -Test
-  UiTests\<Test>.ps1` copies the build's exe and `examples\Schaltungen.*` and runs InkPages' runner
+  UiTests\<Test>.ps1` copies the build's exe, `examples\Schaltungen.*` and the files the test declares in a
+  `# Data: examples\X.pdf` comment line (`UiTests\TestData.ps1`, also used by `Run-CiTest.ps1`) and runs InkPages' runner
   (`external/InkPages/UiTests/Run-SandboxTest.ps1`: `wsb connect` on a separate Win32 desktop – never the user's
   screen; `-Show` puts it on the user's desktop to watch, tell the user first). The sandbox is shared: the runner
   waits for the machine-wide mutex `Global\XournalStudioSandbox` (one test at a time across all worktrees, the holder

@@ -181,11 +181,25 @@ namespace xournal::app
             }
             return 0;
         }
+        case LVN_KEYDOWN:
+            // F2 renames, as in File Explorer: the ListView leaves the key to its owner (it edits labels by itself only
+            // on a click on the selected item); LVM_EDITLABEL on the focused, selected item.
+            if (reinterpret_cast<NMLVKEYDOWN const&>(note).wVKey == VK_F2)
+            {
+                int item = ListView_GetNextItem(list, -1, LVNI_FOCUSED | LVNI_SELECTED);
+                Log(std::format("tasks: F2 on row {}", item));
+                if (item >= 0 && !ListView_EditLabel(list, item)) LogError(std::format("tasks: LVM_EDITLABEL of row {} started no edit", item));
+            }
+            return 0;
         case LVN_BEGINLABELEDITW:
         {
             auto const& info = reinterpret_cast<NMLVDISPINFOW const&>(note);
             TaskRow const* row = RowOfItem(info.item.iItem);
-            if (!row || !renamed) return TRUE; // no edit
+            if (!row || !renamed)
+            {
+                Log(std::format("tasks: no in-place edit of row {} ({})", info.item.iItem, row ? "no handler" : "no task"));
+                return TRUE;
+            }
             // The edit starts with the text as written (priority, +projects, @contexts, other tags), not the shown title.
             HWND edit = ListView_GetEditControl(list);
             if (!edit)

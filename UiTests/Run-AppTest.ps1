@@ -43,7 +43,8 @@ try {
     Get-ChildItem $from -Filter *.dll | Copy-Item -Destination $app
     # One results folder per test: agents running different tests one after another keep each other's results.
     $work = Join-Path $env:TEMP ('xournal-native-sandbox-' + [IO.Path]::GetFileNameWithoutExtension($Test))
-    $data = @((Join-Path $repo 'examples\Schaltungen.xopp'), (Join-Path $repo 'examples\Schaltungen.pdf')) + $Extra
+    . (Join-Path $PSScriptRoot 'TestData.ps1')
+    $data = @(Get-UiTestData $repo $Test) + $Extra   # Schaltungen.* and the test's "# Data:" files
     & (Join-Path $repo 'external\InkPages\UiTests\Run-SandboxTest.ps1') -App $app -Test $Test -Data $data `
         -Work $work -TimeoutSeconds $TimeoutSeconds -Show:$Show
 }

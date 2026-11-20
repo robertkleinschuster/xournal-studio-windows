@@ -21,7 +21,8 @@ foreach ($dir in $sbx, 'C:\work') { if (Test-Path $dir) { Remove-Item -Recurse -
 New-Item -ItemType Directory -Force "$sbx\app", "$sbx\data", "$sbx\out" | Out-Null
 Copy-Item (Join-Path $AppDir 'XournalStudio.exe') "$sbx\app"
 Get-ChildItem $AppDir -Filter *.dll | Copy-Item -Destination "$sbx\app"
-$data = @((Join-Path $repo 'examples\Schaltungen.xopp'), (Join-Path $repo 'examples\Schaltungen.pdf')) + $Extra
+. (Join-Path $PSScriptRoot 'TestData.ps1')
+$data = @(Get-UiTestData $repo $Test) + $Extra   # Schaltungen.* and the test's "# Data:" files
 foreach ($file in $data) { Copy-Item $file "$sbx\data" }
 Copy-Item "$kit\*.cs", "$kit\TestKit.ps1" $sbx -Exclude HiddenDesktop.cs
 Copy-Item $Test "$sbx\test.ps1"

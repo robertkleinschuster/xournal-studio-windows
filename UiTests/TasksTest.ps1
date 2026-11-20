@@ -67,6 +67,10 @@ Invoke-Test {
     ClickAt 'XournalStudioWindow' 'Neue' | Out-Null
     [Inj]::Key(0x71); Start-Sleep -Milliseconds 600   # F2
     Shot '03-editing-in-place'
+    # Only type into the edit box: typed into the list, the text would select rows (type-ahead) and a space toggle one.
+    $focus = "$(& C:\sbx\data\uiaprobe.exe --focus)"
+    "focus after F2: $focus"
+    if ($focus -notmatch 'Edit') { throw 'F2 opened no edit box' }
     [System.Windows.Forms.SendKeys]::SendWait('^a'); Start-Sleep -Milliseconds 200
     [System.Windows.Forms.SendKeys]::SendWait('Blatt 4 abgeben {+}ET'); Start-Sleep -Milliseconds 300
     [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
