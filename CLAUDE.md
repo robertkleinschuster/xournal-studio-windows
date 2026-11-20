@@ -276,6 +276,20 @@ code). In short: `base ← model ← io ← pdf, pdftext, search, import, servic
   PowerShell 5.1 (Add-Type = C# 5), 1514x900 at 144 DPI; synthetic pen input must hover ~100 ms before a press on the
   selection, as a real pen does. Never name a function `Erase` in a test (PowerShell alias); write scripts with the
   Write tool (shell heredocs turned `\t` in paths into tabs).
+- **UI tests on GitHub (standard since 2026-11-20, user's decision):** `.github/workflows/ui-tests.yml` runs every UI
+  test except `MsiTest` after each green Build of a push to main (`workflow_run`; docs-only pushes run no Build, so no
+  UI tests; a newer Build cancels running UI tests), one `windows-2025` job per test in parallel, with the Build's
+  artifact `app-<sha>` (no build) and `uiaprobe.exe` compiled only when its source changes (Actions cache). The
+  summary job lists PASS/FAIL per test with links to the artifact `ui-<Test>` (screenshots, transcript, app logs).
+  By hand: `gh workflow run ui-tests.yml [--ref <branch>] -f tests=TasksTest,TextToolTest [-f build_run=<id>]` (that
+  ref's test scripts against an existing app). `UiTests\Run-CiTest.ps1` lays out `C:\sbx` as the sandbox has it and
+  runs the script directly in the runner's interactive session – never run it on a developer machine. A job takes
+  ~1–2 min (setup ~20 s, test 30–90 s). Measured on the runner (2026-11-20): Windows Server 2025 (26100), runneradmin
+  in an interactive session, foreground/`SetForegroundWindow`, screenshots, `SendInput` and
+  `InjectSyntheticPointerInput` (pen) work; the Win32 ink presenter, DirectComposition/Direct2D (Hyper-V video, no
+  GPU) and Windows.Data.Pdf work; the screen is **1024x768 at 96 DPI** (the sandbox: 1514x900 at 144 DPI), so layout
+  that only fits at 150 % shows up there. Windows PowerShell 5.1 must be started with its own `PSModulePath` (from
+  pwsh it loaded pwsh's modules: `Get-FileHash` not found). The local sandbox stays for debugging a test.
 - **CI runner differences (2026-11-19):** the runner's `%TEMP%` is an 8.3 short path (`C:\Users\RUNNER~1\...`): the
   git tests compared it with the long path libgit2 reports and failed – the workflow points TEMP/TMP at `RUNNER_TEMP`
   (whether the app should compare paths independent of 8.3 names is open). The runner has only the en-US handwriting

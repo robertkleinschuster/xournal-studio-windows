@@ -1,16 +1,27 @@
 name: UI tests
 
-# The app's UI tests (UiTests\*Test.ps1) on a GitHub-hosted Windows runner instead of Windows Sandbox: the runner is a
-# fresh, disposable machine with an interactive desktop, so UiTests\Run-CiTest.ps1 runs a test script directly there.
-# The app is the artifact app-<sha> of a green Build run (no build here); uiaprobe.exe (InkPages' UI Automation probe)
-# is compiled once per version of its source and kept in the Actions cache.
-# Experiment: started by hand (workflow_dispatch), one test per run.
+# The app's UI tests (UiTests\*Test.ps1) on GitHub-hosted Windows runners instead of Windows Sandbox: a hosted runner is
+# a fresh, disposable machine with an interactive desktop (runneradmin, 1024x768 at 96 DPI, Windows Server 2025 with
+# Windows ink), so UiTests\Run-CiTest.ps1 lays out C:\sbx as the sandbox has it and runs the test script directly.
+# - After every green Build of a push to main (workflow_run): the app is that run's artifact app-<sha> (no build here),
+#   the tests are checked out at the same commit. Docs-only pushes run no Build (its paths-ignore), so no UI tests
+#   either (workflow_run has no paths filter of its own). A newer Build cancels the UI tests still running (concurrency).
+# - By hand (workflow_dispatch, any ref): that ref's test scripts, some or all, against the app of a chosen or the
+#   newest green Build: gh workflow run ui-tests.yml [--ref <branch>] -f tests=TasksTest,TextToolTest
+# - One job per test, in parallel; uiaprobe.exe (InkPages' UI Automation probe) is compiled once per version of its
+#   source and kept in the Actions cache. The summary job lists PASS/FAIL per test with links to its results artifact
+#   (screenshots, transcript, app logs). MsiTest (the installer) needs MSIs and stays a sandbox test.
+# The same test scripts run locally in Windows Sandbox for debugging (UiTests\Run-AppTest.ps1).
 on:
+  workflow_run:
+    workflows: [Build]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
-      test:
-        description: 'test script name in UiTests (without .ps1)'
-        default: TasksTest
+      tests:
+        description: 'tests (names without .ps1, comma-separated; empty = all)'
+        default: ''
       build_run:
         description: 'Build run id with the artifact app-<sha> (empty: the newest green Build on main that has one)'
         default: ''
@@ -19,23 +30,50 @@ permissions:
   contents: read
   actions: read
 
-jobs:
-  test:
-    runs-on: windows-2025
-    timeout-minutes: 10
-    steps:
-      - name: Check out
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          submodules: true
+concurrency:
+  group: ui-tests-${{ github.event.workflow_run.head_branch || github.ref }}
+  cancel-in-progress: true
 
-      - name: Get the app (Build artifact)
+jobs:
+  plan:
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      run: ${{ steps.plan.outputs.run }}
+      sha: ${{ steps.plan.outputs.sha }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - name: Build run, commit and tests
+        id: plan
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-          BUILD_RUN: ${{ inputs.build_run }}
+          EVENT_RUN: ${{ github.event.workflow_run.id }}
+          INPUT_RUN: ${{ inputs.build_run }}
+          INPUT_TESTS: ${{ inputs.tests }}
         run: |
-          $run = $env:BUILD_RUN
+          # Every UI test that runs against the staged app (its data files: the test's '# Data:' line, TestData.ps1);
+          # repository = also the git repository of New-TestRepository.ps1.
+          $all = @(
+              @{ test = 'ClipboardTest' }
+              @{ test = 'DocumentFlowsTest' }
+              @{ test = 'ExplorerTest'; repository = $true }
+              @{ test = 'InkRoundTripTest' }
+              @{ test = 'PagesFlowTest' }
+              @{ test = 'PagesPaneTest' }
+              @{ test = 'PdfNavigationTest' }
+              @{ test = 'RecoveryTest' }
+              @{ test = 'TasksTest' }
+              @{ test = 'TextToolTest' }
+          )
+          $tests = $all
+          if ($env:INPUT_TESTS) {
+              $names = $env:INPUT_TESTS -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+              foreach ($name in $names) { if ($name -notin $all.test) { throw "unknown test '$name' (known: $($all.test -join ', '))" } }
+              $tests = @($all | Where-Object { $_.test -in $names })
+          }
+          $run = if ($env:EVENT_RUN) { $env:EVENT_RUN } else { $env:INPUT_RUN }
           if (-not $run) {
               $runs = gh run list --repo $env:GITHUB_REPOSITORY --workflow build.yml --branch main --event push --status success --json databaseId --limit 10 | ConvertFrom-Json
               if ($LASTEXITCODE -ne 0) { throw "gh run list failed ($LASTEXITCODE)" }
@@ -46,12 +84,36 @@ jobs:
               }
               if (-not $run) { throw 'no green Build run on main with an app-<sha> artifact' }
           }
-          gh run download $run --repo $env:GITHUB_REPOSITORY --pattern 'app-*' --dir "$env:RUNNER_TEMP\artifact"
-          if ($LASTEXITCODE -ne 0) { throw "gh run download $run failed ($LASTEXITCODE)" }
-          $exe = Get-ChildItem "$env:RUNNER_TEMP\artifact" -Recurse -Filter XournalStudio.exe | Select-Object -First 1
-          if (-not $exe) { throw "the artifact of run $run has no XournalStudio.exe" }
-          "APP_DIR=$($exe.DirectoryName)" >> $env:GITHUB_ENV
-          "app from Build run $run`: $($exe.DirectoryName)"
+          $sha = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$run" --jq '.head_sha'
+          if ($LASTEXITCODE -ne 0) { throw "gh api run $run failed ($LASTEXITCODE)" }
+          "Build run $run, commit $sha; tests: $($tests.test -join ', ')"
+          "run=$run" >> $env:GITHUB_OUTPUT
+          "sha=$sha" >> $env:GITHUB_OUTPUT
+          "matrix=$(ConvertTo-Json -Compress -InputObject @{ include = @($tests) })" >> $env:GITHUB_OUTPUT
+
+  test:
+    needs: plan
+    name: ${{ matrix.test }}
+    runs-on: windows-2025
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      # The tests of the built commit; by hand those of the chosen ref (test changes against an existing app).
+      - name: Check out the tests
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && needs.plan.outputs.sha || github.sha }}
+          submodules: true
+
+      - name: Get the app (Build artifact)
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: app-${{ needs.plan.outputs.sha }}
+          run-id: ${{ needs.plan.outputs.run }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}\app
 
       - name: Restore uiaprobe.exe
         id: probe
@@ -60,6 +122,7 @@ jobs:
           path: ${{ runner.temp }}\uiaprobe
           key: uiaprobe-${{ hashFiles('external/InkPages/tools/uiaprobe.cpp') }}
 
+      # Only when its source changed (~15 s); parallel jobs may each compile it, the first save wins.
       - name: Compile uiaprobe.exe
         if: steps.probe.outputs.cache-hit != 'true'
         shell: pwsh
@@ -75,23 +138,59 @@ jobs:
 
       - name: Save uiaprobe.exe
         if: steps.probe.outputs.cache-hit != 'true'
+        continue-on-error: true   # a parallel job saved the same key first
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}\uiaprobe
           key: ${{ steps.probe.outputs.cache-primary-key }}
 
-      - name: Run ${{ inputs.test }}
+      - name: Run ${{ matrix.test }}
         shell: pwsh
         env:
-          TEST: ${{ inputs.test }}
+          TEST: ${{ matrix.test }}
+          REPOSITORY: ${{ matrix.repository }}
         run: |
-          .\UiTests\Run-CiTest.ps1 -Test "UiTests\$env:TEST.ps1" -AppDir $env:APP_DIR -Extra "$env:RUNNER_TEMP\uiaprobe\uiaprobe.exe" -Out "$env:RUNNER_TEMP\results" -TimeoutSeconds 360
+          $extra = @("$env:RUNNER_TEMP\uiaprobe\uiaprobe.exe")
+          if ($env:REPOSITORY -eq 'true') { $extra += & .\UiTests\New-TestRepository.ps1 }
+          .\UiTests\Run-CiTest.ps1 -Test "UiTests\$env:TEST.ps1" -AppDir "$env:RUNNER_TEMP\app" -Extra $extra -Out "$env:RUNNER_TEMP\results" -TimeoutSeconds 420
 
       - name: Keep screenshots and logs
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ui-${{ inputs.test }}
+          name: ui-${{ matrix.test }}
           path: ${{ runner.temp }}/results
           retention-days: 7
           if-no-files-found: warn
+
+  summary:
+    needs: [plan, test]
+    if: always() && needs.plan.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: PASS/FAIL per test
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_RUN: ${{ needs.plan.outputs.run }}
+          SHA: ${{ needs.plan.outputs.sha }}
+        run: |
+          $repo = $env:GITHUB_REPOSITORY; $run = $env:GITHUB_RUN_ID
+          $jobs = @(gh api "repos/$repo/actions/runs/$run/jobs?per_page=100" --jq '.jobs[] | {name, conclusion, html_url, started_at, completed_at}' | ForEach-Object { $_ | ConvertFrom-Json })
+          if ($LASTEXITCODE -ne 0) { throw "gh api jobs failed ($LASTEXITCODE)" }
+          $artifacts = @(gh api "repos/$repo/actions/runs/$run/artifacts?per_page=100" --jq '.artifacts[] | {name, id}' | ForEach-Object { $_ | ConvertFrom-Json })
+          if ($LASTEXITCODE -ne 0) { throw "gh api artifacts failed ($LASTEXITCODE)" }
+          $lines = @("### UI tests of $($env:SHA.Substring(0, 7)) (app from [Build run $env:BUILD_RUN]($env:GITHUB_SERVER_URL/$repo/actions/runs/$env:BUILD_RUN))", '',
+              '| Test | Result | Job time | Screenshots and logs |', '|---|---|---|---|')
+          $failed = 0
+          foreach ($job in $jobs | Where-Object { $_.name -like '*Test' } | Sort-Object name) {
+              $result = switch ($job.conclusion) { 'success' { 'PASS' } 'failure' { $failed++; '**FAIL**' } default { $failed++; "$($job.conclusion)" } }
+              $seconds = if ($job.completed_at -and $job.started_at) { [int]([DateTime]$job.completed_at - [DateTime]$job.started_at).TotalSeconds } else { 0 }
+              $artifact = $artifacts | Where-Object { $_.name -eq "ui-$($job.name)" } | Select-Object -First 1
+              $link = if ($artifact) { "[ui-$($job.name)]($env:GITHUB_SERVER_URL/$repo/actions/runs/$run/artifacts/$($artifact.id))" } else { 'none' }
+              $lines += "| [$($job.name)]($($job.html_url)) | $result | $seconds s | $link |"
+          }
+          $lines -join "`n" >> $env:GITHUB_STEP_SUMMARY
+          $lines -join "`n"
+          if ($failed) { throw "$failed UI test(s) failed" }

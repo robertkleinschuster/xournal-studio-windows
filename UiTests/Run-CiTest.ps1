@@ -56,7 +56,12 @@ $info | Set-Content "$sbx\out\runner.txt"
 $info | ForEach-Object { "runner $_" }
 
 $start = Get-Date
-$proc = Start-Process powershell.exe -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File C:\sbx\test.ps1' -PassThru -NoNewWindow
+# Windows PowerShell 5.1 with its own module path: started from PowerShell 7 it would inherit pwsh's PSModulePath and
+# load pwsh's modules (Get-FileHash was "not recognized" on the runner).
+$modulePath = $env:PSModulePath
+$env:PSModulePath = [Environment]::GetEnvironmentVariable('PSModulePath', 'Machine')
+try { $proc = Start-Process powershell.exe -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File C:\sbx\test.ps1' -PassThru -NoNewWindow }
+finally { $env:PSModulePath = $modulePath }
 $timedOut = -not $proc.WaitForExit($TimeoutSeconds * 1000)
 if ($timedOut) {
     Write-Warning "the test ran longer than $TimeoutSeconds s: stopped"
@@ -79,7 +84,6 @@ $transcript = Join-Path $Out 'transcript.txt'
 $errors = @()
 if (Test-Path $transcript) {
     $errors = @(Select-String -Path $transcript -Pattern '^ERROR' | ForEach-Object { $_.Line })
-    Select-String -Path $transcript -Pattern '^(init|shot|exited|ERROR)' | ForEach-Object { $_.Line }
 }
 $passed = -not $timedOut -and (Test-Path (Join-Path $Out 'done.txt')) -and (Test-Path $transcript) -and -not $errors
 $result = if ($passed) { 'PASS' } else { 'FAIL' }

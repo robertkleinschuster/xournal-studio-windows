@@ -7,7 +7,7 @@
 function Lines { [IO.File]::ReadAllText('C:\work\todo.txt') }
 function WaitFor($what, [scriptblock]$condition) {
     for ($i = 0; $i -lt 20 -and -not (& $condition); $i++) { Start-Sleep -Milliseconds 500 }
-    if (-not (& $condition)) { Shot "failed-$what"; throw "timed out: $what" }
+    if (-not (& $condition)) { Shot "failed-$what"; throw "timed out: $what - todo.txt: $(Lines)" }
 }
 # comctl32 controls and Win32 menus through the native UI Automation client (InkPages' uiaprobe, in C:\sbx\data): the
 # managed client of Windows PowerShell does not see their items. ASCII parts of names (the probe matches substrings).
