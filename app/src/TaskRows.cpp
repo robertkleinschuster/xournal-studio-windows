@@ -69,7 +69,7 @@ namespace xournal::app
             row.dueSoon = Key(*due) <= Key(tomorrow);
             std::wstring day = *due == today ? L"heute" : *due == tomorrow ? L"morgen" : DayText(*due);
             std::wstring at = time ? std::format(L" {:02}:{:02}", time->hour, time->minute) : L"";
-            row.dueText = (row.overdue ? L"überfällig · " : L"fällig ") + day + at;
+            row.dueText = day + at;
         }
     }
 

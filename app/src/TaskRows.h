@@ -1,8 +1,8 @@
 #pragma once
 
 // The tasks list as the Aufgaben pane shows it: the todo.txt lines parsed (model's TodoTxt), open tasks by due date and
-// time (none last), then - if wanted - the done ones, newest first; each with its due text ("überfällig · heute 10:00",
-// "fällig morgen", "fällig Mo 24.11.") and its linked page (doc: tag).
+// time (none last), then - if wanted - the done ones, newest first; each with its due text ("heute 10:00", "morgen",
+// "Mo 24.11."; whether it is overdue is a flag) and its linked page (doc: tag).
 
 #include "xournal/model/TodoTxt.h"
 

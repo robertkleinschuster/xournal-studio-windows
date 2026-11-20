@@ -1,10 +1,11 @@
 #pragma once
 
-// The Aufgaben tab: the project folder's todo.txt (services' TaskFile) shown in a TaskListView with a NewTaskForm above
-// it and "Erledigte anzeigen" below. The pane makes the changes: a new task (with an optional due date and a link to the
-// page in view, doc: tag as the GTK Xournal Studio wrote), completing or reopening a task with its check box, deleting it
-// from the context menu (asked), editing it (TaskEditDialog), opening its linked page. Every change rewrites only its own line; nothing is written
-// while a sync runs.
+// The Aufgaben tab: the project folder's todo.txt (services' TaskFile) shown in a TaskListView (groups Überfällig /
+// Offen / Erledigt with their counts) with a NewTaskForm above it and "Erledigte anzeigen" below. The pane makes the
+// changes: a new task (with an optional due date and a link to the page in view, doc: tag as the GTK Xournal Studio
+// wrote), completing or reopening a task with its check box, editing its text in place (F2; due: and doc: kept) or with
+// TaskEditDialog, deleting it from the context menu (asked), opening its linked page. Every change rewrites only its
+// own line; nothing is written while a sync runs.
 
 #include "NewTaskForm.h"
 #include "TaskListView.h"
@@ -60,12 +61,13 @@ namespace xournal::app
         void Add();
         void Toggle(TaskRow const& row);
         void Edit(TaskRow const& row);
+        void Rename(TaskRow const& row, std::wstring const& text);
         void Open(TaskRow const& row);
         void ShowMenu(TaskRow const& row, POINT screen);
         void CreateTaskFile();
 
         HWND window = nullptr;
-        HWND header = nullptr, showDoneBox = nullptr, noFile = nullptr, createButton = nullptr;
+        HWND showDoneBox = nullptr, noFile = nullptr, createButton = nullptr;
         std::unique_ptr<NewTaskForm> form;
         std::unique_ptr<TaskListView> list;
         Messages messages;

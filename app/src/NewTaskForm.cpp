@@ -18,6 +18,7 @@ namespace xournal::app
         {
             ThrowLastError("SetWindowSubclass(new task)");
         }
+        dueLabel = ChildControls::Create(parent, WC_STATICW, L"Fällig am:", SS_LEFT | SS_CENTERIMAGE, 0);
         due = ChildControls::Create(parent, DATETIMEPICK_CLASSW, L"", WS_TABSTOP | DTS_SHORTDATEFORMAT | DTS_SHOWNONE, firstId + 1);
         DateTime_SetSystemtime(due, GDT_NONE, nullptr); // no due date until one is chosen
         linkPage = ChildControls::Create(parent, WC_BUTTONW, L"Mit dieser Seite verknüpfen", WS_TABSTOP | BS_AUTOCHECKBOX, firstId + 2);
@@ -35,20 +36,22 @@ namespace xournal::app
     int NewTaskForm::Layout(int left, int top, int width, int dpi)
     {
         auto px = [dpi](int dip) { return MulDiv(dip, dpi, 96); };
-        int y = top;
-        MoveWindow(text, left, y, width, px(26), TRUE);
-        y += px(30);
-        int addWidth = px(90), gap = px(8);
-        MoveWindow(due, left, y, width - addWidth - gap, px(26), TRUE);
-        MoveWindow(addButton, left + width - addWidth, y, addWidth, px(26), TRUE);
-        y += px(30);
-        MoveWindow(linkPage, left, y, width, px(22), TRUE);
-        return y + px(28);
+        // Windows' sizes: text boxes and buttons 23 DIP high, 7 DIP between related controls.
+        int y = top, height = px(23), gap = px(7);
+        MoveWindow(text, left, y, width, height, TRUE);
+        y += height + gap;
+        int labelWidth = px(64), addWidth = px(84);
+        MoveWindow(dueLabel, left, y, labelWidth, height, TRUE);
+        MoveWindow(due, left + labelWidth, y, width - labelWidth - addWidth - gap, height, TRUE);
+        MoveWindow(addButton, left + width - addWidth, y, addWidth, height, TRUE);
+        y += height + gap;
+        MoveWindow(linkPage, left, y, width, px(20), TRUE);
+        return y + px(20) + px(10);
     }
 
     void NewTaskForm::Show(bool shown)
     {
-        for (HWND control : { text, due, linkPage, addButton })
+        for (HWND control : { text, dueLabel, due, linkPage, addButton })
         {
             ShowWindow(control, shown ? SW_SHOW : SW_HIDE);
         }

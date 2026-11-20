@@ -184,7 +184,10 @@ code). In short: `base ← model ← io ← pdf, pdftext, search, import, servic
 - Git (libgit2): sign-in = the credential Git Credential Manager / wincred stores in the Windows Credential Manager
   (generic `git:https://host`, GCM as UTF-8, wincred as UTF-16); the app never asks for credentials itself. Sync =
   commit all, fetch, rebase or fast-forward, push; a conflict is aborted.
-- Tasks: only `<project folder>/todo.txt`; no reminders, no date words in quick add.
+- Tasks: only `<project folder>/todo.txt`; no reminders, no date words in quick add. Shown with comctl32 in its
+  standard look (user, 2026-11-20: "nutze da die win32 komponenten passender"): a report-view ListView with column
+  headers, check boxes, groups Überfällig / Offen / Erledigt, info tips and in-place editing; the form above it in
+  Windows' control sizes.
 - The page in view is outlined in documents with more than one page.
 - **XmlLite writes LF as CR LF** in `WriteString`/`WriteWhitespace` (measured 2026-11-19): `XmlText` writes the pieces
   between line feeds through the writer and each LF with `WriteRaw` – texts and formatting keep LF as upstream writes.

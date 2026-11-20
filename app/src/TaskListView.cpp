@@ -7,35 +7,86 @@
 #include "xournal/base/Log.h"
 
 #include <uxtheme.h>
+#include <windowsx.h>
 
 #include <algorithm>
 #include <format>
 
 namespace xournal::app
 {
+    namespace
+    {
+        enum GroupId : int { Overdue = 1, Open, Done };
+
+        int GroupOf(TaskRow const& row) { return row.task.done ? Done : row.overdue ? Overdue : Open; }
+
+        std::wstring Shown(TaskRow const& row)
+        {
+            std::wstring text = row.task.priority ? std::format(L"({}) {}", *row.task.priority, row.title) : row.title;
+            return row.linkText.empty() ? text : text + L" · " + row.linkText;
+        }
+
+        // Everything about the row, for the info tip.
+        std::wstring Details(TaskRow const& row)
+        {
+            std::wstring text = Shown(row);
+            if (!row.dueText.empty()) text += std::format(L"\n{} {}", row.overdue ? L"Überfällig seit" : L"Fällig", row.dueText);
+            if (row.task.done && row.task.completed)
+            {
+                text += std::format(L"\nErledigt am {:02}.{:02}.{}", row.task.completed->day, row.task.completed->month,
+                    row.task.completed->year);
+            }
+            if (row.link) text += L"\nDoppelklick öffnet die verknüpfte Seite.";
+            return text;
+        }
+    }
+
     TaskListView::TaskListView(HWND parent, int id)
     {
-        list = ChildControls::Create(parent, WC_LISTVIEWW, L"", WS_TABSTOP | LVS_REPORT | LVS_NOCOLUMNHEADER | LVS_SINGLESEL |
-            LVS_SHOWSELALWAYS, id);
-        ListView_SetExtendedListViewStyle(list, LVS_EX_CHECKBOXES | LVS_EX_FULLROWSELECT | LVS_EX_INFOTIP | LVS_EX_DOUBLEBUFFER);
-        HRESULT hr = SetWindowTheme(list, L"Explorer", nullptr);
+        list = ChildControls::Create(parent, WC_LISTVIEWW, L"Aufgaben", WS_TABSTOP | LVS_REPORT | LVS_SINGLESEL |
+            LVS_SHOWSELALWAYS | LVS_NOSORTHEADER | LVS_EDITLABELS, id);
+        ListView_SetExtendedListViewStyle(list, LVS_EX_CHECKBOXES | LVS_EX_FULLROWSELECT | LVS_EX_INFOTIP | LVS_EX_LABELTIP |
+            LVS_EX_DOUBLEBUFFER);
+        HRESULT hr = SetWindowTheme(list, L"Explorer", nullptr); // File Explorer's look: selection, group headers
         if (FAILED(hr))
         {
             LogError(std::format("tasks: list theme not set: {}", DescribeHr(hr)));
         }
-        LVCOLUMNW column{ LVCF_WIDTH };
-        column.cx = 160;
-        ListView_InsertColumn(list, 0, &column);
-        column.cx = 100;
-        ListView_InsertColumn(list, 1, &column);
+        wchar_t const* titles[] = { L"Aufgabe", L"Fällig" };
+        for (int i = 0; i < 2; ++i)
+        {
+            LVCOLUMNW column{ LVCF_TEXT | LVCF_WIDTH };
+            column.pszText = const_cast<wchar_t*>(titles[i]);
+            column.cx = 100;
+            if (ListView_InsertColumn(list, i, &column) < 0) ThrowLastError("ListView_InsertColumn (tasks)");
+        }
+        if (ListView_EnableGroupView(list, TRUE) < 0) ThrowLastError("ListView_EnableGroupView (tasks)");
     }
 
-    void TaskListView::Layout(int left, int top, int width, int height, int dpi)
+    std::wstring TaskListView::EditableText(TodoTask const& task)
     {
-        auto px = [dpi](int dip) { return MulDiv(dip, dpi, 96); };
+        return TodoTxt::SetTag(TodoTxt::SetTag(task.description, L"due", std::nullopt), L"doc", std::nullopt);
+    }
+
+    void TaskListView::Layout(int left, int top, int width, int height, int)
+    {
         MoveWindow(list, left, top, width, std::max(0, height), TRUE);
-        ListView_SetColumnWidth(list, 1, px(130));
-        ListView_SetColumnWidth(list, 0, std::max(px(60), width - px(130) - GetSystemMetricsForDpi(SM_CXVSCROLL, dpi) - px(4)));
+        FitColumns();
+    }
+
+    // Fällig as wide as its widest text (or its header), Aufgabe the rest of the visible width.
+    void TaskListView::FitColumns()
+    {
+        int dpi = static_cast<int>(GetDpiForWindow(list));
+        int due = ListView_GetStringWidth(list, L"Fällig") + MulDiv(16, dpi, 96);
+        for (auto const& row : rows)
+        {
+            due = std::max(due, ListView_GetStringWidth(list, row.dueText.c_str()) + MulDiv(16, dpi, 96));
+        }
+        RECT client;
+        GetClientRect(list, &client);
+        ListView_SetColumnWidth(list, 1, due);
+        ListView_SetColumnWidth(list, 0, std::max(MulDiv(60, dpi, 96), static_cast<int>(client.right) - due));
     }
 
     void TaskListView::Show(TaskRows const& shown)
@@ -44,30 +95,77 @@ namespace xournal::app
         filling = true;
         SendMessageW(list, WM_SETREDRAW, FALSE, 0);
         ListView_DeleteAllItems(list);
+        ListView_RemoveAllGroups(list);
+        // Only groups that have tasks (in this order).
+        for (int group : { Overdue, Open, Done })
+        {
+            auto count = std::ranges::count_if(rows, [group](TaskRow const& r) { return GroupOf(r) == group; });
+            if (count == 0) continue;
+            std::wstring header = std::format(L"{} ({})", group == Overdue ? L"Überfällig" : group == Open ? L"Offen" : L"Erledigt", count);
+            LVGROUP g{ sizeof(g) };
+            g.mask = LVGF_HEADER | LVGF_GROUPID;
+            g.pszHeader = header.data();
+            g.iGroupId = group;
+            if (ListView_InsertGroup(list, -1, &g) < 0)
+            {
+                filling = false;
+                SendMessageW(list, WM_SETREDRAW, TRUE, 0);
+                ThrowLastError("ListView_InsertGroup (tasks)");
+            }
+        }
         for (size_t i = 0; i < rows.size(); i++)
         {
             TaskRow const& row = rows[i];
-            std::wstring title = row.linkText.empty() ? row.title : row.title + L" · " + row.linkText;
-            LVITEMW item{ LVIF_TEXT | LVIF_PARAM };
+            std::wstring title = Shown(row);
+            LVITEMW item{ LVIF_TEXT | LVIF_PARAM | LVIF_GROUPID };
             item.iItem = static_cast<int>(i);
             item.pszText = title.data();
             item.lParam = static_cast<LPARAM>(i);
+            item.iGroupId = GroupOf(row);
             int index = ListView_InsertItem(list, &item);
             if (index < 0)
             {
                 filling = false;
+                SendMessageW(list, WM_SETREDRAW, TRUE, 0);
                 ThrowLastError("ListView_InsertItem(task)");
             }
             ListView_SetItemText(list, index, 1, const_cast<wchar_t*>(row.dueText.c_str()));
             ListView_SetCheckState(list, index, row.task.done);
         }
+        FitColumns();
         SendMessageW(list, WM_SETREDRAW, TRUE, 0);
+        InvalidateRect(list, nullptr, TRUE);
         filling = false;
     }
 
-    TaskRow const* TaskListView::RowAt(int index) const
+    TaskRow const* TaskListView::RowOfItem(int item) const
     {
-        return index >= 0 && static_cast<size_t>(index) < rows.size() ? &rows[static_cast<size_t>(index)] : nullptr;
+        if (item < 0) return nullptr;
+        LVITEMW lv{ LVIF_PARAM, item };
+        if (!ListView_GetItem(list, &lv)) return nullptr;
+        size_t index = static_cast<size_t>(lv.lParam);
+        return index < rows.size() ? &rows[index] : nullptr;
+    }
+
+    LRESULT TaskListView::OnCustomDraw(NMLVCUSTOMDRAW& draw)
+    {
+        if (draw.nmcd.dwDrawStage == CDDS_PREPAINT) return CDRF_NOTIFYITEMDRAW;
+        if (draw.dwItemType != LVCDI_ITEM) return CDRF_DODEFAULT; // group headers as the theme draws them
+        if (draw.nmcd.dwDrawStage == CDDS_ITEMPREPAINT) return CDRF_NOTIFYSUBITEMDRAW;
+        if (draw.nmcd.dwDrawStage == (CDDS_ITEMPREPAINT | CDDS_SUBITEM))
+        {
+            size_t index = static_cast<size_t>(draw.nmcd.lItemlParam);
+            if (index < rows.size())
+            {
+                TaskRow const& row = rows[index];
+                bool dueColumn = draw.iSubItem == 1;
+                draw.clrText = row.task.done ? GetSysColor(COLOR_GRAYTEXT)
+                    : dueColumn && row.overdue ? RGB(0xC4, 0x2B, 0x1C)
+                    : dueColumn && row.dueSoon ? GetSysColor(COLOR_HOTLIGHT)
+                    : GetSysColor(COLOR_WINDOWTEXT);
+            }
+        }
+        return CDRF_DODEFAULT;
     }
 
     LRESULT TaskListView::OnNotify(NMHDR const& note)
@@ -79,16 +177,57 @@ namespace xournal::app
             auto const& change = reinterpret_cast<NMLISTVIEW const&>(note);
             bool checkChanged = (change.uChanged & LVIF_STATE) && ((change.uNewState ^ change.uOldState) & LVIS_STATEIMAGEMASK) &&
                 (change.uOldState & LVIS_STATEIMAGEMASK); // 0: the item was just inserted
-            TaskRow const* row = RowAt(static_cast<int>(change.lParam));
-            if (!filling && checkChanged && row && toggled)
+            size_t index = static_cast<size_t>(change.lParam);
+            if (!filling && checkChanged && index < rows.size() && toggled)
             {
                 // Not inside the list's own notification: the change refills the list.
-                UiQueue::Post("tasks: complete", [this, copy = *row] { toggled(copy); });
+                UiQueue::Post("tasks: complete", [this, copy = rows[index]] { toggled(copy); });
             }
             return 0;
         }
+        case LVN_BEGINLABELEDITW:
+        {
+            auto const& info = reinterpret_cast<NMLVDISPINFOW const&>(note);
+            TaskRow const* row = RowOfItem(info.item.iItem);
+            if (!row || !renamed) return TRUE; // no edit
+            // The edit starts with the text as written (+projects, @contexts, other tags), not the shown title.
+            HWND edit = ListView_GetEditControl(list);
+            if (edit)
+            {
+                SetWindowTextW(edit, EditableText(row->task).c_str());
+                Edit_SetSel(edit, 0, -1);
+            }
+            Log(std::format("tasks: editing row {} in place", info.item.iItem));
+            return FALSE;
+        }
+        case LVN_ENDLABELEDITW:
+        {
+            auto const& info = reinterpret_cast<NMLVDISPINFOW const&>(note);
+            TaskRow const* row = RowOfItem(info.item.iItem);
+            if (info.item.pszText && row && renamed)
+            {
+                UiQueue::Post("tasks: edit in place", [this, copy = *row, text = std::wstring(info.item.pszText)] { renamed(copy, text); });
+            }
+            return FALSE; // the list is refilled from the file
+        }
+        case LVN_GETINFOTIPW:
+        {
+            auto& tip = const_cast<NMLVGETINFOTIPW&>(reinterpret_cast<NMLVGETINFOTIPW const&>(note));
+            if (TaskRow const* row = RowOfItem(tip.iItem); row && tip.pszText && tip.cchTextMax > 0)
+            {
+                wcsncpy_s(tip.pszText, static_cast<size_t>(tip.cchTextMax), Details(*row).c_str(), _TRUNCATE);
+            }
+            return 0;
+        }
+        case LVN_GETEMPTYMARKUP:
+        {
+            auto& empty = const_cast<NMLVEMPTYMARKUP&>(reinterpret_cast<NMLVEMPTYMARKUP const&>(note));
+            empty.dwFlags = EMF_CENTERED;
+            wcsncpy_s(empty.szMarkup, L"Keine offenen Aufgaben.", _TRUNCATE);
+            return TRUE;
+        }
         case NM_DBLCLK:
-            if (TaskRow const* row = RowAt(reinterpret_cast<NMITEMACTIVATE const&>(note).iItem); row && opened)
+            if (TaskRow const* row = RowOfItem(reinterpret_cast<NMITEMACTIVATE const&>(note).iItem); row && opened)
             {
                 opened(*row);
             }
@@ -96,7 +235,7 @@ namespace xournal::app
         case NM_RCLICK:
         {
             auto const& activate = reinterpret_cast<NMITEMACTIVATE const&>(note);
-            if (TaskRow const* row = RowAt(activate.iItem); row && menuRequested)
+            if (TaskRow const* row = RowOfItem(activate.iItem); row && menuRequested)
             {
                 POINT screen = activate.ptAction;
                 ClientToScreen(list, &screen);
@@ -105,23 +244,7 @@ namespace xournal::app
             return TRUE;
         }
         case NM_CUSTOMDRAW:
-        {
-            auto& draw = const_cast<NMLVCUSTOMDRAW&>(reinterpret_cast<NMLVCUSTOMDRAW const&>(note));
-            if (draw.nmcd.dwDrawStage == CDDS_PREPAINT) return CDRF_NOTIFYITEMDRAW;
-            if (draw.nmcd.dwDrawStage == CDDS_ITEMPREPAINT) return CDRF_NOTIFYSUBITEMDRAW;
-            if (draw.nmcd.dwDrawStage == (CDDS_ITEMPREPAINT | CDDS_SUBITEM))
-            {
-                if (TaskRow const* row = RowAt(static_cast<int>(draw.nmcd.lItemlParam)))
-                {
-                    bool dueColumn = draw.iSubItem == 1;
-                    draw.clrText = row->task.done ? GetSysColor(COLOR_GRAYTEXT)
-                        : dueColumn && row->overdue ? RGB(0xC4, 0x2B, 0x1C)
-                        : dueColumn && row->dueSoon ? GetSysColor(COLOR_HOTLIGHT)
-                        : dueColumn ? GetSysColor(COLOR_GRAYTEXT) : GetSysColor(COLOR_WINDOWTEXT);
-                }
-            }
-            return CDRF_DODEFAULT;
-        }
+            return OnCustomDraw(const_cast<NMLVCUSTOMDRAW&>(reinterpret_cast<NMLVCUSTOMDRAW const&>(note)));
         }
         return 0;
     }

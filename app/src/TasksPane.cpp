@@ -19,7 +19,7 @@ namespace xournal::app
     namespace
     {
         constexpr wchar_t ClassName[] = L"XournalStudioTasksPane";
-        enum ControlId : int { FormId = 1, ListId = 10, ShowDoneId, CreateId };
+        enum ControlId : int { ListId = 10, ShowDoneId, CreateId, FormId = 20 }; // FormId: the new task's text box (UI tests find it by this id)
         enum MenuId : UINT { MenuEdit = 1, MenuOpenLink, MenuDelete };
     }
 
@@ -46,11 +46,11 @@ namespace xournal::app
         {
             ThrowLastError("CreateWindowEx(tasks pane)");
         }
-        header = ChildControls::Create(window, WC_STATICW, L"Aufgaben", SS_LEFT | SS_ENDELLIPSIS, 0);
         form = std::make_unique<NewTaskForm>(window, FormId);
         form->submitted = [this] { Add(); };
         list = std::make_unique<TaskListView>(window, ListId);
         list->toggled = [this](TaskRow const& row) { Toggle(row); };
+        list->renamed = [this](TaskRow const& row, std::wstring const& text) { Rename(row, text); };
         list->opened = [this](TaskRow const& row) { Open(row); };
         list->menuRequested = [this](TaskRow const& row, POINT screen) { ShowMenu(row, screen); };
         showDoneBox = ChildControls::Create(window, WC_BUTTONW, L"Erledigte anzeigen", WS_TABSTOP | BS_AUTOCHECKBOX, ShowDoneId);
@@ -74,18 +74,17 @@ namespace xournal::app
         int dpi = static_cast<int>(GetDpiForWindow(window));
         auto px = [dpi](int dip) { return MulDiv(dip, dpi, 96); };
         int margin = px(8), width = rc.right - 2 * margin, y = margin;
-        MoveWindow(header, margin, y, width, px(20), TRUE);
-        y += px(24);
         if (!file || !file->Exists())
         {
             MoveWindow(noFile, margin, y, width, px(40), TRUE);
-            MoveWindow(createButton, margin, y + px(44), px(140), px(28), TRUE);
+            MoveWindow(createButton, margin, y + px(44), px(140), px(24), TRUE);
             return;
         }
         y = form->Layout(margin, y, width, dpi);
-        int bottom = rc.bottom - margin - px(22);
-        list->Layout(margin, y, width, bottom - y - px(4), dpi);
-        MoveWindow(showDoneBox, margin, bottom, width, px(22), TRUE);
+        // The list from edge to edge (as File Explorer's), "Erledigte anzeigen" below it.
+        int boxHeight = px(20), bottom = rc.bottom - margin - boxHeight;
+        list->Layout(0, y, rc.right, bottom - y - px(6), dpi);
+        MoveWindow(showDoneBox, margin, bottom, width, boxHeight, TRUE);
     }
 
     void TasksPane::SetFolder(std::optional<std::filesystem::path> const& folder)
@@ -128,9 +127,6 @@ namespace xournal::app
         ShowWindow(noFile, exists ? SW_HIDE : SW_SHOW);
         ShowWindow(createButton, !exists && file ? SW_SHOW : SW_HIDE);
         SetWindowTextW(noFile, file ? L"Im Projektordner gibt es keine todo.txt." : L"Kein Ordner geöffnet (Datei → Ordner öffnen).");
-        std::wstring title = !exists ? L"Aufgaben"
-            : rows.openCount == 1 ? L"todo.txt – 1 offen" : std::format(L"todo.txt – {} offen", rows.openCount);
-        SetWindowTextW(header, title.c_str());
         form->EnableLink(currentPage && currentPage().first.has_value());
         list->Show(rows);
         Layout();
@@ -199,7 +195,7 @@ namespace xournal::app
     // date and a link.
     void TasksPane::Edit(TaskRow const& row)
     {
-        std::wstring shown = TodoTxt::SetTag(TodoTxt::SetTag(row.task.description, L"due", std::nullopt), L"doc", std::nullopt);
+        std::wstring shown = TaskListView::EditableText(row.task);
         auto [document, page] = currentPage ? currentPage() : std::pair<std::optional<std::filesystem::path>, int>();
         auto values = TaskEditDialog::Show(window, { shown, row.task.Due(), row.link.has_value() }, row.linkText,
             document.has_value());
@@ -222,6 +218,19 @@ namespace xournal::app
         TodoTask changed = row.task;
         changed.description = description;
         Change("edit task", [&](tasks::TaskFile& f) { return f.Replace(row.line, changed.ToString()); });
+    }
+
+    // The text edited in place: due: and doc: (not part of the edited text) stay as they were.
+    void TasksPane::Rename(TaskRow const& row, std::wstring const& text)
+    {
+        std::wstring typed(Trim(text));
+        if (typed.empty() || typed == TaskListView::EditableText(row.task)) return;
+        std::wstring description = typed;
+        if (auto due = row.task.Tag(L"due")) description = TodoTxt::SetTag(description, L"due", *due);
+        if (auto doc = row.task.Tag(L"doc")) description = TodoTxt::SetTag(description, L"doc", *doc);
+        TodoTask changed = row.task;
+        changed.description = description;
+        Change("edit task in place", [&](tasks::TaskFile& f) { return f.Replace(row.line, changed.ToString()); });
     }
 
     void TasksPane::Open(TaskRow const& row)

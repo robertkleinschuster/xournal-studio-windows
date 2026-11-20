@@ -1,5 +1,6 @@
-﻿# The Aufgaben tab in Windows Sandbox: the todo.txt shown (open by due date), a new task added with Enter, a task
-# completed with its check box (only its line changes, the file keeps CRLF), a task deleted from the context menu.
+﻿# The Aufgaben tab in Windows Sandbox: the todo.txt shown (groups Überfällig / Offen, open by due date), a new task
+# added with Enter, a task completed with its check box (only its line changes, the file keeps CRLF), a task's text
+# edited in place (F2), a task edited with the dialog, a task deleted from the context menu.
 #   UiTests\Run-AppTest.ps1 -Test UiTests\TasksTest.ps1 -Extra D:\src\InkPages\.local-build\tools\uiaprobe.exe
 . C:\sbx\TestKit.ps1
 
@@ -34,11 +35,20 @@ Invoke-Test {
     Start-Sleep 2
     Shot '01-tasks'
     foreach ($title in 'Bald f', 'ter f', 'Ohne Datum') { At 'XournalStudioWindow' $title | Out-Null }
+    # The groups (Überfällig (1), Offen (2)) as UI Automation reports them: logged (their names come from comctl32).
+    foreach ($group in 'Offen (', 'berf') {
+        $r = & C:\sbx\data\uiaprobe.exe XournalStudioWindow $group
+        "group '$group': $(if ($LASTEXITCODE -eq 0) { "at $r" } else { 'not reported' })"
+    }
+    & C:\sbx\data\uiaprobe.exe XournalStudioWindow | Out-File "$out\uia-tree.txt" -Encoding utf8
 
     # 1. A new task: typed into the box, Enter adds it at the end of the file.
-    # The new task's box lies right below the header "todo.txt - n offen" (27 DIP below its center).
-    $header = At 'XournalStudioWindow' 'offen'
-    [Inj]::ClickPixel($header[0], $header[1] + [int](1.5 * 27)); Start-Sleep -Milliseconds 400
+    # The box by its control id (20, UI Automation's id of a Win32 control; it has no name, only a cue banner).
+    $cond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::AutomationIdProperty, '20')
+    $box = [System.Windows.Automation.AutomationElement]::RootElement.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $cond)
+    if ($box -eq $null) { Shot 'missing-new-task-box' | Out-Null; throw 'the new task box (id 20) not found' }
+    $r = $box.Current.BoundingRectangle
+    [Inj]::ClickPixel([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2)); Start-Sleep -Milliseconds 400
     [System.Windows.Forms.SendKeys]::SendWait('Neue Übung abgeben'); Start-Sleep -Milliseconds 300
     [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
     WaitFor 'add' { (Lines) -match 'Neue Übung abgeben' }
@@ -52,6 +62,16 @@ Invoke-Test {
     "after complete: $(Lines)"
     if ((Lines) -notmatch "Bald fällig due:2026-01-01`r`n") { throw 'the other lines changed' }
     Shot '03-completed'
+
+    # 2b. Edit a task's text in place (F2): the new text, its created date kept.
+    ClickAt 'XournalStudioWindow' 'Neue' | Out-Null
+    [Inj]::Key(0x71); Start-Sleep -Milliseconds 600   # F2
+    Shot '03-editing-in-place'
+    [System.Windows.Forms.SendKeys]::SendWait('^a'); Start-Sleep -Milliseconds 200
+    [System.Windows.Forms.SendKeys]::SendWait('Blatt 4 abgeben {+}ET'); Start-Sleep -Milliseconds 300
+    [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+    WaitFor 'edit in place' { (Lines) -match '(?m)^\d{4}-\d\d-\d\d Blatt 4 abgeben \+ET\r$' }
+    "after the edit in place: $(Lines)"
 
     # 3. Edit a task (Bearbeiten: the text without its due: tag, the date in the picker): a new text, the date kept.
     RightClickAt 'XournalStudioWindow' 'Bald f' | Out-Null
