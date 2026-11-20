@@ -37,6 +37,7 @@ namespace xournal::app
         t.pen = L"Stift";
         t.highlighter = L"Textmarker";
         t.presetTip = L"nochmal tippen für Farbe und Stärke";
+        t.writeToolTip = L"Schreibt nur mit dem Stift – Maus und Finger blättern weiter.";
         t.eraser = L"Radierer";
         t.eraserTip = L"Radierer – die Radierer-Taste des Stifts radiert auch, mit jedem Werkzeug";
         t.wholeStrokeErase = L"Ganze Striche radieren";
@@ -45,7 +46,8 @@ namespace xournal::app
         t.eraserRadius = L"Größe";
         t.select = L"Auswählen";
         t.selectTip = L"Auswählen: Lasso oder Rechteck (der Pfeil); ziehen verschiebt, die Ecken skalieren. Mit dem "
-            L"Stift geht das Lasso mit jedem Werkzeug: mit gedrückter Stifttaste ziehen";
+            L"Stift geht das Lasso mit jedem Werkzeug: mit gedrückter Stifttaste ziehen.\n"
+            L"Wählt mit Stift und Maus aus; der Finger tippt zum Auswählen und blättert.";
         t.lasso = L"Lasso";
         t.rectangle = L"Rechteck";
         t.shapes = L"Formen";
@@ -54,7 +56,8 @@ namespace xournal::app
         t.recognizeShapes = L"Gezeichnete Formen erkennen";
         t.text = L"Text";
         t.textTip = L"Text: auf die Seite tippen und schreiben (die Tastatur tippt), auf einen Text tippen, um ihn zu "
-            L"bearbeiten, daneben tippen, um fertig zu sein. Der Pfeil: Schrift, Größe und Farbe";
+            L"bearbeiten, daneben tippen, um fertig zu sein. Der Pfeil: Schrift, Größe und Farbe.\n"
+            L"Tippen oder Klicken setzt einen Text – mit Stift, Maus oder Finger.";
         t.ruler = L"Lineal";
         t.protractor = L"Winkelmesser";
         t.rulerTip = L"Lineal / Winkelmesser (der Pfeil): daran entlang gezogene Linien werden gerade";

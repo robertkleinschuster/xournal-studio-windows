@@ -190,7 +190,7 @@ Invoke-Test {
     Mark 'copy a PDF rectangle as a picture'
     Ctrl 0x32 '2'
     Click ("Ausw" + [char]0x00E4 + "hlen")
-    [Inj]::MouseDrag(@($cx - 55, $cy - 45, $cx + 55, $cy + 45))
+    [Inj]::MouseDrag(@(($cx - 55), ($cy - 45), ($cx + 55), ($cy + 45)))
     Start-Sleep -Milliseconds 700
     [Inj]::Key(0x28)
     [Inj]::Key(0x0D)

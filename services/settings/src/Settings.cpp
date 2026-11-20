@@ -96,6 +96,8 @@ namespace xournal::settings
         settings.paneOpen = Boolean(o, L"paneOpen", false);
         settings.paneTab = static_cast<int>(Number(o, L"paneTab", 0));
         settings.doneTasksShown = Boolean(o, L"doneTasksShown", false);
+        settings.penHasWritten = Boolean(o, L"penHasWritten", false);
+        settings.mouseHintShown = Boolean(o, L"mouseHintShown", false);
         if (auto choices = String(o, L"toolChoices")) settings.toolChoices = ToUtf8(*choices);
         if (Has(o, L"documentPositions", JsonValueType::Object))
         {
@@ -165,6 +167,8 @@ namespace xournal::settings
         set(L"paneOpen", JsonValue::CreateBooleanValue(paneOpen));
         set(L"paneTab", JsonValue::CreateNumberValue(paneTab));
         set(L"doneTasksShown", JsonValue::CreateBooleanValue(doneTasksShown));
+        set(L"penHasWritten", JsonValue::CreateBooleanValue(penHasWritten));
+        set(L"mouseHintShown", JsonValue::CreateBooleanValue(mouseHintShown));
         set(L"toolChoices", JsonValue::CreateStringValue(FromUtf8(toolChoices)));
         JsonObject positions;
         for (auto const& [document, position] : documentPositions)

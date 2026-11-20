@@ -55,6 +55,8 @@ namespace xournal::settings
         bool paneOpen = false;
         int paneTab = 0;
         bool doneTasksShown = false;
+        bool penHasWritten = false;
+        bool mouseHintShown = false;
         /// InkPages' ToolChoices::Serialize, kept as it is.
         std::string toolChoices;
         /// The last position of each opened document, by path (case ignored like Windows).

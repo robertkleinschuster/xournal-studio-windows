@@ -167,6 +167,13 @@ namespace xournal::app
         }
     }
 
+    bool PdfTextSelection::SelectWord(int page, inkpages::PointF point)
+    {
+        Gesture({ inkpages::MousePhase::Begin, page, point, 2 });
+        Gesture({ inkpages::MousePhase::End, page, point, 2 });
+        return HasSelection();
+    }
+
     void PdfTextSelection::Extend(int to)
     {
         // By characters, words or lines (a double or triple click) from the anchor's unit to the mouse's.

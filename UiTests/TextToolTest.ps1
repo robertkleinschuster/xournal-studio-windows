@@ -60,10 +60,11 @@ Invoke-Test {
     # 1. a new text: the Text tool, a pen tap, typing, a tap beside; Ctrl+S
     # The Text button: uiaprobe finds a name by a part of it ("Text" is in "Textmarker"), so it is found between its
     # neighbors (the icon left of the middle, the options arrow right of it).
-    $shapes = & C:\sbx\data\uiaprobe.exe XournalStudioWindow 'Formen'
+    $select = & C:\sbx\data\uiaprobe.exe XournalStudioWindow "Ausw$($ae)hlen"
     $ruler = & C:\sbx\data\uiaprobe.exe XournalStudioWindow 'Lineal'
-    $sx, $sy = "$shapes".Trim() -split ' '; $rx, $ry = "$ruler".Trim() -split ' '
-    [Inj]::ClickPixel([int](([int]$sx + [int]$rx) / 2) - 8, [int]$sy); Start-Sleep -Milliseconds 800; [Inj]::MoveMouse(980, 500)
+    $sx, $sy = "$select".Trim() -split ' '; $rx, $ry = "$ruler".Trim() -split ' '
+    $textButtonX = [int](([int]$sx + [int]$rx) / 2) - 8
+    [Inj]::ClickPixel($textButtonX, [int]$sy); Start-Sleep -Milliseconds 800; [Inj]::MoveMouse(980, 500)
     "toolbar: Text between $sx and $rx"
     PenTap 'new text' 150 290
     Write-Typed "Gr$($ue)n und K$($ae)se`nZeile 2"
@@ -115,6 +116,17 @@ Invoke-Test {
     if ($x2 -le $x + 10) { throw "the text did not move: x $x -> $x2" }
     if (@(Texts $file).Count -ne $textsBefore + 1) { throw 'texts were added or lost by the move' }
     if ((StrokeCount $file) -ne $strokesBefore) { throw 'the strokes changed' }
+
+    # A finger tap selects the text with Auswaehlen and a finger drag on it moves it.
+    ToolbarButton "Ausw$($ae)hlen"
+    Key 0x1B
+    [Inj]::TouchTap(230, 300); Start-Sleep -Milliseconds 800
+    [Inj]::TouchDrag(230, 300, 275, 300, 20); Start-Sleep -Milliseconds 800
+    Ctrl 0x53 'S'
+    $touchMoved = @(Texts $file)[$textsBefore]
+    $x3 = [double]::Parse($touchMoved.GetAttribute('x'), [Globalization.CultureInfo]::InvariantCulture)
+    if ($x3 -le $x2 + 5) { throw "the finger did not move the selected text: x $x2 -> $x3" }
+    [Inj]::ClickPixel($textButtonX, [int]$sy); Start-Sleep -Milliseconds 800
 
     # 4. leaving while a text is typed: closing the window asks (the typed text is a change), Speichern writes it
     PenTap 'another new text' 150 450

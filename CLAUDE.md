@@ -62,6 +62,8 @@ long formulas in several colors. For open pen/UI design questions, propose how O
 - **Pen, finger, mouse** (user, 2026-11-20): only the pen writes. Finger and touchpad gestures pan (with inertia) and zoom
   the sheet. A left mouse drag in Auswählen selects; with other tools it selects PDF text through ink or pans.
   A right drag lassos with any tool. The mouse moves/scales the current selection and a click beside it clears it.
+  In Auswählen a finger tap selects an object and a drag on the selection moves or scales it. A second contact
+  hands the gesture to DirectManipulation for panning and zooming. A finger tap with Text places or edits a text.
   A mouse click or finger tap follows a PDF link. The pen operates every
   control (controls in normal mouse size, not finger size).
 - **Pen buttons:** eraser end / eraser button erases with any tool (exact or whole strokes, following the toggle).

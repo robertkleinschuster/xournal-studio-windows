@@ -108,6 +108,13 @@ Invoke-Test {
     if ($piece.Length -lt 3 -or -not $Word.Contains($piece) -or $piece -eq $Word) { throw "the drag copied '$piece', not a piece of '$Word'" }
     if ((InkCount 'mouse: selection drag begins') -gt 0) { throw 'a drag on the PDF''s text made a lasso' }
 
+    # Windows recognizes a finger press-and-hold as a secondary tap.
+    [Inj]::Key(0x1B); Start-Sleep -Milliseconds 400
+    [Inj]::TouchHold($x, $lineY, 1100)
+    Expect 'page menu: touch PDF text copy' 'touch hold opened the copy menu'
+    [Inj]::Key(0x28); [Inj]::Key(0x0D); Start-Sleep -Milliseconds 600
+    if ((ClipboardText) -ne $Word) { throw 'touch hold did not copy the word' }
+
     # 3. A left drag selects PDF text through ink. A right drag lassos the ink.
     [Inj]::Key(0x1B); Start-Sleep -Milliseconds 400
     Stroke ($x - 150) $lineY ($x + 150) $lineY

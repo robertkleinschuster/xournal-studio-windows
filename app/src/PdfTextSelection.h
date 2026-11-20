@@ -40,6 +40,7 @@ namespace xournal::app
 
         /// Whether the PDF's text lies at a point of a document page (page units): InkPages' `mouseClaims`.
         bool TextAt(int page, inkpages::PointF point);
+        bool SelectWord(int page, inkpages::PointF point);
         /// A claimed mouse gesture (InkPages' `mouseGesture`).
         void Gesture(inkpages::MouseGesture const& gesture);
 

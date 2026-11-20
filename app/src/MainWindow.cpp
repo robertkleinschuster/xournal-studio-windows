@@ -139,6 +139,12 @@ namespace xournal::app
         surface->selectionChanged = [this] { textSelection->Clear(); };
         surface->mouseClaims = [this](int page, inkpages::PointF point) { return textSelection->TextAt(page, point); };
         surface->mouseGesture = [this](inkpages::MouseGesture const& gesture) { textSelection->Gesture(gesture); };
+        surface->touchHeld = [this](int page, inkpages::PointF point, POINT screen)
+        {
+            if (!textSelection->TextAt(page, point)) return;
+            surface->ClearSelection();
+            if (textSelection->SelectWord(page, point) && PageContextMenu::ShowCopy(window, screen)) CopyPdfText();
+        };
         surface->textEditingChanged = [this](bool) { textSelection->Clear(); };
         clipboard = std::make_unique<SelectionClipboard>(window, *surface, *view);
         surface->emptyRectangle = [this](int page, inkpages::RectF area)
@@ -225,6 +231,20 @@ namespace xournal::app
         };
         CreateSearch();
         toast = std::make_unique<Toast>(window);
+        surface->firstPenStroke = [this]
+        {
+            if (settings.penHasWritten) return;
+            settings.penHasWritten = true;
+            SaveSettings();
+        };
+        surface->mousePannedWithWriteTool = [this]
+        {
+            if (settings.penHasWritten || settings.mouseHintShown) return;
+            settings.mouseHintShown = true;
+            SaveSettings();
+            Message(L"Zum Schreiben den Stift verwenden. Mit Maus und Finger blättern, Text markieren und Links öffnen. "
+                L"Auswählen und Text gehen auch mit der Maus.", ToastKind::Info);
+        };
         statusBar = std::make_unique<StatusBar>(window);
         statusBar->pageDoubleClicked = [this] { OnCommand(CmdGoToPage); };
         DragAcceptFiles(window, TRUE); // a .xopp or PDF dropped on the window opens
@@ -767,7 +787,10 @@ namespace xournal::app
             surface->tapped = nullptr;
             surface->mouseClaims = nullptr;
             surface->emptyRectangle = nullptr;
+            surface->firstPenStroke = nullptr;
+            surface->mousePannedWithWriteTool = nullptr;
             surface->mouseGesture = nullptr;
+            surface->touchHeld = nullptr;
             surface->selectionChanged = nullptr;
             surface->textEditingChanged = nullptr;
             surface->cursorAt = nullptr;

@@ -59,4 +59,14 @@ namespace xournal::app::PageContextMenu
         POINT at = screen.x == -1 && screen.y == -1 ? fallback : screen;
         return static_cast<int>(TrackPopupMenu(menu.handle, TPM_RETURNCMD | TPM_RIGHTBUTTON, at.x, at.y, 0, owner, nullptr));
     }
+
+    bool ShowCopy(HWND owner, POINT screen)
+    {
+        Menu menu;
+        if (!menu.handle) ThrowLastError("CreatePopupMenu (PDF text)");
+        if (!AppendMenuW(menu.handle, MF_STRING, CmdCopy, L"&Kopieren"))
+            ThrowLastError("AppendMenu (PDF text)");
+        Log("page menu: touch PDF text copy");
+        return TrackPopupMenu(menu.handle, TPM_RETURNCMD | TPM_RIGHTBUTTON, screen.x, screen.y, 0, owner, nullptr) == CmdCopy;
+    }
 }

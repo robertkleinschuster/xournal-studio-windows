@@ -17,4 +17,5 @@ namespace xournal::app::PageContextMenu
 
     /// Shows the menu at `screen` (a keyboard request: (-1, -1) - then at `fallback`); returns the chosen command or 0.
     int Show(HWND owner, POINT screen, POINT fallback, State const& state);
+    bool ShowCopy(HWND owner, POINT screen);
 }
