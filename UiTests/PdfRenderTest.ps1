@@ -106,7 +106,7 @@ Invoke-Test {
     Start-TestApp 'XournalStudio.exe' '"C:\work\Render.pdf"'
     Shot '01-open-fit-width'
     Memory 'opened'
-    $cx = [int]($script:W / 2); $cy = [int]($script:H / 2)
+    $cx = [int]([Inj]::W / 2); $cy = [int]([Inj]::H / 2)
 
     Mark 'thumbnails'
     Ctrl 0x42 'B'
@@ -190,8 +190,12 @@ Invoke-Test {
     Mark 'copy a PDF rectangle as a picture'
     Ctrl 0x32 '2'
     Click ("Ausw" + [char]0x00E4 + "hlen")
+    "draw rectangle at $cx,$cy DIPs"
     [Inj]::MouseDrag(@(($cx - 55), ($cy - 45), ($cx + 55), ($cy + 45)))
-    Start-Sleep -Milliseconds 700
+    for ($i = 0; $i -lt 20 -and -not (Select-String "$out\app.log" -Pattern 'clipboard: PDF area menu shown' -Quiet); $i++) {
+        Start-Sleep -Milliseconds 200
+    }
+    if (-not (Select-String "$out\app.log" -Pattern 'clipboard: PDF area menu shown' -Quiet)) { throw 'no menu for the PDF rectangle' }
     [Inj]::Key(0x28)
     [Inj]::Key(0x0D)
     for ($i = 0; $i -lt 30 -and -not (Select-String "$out\app.log" -Pattern 'clipboard: PDF area copied' -Quiet); $i++) {
@@ -216,6 +220,16 @@ Invoke-Test {
             throw 'the PDF rectangle did not paste as an upstream PNG image'
         }
     } finally { $stream.Dispose() }
+
+    Mark 'one-finger pan away from the selection'
+    $pan = 'touch: no tap \((the view moves|DirectManipulation took the contact)\)'
+    $inklog = "$out\app.log.inkpages.log"
+    $before = @(Select-String $inklog -Pattern $pan).Count
+    [Inj]::TouchDrag(([Inj]::W * 0.19), ($cy + 105), ([Inj]::W * 0.19), ($cy - 100), 30)
+    Start-Sleep -Milliseconds 800
+    if (@(Select-String $inklog -Pattern $pan).Count -le $before) {
+        throw 'a finger drag beside the selection did not go to DirectManipulation'
+    }
 
     'pdf render: done'
 }
