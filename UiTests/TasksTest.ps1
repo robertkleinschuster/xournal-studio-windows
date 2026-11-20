@@ -4,7 +4,18 @@
 #   UiTests\Run-AppTest.ps1 -Test UiTests\TasksTest.ps1 -Extra D:\src\InkPages\.local-build\tools\uiaprobe.exe
 . C:\sbx\TestKit.ps1
 
-function Lines { [IO.File]::ReadAllText('C:\work\todo.txt') }
+# The app may be writing the file just then (a sharing violation, seen on the GitHub runner): read again shortly after,
+# logged; the error is thrown when it stays busy.
+function Lines {
+    for ($try = 1; ; $try++) {
+        try { return [IO.File]::ReadAllText('C:\work\todo.txt') }
+        catch [IO.IOException] {
+            if ($try -ge 20) { throw }
+            Write-Host "todo.txt busy (try $try): $($_.Exception.Message)"
+            Start-Sleep -Milliseconds 100
+        }
+    }
+}
 function WaitFor($what, [scriptblock]$condition) {
     for ($i = 0; $i -lt 20 -and -not (& $condition); $i++) { Start-Sleep -Milliseconds 500 }
     if (-not (& $condition)) { Shot "failed-$what"; throw "timed out: $what - todo.txt: $(Lines)" }
