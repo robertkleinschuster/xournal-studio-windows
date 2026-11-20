@@ -180,7 +180,9 @@ namespace xournal::app
     bool DocumentSession::SaveAs()
     {
         if (!doc || (refusedWhileSyncing && refusedWhileSyncing(L"Speichern"))) return false;
+        std::optional<std::filesystem::path> forNew = !doc->FilePath() && folderForNew ? folderForNew() : std::nullopt;
         std::filesystem::path folder = doc->FilePath() ? doc->FilePath()->parent_path()
+            : forNew ? *forNew
             : doc->PdfPath() ? doc->PdfPath()->parent_path() : std::filesystem::path();
         auto file = Dialogs::SaveDocument(owner, folder, doc->SuggestedName());
         return file && SaveTo(*file, true);

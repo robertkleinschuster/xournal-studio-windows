@@ -273,6 +273,13 @@ namespace xournal::app
         }
     }
 
+    std::optional<std::filesystem::path> ExplorerTree::SelectedFolder() const
+    {
+        Node const* node = NodeOf(TreeView_GetSelection(tree));
+        if (!node || node->missing) return std::nullopt;
+        return node->isFolder ? node->path : node->path.parent_path();
+    }
+
     void ExplorerTree::RequestForSelection(ExplorerCommand command)
     {
         HTREEITEM item = TreeView_GetSelection(tree);

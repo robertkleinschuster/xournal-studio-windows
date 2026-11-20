@@ -54,6 +54,9 @@ namespace xournal::app
         std::function<bool(std::wstring const& what)> refusedWhileSyncing;
         /// While a sync runs, Speichern (Strg+S) waits for it: returns true when the save was put off (said).
         std::function<bool()> saveDeferredWhileSyncing;
+        /// Where the save dialog opens for a document never saved: the folder selected in the explorer, else the project
+        /// folder (user, 2026-11-20); none: the PDF's folder.
+        std::function<std::optional<std::filesystem::path>()> folderForNew;
 
         /// Ends the Text tool's editing first (the typed text is part of the document), then asks about unsaved changes;
         /// true when the document may be left (saved, discarded or unchanged).

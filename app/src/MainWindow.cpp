@@ -395,6 +395,11 @@ namespace xournal::app
         remoteFetch->fetched = [this] { projectExplorer->Refresh(); }; // the fetch wrote only inside .git (not watched)
         session->refusedWhileSyncing = [this](std::wstring const& what) { return sync->RefusedWhileSyncing(what); };
         session->saveDeferredWhileSyncing = [this] { return sync->DeferSave(); };
+        session->folderForNew = [this]() -> std::optional<std::filesystem::path>
+        {
+            if (auto selected = pane->Explorer().SelectedFolder()) return selected;
+            return projectExplorer ? projectExplorer->Folder() : std::nullopt;
+        };
 
         projectExplorer = std::make_unique<ProjectExplorer>(pane->Explorer());
         projectExplorer->refreshed = [this]

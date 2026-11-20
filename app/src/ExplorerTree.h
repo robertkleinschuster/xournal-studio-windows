@@ -64,6 +64,9 @@ namespace xournal::app
         void Select(std::filesystem::path const& p);
         /// Starts editing the label of this item (rename), e.g. a document just created.
         void BeginRename(std::filesystem::path const& p);
+        /// The folder the selection stands for: a selected folder, or a selected file's folder; none when nothing (or
+        /// only a deleted item) is selected.
+        std::optional<std::filesystem::path> SelectedFolder() const;
 
         /// The selected item's request for `command` (nothing selected: nothing happens, but Paste goes into the project
         /// folder).
