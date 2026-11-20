@@ -12,16 +12,25 @@
 
 namespace xournal::app
 {
+    namespace
+    {
+        void DestroyOwnedMenu(HMENU menu)
+        {
+            if (!DestroyMenu(menu))
+                LogError("DestroyMenu (main menu): " + DescribeHr(HRESULT_FROM_WIN32(GetLastError())));
+        }
+    }
+
     MainMenu::MainMenu()
     {
         HINSTANCE instance = GetModuleHandleW(nullptr);
         accelerators = LoadAcceleratorsW(instance, MAKEINTRESOURCEW(IDA_MAIN));
         if (!accelerators) ThrowLastError("LoadAccelerators (main menu)");
 
-        using MenuHandle = std::unique_ptr<std::remove_pointer_t<HMENU>, decltype(&DestroyMenu)>;
-        MenuHandle mainMenu(LoadMenuW(instance, MAKEINTRESOURCEW(IDM_MAIN)), DestroyMenu);
+        using MenuHandle = std::unique_ptr<std::remove_pointer_t<HMENU>, decltype(&DestroyOwnedMenu)>;
+        MenuHandle mainMenu(LoadMenuW(instance, MAKEINTRESOURCEW(IDM_MAIN)), DestroyOwnedMenu);
         if (!mainMenu) ThrowLastError("LoadMenu (main menu)");
-        MenuHandle recentMenu(CreatePopupMenu(), DestroyMenu);
+        MenuHandle recentMenu(CreatePopupMenu(), DestroyOwnedMenu);
         if (!recentMenu) ThrowLastError("CreatePopupMenu (recent files)");
 
         HMENU file = GetSubMenu(mainMenu.get(), 0);
@@ -37,15 +46,18 @@ namespace xournal::app
 
     MainMenu::~MainMenu()
     {
-        if (ownsBar && IsMenu(bar) && !DestroyMenu(bar))
-            LogError("DestroyMenu (main menu) failed");
+        if (ownsBar && IsMenu(bar)) DestroyOwnedMenu(bar);
     }
 
     void MainMenu::SetRecentFiles(std::vector<std::filesystem::path> const& files)
     {
-        while (GetMenuItemCount(recent) > 0)
+        int count = GetMenuItemCount(recent);
+        if (count == -1) ThrowLastError("GetMenuItemCount (recent files)");
+        while (count > 0)
         {
-            if (!DeleteMenu(recent, 0, MF_BYPOSITION)) ThrowLastError("DeleteMenu(recent files)");
+            --count;
+            if (!DeleteMenu(recent, static_cast<UINT>(count), MF_BYPOSITION))
+                ThrowLastError("DeleteMenu (recent files)");
         }
         if (files.empty())
         {
