@@ -1,0 +1,97 @@
+name: UI tests
+
+# The app's UI tests (UiTests\*Test.ps1) on a GitHub-hosted Windows runner instead of Windows Sandbox: the runner is a
+# fresh, disposable machine with an interactive desktop, so UiTests\Run-CiTest.ps1 runs a test script directly there.
+# The app is the artifact app-<sha> of a green Build run (no build here); uiaprobe.exe (InkPages' UI Automation probe)
+# is compiled once per version of its source and kept in the Actions cache.
+# Experiment: started by hand (workflow_dispatch), one test per run.
+on:
+  workflow_dispatch:
+    inputs:
+      test:
+        description: 'test script name in UiTests (without .ps1)'
+        default: TasksTest
+      build_run:
+        description: 'Build run id with the artifact app-<sha> (empty: the newest green Build on main that has one)'
+        default: ''
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  test:
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+
+      - name: Get the app (Build artifact)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_RUN: ${{ inputs.build_run }}
+        run: |
+          $run = $env:BUILD_RUN
+          if (-not $run) {
+              $runs = gh run list --repo $env:GITHUB_REPOSITORY --workflow build.yml --branch main --event push --status success --json databaseId --limit 10 | ConvertFrom-Json
+              if ($LASTEXITCODE -ne 0) { throw "gh run list failed ($LASTEXITCODE)" }
+              foreach ($r in $runs) {
+                  $names = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$($r.databaseId)/artifacts" --jq '.artifacts[] | select(.expired == false) | .name'
+                  if ($LASTEXITCODE -ne 0) { throw "gh api artifacts failed ($LASTEXITCODE)" }
+                  if (@($names) -like 'app-*') { $run = $r.databaseId; break }
+              }
+              if (-not $run) { throw 'no green Build run on main with an app-<sha> artifact' }
+          }
+          gh run download $run --repo $env:GITHUB_REPOSITORY --pattern 'app-*' --dir "$env:RUNNER_TEMP\artifact"
+          if ($LASTEXITCODE -ne 0) { throw "gh run download $run failed ($LASTEXITCODE)" }
+          $exe = Get-ChildItem "$env:RUNNER_TEMP\artifact" -Recurse -Filter XournalStudio.exe | Select-Object -First 1
+          if (-not $exe) { throw "the artifact of run $run has no XournalStudio.exe" }
+          "APP_DIR=$($exe.DirectoryName)" >> $env:GITHUB_ENV
+          "app from Build run $run`: $($exe.DirectoryName)"
+
+      - name: Restore uiaprobe.exe
+        id: probe
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}\uiaprobe
+          key: uiaprobe-${{ hashFiles('external/InkPages/tools/uiaprobe.cpp') }}
+
+      - name: Compile uiaprobe.exe
+        if: steps.probe.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          if (-not $vs) { throw 'Visual Studio not found (vswhere)' }
+          $dir = "$env:RUNNER_TEMP\uiaprobe"
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          $src = (Resolve-Path external\InkPages\tools\uiaprobe.cpp).Path
+          cmd /c "`"$vs\VC\Auxiliary\Build\vcvars64.bat`" >nul && cl /nologo /std:c++20 /EHsc /O1 /MT /W4 /WX /permissive- /utf-8 /DUNICODE /D_UNICODE /DNOMINMAX /DWIN32_LEAN_AND_MEAN /Fo`"$dir\\`" /Fe`"$dir\uiaprobe.exe`" `"$src`" windowsapp.lib oleaut32.lib uiautomationcore.lib dwmapi.lib user32.lib ole32.lib"
+          if ($LASTEXITCODE -ne 0) { throw "cl failed ($LASTEXITCODE)" }
+          Remove-Item "$dir\*.obj"
+
+      - name: Save uiaprobe.exe
+        if: steps.probe.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}\uiaprobe
+          key: ${{ steps.probe.outputs.cache-primary-key }}
+
+      - name: Run ${{ inputs.test }}
+        shell: pwsh
+        env:
+          TEST: ${{ inputs.test }}
+        run: |
+          .\UiTests\Run-CiTest.ps1 -Test "UiTests\$env:TEST.ps1" -AppDir $env:APP_DIR -Extra "$env:RUNNER_TEMP\uiaprobe\uiaprobe.exe" -Out "$env:RUNNER_TEMP\results" -TimeoutSeconds 360
+
+      - name: Keep screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ui-${{ inputs.test }}
+          path: ${{ runner.temp }}/results
+          retention-days: 7
+          if-no-files-found: warn
