@@ -185,6 +185,29 @@ namespace xournal::app
 
     LRESULT TaskListView::OnCustomDraw(NMLVCUSTOMDRAW& draw)
     {
+        if (draw.dwItemType == LVCDI_GROUP && draw.nmcd.dwDrawStage == CDDS_PREPAINT &&
+            DarkColors::Enabled(list) && !IsRectEmpty(&draw.rcText))
+        {
+            wchar_t title[64]{};
+            LVGROUP group{ sizeof(group) };
+            group.mask = LVGF_HEADER;
+            group.pszHeader = title;
+            group.cchHeader = ARRAYSIZE(title);
+            auto id = static_cast<int>(draw.nmcd.dwItemSpec);
+            if (ListView_GetGroupInfo(list, id, &group) == -1)
+                ThrowHr("LVM_GETGROUPINFO (task group header)", E_FAIL);
+
+            HDC dc = draw.nmcd.hdc;
+            int saved = SaveDC(dc);
+            if (!saved) ThrowHr("SaveDC (task group header)", E_FAIL);
+            auto color = SetTextColor(dc, DarkColors::Text);
+            auto mode = SetBkMode(dc, TRANSPARENT);
+            RECT label = draw.rcText;
+            int drawn = DrawTextW(dc, title, -1, &label, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | DT_END_ELLIPSIS);
+            if (!RestoreDC(dc, saved)) ThrowHr("RestoreDC (task group header)", E_FAIL);
+            if (color == CLR_INVALID || !mode || !drawn) ThrowHr("DrawText (task group header)", E_FAIL);
+            return CDRF_SKIPDEFAULT;
+        }
         if (draw.nmcd.dwDrawStage == CDDS_PREPAINT) return CDRF_NOTIFYITEMDRAW;
         if (draw.dwItemType != LVCDI_ITEM) return CDRF_DODEFAULT;
         if (draw.nmcd.dwDrawStage == CDDS_ITEMPREPAINT) return CDRF_NOTIFYSUBITEMDRAW;

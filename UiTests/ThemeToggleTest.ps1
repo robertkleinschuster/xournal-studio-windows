@@ -25,11 +25,13 @@ function ClickTab([string]$name) {
 Invoke-Test {
     New-Item -ItemType Directory -Force "$out\config","$out\project" | Out-Null
     Copy-Item 'C:\sbx\data\Schaltungen.*' "$out\project"
+    @('2000-01-01 Frist abgelaufen due:2000-01-02', 'Aufgabe ohne Frist',
+        'x 2000-01-02 2000-01-01 Abgeschlossene Aufgabe') | Set-Content "$out\project\todo.txt" -Encoding ascii
     $env:XOURNAL_STUDIO_CONFIG_DIR = "$out\config"
     $env:XOURNAL_STUDIO_LOG = "$out\app.log"
     @{
         paneOpen = $true; paneTab = 0; darkMode = $true; projectFolder = "$out\project"
-        mouseHintShown = $true
+        mouseHintShown = $true; doneTasksShown = $true
     } | ConvertTo-Json -Compress | Set-Content "$out\config\settings-native.json" -Encoding ascii
     Start-TestApp 'XournalStudio.exe' ('"' + "$out\project\Schaltungen.xopp" + '"')
     $mainMenu = [ThemeProbe]::GetMenu($script:h)
@@ -60,6 +62,11 @@ Invoke-Test {
     Shot '02-dark-tasks'
     if ([ThemeProbe]::SendMessage($tabs,0x130b,[IntPtr]::Zero,[IntPtr]::Zero).ToInt32() -ne 1) { # TCM_GETCURSEL
         throw 'Clicking Aufgaben did not select the native tab.'
+    }
+    $tasks = [ThemeProbe]::FindWindowEx($pane,[IntPtr]::Zero,'XournalStudioTasksPane',$null)
+    $list = [ThemeProbe]::FindWindowEx($tasks,[IntPtr]::Zero,'SysListView32',$null)
+    if ([ThemeProbe]::SendMessage($list,0x1098,[IntPtr]::Zero,[IntPtr]::Zero).ToInt32() -ne 3) { # LVM_GETGROUPCOUNT
+        throw 'Expected overdue, open and completed task groups in the dark screenshot.'
     }
     ClickTab 'Dateien'
     Shot '03-dark-files'
