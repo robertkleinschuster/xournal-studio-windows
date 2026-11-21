@@ -12,4 +12,5 @@ dependency cache (`cmake/DependencyCache.cmake`) and linked statically unless no
 | PDFium | 158.0.8125.0 (bblanchon/pdfium-binaries, chromium/8125) | BSD-3-Clause; bundles abseil, FreeType, HarfBuzz, highway, ICU, lcms, libjpeg-turbo, OpenJPEG, libpng, zlib and others under their licenses | `pdftext/CMakeLists.txt` | `pdfium.dll` (delay-loaded); `xournal_deploy_pdfium` copies its `LICENSE` and `licenses/` to `licenses/pdfium` next to the exe |
 | libgit2 | 1.9.7 | GPL-2.0 with the linking exception; its bundled llhttp (MIT), PCRE (BSD-3-Clause), xdiff (LGPL-2.1+) and SHA-1 collision detection (MIT) are covered by its `COPYING` | `services/git/Dependencies.cmake` (a project of its own; HTTPS through WinHTTP, the shared zlib) | static; `install.ps1` copies `COPYING` to `licenses/libgit2` |
 | InkPages | submodule | the project's own | `external/InkPages` | static |
+| win32-darkmodelib | `e8ec95b` | MPL-2.0 and MIT | `app/Darkmodelib.cmake` | static; [corresponding source](https://github.com/ozone10/win32-darkmodelib/tree/e8ec95ba631462f01e238e63f7d06c1e6829a7a1) |
 | GoogleTest | 1.15.2 | BSD-3-Clause | `CMakeLists.txt` | tests only, not shipped |

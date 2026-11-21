@@ -25,6 +25,7 @@ add_executable(XournalStudio WIN32
     src/DelayedAction.cpp
     src/Questions.cpp
     src/Dialogs.cpp
+    src/NativeTheme.cpp
     src/ErrorText.cpp
     src/PdfExportCommand.cpp
     src/PageCommands.cpp
@@ -65,6 +66,8 @@ add_executable(XournalStudio WIN32
     src/SelectionClipboard.cpp
     app.rc
 )
+include(${CMAKE_CURRENT_LIST_DIR}/Darkmodelib.cmake)
+target_link_libraries(XournalStudio PRIVATE XournalDarkmodelib)
 target_compile_options(XournalStudio PRIVATE ${XOURNAL_COMPILE_OPTIONS})
 target_link_options(XournalStudio PRIVATE /MANIFEST:NO) # the manifest is a resource (app.manifest)
 # The pen cursors come from InkPages' demo (a dot per palette color x width step), included by app.rc.

@@ -1,4 +1,5 @@
 #include "Questions.h"
+#include "NativeTheme.h"
 
 #include "xournal/base/Error.h"
 
@@ -25,7 +26,7 @@ namespace xournal::app::Questions
         config.pButtons = items.data();
         config.nDefaultButton = FirstId + defaultButton;
         int pressed = 0;
-        Check("TaskDialogIndirect", TaskDialogIndirect(&config, &pressed, nullptr, nullptr));
+        Check("TaskDialogIndirect", NativeTheme::ShowTaskDialog(config, &pressed));
         return pressed >= FirstId && pressed < FirstId + static_cast<int>(buttons.size()) ? pressed - FirstId : -1;
     }
 

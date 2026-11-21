@@ -1,5 +1,6 @@
 #include "Dialogs.h"
 #include "DarkColors.h"
+#include "NativeTheme.h"
 
 #include "xournal/base/Error.h"
 #include "xournal/base/Log.h"
@@ -23,16 +24,7 @@ namespace xournal::app::Dialogs
             ThrowLastError("SetWindowLongPtr (dialog state)");
         if (GetPropW(GetAncestor(dialog, GA_ROOTOWNER), DarkColors::WindowProperty))
         {
-            for (auto [attribute, color] : { std::pair{ DWMWA_CAPTION_COLOR, DarkColors::Background },
-                    std::pair{ DWMWA_TEXT_COLOR, DarkColors::Text } })
-            {
-                HRESULT hr = DwmSetWindowAttribute(dialog, attribute, &color, sizeof(color));
-                if (FAILED(hr)) LogError("DwmSetWindowAttribute (dialog): " + DescribeHr(hr));
-            }
-            EnumChildWindows(dialog, [](HWND child, LPARAM) -> BOOL {
-                DarkColors::SetCheckBoxPalette(child, true);
-                return TRUE;
-            }, 0);
+            NativeTheme::ApplyDialog(dialog);
         }
     }
 
@@ -211,7 +203,7 @@ namespace xournal::app::Dialogs
         config.pButtons = buttons;
         config.nDefaultButton = IDCANCEL;
         int pressed = 0;
-        Check("TaskDialogIndirect (confirm)", TaskDialogIndirect(&config, &pressed, nullptr, nullptr));
+        Check("TaskDialogIndirect (confirm)", NativeTheme::ShowTaskDialog(config, &pressed));
         return pressed == IDYES;
     }
 
@@ -277,7 +269,7 @@ namespace xournal::app::Dialogs
         config.pButtons = buttons;
         config.nDefaultButton = Save;
         int pressed = 0;
-        Check("TaskDialogIndirect", TaskDialogIndirect(&config, &pressed, nullptr, nullptr));
+        Check("TaskDialogIndirect", NativeTheme::ShowTaskDialog(config, &pressed));
         return pressed == Save ? LeaveChoice::Save : pressed == Discard ? LeaveChoice::Discard : LeaveChoice::Cancel;
     }
 
@@ -291,7 +283,7 @@ namespace xournal::app::Dialogs
         config.pszMainInstruction = title.c_str();
         config.pszContent = detail.c_str();
         config.dwCommonButtons = TDCBF_OK_BUTTON;
-        HRESULT hr = TaskDialogIndirect(&config, nullptr, nullptr, nullptr);
+        HRESULT hr = NativeTheme::ShowTaskDialog(config, nullptr);
         if (FAILED(hr))
         {
             LogError(std::format("TaskDialogIndirect (error dialog): {}", DescribeHr(hr))); // the error itself is logged by its thrower

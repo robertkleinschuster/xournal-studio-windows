@@ -21,17 +21,6 @@ namespace xournal::app::DarkColors
         return GetPropW(GetAncestor(window, GA_ROOTOWNER), WindowProperty) != nullptr;
     }
 
-    inline void SetCheckBoxPalette(HWND control, bool dark)
-    {
-        wchar_t name[16]{};
-        if (!GetClassNameW(control, name, ARRAYSIZE(name)) || wcscmp(name, WC_BUTTONW) != 0) return;
-        auto style = GetWindowLongPtrW(control, GWL_STYLE) & BS_TYPEMASK;
-        if (style != BS_AUTOCHECKBOX && style != BS_CHECKBOX) return;
-        // Let the checkbox honor its parent's WM_CTLCOLORBTN palette.
-        HRESULT hr = SetWindowTheme(control, dark ? L"" : nullptr, dark ? L"" : nullptr);
-        if (FAILED(hr)) LogError("SetWindowTheme (checkbox): " + DescribeHr(hr));
-    }
-
     inline void SetTooltipPalette(HWND tooltip, bool dark)
     {
         // The tooltip color messages only apply when visual styles are disabled for this window.

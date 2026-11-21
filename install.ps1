@@ -60,7 +60,9 @@ function Stage-LocalApp([string]$BuildDir, [string]$SourceDir) {
         @{ Name = 'qpdf'; Files = @('LICENSE.txt', 'NOTICE.md') },
         @{ Name = 'libjpeg-turbo'; Files = @('LICENSE.md') },
         @{ Name = 'protozero'; Files = @('LICENSE.md', 'LICENSE.from_folly') },
-        @{ Name = 'libgit2'; Files = @('COPYING') }
+        @{ Name = 'libgit2'; Files = @('COPYING') },
+        @{ Name = 'darkmodelib'; Files = @('LICENSE.md', 'LICENSE-MIT.md', 'LICENSE-PolyHook_2_0.md',
+            'LICENSE-UAHMenuBar.md', 'LICENSE-win32-darkmode.md') }
     )
     foreach ($license in $licenses) {
         $folder = Join-Path $stage "licenses\$($license.Name)"

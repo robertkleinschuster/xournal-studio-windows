@@ -1,4 +1,4 @@
-# Verifies that the theme switch restores native menu drawing and system tree-view colors.
+# Verifies native menu items and tree-view colors across a dark/light round trip.
 . C:\sbx\TestKit.ps1
 Add-Type @"
 using System;
@@ -8,6 +8,7 @@ public static class ThemeProbe {
     [DllImport("user32")] public static extern bool PostMessage(IntPtr w, uint m, IntPtr a, IntPtr b);
     [DllImport("user32",CharSet=CharSet.Unicode)] public static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string cls, string title);
     [DllImport("user32")] public static extern IntPtr GetMenu(IntPtr w);
+    [DllImport("user32")] public static extern bool IsWindowVisible(IntPtr w);
     [DllImport("user32")] public static extern IntPtr GetSubMenu(IntPtr m, int item);
     [DllImport("user32")] public static extern uint GetMenuState(IntPtr m, uint item, uint flags);
 }
@@ -26,9 +27,11 @@ Invoke-Test {
     $view = [ThemeProbe]::GetSubMenu($mainMenu,3)
     $dark = [ThemeProbe]::GetMenuState($view,409,0)
     if ($dark -eq [UInt32]::MaxValue -or ($dark -band 8) -eq 0) { throw "Dark mode is not checked: $dark" }
-    if (($dark -band 0x100) -eq 0) { throw 'Dark command should be owner drawn.' }
+    if (($dark -band 0x100) -ne 0) { throw 'Dark command should keep native menu drawing.' }
     $pane = [ThemeProbe]::FindWindowEx($script:h,[IntPtr]::Zero,'XournalStudioSidePane',$null)
     if ($pane -eq [IntPtr]::Zero) { throw 'Side pane not found.' }
+    $tabs = [ThemeProbe]::FindWindowEx($pane,[IntPtr]::Zero,'SysTabControl32',$null)
+    if (![ThemeProbe]::IsWindowVisible($tabs)) { throw 'Native side pane tabs are hidden in dark mode.' }
     $tree = [ThemeProbe]::FindWindowEx($pane,[IntPtr]::Zero,'SysTreeView32',$null)
     if ($tree -eq [IntPtr]::Zero) { throw 'File tree not found.' }
     function TreeColors {
@@ -48,11 +51,13 @@ Invoke-Test {
     }
     $stored = (Get-Content "$out\config\settings-native.json" -Raw | ConvertFrom-Json).darkMode
     if ($stored) { throw 'Dark mode setting stayed enabled.' }
+    if (![ThemeProbe]::IsWindowVisible($tabs)) { throw 'Native side pane tabs are hidden in light mode.' }
     $light = [ThemeProbe]::GetMenuState($view,409,0)
     if ($light -eq [UInt32]::MaxValue -or ($light -band 8) -ne 0) { throw "Dark mode is still checked: $light" }
     if (($light -band 0x100) -ne 0) { throw 'Light command did not restore native drawing.' }
     [ThemeProbe]::PostMessage($script:h,0x111,[IntPtr]409,[IntPtr]::Zero) | Out-Null
     Shot '05-back-to-dark'
+    if (![ThemeProbe]::IsWindowVisible($tabs)) { throw 'Native side pane tabs did not survive the toggle.' }
     if ((@(TreeColors) -join ',') -ne ($darkColors -join ',')) { throw 'Dark tree colors did not restore.' }
     if (!(Get-Content "$out\config\settings-native.json" -Raw | ConvertFrom-Json).darkMode) { throw 'Dark appearance did not restore.' }
 }

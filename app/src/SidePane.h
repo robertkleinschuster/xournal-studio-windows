@@ -61,7 +61,6 @@ namespace xournal::app
 
         HWND window = nullptr;
         HWND tabs = nullptr;
-        HWND navigation = nullptr;
         HWND syncButton = nullptr;
         HWND syncTip = nullptr;
         std::wstring syncText = L"Synchronisieren";

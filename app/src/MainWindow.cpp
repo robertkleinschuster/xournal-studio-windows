@@ -5,6 +5,7 @@
 #include "ChildControls.h"
 #include "Commands.h"
 #include "DarkColors.h"
+#include "NativeTheme.h"
 #include "Dialogs.h"
 #include "ErrorText.h"
 #include "FileDrop.h"
@@ -17,7 +18,6 @@
 #include "xournal/base/Text.h"
 
 #include <commctrl.h>
-#include <dwmapi.h>
 #include <windowsx.h>
 
 #include <algorithm>
@@ -48,8 +48,6 @@ namespace xournal::app
                 TreeView_SetBkColor(control, dark ? bg : CLR_NONE);
                 TreeView_SetTextColor(control, dark ? text : CLR_NONE);
             }
-            if (EqualsIgnoreCase(name, WC_BUTTONW))
-                DarkColors::SetCheckBoxPalette(control, dark != 0);
             return TRUE;
         }
 
@@ -639,15 +637,8 @@ namespace xournal::app
         }
         else RemovePropW(window, DarkColors::WindowProperty);
         menu.Check(CmdDarkMode, dark);
-        menu.SetDarkMode(window, dark);
-        Log("appearance: menu updated");
-        COLORREF caption = dark ? DarkColors::Background : DWMWA_COLOR_DEFAULT;
-        COLORREF text = dark ? DarkColors::Text : DWMWA_COLOR_DEFAULT;
-        for (auto [attribute, color] : { std::pair{ DWMWA_CAPTION_COLOR, caption }, std::pair{ DWMWA_TEXT_COLOR, text } })
-        {
-            HRESULT hr = DwmSetWindowAttribute(window, attribute, &color, sizeof(color));
-            if (FAILED(hr)) LogError("DwmSetWindowAttribute (dark mode): " + DescribeHr(hr));
-        }
+        NativeTheme::ApplyMainWindow(window, dark);
+        if (!DrawMenuBar(window)) ThrowLastError("DrawMenuBar (theme)");
         EnumChildWindows(window, ApplyControlColors, dark);
         surface->SetWorkspaceColor(dark ? inkpages::Color{ 255, 23, 24, 26 } : inkpages::SurfaceOptions{}.background);
         thumbnails->SetDarkPaper(dark);
@@ -831,15 +822,7 @@ namespace xournal::app
             if (statusBar && statusBar->OnNotify(*reinterpret_cast<NMHDR const*>(lp))) return 0;
             break;
         case WM_DRAWITEM:
-            if (menu.Draw(window, *reinterpret_cast<DRAWITEMSTRUCT const*>(lp)) ||
-                (statusBar && statusBar->DrawPart(*reinterpret_cast<DRAWITEMSTRUCT const*>(lp)))) return TRUE;
-            break;
-        case WM_MEASUREITEM:
-            if (menu.Measure(window, *reinterpret_cast<MEASUREITEMSTRUCT*>(lp))) return TRUE;
-            break;
-        case WM_MENUCHAR:
-            if (auto result = menu.MenuChar(static_cast<wchar_t>(LOWORD(wp)), reinterpret_cast<HMENU>(lp)))
-                return result;
+            if (statusBar && statusBar->DrawPart(*reinterpret_cast<DRAWITEMSTRUCT const*>(lp))) return TRUE;
             break;
         case WM_CONTEXTMENU:
             // The pages' menu (InkPages leaves the right click to the parent); other children have their own.
