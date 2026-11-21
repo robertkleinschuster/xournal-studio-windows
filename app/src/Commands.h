@@ -38,5 +38,6 @@
 #define CmdBack 407
 #define CmdForward 408
 #define CmdDarkMode 409
+#define CmdLargeToolbarIcons 410
 #define CmdRecentFirst 500
 #define CmdRecentLast (CmdRecentFirst + 19)

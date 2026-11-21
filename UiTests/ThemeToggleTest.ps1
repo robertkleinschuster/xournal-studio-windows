@@ -47,6 +47,22 @@ Invoke-Test {
     $dark = [ThemeProbe]::GetMenuState($view,409,0)
     if ($dark -eq [UInt32]::MaxValue -or ($dark -band 8) -eq 0) { throw "Dark mode is not checked: $dark" }
     if (($dark -band 0x100) -ne 0) { throw 'Dark command should keep native menu drawing.' }
+    $toolbarHost = [ThemeProbe]::FindWindowEx($script:h,[IntPtr]::Zero,'InkPagesToolbar',$null)
+    $toolbar = [ThemeProbe]::FindWindowEx($toolbarHost,[IntPtr]::Zero,'ToolbarWindow32',$null)
+    if (!$toolbarHost -or !$toolbar) { throw 'Main toolbar not found.' }
+    function ToolbarButtonHeight {
+        ([ThemeProbe]::SendMessage($toolbar,0x43a,[IntPtr]::Zero,[IntPtr]::Zero).ToInt64() -shr 16) -band 0xffff # TB_GETBUTTONSIZE
+    }
+    $normal = ToolbarButtonHeight
+    [ThemeProbe]::SendMessage($script:h,0x111,[IntPtr]410,[IntPtr]::Zero) | Out-Null
+    $large = ToolbarButtonHeight
+    if (!$normal -or $large -lt ($normal + 12 * $dpi / 96.0)) { throw "Toolbar did not grow ($normal to $large pixels)." }
+    if (!(Get-Content "$out\config\settings-native.json" -Raw | ConvertFrom-Json).largeToolbarIcons) {
+        throw 'Large toolbar icons setting was not saved.'
+    }
+    Shot '00-large-toolbar'
+    [ThemeProbe]::SendMessage($script:h,0x111,[IntPtr]410,[IntPtr]::Zero) | Out-Null
+    if ((ToolbarButtonHeight) -ne $normal) { throw 'Toolbar did not return to its normal height.' }
     $pane = [ThemeProbe]::FindWindowEx($script:h,[IntPtr]::Zero,'XournalStudioSidePane',$null)
     if ($pane -eq [IntPtr]::Zero) { throw 'Side pane not found.' }
     $tabs = [ThemeProbe]::FindWindowEx($pane,[IntPtr]::Zero,'SysTabControl32',$null)

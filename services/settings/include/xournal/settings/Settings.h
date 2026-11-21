@@ -54,6 +54,7 @@ namespace xournal::settings
         std::optional<std::filesystem::path> projectFolder;
         bool paneOpen = false;
         bool darkMode = false;
+        bool largeToolbarIcons = false;
         int paneTab = 0;
         bool doneTasksShown = false;
         bool penHasWritten = false;

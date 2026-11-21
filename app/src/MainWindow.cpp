@@ -233,6 +233,9 @@ namespace xournal::app
             [this] { OnCommand(CmdInsertPage); },
             [this] { OnCommand(CmdDeletePage); },
         });
+        toolbar->SetLargeIcons(settings.largeToolbarIcons);
+        toolbar->sizeChanged = [this] { Layout(); };
+        menu.Check(CmdLargeToolbarIcons, settings.largeToolbarIcons);
         toolbar->choicesChanged = [this](inkpages::ToolChoices const& choices)
         {
             settings.toolChoices = choices.Serialize();
@@ -657,6 +660,15 @@ namespace xournal::app
 
     void MainWindow::OnCommand(int command)
     {
+        if (command == CmdLargeToolbarIcons)
+        {
+            bool large = !settings.largeToolbarIcons;
+            toolbar->SetLargeIcons(large);
+            settings.largeToolbarIcons = large;
+            menu.Check(CmdLargeToolbarIcons, large);
+            SaveSettings();
+            return;
+        }
         if (command == CmdDarkMode)
         {
             // Let Win32 finish dispatching the menu command before changing the process theme.

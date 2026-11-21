@@ -95,6 +95,7 @@ namespace xournal::settings
         if (auto folder = String(o, L"projectFolder")) settings.projectFolder = *folder;
         settings.paneOpen = Boolean(o, L"paneOpen", false);
         settings.darkMode = Boolean(o, L"darkMode", false);
+        settings.largeToolbarIcons = Boolean(o, L"largeToolbarIcons", false);
         settings.paneTab = static_cast<int>(Number(o, L"paneTab", 0));
         settings.doneTasksShown = Boolean(o, L"doneTasksShown", false);
         settings.penHasWritten = Boolean(o, L"penHasWritten", false);
@@ -167,6 +168,7 @@ namespace xournal::settings
         set(L"projectFolder", pathValue(projectFolder));
         set(L"paneOpen", JsonValue::CreateBooleanValue(paneOpen));
         set(L"darkMode", JsonValue::CreateBooleanValue(darkMode));
+        set(L"largeToolbarIcons", JsonValue::CreateBooleanValue(largeToolbarIcons));
         set(L"paneTab", JsonValue::CreateNumberValue(paneTab));
         set(L"doneTasksShown", JsonValue::CreateBooleanValue(doneTasksShown));
         set(L"penHasWritten", JsonValue::CreateBooleanValue(penHasWritten));

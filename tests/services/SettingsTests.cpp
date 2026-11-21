@@ -40,6 +40,7 @@ namespace xournal::tests
         settings.projectFolder = temp.Path();
         settings.paneOpen = true;
         settings.darkMode = true;
+        settings.largeToolbarIcons = true;
         settings.paneTab = 2;
         settings.doneTasksShown = true;
         settings.penHasWritten = true;
@@ -60,6 +61,7 @@ namespace xournal::tests
         EXPECT_EQ(settings.projectFolder, read.projectFolder);
         EXPECT_TRUE(read.paneOpen);
         EXPECT_TRUE(read.darkMode);
+        EXPECT_TRUE(read.largeToolbarIcons);
         EXPECT_EQ(2, read.paneTab);
         EXPECT_TRUE(read.doneTasksShown);
         EXPECT_TRUE(read.penHasWritten);

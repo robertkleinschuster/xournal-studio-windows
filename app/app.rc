@@ -58,6 +58,7 @@ BEGIN
     POPUP "&Ansicht"
     BEGIN
         MENUITEM "&Dunkelmodus", CmdDarkMode
+        MENUITEM "&Große Werkzeugleistensymbole", CmdLargeToolbarIcons
         MENUITEM "&Dateien und Aufgaben\tStrg+B", CmdTogglePane
         MENUITEM SEPARATOR
         MENUITEM "&Vergrößern\tStrg+Plus", CmdZoomIn

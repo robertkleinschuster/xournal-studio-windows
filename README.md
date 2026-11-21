@@ -117,7 +117,7 @@ the window's parts to feature classes:
 
 - `MainMenu` (Datei/Bearbeiten/Seite/Ansicht with the C# app's shortcuts (tag `csharp-final`); features of later phases shown disabled),
   `AppToolbar` (InkPages' toolbar in German with the exe's pen cursors and the shared command and tool icons rendered
-  as bitmaps at the toolbar's DPI), `SidePane` (Dateien, Aufgaben,
+  as bitmaps at the toolbar's DPI; Ansicht → Große Werkzeugleistensymbole switches from 16 to 32 DIP), `SidePane` (Dateien, Aufgaben,
   Seiten), `StatusBar` (page, zoom and the latest app message with a tooltip),
   `Dialogs` (file dialogs, the leave question).
 - `DocumentSession`: new, open (.xopp, .moj, or a PDF as a new document; loaded on the thread pool), save, Save As with
