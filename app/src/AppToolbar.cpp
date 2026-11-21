@@ -31,8 +31,10 @@ namespace xournal::app
             L"Über den Pfeil lässt sich die Radierergröße einstellen.";
         t.wholeStrokeErase = L"Ganze Striche radieren";
         t.wholeStrokeEraseTip = L"Ganze Striche radieren: Radierer und Radierer-Taste des Stifts löschen jeden Strich, "
-            L"den sie berühren. Aus: nur, was im Kreis liegt.";
+            L"den sie berühren. Aus: Nur innerhalb der Radierer-Kontur radieren.";
         t.eraserRadius = L"Größe";
+        t.sizeSteps = { L"Sehr fein", L"Fein", L"Mittel", L"Dick", L"Sehr dick" };
+        t.squareEraser = L"Quadratischer Radierer (Xournal++)";
         t.select = L"Auswählen";
         t.selectTip = L"Auswählen: Lasso oder Rechteck (der Pfeil); ziehen verschiebt, die Ecken skalieren. Mit dem "
             L"Stift geht das Lasso mit jedem Werkzeug: mit gedrückter Stifttaste ziehen.\n"
