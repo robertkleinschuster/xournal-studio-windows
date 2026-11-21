@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <exception>
 #include <format>
 
 namespace xournal::app
@@ -27,6 +28,7 @@ namespace xournal::app
             std::shared_ptr<bool> alive = std::make_shared<bool>(true); // thumbnails arriving after the dialog closed
             std::vector<std::shared_ptr<CpuBitmap>> thumbnails;
             std::optional<InsertPagesChoice> choice;
+            std::exception_ptr initializationError;
             HWND dialog = nullptr;
             HWND list = nullptr;
             HIMAGELIST images = nullptr;
@@ -144,7 +146,7 @@ namespace xournal::app
                 {
                     int index = static_cast<int>(draw.nmcd.dwItemSpec);
                     RECT preview{};
-                    if (index < static_cast<int>(state.thumbnails.size()) &&
+                    if (index >= 0 && index < static_cast<int>(state.thumbnails.size()) &&
                         ListView_GetSubItemRect(state.list, index, PreviewColumn, LVIR_BOUNDS, &preview))
                     {
                         double aspect = state.request.aspect ? state.request.aspect(index) : 1.4142;
@@ -152,7 +154,9 @@ namespace xournal::app
                         DrawPageThumbnail(draw.nmcd.hdc, preview, state.box, aspect, state.thumbnails[index].get());
                     }
                 }
-                SetWindowLongPtrW(state.dialog, DWLP_MSGRESULT, result);
+                SetLastError(ERROR_SUCCESS);
+                if (!SetWindowLongPtrW(state.dialog, DWLP_MSGRESULT, result) && GetLastError() != ERROR_SUCCESS)
+                    ThrowLastError("SetWindowLongPtr (insert pages custom draw)");
                 return TRUE;
             }
             }
@@ -198,6 +202,7 @@ namespace xournal::app
                 LogException(std::format("insert dialog: message 0x{:X}", message));
                 if (message == WM_INITDIALOG)
                 {
+                    reinterpret_cast<DialogState*>(lp)->initializationError = std::current_exception();
                     if (!EndDialog(dialog, IDCANCEL)) LogError("EndDialog (insert pages initialization) failed");
                     return TRUE;
                 }
@@ -214,6 +219,7 @@ namespace xournal::app
         DWORD error = result <= 0 ? GetLastError() : ERROR_SUCCESS;
         state.alive.reset(); // thumbnails still on their way are dropped
         if (state.images && !ImageList_Destroy(state.images)) LogError("ImageList_Destroy (insert pages) failed");
+        if (state.initializationError) std::rethrow_exception(state.initializationError);
         if (result <= 0) ThrowHr("DialogBoxParam (insert pages)", HRESULT_FROM_WIN32(error));
         return result == IDOK ? state.choice : std::nullopt;
     }
