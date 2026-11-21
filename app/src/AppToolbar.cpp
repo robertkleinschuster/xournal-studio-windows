@@ -64,7 +64,8 @@ namespace xournal::app
         t.widthFormat = L"{} pt";
         t.decimalSeparator = L',';
         t.penColors = { L"Schwarz", L"Blau", L"Rot", L"Grün", L"Grau", L"Hellblau", L"Hellgrün", L"Magenta", L"Orange", L"Gelb" };
-        t.highlighterColors = { L"Gelb", L"Grün", L"Hellblau", L"Magenta", L"Orange" };
+        t.highlighterColors = { L"Gelb", L"Grün", L"Hellblau", L"Magenta", L"Orange", L"Rot", L"Rosa", L"Lavendel",
+            L"Blau", L"Türkis", L"Mint", L"Apricot" };
         return t;
     }
 
