@@ -55,6 +55,7 @@ namespace xournal::app
         t.shapeKinds = { L"Linie", L"Pfeil", L"Rechteck", L"Ellipse" };
         t.recognizeShapes = L"Gezeichnete Formen erkennen";
         t.text = L"Text";
+        t.laser = L"Laserpointer";
         t.textTip = L"Text: auf die Seite tippen und schreiben (die Tastatur tippt), auf einen Text tippen, um ihn zu "
             L"bearbeiten, daneben tippen, um fertig zu sein. Der Pfeil: Schrift, Größe und Farbe.\n"
             L"Tippen oder Klicken setzt einen Text – mit Stift, Maus oder Finger.";

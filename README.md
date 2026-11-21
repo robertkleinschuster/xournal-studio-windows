@@ -13,14 +13,17 @@ a delay-loaded DLL. Licenses: [THIRD-PARTY.md](THIRD-PARTY.md). The earlier C#/W
 
 - Pen: Windows ink (pressure, eraser end, barrel button = lasso), pen and highlighter presets, exact or whole-stroke
   eraser, selection (lasso/rectangle: move, scale, copy, delete, across pages), shapes and shape recognition, the
-  Windows ruler, a text tool, undo/redo. Only the pen writes. Finger and touchpad gestures pan and zoom. The mouse
+  Windows ruler, a text tool, and undo/redo. The laser pointer draws a temporary trail with an adjustable duration
+  in its toolbar menu. Only the pen writes. Finger and touchpad gestures pan and zoom. The mouse
   pans on a left drag outside PDF text, lassos on a right drag and uses the active selection mode in Auswählen.
 - Documents: PDF backgrounds (PDF opened as a new document), all Xournal++ backgrounds, pictures, texts, PDF export,
   pages inserted (blank, from a PDF or another document), moved and deleted, iPad (PencilKit) markup import.
 - Side pane: the project folder (git colors, sync), todo.txt tasks, page thumbnails, the PDF's outline, search
-  (Strg+F: PDF text, texts and handwriting); PDF links follow a mouse click or finger tap; the mouse selects the PDF's
-  text (drag, double click = word, triple click = line) for Strg+C.
+  (Strg+F: PDF text, texts, handwriting, and OCR for pictures and PDF pages without a text layer). PDF links follow a
+  mouse click or finger tap. The mouse selects the PDF's text (drag, double click = word, triple click = line) for Strg+C.
 - Saving only by choice (the leave question), recovery copies of unsaved changes.
+- Search uses Windows OCR for pictures and scans and Windows InkAnalyzer for pen strokes, including PDF ink annotations
+  and consecutive vector pen segments on PDF pages without a text layer. Recognition runs locally, with results kept in memory.
 
 ## Build, test, install
 
