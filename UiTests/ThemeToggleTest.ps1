@@ -10,6 +10,9 @@ public static class ThemeProbe {
     [DllImport("user32")] public static extern IntPtr GetMenu(IntPtr w);
     [DllImport("user32")] public static extern bool IsWindowVisible(IntPtr w);
     [DllImport("user32")] public static extern bool IsWindowEnabled(IntPtr w);
+    [DllImport("user32")] public static extern uint GetDpiForWindow(IntPtr w);
+    [DllImport("user32")] public static extern IntPtr GetWindowDpiAwarenessContext(IntPtr w);
+    [DllImport("user32")] public static extern bool AreDpiAwarenessContextsEqual(IntPtr a, IntPtr b);
     [DllImport("user32")] public static extern IntPtr GetSubMenu(IntPtr m, int item);
     [DllImport("user32")] public static extern uint GetMenuState(IntPtr m, uint item, uint flags);
 }
@@ -34,6 +37,11 @@ Invoke-Test {
         mouseHintShown = $true; doneTasksShown = $true
     } | ConvertTo-Json -Compress | Set-Content "$out\config\settings-native.json" -Encoding ascii
     Start-TestApp 'XournalStudio.exe' ('"' + "$out\project\Schaltungen.xopp" + '"')
+    $dpi = [ThemeProbe]::GetDpiForWindow($script:h)
+    if (!$dpi -or ![ThemeProbe]::AreDpiAwarenessContextsEqual([ThemeProbe]::GetWindowDpiAwarenessContext($script:h),[IntPtr](-4))) {
+        throw 'Expected a Per-Monitor V2 main window.'
+    }
+    "main window DPI: $dpi"
     $mainMenu = [ThemeProbe]::GetMenu($script:h)
     $view = [ThemeProbe]::GetSubMenu($mainMenu,3)
     $dark = [ThemeProbe]::GetMenuState($view,409,0)
@@ -60,6 +68,24 @@ Invoke-Test {
     }
     ClickTab 'Aufgaben'
     Shot '02-dark-tasks'
+    $bitmap = New-Object Drawing.Bitmap "$out\02-dark-tasks.png"
+    try {
+        $scale = $dpi / 96.0
+        # Sample above each task row, where the left-aligned group label is painted.
+        foreach ($row in 'Frist abgelaufen', 'Aufgabe ohne Frist', 'Abgeschlossene Aufgabe') {
+            $point = & C:\sbx\data\uiaprobe.exe XournalStudioWindow $row
+            if ($LASTEXITCODE -ne 0) { throw "Task '$row' not found." }
+            $y = [int](("$point".Trim() -split ' ')[1])
+            $bright = 0
+            for ($py = [int]($y - 30 * $scale); $py -lt [int]($y - 10 * $scale); $py++) {
+                for ($x = 2; $x -lt [int](85 * $scale); $x++) {
+                    $pixel = $bitmap.GetPixel($x, $py)
+                    if ($pixel.R -ge 225 -and $pixel.G -ge 225 -and $pixel.B -ge 225) { $bright++ }
+                }
+            }
+            if ($bright -lt 5) { throw "Dark group heading above '$row' lacks light text ($bright pixels at $dpi DPI)." }
+        }
+    } finally { $bitmap.Dispose() }
     if ([ThemeProbe]::SendMessage($tabs,0x130b,[IntPtr]::Zero,[IntPtr]::Zero).ToInt32() -ne 1) { # TCM_GETCURSEL
         throw 'Clicking Aufgaben did not select the native tab.'
     }

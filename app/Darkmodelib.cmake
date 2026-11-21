@@ -5,6 +5,20 @@ FetchContent_Declare(darkmodelib
 )
 FetchContent_MakeAvailable(darkmodelib)
 
+# Keep the native status text and fix the library's dark-mode painter.
+set(status_painter "${darkmodelib_SOURCE_DIR}/src/DmlibSubclassControl.cpp")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${status_painter}")
+file(READ "${status_painter}" control_source)
+string(REPLACE
+    "str.c_str(), -1, &rcPart, DT_SINGLELINE | DT_VCENTER | DT_LEFT);"
+    "str.c_str(), -1, &rcPart, DT_SINGLELINE | DT_VCENTER | DT_LEFT | DT_NOPREFIX | DT_END_ELLIPSIS);"
+    patched_control_source "${control_source}")
+if(patched_control_source STREQUAL control_source)
+    message(FATAL_ERROR "Recheck the darkmodelib status text patch after updating the dependency")
+endif()
+set(patched_control_file "${CMAKE_CURRENT_BINARY_DIR}/DmlibSubclassControl.cpp")
+file(CONFIGURE OUTPUT "${patched_control_file}" CONTENT "${patched_control_source}" @ONLY)
+
 add_library(XournalDarkmodelib STATIC
     ${darkmodelib_SOURCE_DIR}/src/Darkmodelib.cpp
     ${darkmodelib_SOURCE_DIR}/src/DmlibColor.cpp
@@ -12,11 +26,12 @@ add_library(XournalDarkmodelib STATIC
     ${darkmodelib_SOURCE_DIR}/src/DmlibHook.cpp
     ${darkmodelib_SOURCE_DIR}/src/DmlibPaintHelper.cpp
     ${darkmodelib_SOURCE_DIR}/src/DmlibSubclass.cpp
-    ${darkmodelib_SOURCE_DIR}/src/DmlibSubclassControl.cpp
+    "${patched_control_file}"
     ${darkmodelib_SOURCE_DIR}/src/DmlibSubclassWindow.cpp
     ${darkmodelib_SOURCE_DIR}/src/DmlibWinApi.cpp
 )
 target_include_directories(XournalDarkmodelib SYSTEM PUBLIC ${darkmodelib_SOURCE_DIR}/include)
+target_include_directories(XournalDarkmodelib PRIVATE ${darkmodelib_SOURCE_DIR}/src)
 target_compile_features(XournalDarkmodelib PRIVATE cxx_std_20)
 target_compile_definitions(XournalDarkmodelib PRIVATE
     UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN
