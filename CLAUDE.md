@@ -75,7 +75,7 @@ long formulas in several colors. For open pen/UI design questions, propose how O
   viewer. The Text tool takes its clicks and taps. System cursors show the mouse's action on the page. The pen
   operates every control in its normal mouse size.
 - **Pen buttons:** eraser end / eraser button erases with any tool (exact or whole strokes, following the toggle).
-  The barrel button lassos with every tool. A barrel tap inside an existing selection duplicates it. The tip moves
+  The barrel button lassos with every tool. Inside a selection, a barrel tap duplicates it and a barrel drag moves it. The tip moves
   the selection, scales it at a corner and rotates it at the rotation handle. The frame also offers delete and
   duplicate. An inside tap keeps the selection; a tap outside clears it.
 - **Simple, flat and honest – no magic** (user, 2026-11-15). Show things as they are and do exactly what the user asked:

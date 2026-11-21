@@ -23,6 +23,7 @@ namespace xournal::app
         /// The area the text covers on its page (axis-aligned, also for a turned matrix; at least a line high and a little
         /// wide, so an empty or blank text can still be hit and selected).
         Rect Bounds(XoppText const& text) const;
+        Rect LocalBounds(XoppText const& text) const;
 
     private:
         Microsoft::WRL::ComPtr<IDWriteTextLayout> Layout(XoppText const& text) const;

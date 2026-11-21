@@ -70,7 +70,8 @@ namespace xournal::app
         static bool IsObject(XmlElement const& e);                 // a picture or a text
         std::vector<XmlElementPtr> ObjectsOf(int page) const;     // bottom to top
         Rect BoundsOf(XmlElement const& element) const;           // page units
-        static void TransformInPlace(XmlElement& element, Matrix const& m);
+        std::pair<Rect, Matrix> LocalPlacement(XmlElement const& element) const;
+        static void TransformInPlace(XmlElement& element, Matrix const& m, std::optional<Size> intrinsic = {});
         std::optional<inkpages::PictureId> TopmostAt(inkpages::PointF point, bool textsOnly);
         Matrix ToPage(inkpages::Affine const& m, int page) const; // a document transform as one in the page's units
         int PageAtPoint(Point document) const;
@@ -80,6 +81,7 @@ namespace xournal::app
         std::mutex& documentLock;
         std::function<void(int)> invalidate;
         TextDrawing measure;
+        Microsoft::WRL::ComPtr<ID2D1Factory> geometryFactory;
         XmlElement const* editing = nullptr;
         std::map<inkpages::PictureId, XmlElementPtr> pictures;
         std::map<XmlElement const*, inkpages::PictureId> idByElement;

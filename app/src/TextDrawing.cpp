@@ -60,15 +60,21 @@ namespace xournal::app
         dc->SetTransform(page);
     }
 
-    Rect TextDrawing::Bounds(XoppText const& text) const
+    Rect TextDrawing::LocalBounds(XoppText const& text) const
     {
         DWRITE_TEXT_METRICS metrics{};
         Check("IDWriteTextLayout::GetMetrics", Layout(text)->GetMetrics(&metrics));
         double width = std::max<double>(metrics.widthIncludingTrailingWhitespace, text.size / 2);
         double height = std::max<double>(metrics.height, text.size);
         double left = text.wrap ? 0 : metrics.left;
-        Point corners[] = { text.transform.Apply({ left, 0 }), text.transform.Apply({ left + width, 0 }),
-            text.transform.Apply({ left, height }), text.transform.Apply({ left + width, height }) };
+        return { left, 0, width, height };
+    }
+
+    Rect TextDrawing::Bounds(XoppText const& text) const
+    {
+        Rect b = LocalBounds(text);
+        Point corners[] = { text.transform.Apply({ b.Left(), b.Top() }), text.transform.Apply({ b.Right(), b.Top() }),
+            text.transform.Apply({ b.Left(), b.Bottom() }), text.transform.Apply({ b.Right(), b.Bottom() }) };
         double x0 = corners[0].x, y0 = corners[0].y, x1 = x0, y1 = y0;
         for (auto c : corners)
         {

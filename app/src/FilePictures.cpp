@@ -1,6 +1,8 @@
 #include "FilePictures.h"
 
 #include "Bitmaps.h"
+#include "Direct2D.h"
+#include "xournal/model/XoppFormat.h"
 #include "xournal/base/Error.h"
 #include "xournal/pdf/PdfNavigation.h"
 
@@ -17,20 +19,15 @@ namespace xournal::app
     {
         Matrix MatrixOf(inkpages::Affine const& a) { return { a.m11, a.m12, a.m21, a.m22, a.dx, a.dy }; }
 
-        // Even-odd point in polygon.
-        bool Inside(std::vector<inkpages::PointF> const& polygon, Point p)
+        std::optional<Size> RotationSize(XmlElement const& element, Matrix const& m)
         {
-            bool inside = false;
-            for (size_t i = 0, j = polygon.size() - 1; i < polygon.size(); j = i++)
-            {
-                auto const& a = polygon[i];
-                auto const& b = polygon[j];
-                if ((a.y > p.y) != (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x)
-                {
-                    inside = !inside;
-                }
-            }
-            return inside;
+            if (!XoppImage::IsImage(element) || XoppFormat::ReadMatrix(element) ||
+                (m.m12 == 0 && m.m21 == 0 && m.m11 >= 0 && m.m22 >= 0)) return {};
+            if (auto size = XoppImage::NaturalSize(element)) return size;
+            auto data = XoppImage::GetData(element);
+            Size size = XoppImage::IsPdf(data) ? pdf::PdfNavigation(data).PageSize(0) : Bitmaps::NaturalSize(data);
+            if (!(size.width > 0 && size.height > 0)) ThrowInvalidData("picture of size 0");
+            return size;
         }
     }
 
@@ -70,27 +67,21 @@ namespace xournal::app
         return XoppImage::IsImage(element) ? XoppImage::GetBounds(element) : measure.Bounds(XoppText::Read(element));
     }
 
-    void FilePictures::TransformInPlace(XmlElement& element, Matrix const& m)
+    std::pair<Rect, Matrix> FilePictures::LocalPlacement(XmlElement const& element) const
     {
         if (XoppImage::IsImage(element))
         {
-            std::optional<Size> intrinsic;
-            if ((m.m12 != 0 || m.m21 != 0 || m.m11 < 0 || m.m22 < 0) && !element.Attribute(L"matrix"))
-            {
-                intrinsic = XoppImage::NaturalSize(element);
-                if (!intrinsic)
-                {
-                    auto data = XoppImage::GetData(element);
-                    intrinsic = XoppImage::IsPdf(data) ? pdf::PdfNavigation(data).PageSize(0) : Bitmaps::NaturalSize(data);
-                    if (!(intrinsic->width > 0 && intrinsic->height > 0)) ThrowInvalidData("picture of size 0");
-                }
-            }
-            XoppImage::Transform(element, m, intrinsic);
+            auto placement = XoppImage::GetPlacement(element);
+            return { { 0, 0, placement.size.width, placement.size.height }, placement.transform };
         }
-        else
-        {
-            XoppText::Transform(element, m);
-        }
+        auto text = XoppText::Read(element);
+        return { measure.LocalBounds(text), text.transform };
+    }
+
+    void FilePictures::TransformInPlace(XmlElement& element, Matrix const& m, std::optional<Size> intrinsic)
+    {
+        if (XoppImage::IsImage(element)) XoppImage::Transform(element, m, intrinsic);
+        else XoppText::Transform(element, m);
     }
 
     int FilePictures::PageOf(XmlElement const* element) const
@@ -144,14 +135,32 @@ namespace xournal::app
         std::scoped_lock guard(documentLock);
         std::vector<inkpages::PictureId> found;
         if (page < 0 || page >= static_cast<int>(doc->Pages().size()) || polygon.size() < 3) return found;
+        auto objects = ObjectsOf(page);
+        if (objects.empty()) return found;
+        if (!geometryFactory)
+            Check("D2D1CreateFactory (selection)", D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, geometryFactory.GetAddressOf()));
+        Microsoft::WRL::ComPtr<ID2D1PathGeometry> lasso;
+        Check("CreatePathGeometry (selection)", geometryFactory->CreatePathGeometry(&lasso));
+        Microsoft::WRL::ComPtr<ID2D1GeometrySink> sink;
+        Check("ID2D1PathGeometry::Open (selection)", lasso->Open(&sink));
+        sink->SetFillMode(D2D1_FILL_MODE_ALTERNATE);
+        sink->BeginFigure({ polygon.front().x, polygon.front().y }, D2D1_FIGURE_BEGIN_FILLED);
+        for (size_t i = 1; i < polygon.size(); ++i) sink->AddLine({ polygon[i].x, polygon[i].y });
+        sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+        Check("ID2D1GeometrySink::Close (selection)", sink->Close());
+
         Point o = Origin(page);
-        for (auto const& image : ObjectsOf(page))
+        for (auto const& object : objects)
         {
-            Rect b = BoundsOf(*image);
-            Point corners[] = { { b.Left(), b.Top() }, { b.Right(), b.Top() }, { b.Right(), b.Bottom() }, { b.Left(), b.Bottom() } };
-            bool all = true;
-            for (auto c : corners) all = all && Inside(polygon, { c.x + o.x, c.y + o.y });
-            if (all) found.push_back(IdOf(image));
+            auto [b, placement] = LocalPlacement(*object);
+            Microsoft::WRL::ComPtr<ID2D1RectangleGeometry> rectangle;
+            Check("CreateRectangleGeometry (selection)", geometryFactory->CreateRectangleGeometry(
+                D2D1::RectF(static_cast<float>(b.Left()), static_cast<float>(b.Top()),
+                    static_cast<float>(b.Right()), static_cast<float>(b.Bottom())), &rectangle));
+            auto transform = ToD2D(placement * Matrix::Translation(o.x, o.y));
+            D2D1_GEOMETRY_RELATION relation{};
+            Check("CompareWithGeometry (selection)", lasso->CompareWithGeometry(rectangle.Get(), &transform, &relation));
+            if (relation == D2D1_GEOMETRY_RELATION_CONTAINS) found.push_back(IdOf(object));
         }
         return found;
     }
@@ -197,8 +206,12 @@ namespace xournal::app
         for (auto it = objects.rbegin(); it != objects.rend(); ++it) // the topmost first
         {
             if (textsOnly && !XoppText::IsText(**it)) continue;
-            Rect b = BoundsOf(**it);
-            if (point.x >= b.Left() + o.x && point.x <= b.Right() + o.x && point.y >= b.Top() + o.y && point.y <= b.Bottom() + o.y)
+            auto [b, placement] = LocalPlacement(**it);
+            auto inverse = ToD2D(placement);
+            if (!D2D1InvertMatrix(&inverse)) continue;
+            Point local = Matrix{ inverse._11, inverse._12, inverse._21, inverse._22, inverse._31, inverse._32 }
+                .Apply({ point.x - o.x, point.y - o.y });
+            if (local.x >= b.Left() && local.x <= b.Right() && local.y >= b.Top() && local.y <= b.Bottom())
             {
                 return IdOf(*it);
             }
@@ -226,13 +239,21 @@ namespace xournal::app
 
     void FilePictures::Transform(std::vector<inkpages::PictureId> const& ids, inkpages::Affine const& m)
     {
+        struct Change
+        {
+            XmlElementPtr element;
+            int source, target;
+            Matrix transform;
+            std::optional<Size> intrinsic;
+        };
         std::set<int> pages;
         {
             std::scoped_lock guard(documentLock);
+            std::vector<Change> changes;
+            changes.reserve(ids.size());
             for (auto id : ids)
             {
                 auto const& element = pictures.at(id);
-                previews.erase(element.get());
                 int page = PageOf(element.get());
                 if (page < 0)
                 {
@@ -240,21 +261,27 @@ namespace xournal::app
                     continue;
                 }
                 Matrix onPage = ToPage(m, page);
-                Rect moved = XoppImage::Transform(BoundsOf(*element), onPage);
+                auto [b, placement] = LocalPlacement(*element);
+                Point center = (placement * onPage).Apply({ b.x + b.width / 2, b.y + b.height / 2 });
                 Point o = Origin(page);
-                int target = PageAtPoint({ moved.x + moved.width / 2 + o.x, moved.y + moved.height / 2 + o.y });
-                pages.insert(page);
-                if (target < 0 || target == page)
-                {
-                    TransformInPlace(*element, onPage);
-                    continue;
-                }
-                // Onto another page: into that page's units, then into its top layer.
+                int target = PageAtPoint({ center.x + o.x, center.y + o.y });
+                if (target < 0) target = page;
                 Point t = Origin(target);
-                TransformInPlace(*element, onPage * Matrix::Translation(o.x - t.x, o.y - t.y));
-                doc->Pages()[page]->Images().Remove({ element }); // any element: its layer and place
-                doc->Pages()[target]->Images().Add({ element });
+                changes.push_back({ element, page, target, onPage * Matrix::Translation(o.x - t.x, o.y - t.y),
+                    RotationSize(*element, onPage) });
+                pages.insert(page);
                 pages.insert(target);
+            }
+            for (auto const& change : changes)
+            {
+                auto const& element = change.element;
+                previews.erase(element.get());
+                TransformInPlace(*element, change.transform, change.intrinsic);
+                if (change.source != change.target)
+                {
+                    doc->Pages()[change.source]->Images().Remove({ element });
+                    doc->Pages()[change.target]->Images().Add({ element });
+                }
             }
         }
         for (int page : pages) invalidate(page);

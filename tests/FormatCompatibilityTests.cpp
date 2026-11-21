@@ -19,6 +19,18 @@ namespace xournal::tests
 {
     using namespace io::DocumentFile;
 
+    TEST(FormatCompatibility, UnknownAndInvalidMatricesDoNotUpgradeTheFileVersion)
+    {
+        auto doc = XoppDocument::FromXml(Xml(R"(<xournal fileversion="4"><page><layer>
+            <extension matrix="1 0 0 1 0 0"/><text matrix="invalid" x="10" y="20">test</text>
+            </layer></page></xournal>)"), {});
+        auto snapshot = TakeSnapshot(*doc, {});
+        EXPECT_EQ(L"4", snapshot->AttributeOr(L"fileversion", L""));
+        auto layer = snapshot->Element(L"page")->Element(L"layer");
+        EXPECT_EQ(L"1 0 0 1 0 0", layer->Element(L"extension")->AttributeOr(L"matrix", L""));
+        EXPECT_EQ(L"invalid", layer->Element(L"text")->AttributeOr(L"matrix", L""));
+    }
+
     TEST(FormatCompatibility, RotatedPicturesAndTextKeepTheirAffinePlacementOnSave)
     {
         auto doc = XoppDocument::FromXml(Xml(R"(<xournal fileversion="4"><page width="100" height="100"><layer>

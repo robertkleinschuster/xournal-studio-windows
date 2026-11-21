@@ -2,6 +2,8 @@
 
 #include "References.h"
 #include "xournal/model/XoppFormat.h"
+#include "xournal/model/XoppImage.h"
+#include "xournal/model/XoppText.h"
 
 namespace xournal
 {
@@ -26,7 +28,8 @@ namespace xournal
                 {
                     for (auto const& object : layer->Elements())
                     {
-                        if (object->Attribute(L"matrix")) output->SetAttribute(L"fileversion", L"5");
+                        if ((XoppImage::IsImage(*object) || XoppText::IsText(*object)) && XoppFormat::ReadMatrix(*object))
+                            output->SetAttribute(L"fileversion", L"5");
                     }
                 }
             }
