@@ -27,10 +27,11 @@ namespace xournal::app
         t.presetTip = L"nochmal tippen für Farbe und Stärke";
         t.writeToolTip = L"Schreibt nur mit dem Stift – Maus und Finger blättern weiter.";
         t.eraser = L"Radierer";
-        t.eraserTip = L"Radierer – die Radierer-Taste des Stifts radiert auch, mit jedem Werkzeug";
+        t.eraserTip = L"Radierer – die Radierer-Taste des Stifts radiert bei jedem Werkzeug. "
+            L"Über den Pfeil lässt sich die Radierergröße einstellen.";
         t.wholeStrokeErase = L"Ganze Striche radieren";
         t.wholeStrokeEraseTip = L"Ganze Striche radieren: Radierer und Radierer-Taste des Stifts löschen jeden Strich, "
-            L"den sie berühren. Aus: nur, was im Kreis liegt. Der Pfeil: Größe des Kreises";
+            L"den sie berühren. Aus: nur, was im Kreis liegt.";
         t.eraserRadius = L"Größe";
         t.select = L"Auswählen";
         t.selectTip = L"Auswählen: Lasso oder Rechteck (der Pfeil); ziehen verschiebt, die Ecken skalieren. Mit dem "
