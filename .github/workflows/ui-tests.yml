@@ -57,6 +57,7 @@ jobs:
           # repository = also the git repository of New-TestRepository.ps1.
           $all = @(
               @{ test = 'ClipboardTest' }
+              @{ test = 'DarkPdfTest' }
               @{ test = 'DocumentFlowsTest' }
               @{ test = 'ExplorerTest'; repository = $true }
               @{ test = 'InkRoundTripTest' }
@@ -69,6 +70,7 @@ jobs:
               @{ test = 'RecoveryTest' }
               @{ test = 'TasksTest' }
               @{ test = 'TextToolTest' }
+              @{ test = 'ThemeToggleTest' }
           )
           $tests = $all
           if ($env:INPUT_TESTS) {

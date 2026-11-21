@@ -13,6 +13,14 @@ public static class ThemeProbe {
     [DllImport("user32")] public static extern uint GetMenuState(IntPtr m, uint item, uint flags);
 }
 "@
+
+function ClickTab([string]$name) {
+    $point = & C:\sbx\data\uiaprobe.exe XournalStudioWindow $name
+    if ($LASTEXITCODE -ne 0) { throw "Native tab '$name' not found." }
+    $coords = "$point".Trim() -split ' '
+    [Inj]::ClickPixel([int]$coords[0], [int]$coords[1])
+}
+
 Invoke-Test {
     New-Item -ItemType Directory -Force "$out\config","$out\project" | Out-Null
     Copy-Item 'C:\sbx\data\Schaltungen.*' "$out\project"
@@ -47,12 +55,12 @@ Invoke-Test {
     if (($part -band 0xffff) -eq 0 -or ($part -band 0x10000000) -ne 0) {
         throw 'Zoom status must expose its text through the native status bar in dark mode.'
     }
-    ClickAnywhere 'Aufgaben'
+    ClickTab 'Aufgaben'
     Shot '02-dark-tasks'
     if ([ThemeProbe]::SendMessage($tabs,0x130b,[IntPtr]::Zero,[IntPtr]::Zero).ToInt32() -ne 1) { # TCM_GETCURSEL
         throw 'Clicking Aufgaben did not select the native tab.'
     }
-    ClickAnywhere 'Dateien'
+    ClickTab 'Dateien'
     Shot '03-dark-files'
     if (![ThemeProbe]::IsWindowVisible($tree)) { throw 'Clicking Dateien did not reopen the tree.' }
     [ThemeProbe]::SendMessage($script:h,0x111,[IntPtr]409,[IntPtr]::Zero) | Out-Null

@@ -659,7 +659,7 @@ namespace xournal::app
     {
         if (command == CmdDarkMode)
         {
-            // Let Win32 finish dispatching the menu command before changing the menu's item types.
+            // Let Win32 finish dispatching the menu command before changing the process theme.
             if (!UiQueue::Post("toggle appearance", [this] {
                 settings.darkMode = !settings.darkMode;
                 ApplyAppearance();
