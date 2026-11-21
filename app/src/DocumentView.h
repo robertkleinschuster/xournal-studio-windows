@@ -67,6 +67,7 @@ namespace xournal::app
 
         /// The shown document (nothing before the first).
         std::shared_ptr<XoppDocument> Document() const;
+        void SetDarkPaper(bool dark);
         /// The shown document's background PDF on screen (nothing without one).
         std::shared_ptr<PdfBackground> Pdf() const;
         RenderQueue& Queue() { return renderQueue; }
@@ -87,6 +88,7 @@ namespace xournal::app
         void CaptureInk(std::function<void()> const& work, std::span<int const> pages = {});
 
     private:
+        bool darkPaper = false;
         void MarkCurrentPage(); // after the page count changed
         void DrawUnderlay(int page, ID2D1DeviceContext* dc, inkpages::RectF area);
         void OnViewChanged();

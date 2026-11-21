@@ -4,6 +4,13 @@
 # and Datei → Als PDF exportieren.
 #   UiTests\Run-AppTest.ps1 -Test UiTests\DocumentFlowsTest.ps1
 . C:\sbx\TestKit.ps1
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public static class DocumentThemeProbe {
+    [DllImport("user32")] public static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr wp, IntPtr lp);
+}
+"@
 
 $INRANGE = 0x2; $INCONTACT = 0x4; $FIRST = 0x10; $PRIMARY = 0x2000; $DOWN = 0x10000; $UPDATE = 0x20000; $UP = 0x40000
 function Hover($x, $y) { for ($i = 0; $i -lt 15; $i++) { [Inj]::PenFrame($x, $y, $INRANGE -bor $UPDATE -bor $PRIMARY, 0, 0) } }
@@ -110,6 +117,17 @@ Invoke-Test {
     if (-not (Test-Path 'C:\work\Export.pdf')) { throw 'no exported PDF' }
     $head = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes('C:\work\Export.pdf')[0..4])
     if ($head -ne '%PDF-') { throw "the export is not a PDF ($head)" }
+
+    [DocumentThemeProbe]::SendMessage($script:h, 0x111, [IntPtr]409, [IntPtr]::Zero) | Out-Null
+    Shot '07-dark-before-export'
+    if (!(Get-Content "$out\config\settings-native.json" -Raw | ConvertFrom-Json).darkMode) { throw 'Dark mode did not enable.' }
+    Ctrl 0x45 'E'
+    TypePath 'C:\work\ExportDark.pdf'
+    for ($i = 0; $i -lt 30 -and -not (Log-Has "$exportMessage.*ExportDark[.]pdf"); $i++) { Start-Sleep -Milliseconds 500 }
+    if (-not (Log-Has "$exportMessage.*ExportDark[.]pdf")) { throw 'The dark-mode export did not finish.' }
+    if ((Get-FileHash 'C:\work\Export.pdf').Hash -ne (Get-FileHash 'C:\work\ExportDark.pdf').Hash) {
+        throw 'The exported PDF changed with the view theme.'
+    }
     Select-String -Path "$out\app.log" -Pattern 'status message \(' | ForEach-Object { "log: $($_.Line)" }
     Get-Content "$out\config\errors.log" -ErrorAction SilentlyContinue | ForEach-Object { "errors.log: $_" }
 }

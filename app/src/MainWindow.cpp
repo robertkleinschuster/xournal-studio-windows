@@ -4,6 +4,7 @@
 #include "AppToolbar.h"
 #include "ChildControls.h"
 #include "Commands.h"
+#include "DarkColors.h"
 #include "Dialogs.h"
 #include "ErrorText.h"
 #include "FileDrop.h"
@@ -16,6 +17,7 @@
 #include "xournal/base/Text.h"
 
 #include <commctrl.h>
+#include <dwmapi.h>
 #include <windowsx.h>
 
 #include <algorithm>
@@ -27,6 +29,29 @@ namespace xournal::app
     {
         constexpr wchar_t ClassName[] = L"XournalStudioWindow";
         constexpr int PaneWidthDip = 280;
+
+        BOOL CALLBACK ApplyControlColors(HWND control, LPARAM dark)
+        {
+            wchar_t name[64]{};
+            if (!GetClassNameW(control, name, ARRAYSIZE(name))) return TRUE;
+            COLORREF bg = dark ? DarkColors::Background : GetSysColor(COLOR_WINDOW);
+            COLORREF text = dark ? DarkColors::Text : GetSysColor(COLOR_WINDOWTEXT);
+            if (EqualsIgnoreCase(name, WC_LISTVIEWW))
+            {
+                if (!ListView_SetBkColor(control, bg) || !ListView_SetTextBkColor(control, CLR_NONE) ||
+                    !ListView_SetTextColor(control, text))
+                    LogError("ListView color update (dark mode)");
+            }
+            if (EqualsIgnoreCase(name, WC_TREEVIEWW))
+            {
+                // The tree-view messages use -1 (CLR_NONE) to restore system colors.
+                TreeView_SetBkColor(control, dark ? bg : CLR_NONE);
+                TreeView_SetTextColor(control, dark ? text : CLR_NONE);
+            }
+            if (EqualsIgnoreCase(name, WC_BUTTONW))
+                DarkColors::SetCheckBoxPalette(control, dark != 0);
+            return TRUE;
+        }
 
         // Keys typed into an edit box (the explorer's rename, a new task) are the box's, not the menu's shortcuts
         // (Entf, Strg+C/V/X/A would otherwise act on the document).
@@ -77,6 +102,7 @@ namespace xournal::app
         {
             UiQueue::Attach();
             CreateParts(std::move(startFile));
+            if (settings.darkMode) ApplyAppearance();
         }
         catch (...)
         {
@@ -461,7 +487,19 @@ namespace xournal::app
     void MainWindow::UpdateStatus()
     {
         if (!statusBar || !view) return;
-        statusBar->Show(surface->PageInView().value_or(-1), view->PageCount(), navigation->ZoomPercent());
+        int page = surface->PageInView().value_or(-1);
+        statusBar->Show(page, view->PageCount(), navigation->ZoomPercent());
+        bool usesDarkPaper = false;
+        if (settings.darkMode && page >= 0 && page < view->PageCount())
+        {
+            auto document = view->Document();
+            if (document)
+            {
+                auto const& content = *document->Pages()[page];
+                usesDarkPaper = !content.IsImageBackground();
+            }
+        }
+        if (toolbar) toolbar->SetDarkPaperPreview(usesDarkPaper);
     }
 
     void MainWindow::RememberPlace()
@@ -590,8 +628,56 @@ namespace xournal::app
         }
     }
 
+    void MainWindow::ApplyAppearance()
+    {
+        bool dark = settings.darkMode;
+        Log(dark ? "appearance: applying dark mode" : "appearance: applying light mode");
+        if (dark)
+        {
+            if (!SetPropW(window, DarkColors::WindowProperty, reinterpret_cast<HANDLE>(1)))
+                ThrowLastError("SetProp (dark mode)");
+        }
+        else RemovePropW(window, DarkColors::WindowProperty);
+        menu.Check(CmdDarkMode, dark);
+        menu.SetDarkMode(window, dark);
+        Log("appearance: menu updated");
+        COLORREF caption = dark ? DarkColors::Background : DWMWA_COLOR_DEFAULT;
+        COLORREF text = dark ? DarkColors::Text : DWMWA_COLOR_DEFAULT;
+        for (auto [attribute, color] : { std::pair{ DWMWA_CAPTION_COLOR, caption }, std::pair{ DWMWA_TEXT_COLOR, text } })
+        {
+            HRESULT hr = DwmSetWindowAttribute(window, attribute, &color, sizeof(color));
+            if (FAILED(hr)) LogError("DwmSetWindowAttribute (dark mode): " + DescribeHr(hr));
+        }
+        EnumChildWindows(window, ApplyControlColors, dark);
+        surface->SetWorkspaceColor(dark ? inkpages::Color{ 255, 23, 24, 26 } : inkpages::SurfaceOptions{}.background);
+        thumbnails->SetDarkPaper(dark);
+        view->SetDarkPaper(dark);
+        Log("appearance: list and tree colors updated");
+        toolbar->SetColors(dark ? std::optional{ inkpages::ToolbarColors{ DarkColors::Background, DarkColors::Text,
+            DarkColors::Selected } } : std::nullopt);
+        statusBar->SetDarkMode(dark);
+        Log("appearance: status bar updated");
+        pane->SetDarkMode(dark);
+        linkHover->SetDarkMode(dark);
+        pagesPane->SetDarkMode(dark);
+        UpdateStatus();
+        if (!RedrawWindow(window, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN))
+            LogError("RedrawWindow (dark mode)");
+        Log("appearance: controls updated");
+    }
+
     void MainWindow::OnCommand(int command)
     {
+        if (command == CmdDarkMode)
+        {
+            // Let Win32 finish dispatching the menu command before changing the menu's item types.
+            if (!UiQueue::Post("toggle appearance", [this] {
+                settings.darkMode = !settings.darkMode;
+                ApplyAppearance();
+                SaveSettings();
+            })) LogError("Could not queue appearance change");
+            return;
+        }
         // A text being typed is part of the document before any command acts on it (save, export, leave, ...).
         if (surface && surface->EditingText()) surface->EndTextEditing();
         switch (command)
@@ -722,6 +808,9 @@ namespace xournal::app
     {
         switch (message)
         {
+        case WM_NCDESTROY:
+            RemovePropW(window, DarkColors::WindowProperty);
+            break;
         case WM_SIZE:
             Layout();
             return 0;
@@ -740,6 +829,17 @@ namespace xournal::app
             return 0;
         case WM_NOTIFY:
             if (statusBar && statusBar->OnNotify(*reinterpret_cast<NMHDR const*>(lp))) return 0;
+            break;
+        case WM_DRAWITEM:
+            if (menu.Draw(window, *reinterpret_cast<DRAWITEMSTRUCT const*>(lp)) ||
+                (statusBar && statusBar->DrawPart(*reinterpret_cast<DRAWITEMSTRUCT const*>(lp)))) return TRUE;
+            break;
+        case WM_MEASUREITEM:
+            if (menu.Measure(window, *reinterpret_cast<MEASUREITEMSTRUCT*>(lp))) return TRUE;
+            break;
+        case WM_MENUCHAR:
+            if (auto result = menu.MenuChar(static_cast<wchar_t>(LOWORD(wp)), reinterpret_cast<HMENU>(lp)))
+                return result;
             break;
         case WM_CONTEXTMENU:
             // The pages' menu (InkPages leaves the right click to the parent); other children have their own.

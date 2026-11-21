@@ -28,7 +28,7 @@ namespace xournal::app
     }
 
     void PictureBitmaps::DrawElement(ID2D1DeviceContext* dc, XmlElementPtr const& element, int page, D2D1_SIZE_F size,
-        float pixelsPerUnit)
+        float pixelsPerUnit, bool dark)
     {
         auto [it, added] = elements.try_emplace(element.get());
         Entry& entry = it->second;
@@ -60,7 +60,9 @@ namespace xournal::app
         }
         if (entry.bitmap)
         {
-            DrawOver(dc, *entry.bitmap, size);
+            if (dark && entry.pdf)
+                darkDrawing.Draw(dc, entry.bitmap->On(dc), { 0, 0, size.width, size.height }, D2D1_INTERPOLATION_MODE_LINEAR);
+            else DrawOver(dc, *entry.bitmap, size);
         }
         if (entry.pdf)
         {

@@ -23,6 +23,7 @@ namespace xournal::app
         /// InkPages' cursorAt: the hand over a link (and its tooltip), else the default (and no tooltip).
         LPCWSTR CursorAt(int page, inkpages::PointF point);
         void Hide();
+        void SetDarkMode(bool dark);
 
     private:
         void Show(std::wstring const& text);

@@ -67,6 +67,7 @@ namespace xournal::app
         void UpdateMenu();
         void UpdateCommands(); // commands that depend on the document (a page can be deleted while there are two)
         void CreatePagesPane();
+        void ApplyAppearance();
         void CreateSearch();      // Strg+F: the Suche tab and the document search
         void ShowSearch();        // opens the pane on the Suche tab, the keyboard in its field
         void UpdatePagesPane(); // thumbnails only while the Seiten tab is shown

@@ -29,7 +29,8 @@ namespace xournal::app
         // Draws `bitmap` into `dest` (page units). Its memory copy may be gone and the device changed since: then the
         // bitmap is let go (false) and rendered again. 1:1 on the pixel grid: plain sampling; shrunk (a placeholder of
         // a higher zoom): high-quality cubic, which prefilters (no aliasing of fine lines); enlarged: linear.
-        bool DrawPart(ID2D1DeviceContext* dc, std::unique_ptr<DrawableBitmap>& bitmap, D2D1_RECT_F dest, bool shrunk)
+        bool DrawPart(ID2D1DeviceContext* dc, std::unique_ptr<DrawableBitmap>& bitmap, D2D1_RECT_F dest, bool shrunk,
+            DarkPdf::Drawing* darkDrawing)
         {
             if (!bitmap) return false;
             ID2D1Bitmap* uploaded = bitmap->On(dc);
@@ -38,7 +39,9 @@ namespace xournal::app
                 bitmap.reset();
                 return false;
             }
-            dc->DrawBitmap(uploaded, dest, 1.0f, shrunk ? D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC : D2D1_INTERPOLATION_MODE_LINEAR);
+            auto interpolation = shrunk ? D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC : D2D1_INTERPOLATION_MODE_LINEAR;
+            if (darkDrawing) darkDrawing->Draw(dc, uploaded, dest, interpolation);
+            else dc->DrawBitmap(uploaded, dest, 1.0f, interpolation);
             return true;
         }
 
@@ -148,7 +151,7 @@ namespace xournal::app
         return source->navigation;
     }
 
-    void PdfBackground::Draw(ID2D1DeviceContext* dc, int page, int pdfPage, D2D1_SIZE_F size, D2D1_RECT_F area, float pixelsPerUnit)
+    void PdfBackground::Draw(ID2D1DeviceContext* dc, int page, int pdfPage, D2D1_SIZE_F size, D2D1_RECT_F area, float pixelsPerUnit, bool dark)
     {
         if (!(pixelsPerUnit > 0) || !(size.width > 0) || !(size.height > 0)) return;
         PageKey key{ pdfPage, size.width, size.height };
@@ -184,16 +187,17 @@ namespace xournal::app
         bool complete = std::ranges::all_of(needed, [&](int index) { return entry.tiles.done.contains(index); });
         if (complete)
         {
-            DrawTiles(dc, entry.tiles, size, false, area);
+            DrawTiles(dc, entry.tiles, size, false, area, dark);
             complete = std::ranges::all_of(needed, [&](int index) { return entry.tiles.done.contains(index); });
         }
         if (!complete)
         {
-            DrawPart(dc, entry.preview, { 0, 0, size.width, size.height }, entry.previewWidth > size.width * s);
+            DrawPart(dc, entry.preview, { 0, 0, size.width, size.height }, entry.previewWidth > size.width * s,
+                dark ? &darkDrawing : nullptr);
             float oldScale = entry.placeholder.pixelsPerUnit;
             if (!entry.preview || oldScale * size.width >= entry.previewWidth)
-                DrawTiles(dc, entry.placeholder, size, oldScale > s, area);
-            DrawTiles(dc, entry.tiles, size, false, area);
+                DrawTiles(dc, entry.placeholder, size, oldScale > s, area, dark);
+            DrawTiles(dc, entry.tiles, size, false, area, dark);
             // For a small page the sharp render is already cheap. For larger pages, render one fixed preview only
             // when the old tiles do not cover the drawn area. A zoom change never resubmits that preview.
             float previewScale = static_cast<float>(PreviewSide) / std::max(size.width, size.height);
@@ -221,7 +225,7 @@ namespace xournal::app
             entry.placeholder = {};
     }
 
-    void PdfBackground::DrawTiles(ID2D1DeviceContext* dc, Tiles& tiles, D2D1_SIZE_F size, bool shrunk, D2D1_RECT_F area)
+    void PdfBackground::DrawTiles(ID2D1DeviceContext* dc, Tiles& tiles, D2D1_SIZE_F size, bool shrunk, D2D1_RECT_F area, bool dark)
     {
         if (tiles.done.empty()) return;
         float k = tiles.pixelsPerUnit;
@@ -231,7 +235,7 @@ namespace xournal::app
             pdf::PixelRect r = grid.Rect(index);
             D2D1_RECT_F dest{ r.left / k, r.top / k, r.right / k, r.bottom / k };
             if (dest.left < area.right && dest.right > area.left && dest.top < area.bottom && dest.bottom > area.top)
-                DrawPart(dc, bitmap, dest, shrunk);
+                DrawPart(dc, bitmap, dest, shrunk, dark ? &darkDrawing : nullptr);
         }
         std::erase_if(tiles.done, [](auto const& tile) { return !tile.second; }); // let go after a device change: asked again
     }
@@ -389,12 +393,12 @@ namespace xournal::app
         }, rank);
     }
 
-    void PdfBackground::RenderPage(std::uint64_t key, int pdfPage, UINT width, UINT height, int priorityPage,
+    void PdfBackground::RenderPage(std::uint64_t key, int pdfPage, UINT width, UINT height, int priorityPage, bool dark,
         std::function<void(std::shared_ptr<CpuBitmap>)> done)
     {
         // A page move changes the priority index while the request is waiting.
         queue.Submit(key, priorityPage, std::format("render PDF page {} for a thumbnail", pdfPage + 1),
-            [source = source, pdfPage, width, height, done](PdfPageRenderer& renderer)
+            [source = source, pdfPage, width, height, dark, done](PdfPageRenderer& renderer)
         {
             std::shared_ptr<CpuBitmap> bitmap;
             auto document = source->Document();
@@ -403,6 +407,7 @@ namespace xournal::app
                 try
                 {
                     bitmap = renderer.RenderThumbnail(document.GetPage(static_cast<UINT>(pdfPage)), width, height, false);
+                    if (dark) DarkPdf::Recolor(*bitmap);
                 }
                 catch (...)
                 {

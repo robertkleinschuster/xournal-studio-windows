@@ -1,6 +1,8 @@
 #include "PagesPane.h"
 
 #include "ChildControls.h"
+#include "DarkColors.h"
+#include "MainMenu.h"
 #include "ThumbnailDrawing.h"
 
 #include "inkpages/Toolbar.h"
@@ -30,14 +32,14 @@ namespace xournal::app
 
         int Scaled(int dip, HWND window) { return MulDiv(dip, static_cast<int>(GetDpiForWindow(window)), 96); }
 
-        HIMAGELIST PageButtonImages(int size)
+        HIMAGELIST PageButtonImages(int size, COLORREF color)
         {
             std::unique_ptr<std::remove_pointer_t<HIMAGELIST>, decltype(&ImageList_Destroy)> images(
                 ImageList_Create(size, size, ILC_COLOR32, 2, 0), ImageList_Destroy);
             if (!images) ThrowHr("ImageList_Create (page buttons)", E_FAIL);
             for (wchar_t glyph : { GlyphUp, GlyphDown })
             {
-                HBITMAP bitmap = inkpages::CreateFluentGlyphBitmap(glyph, GetSysColor(COLOR_BTNTEXT), size);
+                HBITMAP bitmap = inkpages::CreateFluentGlyphBitmap(glyph, color, size);
                 if (!bitmap) ThrowHr("CreateFluentGlyphBitmap (page buttons)", E_FAIL);
                 int index = ImageList_Add(images.get(), bitmap, nullptr);
                 if (!DeleteObject(bitmap)) LogError("DeleteObject (page button glyph) failed");
@@ -132,12 +134,26 @@ namespace xournal::app
         if (!SendMessageW(bar, TB_ADDBUTTONSW, 2, reinterpret_cast<LPARAM>(buttons))) ThrowLastError("TB_ADDBUTTONS (pages)");
     }
 
+    void PagesPane::SetDarkMode(bool dark)
+    {
+        if (darkMode == dark) return;
+        darkMode = dark;
+        UpdateBarImages();
+        if (!RedrawWindow(window, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN))
+            ThrowHr("RedrawWindow (page toolbar appearance)", E_FAIL);
+    }
+
+    void PagesPane::UpdateBarImages()
+    {
+        HIMAGELIST glyphs = PageButtonImages(Scaled(16, window), darkMode ? DarkColors::Text : GetSysColor(COLOR_BTNTEXT));
+        SendMessageW(bar, TB_SETIMAGELIST, 0, reinterpret_cast<LPARAM>(glyphs));
+        if (barImages && !ImageList_Destroy(barImages)) LogError("ImageList_Destroy (previous page toolbar images) failed");
+        barImages = glyphs;
+    }
+
     void PagesPane::UpdateSizes()
     {
-        HIMAGELIST glyphs = PageButtonImages(Scaled(16, window));
-        SendMessageW(bar, TB_SETIMAGELIST, 0, reinterpret_cast<LPARAM>(glyphs));
-        if (barImages) ImageList_Destroy(barImages);
-        barImages = glyphs;
+        UpdateBarImages();
         ChildControls::UseMessageFont(bar);
         SendMessageW(bar, TB_AUTOSIZE, 0, 0);
 
@@ -247,7 +263,7 @@ namespace xournal::app
     void PagesPane::DrawThumbnail(HDC dc, RECT const& area, int index)
     {
         auto layers = thumbnails.Of(index);
-        DrawCachedPageThumbnail(dc, area, Box(), layers.aspect, layers.background.get(), layers.content.get());
+        DrawCachedPageThumbnail(dc, area, Box(), layers.aspect, layers.background.get(), layers.content.get(), layers.darkPaper);
     }
 
     void PagesPane::UpdateThumbnailFocus()
@@ -328,7 +344,7 @@ namespace xournal::app
         AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
         AppendMenuW(menu, MF_STRING | (count > 1 ? 0 : MF_GRAYED), MenuDelete, L"Seite &löschen…");
         Log(std::format("pages pane: menu of page {}", index + 1));
-        UINT chosen = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, screen.x, screen.y, 0, window, nullptr);
+        UINT chosen = TrackContextMenu(menu, window, screen);
         DestroyMenu(menu);
         Log(std::format("pages pane: menu of page {}: {}", index + 1, chosen));
         switch (chosen)
@@ -345,6 +361,24 @@ namespace xournal::app
 
     LRESULT PagesPane::OnNotify(NMHDR const& header)
     {
+        if (darkMode && header.hwndFrom == bar && header.code == NM_CUSTOMDRAW)
+        {
+            auto& draw = const_cast<NMTBCUSTOMDRAW&>(reinterpret_cast<NMTBCUSTOMDRAW const&>(header));
+            if (draw.nmcd.dwDrawStage == CDDS_PREPAINT)
+            {
+                SetDCBrushColor(draw.nmcd.hdc, DarkColors::Background);
+                if (!FillRect(draw.nmcd.hdc, &draw.nmcd.rc, static_cast<HBRUSH>(GetStockObject(DC_BRUSH))))
+                    ThrowHr("FillRect (dark page toolbar)", E_FAIL);
+                return CDRF_NOTIFYITEMDRAW;
+            }
+            if (draw.nmcd.dwDrawStage == CDDS_ITEMPREPAINT)
+            {
+                draw.clrText = draw.nmcd.uItemState & CDIS_DISABLED ? RGB(157, 159, 165) : DarkColors::Text;
+                draw.clrTextHighlight = DarkColors::Text;
+                draw.clrHighlightHotTrack = DarkColors::Selected;
+                return TBCDRF_USECDCOLORS | TBCDRF_HILITEHOTTRACK;
+            }
+        }
         if (header.hwndFrom != list) return 0;
         switch (header.code)
         {
@@ -388,6 +422,18 @@ namespace xournal::app
     {
         switch (message)
         {
+        case WM_ERASEBKGND:
+            if (darkMode)
+            {
+                RECT rect{};
+                if (!GetClientRect(window, &rect)) ThrowLastError("GetClientRect (pages pane background)");
+                auto dc = reinterpret_cast<HDC>(wp);
+                SetDCBrushColor(dc, DarkColors::Background);
+                if (!FillRect(dc, &rect, static_cast<HBRUSH>(GetStockObject(DC_BRUSH))))
+                    ThrowHr("FillRect (pages pane background)", E_FAIL);
+                return TRUE;
+            }
+            break;
         case WM_SIZE:
             Layout();
             return 0;

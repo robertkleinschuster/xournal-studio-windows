@@ -1,4 +1,5 @@
 #include "SearchPane.h"
+#include "DarkColors.h"
 
 #include "ChildControls.h"
 
@@ -189,7 +190,21 @@ namespace xournal::app
         case WM_SETFOCUS:
             SetFocus(field);
             return 0;
+        case WM_ERASEBKGND:
+            if (DarkColors::Enabled(window))
+            {
+                if (!DarkColors::PaintBackground(window, reinterpret_cast<HDC>(wp)))
+                    ThrowHr("PaintBackground (search pane)", E_FAIL);
+                return TRUE;
+            }
+            break;
+        case WM_CTLCOLOREDIT:
+            if (DarkColors::Enabled(window))
+                return reinterpret_cast<LRESULT>(DarkColors::ControlBrush(reinterpret_cast<HDC>(wp), DarkColors::Input));
+            break;
         case WM_CTLCOLORSTATIC:
+            if (DarkColors::Enabled(window))
+                return reinterpret_cast<LRESULT>(DarkColors::ControlBrush(reinterpret_cast<HDC>(wp), DarkColors::Background));
             // The status line on the pane's own background (white), not the dialog color.
             SetBkColor(reinterpret_cast<HDC>(wp), GetSysColor(COLOR_WINDOW));
             return reinterpret_cast<LRESULT>(GetSysColorBrush(COLOR_WINDOW));

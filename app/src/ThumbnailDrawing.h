@@ -35,9 +35,9 @@ namespace xournal::app
     /// An image list holding one fully transparent image of `slot` pixels.
     HIMAGELIST CreateSlotImages(SIZE slot);
 
-    /// The page fitted into `box` and centered in `area` (the item's icon rectangle), its layers over white.
+    /// The page fitted into `box` and centered in `area` (the item's icon rectangle), its layers over the paper color.
     void DrawCachedPageThumbnail(HDC dc, RECT const& area, SIZE box, double aspect,
-        ThumbnailBitmap const* background, ThumbnailBitmap const* content);
+        ThumbnailBitmap const* background, ThumbnailBitmap const* content, bool darkPaper = false);
     /// The insert dialog may hold thumbnails for every page. Keep its GDI resources only while drawing.
     void DrawPageThumbnail(HDC dc, RECT const& area, SIZE box, double aspect, CpuBitmap const* background);
 }

@@ -1,4 +1,5 @@
 #include "PageContextMenu.h"
+#include "MainMenu.h"
 
 #include "Commands.h"
 
@@ -59,7 +60,7 @@ namespace xournal::app::PageContextMenu
         }
         Log("page menu: shown");
         POINT at = screen.x == -1 && screen.y == -1 ? fallback : screen;
-        return static_cast<int>(TrackPopupMenu(menu.handle, TPM_RETURNCMD | TPM_RIGHTBUTTON, at.x, at.y, 0, owner, nullptr));
+        return static_cast<int>(TrackContextMenu(menu.handle, owner, at));
     }
 
     bool ShowCopy(HWND owner, POINT screen)
@@ -69,6 +70,6 @@ namespace xournal::app::PageContextMenu
         if (!AppendMenuW(menu.handle, MF_STRING, CmdCopy, L"&Kopieren"))
             ThrowLastError("AppendMenu (PDF text)");
         Log("page menu: touch PDF text copy");
-        return TrackPopupMenu(menu.handle, TPM_RETURNCMD | TPM_RIGHTBUTTON, screen.x, screen.y, 0, owner, nullptr) == CmdCopy;
+        return TrackContextMenu(menu.handle, owner, screen) == CmdCopy;
     }
 }

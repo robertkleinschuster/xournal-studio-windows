@@ -37,6 +37,7 @@ namespace xournal::app
             std::shared_ptr<ThumbnailBitmap> background; // the PDF page (nothing yet, or not a PDF page)
             std::shared_ptr<ThumbnailBitmap> content;    // what lies on the page (transparent on a PDF page)
             double aspect = 1.414;                 // height / width
+            bool darkPaper = false;
         };
 
         /// The layers of page `index` as far as they are rendered.
@@ -45,6 +46,7 @@ namespace xournal::app
         /// Thumbnails are made only while the pane is shown.
         void SetActive(bool active);
         void SetPaneFocus(int index);
+        void SetDarkPaper(bool dark);
         /// A new document (all thumbnails start over).
         void Reset();
         /// An edit touched these pages (indices now).
@@ -77,6 +79,7 @@ namespace xournal::app
         inkpages::WritingSurface& surface;
         SIZE box{};
         bool active = false;
+        bool darkPaper = false;
         int paneFocus = -1;
         std::uint64_t generation = 0; // a new document's results are not mixed with the old one's
         std::map<XoppPage const*, Thumb> thumbs;

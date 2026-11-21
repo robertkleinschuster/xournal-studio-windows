@@ -25,6 +25,7 @@ namespace xournal::app::GoToPageDialog
         {
             try
             {
+                if (auto result = Dialogs::ControlColor(dialog, message, wp, lp)) return result;
                 switch (message)
                 {
                 case WM_INITDIALOG:

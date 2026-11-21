@@ -1,4 +1,5 @@
 #include "LinkHover.h"
+#include "DarkColors.h"
 
 #include "xournal/base/Error.h"
 #include "xournal/base/Log.h"
@@ -50,6 +51,12 @@ namespace xournal::app
     {
         // DestroyWindow on the owner may already have destroyed its tooltip.
         if (IsWindow(tip)) DestroyTooltip(tip);
+    }
+
+    void LinkHover::SetDarkMode(bool dark)
+    {
+        Hide();
+        DarkColors::SetTooltipPalette(tip, dark);
     }
 
     LPCWSTR LinkHover::CursorAt(int page, inkpages::PointF point)

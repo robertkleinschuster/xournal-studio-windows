@@ -1,6 +1,7 @@
 #include "InsertPagesDialog.h"
 
 #include "Dialogs.h"
+#include "DarkColors.h"
 #include "Resources.h"
 #include "ThumbnailDrawing.h"
 
@@ -59,6 +60,13 @@ namespace xournal::app
             state.list = GetDlgItem(dialog, IDC_INSERT_LIST);
             HRESULT hr = SetWindowTheme(state.list, L"Explorer", nullptr);
             if (FAILED(hr)) LogError(std::format("insert dialog: theme not set: {}", DescribeHr(hr)));
+            if (GetPropW(GetAncestor(dialog, GA_ROOTOWNER), DarkColors::WindowProperty))
+            {
+                if (!ListView_SetBkColor(state.list, DarkColors::Background) ||
+                    !ListView_SetTextBkColor(state.list, CLR_NONE) ||
+                    !ListView_SetTextColor(state.list, DarkColors::Text))
+                    LogError("ListView color update (insert pages)");
+            }
             ListView_SetExtendedListViewStyle(state.list, LVS_EX_CHECKBOXES | LVS_EX_DOUBLEBUFFER | LVS_EX_FULLROWSELECT);
             int width = Scaled(ThumbWidthDip, dialog);
             state.box = { width, static_cast<LONG>(std::lround(width * 1.4142)) };
@@ -167,6 +175,7 @@ namespace xournal::app
         {
             try
             {
+                if (auto result = Dialogs::ControlColor(dialog, message, wp, lp)) return result;
                 if (message == WM_INITDIALOG) Dialogs::SetState(dialog, lp);
                 auto state = reinterpret_cast<DialogState*>(GetWindowLongPtrW(dialog, DWLP_USER));
                 if (!state) return FALSE;

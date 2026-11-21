@@ -1,6 +1,7 @@
 #include "PageUnderlay.h"
 
 #include "Direct2D.h"
+#include "DarkColors.h"
 
 #include "xournal/base/Error.h"
 #include "xournal/base/Log.h"
@@ -11,6 +12,7 @@
 
 #include <wrl/client.h>
 
+#include <algorithm>
 #include <chrono>
 #include <format>
 #include <set>
@@ -137,18 +139,18 @@ namespace xournal::app
     }
 
     void PageUnderlay::DrawBackground(int page, XoppPage const& content, ID2D1DeviceContext* dc, inkpages::RectF area,
-        float pixelsPerUnit)
+        float pixelsPerUnit, bool darkPaper)
     {
         D2D1_SIZE_F size{ static_cast<float>(content.Width()), static_cast<float>(content.Height()) };
         bool pdfPage = content.IsPdf(), picture = content.IsImageBackground();
         ComPtr<ID2D1SolidColorBrush> brush;
         // Under a PDF or picture: white, as upstream shows a page whose background is missing.
-        Color paper = pdfPage || picture ? Colors::White : content.BackgroundColor();
+        Color paper = darkPaper ? DarkColors::Sheet : pdfPage || picture ? Colors::White : content.BackgroundColor();
         Check("CreateSolidColorBrush", dc->CreateSolidColorBrush(ToD2D(paper), &brush));
         dc->FillRectangle({ 0, 0, size.width, size.height }, brush.Get());
         if (pdfPage)
         {
-            pdf->Draw(dc, page, content.PdfPageIndex(), size, { area.left, area.top, area.right, area.bottom }, pixelsPerUnit);
+            pdf->Draw(dc, page, content.PdfPageIndex(), size, { area.left, area.top, area.right, area.bottom }, pixelsPerUnit, darkPaper);
             return;
         }
         if (picture)
@@ -174,7 +176,7 @@ namespace xournal::app
         }
     }
 
-    void PageUnderlay::DrawPicture(int page, XmlElementPtr const& picture, ID2D1DeviceContext* dc, float pixelsPerUnit)
+    void PageUnderlay::DrawPicture(int page, XmlElementPtr const& picture, ID2D1DeviceContext* dc, float pixelsPerUnit, bool dark)
     {
         auto placement = XoppImage::GetPlacement(*picture);
         Matrix transform = placement.transform;
@@ -188,7 +190,7 @@ namespace xournal::app
         // Sharpness: the picture's pixels per unit of its own size (a scaled picture needs more).
         double scale = std::sqrt(std::abs(transform.m11 * transform.m22 - transform.m12 * transform.m21));
         bitmaps->DrawElement(dc, picture, page, { static_cast<float>(placement.size.width), static_cast<float>(placement.size.height) },
-            static_cast<float>(pixelsPerUnit * scale));
+            static_cast<float>(pixelsPerUnit * scale), dark);
         dc->SetTransform(pageTransform);
     }
 
@@ -211,8 +213,11 @@ namespace xournal::app
         };
     }
 
-    void PageUnderlay::Draw(int page, XoppPage const& content, ID2D1DeviceContext* dc, inkpages::RectF area, float pixelsPerUnit)
+    void PageUnderlay::Draw(int page, XoppPage const& content, ID2D1DeviceContext* dc, inkpages::RectF area, float pixelsPerUnit,
+        bool darkPaper)
     {
+        bool darkPictures = darkPaper;
+        darkPaper = darkPaper && !content.IsImageBackground();
         auto start = std::chrono::steady_clock::now();
         struct Timing
         {
@@ -245,7 +250,7 @@ namespace xournal::app
             }
             dc->SetTransform(pageTransform); // an element that threw while placed by its own transform
         };
-        guarded("background", [&] { DrawBackground(page, content, dc, area, pixelsPerUnit); });
+        guarded("background", [&] { DrawBackground(page, content, dc, area, pixelsPerUnit, darkPaper); });
         auto factory = FactoryOf(dc);
         std::set<XmlElement const*> drawnSet;
         for (auto const& e : content.DrawnStrokes()) drawnSet.insert(e.get());
@@ -255,16 +260,31 @@ namespace xournal::app
             {
                 if (drawnSet.contains(element.get()))
                 {
-                    guarded("a stroke", [&] { if (auto shape = Strokes::ReadShape(*element)) DrawShape(*shape, dc, factory.Get()); });
+                    guarded("a stroke", [&] {
+                        if (auto shape = Strokes::ReadShape(*element))
+                        {
+                            if (darkPaper)
+                            {
+                                auto opacity = shape->highlighter && shape->fill >= 0
+                                    ? static_cast<std::uint8_t>(std::clamp(shape->fill, 0, 255)) : shape->color.a;
+                                shape->color = DarkColors::Ink(shape->color, opacity, shape->highlighter);
+                            }
+                            DrawShape(*shape, dc, factory.Get());
+                        }
+                    });
                 }
                 else if (XoppImage::IsImage(*element))
                 {
-                    guarded("a picture", [&] { DrawPicture(page, element, dc, pixelsPerUnit); });
+                    guarded("a picture", [&] { DrawPicture(page, element, dc, pixelsPerUnit, darkPictures); });
                 }
                 else if (XoppText::IsText(*element) && !pictures.IsEditing(element.get()))
                 {
                     // The text the Text tool edits is the library's meanwhile; a dragged one shows its preview.
-                    guarded("a text", [&] { texts.Draw(dc, XoppText::Read(*element), pictures.PreviewOf(element.get()).value_or(Matrix{})); });
+                    guarded("a text", [&] {
+                        auto text = XoppText::Read(*element);
+                        if (darkPaper) text.color = DarkColors::Ink(text.color, text.color.a);
+                        texts.Draw(dc, text, pictures.PreviewOf(element.get()).value_or(Matrix{}));
+                    });
                 }
             }
         }

@@ -1,4 +1,5 @@
 #include "ThumbnailDrawing.h"
+#include "DarkColors.h"
 
 #include "xournal/base/Error.h"
 #include "xournal/base/Log.h"
@@ -109,13 +110,19 @@ namespace xournal::app
     }
 
     void DrawCachedPageThumbnail(HDC dc, RECT const& area, SIZE box, double aspect,
-        ThumbnailBitmap const* background, ThumbnailBitmap const* content)
+        ThumbnailBitmap const* background, ThumbnailBitmap const* content, bool darkPaper)
     {
         SIZE size = ThumbnailSize(box, aspect);
         RECT page{ area.left + (area.right - area.left - size.cx) / 2, area.top + (area.bottom - area.top - size.cy) / 2, 0, 0 };
         page.right = page.left + size.cx;
         page.bottom = page.top + size.cy;
-        FillRect(dc, &page, static_cast<HBRUSH>(GetStockObject(WHITE_BRUSH)));
+        auto brush = static_cast<HBRUSH>(GetStockObject(darkPaper ? DC_BRUSH : WHITE_BRUSH));
+        if (!brush) ThrowHr("GetStockObject (thumbnail paper)", E_FAIL);
+        COLORREF previous = darkPaper ? SetDCBrushColor(dc, RGB(DarkColors::Sheet.r, DarkColors::Sheet.g, DarkColors::Sheet.b)) : 0;
+        if (previous == CLR_INVALID) ThrowLastError("SetDCBrushColor (thumbnail paper)");
+        int filled = FillRect(dc, &page, brush);
+        if (darkPaper && SetDCBrushColor(dc, previous) == CLR_INVALID) ThrowLastError("restore DC brush (thumbnail paper)");
+        if (!filled) ThrowHr("FillRect (thumbnail paper)", E_FAIL);
         if (background) background->Draw(dc, page);
         if (content) content->Draw(dc, page);
         RECT frame = page;

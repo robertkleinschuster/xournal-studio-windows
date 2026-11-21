@@ -18,6 +18,7 @@
 // (and never destroys) anything of the UI thread.
 
 #include "Bitmaps.h"
+#include "DarkPdf.h"
 #include "RenderQueue.h"
 
 #include "inkpages/model/PageMap.h"
@@ -51,12 +52,12 @@ namespace xournal::app
 
         /// Draws PDF page `pdfPage` over `size` (page units) for document page `page` where `area` (page units) is drawn
         /// at `pixelsPerUnit` (the sheet's pixel grid: unit * pixelsPerUnit = pixel); asks for what is missing (UI thread).
-        void Draw(ID2D1DeviceContext* dc, int page, int pdfPage, D2D1_SIZE_F size, D2D1_RECT_F area, float pixelsPerUnit);
+        void Draw(ID2D1DeviceContext* dc, int page, int pdfPage, D2D1_SIZE_F size, D2D1_RECT_F area, float pixelsPerUnit, bool dark);
 
         /// A PDF page rendered once at `width` x `height` pixels for a thumbnail (render thread, near `priorityPage` first;
         /// a newer request for the same PDF page replaces a waiting one). `done` runs on the UI thread, with nothing when
         /// the page cannot be rendered (logged) or the PDF is not loaded.
-        void RenderPage(std::uint64_t key, int pdfPage, UINT width, UINT height, int priorityPage,
+        void RenderPage(std::uint64_t key, int pdfPage, UINT width, UINT height, int priorityPage, bool dark,
             std::function<void(std::shared_ptr<CpuBitmap>)> done);
         /// Explicit copy of an area from the loaded PDF. Completion runs on the render thread.
         void RenderArea(int pdfPage, int documentPage, Rect area, double scale,
@@ -120,11 +121,12 @@ namespace xournal::app
         void RequestTile(int page, PageKey key, float pixelsPerUnit, int index, pdf::PixelRect pixels, int rank);
         void DropTiles(Tiles& tiles, std::set<int> const& indices);
         void DropTiles(Tiles& tiles);
-        void DrawTiles(ID2D1DeviceContext* dc, Tiles& tiles, D2D1_SIZE_F size, bool shrunk, D2D1_RECT_F area);
+        void DrawTiles(ID2D1DeviceContext* dc, Tiles& tiles, D2D1_SIZE_F size, bool shrunk, D2D1_RECT_F area, bool dark);
         std::uint64_t NextRequest();
         /// Draws the pages again once per batch of arrived renders (UI thread).
         void Ready(PageKey const& key);
 
+        DarkPdf::Drawing darkDrawing;
         RenderQueue& queue;
         std::uint64_t generation;
         std::function<void(std::set<int> const&)> ready;

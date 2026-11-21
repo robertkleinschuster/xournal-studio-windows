@@ -1,4 +1,5 @@
 #include "OutlinePane.h"
+#include "DarkColors.h"
 
 #include "ChildControls.h"
 
@@ -112,6 +113,20 @@ namespace xournal::app
         {
             auto const& header = *reinterpret_cast<NMHDR const*>(lp);
             if (header.hwndFrom != tree) break;
+            if (header.code == NM_CUSTOMDRAW && DarkColors::Enabled(tree))
+            {
+                auto& draw = *reinterpret_cast<NMTVCUSTOMDRAW*>(lp);
+                if (draw.nmcd.dwDrawStage == CDDS_PREPAINT) return CDRF_NOTIFYITEMDRAW;
+                if (draw.nmcd.dwDrawStage == CDDS_ITEMPREPAINT)
+                {
+                    draw.clrText = DarkColors::Text;
+                    if (draw.nmcd.uItemState & CDIS_SELECTED)
+                        draw.clrTextBk = DarkColors::Selected;
+                    else if (draw.nmcd.uItemState & CDIS_HOT)
+                        draw.clrTextBk = DarkColors::Input;
+                }
+                return CDRF_DODEFAULT;
+            }
             if (header.code == NM_CLICK)
             {
                 // The item under the click (the selection changes only after this notification).

@@ -1,10 +1,13 @@
+#include <initguid.h>
 #include "StatusBar.h"
+#include "DarkColors.h"
 
 #include "xournal/base/Error.h"
 #include "xournal/base/Log.h"
 #include "xournal/base/Text.h"
 
 #include <commctrl.h>
+#include <uxtheme.h>
 
 #include <format>
 
@@ -21,6 +24,22 @@ namespace xournal::app
             GetModuleHandleW(nullptr), nullptr);
         if (!bar) ThrowLastError("CreateWindowEx(status bar)");
         Layout();
+    }
+
+    StatusBar::~StatusBar()
+    {
+        ClearAccessibleNames();
+    }
+
+    void StatusBar::ClearAccessibleNames()
+    {
+        if (!accessibleNames || !IsWindow(bar)) return;
+        for (int part = 0; part <= MessagePart; ++part)
+        {
+            HRESULT hr = accessibleNames->ClearHwndProps(bar, static_cast<DWORD>(OBJID_CLIENT), part + 1, &PROPID_ACC_NAME, 1);
+            if (FAILED(hr)) LogError("ClearHwndProps (status bar): " + DescribeHr(hr));
+        }
+        accessibleNames.Reset();
     }
 
     int StatusBar::Height() const
@@ -52,12 +71,8 @@ namespace xournal::app
     void StatusBar::SetPart(int part, std::wstring const& text, std::wstring& shown)
     {
         if (text == shown) return; // the view moves often: only changes are drawn
-        if (!SendMessageW(bar, SB_SETTEXTW, static_cast<WPARAM>(part), reinterpret_cast<LPARAM>(text.c_str())))
-        {
-            LogError("SB_SETTEXTW (status bar) failed");
-            return;
-        }
         shown = text;
+        UpdatePart(part, shown);
         Log(std::format("status: {}", ToUtf8(shown)));
     }
 
@@ -65,11 +80,58 @@ namespace xournal::app
     {
         char const* kinds[] = { "success", "info", "warning", "error" };
         Log(std::format("status message ({}): {}", kinds[static_cast<int>(kind)], ToUtf8(text)));
-        std::wstring shown = kind == MessageKind::Error ? L"Fehler: " + text :
+        messageText = kind == MessageKind::Error ? L"Fehler: " + text :
             kind == MessageKind::Warning ? L"Warnung: " + text : text;
-        if (!SendMessageW(bar, SB_SETTEXTW, MessagePart | SBT_NOTABPARSING, reinterpret_cast<LPARAM>(shown.c_str())))
-            LogError("SB_SETTEXTW (status message) failed");
-        SendMessageW(bar, SB_SETTIPTEXTW, MessagePart, reinterpret_cast<LPARAM>(shown.c_str()));
+        UpdatePart(MessagePart, messageText);
+        SendMessageW(bar, SB_SETTIPTEXTW, MessagePart, reinterpret_cast<LPARAM>(messageText.c_str()));
+    }
+
+    void StatusBar::UpdatePart(int part, std::wstring const& text)
+    {
+        WPARAM style = darkMode ? SBT_OWNERDRAW | SBT_NOBORDERS : SBT_NOTABPARSING;
+        LPARAM data = darkMode ? part : reinterpret_cast<LPARAM>(text.c_str());
+        if (!SendMessageW(bar, SB_SETTEXTW, part | style, data))
+            LogError("SB_SETTEXTW (status bar) failed");
+        if (accessibleNames)
+        {
+            DWORD child = part + 1; // MSAA child IDs are one-based.
+            HRESULT hr = accessibleNames->SetHwndPropStr(bar, static_cast<DWORD>(OBJID_CLIENT), child, PROPID_ACC_NAME, text.c_str());
+            if (FAILED(hr)) LogError("SetHwndPropStr (status bar): " + DescribeHr(hr));
+            else NotifyWinEvent(EVENT_OBJECT_NAMECHANGE, bar, OBJID_CLIENT, child);
+        }
+    }
+
+    void StatusBar::SetDarkMode(bool dark)
+    {
+        if (dark && !accessibleNames)
+        {
+            HRESULT hr = CoCreateInstance(CLSID_AccPropServices, nullptr, CLSCTX_INPROC_SERVER,
+                IID_PPV_ARGS(accessibleNames.GetAddressOf()));
+            if (FAILED(hr)) LogError("CoCreateInstance (status bar accessibility): " + DescribeHr(hr));
+        }
+        else if (!dark) ClearAccessibleNames();
+        darkMode = dark;
+        HRESULT hr = SetWindowTheme(bar, dark ? L"" : nullptr, dark ? L"" : nullptr);
+        if (FAILED(hr)) LogError("SetWindowTheme (status bar): " + DescribeHr(hr));
+        SendMessageW(bar, SB_SETBKCOLOR, 0, dark ? DarkColors::Background : CLR_DEFAULT);
+        UpdatePart(0, pageText);
+        UpdatePart(1, zoomText);
+        UpdatePart(MessagePart, messageText);
+    }
+
+    bool StatusBar::DrawPart(DRAWITEMSTRUCT const& item) const
+    {
+        if (item.hwndItem != bar || item.itemID > MessagePart) return false;
+        auto const& text = item.itemID == 0 ? pageText : item.itemID == 1 ? zoomText : messageText;
+        auto dc = item.hDC;
+        SetDCBrushColor(dc, DarkColors::Background);
+        FillRect(dc, &item.rcItem, static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
+        SetBkMode(dc, TRANSPARENT);
+        SetTextColor(dc, DarkColors::Text);
+        RECT rect = item.rcItem;
+        rect.left += MulDiv(6, GetDpiForWindow(bar), 96);
+        DrawTextW(dc, text.c_str(), -1, &rect, DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX);
+        return true;
     }
 
     bool StatusBar::OnNotify(NMHDR const& header)

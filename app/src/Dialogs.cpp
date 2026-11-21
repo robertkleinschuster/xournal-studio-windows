@@ -1,9 +1,11 @@
 #include "Dialogs.h"
+#include "DarkColors.h"
 
 #include "xournal/base/Error.h"
 #include "xournal/base/Log.h"
 
 #include <commctrl.h>
+#include <dwmapi.h>
 #include <shobjidl.h>
 #include <wrl/client.h>
 
@@ -19,6 +21,97 @@ namespace xournal::app::Dialogs
         SetLastError(ERROR_SUCCESS);
         if (!SetWindowLongPtrW(dialog, DWLP_USER, state) && GetLastError() != ERROR_SUCCESS)
             ThrowLastError("SetWindowLongPtr (dialog state)");
+        if (GetPropW(GetAncestor(dialog, GA_ROOTOWNER), DarkColors::WindowProperty))
+        {
+            for (auto [attribute, color] : { std::pair{ DWMWA_CAPTION_COLOR, DarkColors::Background },
+                    std::pair{ DWMWA_TEXT_COLOR, DarkColors::Text } })
+            {
+                HRESULT hr = DwmSetWindowAttribute(dialog, attribute, &color, sizeof(color));
+                if (FAILED(hr)) LogError("DwmSetWindowAttribute (dialog): " + DescribeHr(hr));
+            }
+            EnumChildWindows(dialog, [](HWND child, LPARAM) -> BOOL {
+                DarkColors::SetCheckBoxPalette(child, true);
+                return TRUE;
+            }, 0);
+        }
+    }
+
+    bool DrawDarkPushButton(NMHDR const& header)
+    {
+        if (header.code != NM_CUSTOMDRAW) return false;
+        HWND button = header.hwndFrom;
+        wchar_t type[16]{};
+        if (!GetClassNameW(button, type, ARRAYSIZE(type)) || wcscmp(type, WC_BUTTONW) != 0) return false;
+        auto style = GetWindowLongPtrW(button, GWL_STYLE) & BS_TYPEMASK;
+        if (style != BS_PUSHBUTTON && style != BS_DEFPUSHBUTTON) return false;
+        auto const& draw = reinterpret_cast<NMCUSTOMDRAW const&>(header);
+        if (draw.dwDrawStage != CDDS_PREPAINT) return false;
+
+        wchar_t caption[512]{};
+        if (!GetWindowTextW(button, caption, ARRAYSIZE(caption))) return false;
+        HDC dc = draw.hdc;
+        int saved = SaveDC(dc);
+        if (!saved) ThrowHr("SaveDC (dark button)", E_FAIL);
+        auto brush = static_cast<HBRUSH>(GetStockObject(DC_BRUSH));
+        bool focused = (draw.uItemState & CDIS_FOCUS) != 0 || GetFocus() == button;
+        bool selected = (draw.uItemState & (CDIS_HOT | CDIS_SELECTED)) != 0;
+        SetDCBrushColor(dc, selected ? DarkColors::Selected : DarkColors::Input);
+        FillRect(dc, &draw.rc, brush);
+        SetDCBrushColor(dc, focused || style == BS_DEFPUSHBUTTON ? RGB(134, 181, 255) : RGB(98, 102, 110));
+        FrameRect(dc, &draw.rc, brush);
+        auto font = reinterpret_cast<HFONT>(SendMessageW(button, WM_GETFONT, 0, 0));
+        if (font) SelectObject(dc, font);
+        SetTextColor(dc, IsWindowEnabled(button) ? DarkColors::Text : RGB(157, 159, 165));
+        SetBkMode(dc, TRANSPARENT);
+        UINT flags = DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS;
+        auto cues = SendMessageW(button, WM_QUERYUISTATE, 0, 0);
+        if (cues & UISF_HIDEACCEL) flags |= DT_HIDEPREFIX;
+        RECT label = draw.rc;
+        InflateRect(&label, -4, -2);
+        DrawTextW(dc, caption, -1, &label, flags);
+        if (focused && !(cues & UISF_HIDEFOCUS)) DrawFocusRect(dc, &label);
+        if (!RestoreDC(dc, saved)) LogError("RestoreDC (dark button)");
+        return true;
+    }
+
+    void SetDarkCalendarPalette(NMHDR const& header)
+    {
+        if (header.code != DTN_DROPDOWN) return;
+        HWND calendar = DateTime_GetMonthCal(header.hwndFrom);
+        if (!calendar) ThrowHr("DTM_GETMONTHCAL (date picker)", E_FAIL);
+        // The picker creates a fresh native calendar for each drop-down.
+        Check("SetWindowTheme (month calendar)", SetWindowTheme(calendar, L"", L""));
+        for (auto [part, color] : { std::pair{ MCSC_BACKGROUND, DarkColors::Background },
+                std::pair{ MCSC_MONTHBK, DarkColors::Input }, std::pair{ MCSC_TEXT, DarkColors::Text },
+                std::pair{ MCSC_TITLEBK, DarkColors::Selected }, std::pair{ MCSC_TITLETEXT, DarkColors::Text },
+                std::pair{ MCSC_TRAILINGTEXT, RGB(170, 172, 178) } })
+        {
+            if (MonthCal_SetColor(calendar, part, color) == CLR_NONE)
+                ThrowHr("MCM_SETCOLOR (month calendar)", E_FAIL);
+        }
+    }
+
+    INT_PTR ControlColor(HWND dialog, UINT message, WPARAM wp, LPARAM lp)
+    {
+        if (message != WM_CTLCOLORDLG && message != WM_CTLCOLORSTATIC && message != WM_CTLCOLOREDIT &&
+            message != WM_CTLCOLORLISTBOX && message != WM_CTLCOLORBTN && message != WM_NOTIFY) return 0;
+        if (!GetPropW(GetAncestor(dialog, GA_ROOTOWNER), DarkColors::WindowProperty)) return 0;
+        if (message == WM_NOTIFY)
+        {
+            auto const& note = *reinterpret_cast<NMHDR const*>(lp);
+            SetDarkCalendarPalette(note);
+            if (!DrawDarkPushButton(note)) return 0;
+            SetLastError(ERROR_SUCCESS);
+            if (!SetWindowLongPtrW(dialog, DWLP_MSGRESULT, CDRF_SKIPDEFAULT) && GetLastError() != ERROR_SUCCESS)
+                ThrowLastError("SetWindowLongPtr (dark dialog button)");
+            return TRUE;
+        }
+        auto context = reinterpret_cast<HDC>(wp);
+        COLORREF bg = (message == WM_CTLCOLOREDIT || message == WM_CTLCOLORLISTBOX) ? DarkColors::Input : DarkColors::Background;
+        SetTextColor(context, DarkColors::Text);
+        SetBkColor(context, bg);
+        SetDCBrushColor(context, bg);
+        return reinterpret_cast<INT_PTR>(GetStockObject(DC_BRUSH));
     }
 
     namespace

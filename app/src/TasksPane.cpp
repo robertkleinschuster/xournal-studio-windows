@@ -1,6 +1,9 @@
 #include "TasksPane.h"
+#include "DarkColors.h"
+#include "MainMenu.h"
 
 #include "ChildControls.h"
+#include "Dialogs.h"
 #include "Questions.h"
 #include "TaskEditDialog.h"
 
@@ -249,7 +252,7 @@ namespace xournal::app
         AppendMenuW(menu, MF_STRING, MenuEdit, L"&Bearbeiten…");
         AppendMenuW(menu, MF_STRING | (row.link ? MF_ENABLED : MF_GRAYED), MenuOpenLink, L"Verknüpfte Seite ö&ffnen");
         AppendMenuW(menu, MF_STRING, MenuDelete, L"&Löschen");
-        UINT chosen = static_cast<UINT>(TrackPopupMenuEx(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, screen.x, screen.y, window, nullptr));
+        UINT chosen = TrackContextMenu(menu, window, screen);
         DestroyMenu(menu);
         TaskRow target = row; // the menu ran a message loop: the list may have been refilled meanwhile
         if (chosen == MenuEdit)
@@ -310,13 +313,37 @@ namespace xournal::app
         case WM_NOTIFY:
         {
             auto const& note = *reinterpret_cast<NMHDR const*>(lp);
+            if (DarkColors::Enabled(window))
+            {
+                Dialogs::SetDarkCalendarPalette(note);
+                if (Dialogs::DrawDarkPushButton(note)) return CDRF_SKIPDEFAULT;
+            }
             if (note.hwndFrom == list->Window())
             {
                 return list->OnNotify(note);
             }
             break;
         }
+        case WM_ERASEBKGND:
+            if (DarkColors::Enabled(window))
+            {
+                if (!DarkColors::PaintBackground(window, reinterpret_cast<HDC>(wp)))
+                    ThrowHr("PaintBackground (tasks pane)", E_FAIL);
+                return TRUE;
+            }
+            break;
+        case WM_CTLCOLOREDIT:
+        case WM_CTLCOLORLISTBOX:
+            if (DarkColors::Enabled(window))
+                return reinterpret_cast<LRESULT>(DarkColors::ControlBrush(reinterpret_cast<HDC>(wp), DarkColors::Input));
+            break;
+        case WM_CTLCOLORBTN:
+            if (DarkColors::Enabled(window))
+                return reinterpret_cast<LRESULT>(DarkColors::ControlBrush(reinterpret_cast<HDC>(wp), DarkColors::Background));
+            break;
         case WM_CTLCOLORSTATIC:
+            if (DarkColors::Enabled(window))
+                return reinterpret_cast<LRESULT>(DarkColors::ControlBrush(reinterpret_cast<HDC>(wp), DarkColors::Background));
             // The labels and check boxes on the pane's window background (not the dialog color).
             SetBkColor(reinterpret_cast<HDC>(wp), GetSysColor(COLOR_WINDOW));
             SetTextColor(reinterpret_cast<HDC>(wp), GetSysColor(COLOR_WINDOWTEXT));

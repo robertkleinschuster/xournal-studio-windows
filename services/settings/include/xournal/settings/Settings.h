@@ -53,6 +53,7 @@ namespace xournal::settings
         /// The folder shown in the explorer (a git repository or any folder).
         std::optional<std::filesystem::path> projectFolder;
         bool paneOpen = false;
+        bool darkMode = false;
         int paneTab = 0;
         bool doneTasksShown = false;
         bool penHasWritten = false;

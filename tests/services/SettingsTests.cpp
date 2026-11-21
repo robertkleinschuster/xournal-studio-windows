@@ -39,6 +39,7 @@ namespace xournal::tests
         settings.lastFile = temp / L"\u00DCbung 1.xopp";
         settings.projectFolder = temp.Path();
         settings.paneOpen = true;
+        settings.darkMode = true;
         settings.paneTab = 2;
         settings.doneTasksShown = true;
         settings.penHasWritten = true;
@@ -58,6 +59,7 @@ namespace xournal::tests
         EXPECT_EQ(settings.lastFile, read.lastFile);
         EXPECT_EQ(settings.projectFolder, read.projectFolder);
         EXPECT_TRUE(read.paneOpen);
+        EXPECT_TRUE(read.darkMode);
         EXPECT_EQ(2, read.paneTab);
         EXPECT_TRUE(read.doneTasksShown);
         EXPECT_TRUE(read.penHasWritten);

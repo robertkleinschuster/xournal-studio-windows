@@ -1,6 +1,7 @@
 #include "AppToolbar.h"
 
 #include "Commands.h"
+#include "inkpages/model/PaperAppearance.h"
 
 namespace xournal::app
 {
@@ -15,6 +16,14 @@ namespace xournal::app
             case inkpages::Tool::Highlighter: return 2000 + preset.color * 10 + inkpages::HighlighterWidths::StepOf(preset.width);
             default: return 0; // other tools: Windows' cursor (the exact eraser shows its circle)
             }
+        }
+
+        UINT DarkCursorFor(inkpages::Tool tool, inkpages::PenPreset const& preset)
+        {
+            using namespace inkpages;
+            bool highlighter = tool == Tool::Highlighter;
+            auto original = highlighter ? Palette::Highlighters[preset.color] : Palette::Pens[preset.color];
+            return PaperAppearance::DarkToolInk(original, highlighter) == original ? 0 : CursorFor(tool, preset) + 2000;
         }
 
     }
@@ -80,6 +89,6 @@ namespace xournal::app
             { CmdDeletePage, 0, L"Seite löschen", actions.deletePage, L"Seite löschen", {}, 20, false, false, inkpages::ToolbarSymbol::DeletePage },
         };
         return inkpages::Toolbar::Create(parent, surface, std::move(choices), GermanToolbarTexts(), CursorFor,
-            std::move(buttons));
+            std::move(buttons), DarkCursorFor);
     }
 }

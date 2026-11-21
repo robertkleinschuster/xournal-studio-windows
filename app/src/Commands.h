@@ -37,5 +37,6 @@
 #define CmdGoToPage 406
 #define CmdBack 407
 #define CmdForward 408
+#define CmdDarkMode 409
 #define CmdRecentFirst 500
 #define CmdRecentLast (CmdRecentFirst + 19)

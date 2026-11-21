@@ -26,6 +26,7 @@ namespace xournal::app
         HWND Window() const { return window; }
         ExplorerTree& Explorer() { return *explorer; }
         TasksPane& Tasks() { return *tasks; }
+        void SetDarkMode(bool dark);
 
         /// The sync button was pressed.
         std::function<void()> syncRequested;
@@ -50,7 +51,7 @@ namespace xournal::app
         /// The width (pixels) the tab strip needs to show every tab in one row without scroll arrows - Gliederung
         /// included even while it is hidden, so the pane does not change width with the document. Measured from the tab
         /// control's own item rectangles and its font.
-        int TabsWidth() const;
+        int TabsWidth(bool includeOutline = true) const;
 
     private:
         static LRESULT CALLBACK Proc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp);
@@ -60,10 +61,12 @@ namespace xournal::app
 
         HWND window = nullptr;
         HWND tabs = nullptr;
+        HWND navigation = nullptr;
         HWND syncButton = nullptr;
         HWND syncTip = nullptr;
         std::wstring syncText = L"Synchronisieren";
         bool syncing = false;
+        bool darkMode = false;
         HWND pagesContent = nullptr; // a placeholder until the window puts the pages pane in
         HWND searchContent = nullptr;
         HWND outlineContent = nullptr;

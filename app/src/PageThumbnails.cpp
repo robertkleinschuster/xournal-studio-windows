@@ -3,6 +3,8 @@
 #include "Bitmaps.h"
 #include "ThumbnailDrawing.h"
 #include "UiQueue.h"
+#include "DarkColors.h"
+#include "DarkPdf.h"
 
 #include "xournal/base/Log.h"
 #include "xournal/pdf/DocumentExport.h"
@@ -17,6 +19,49 @@ namespace xournal::app
 {
     namespace
     {
+        void DarkenPreview(pdf::ExportPage& page, PdfPageRenderer& renderer, float scale, bool darkPaper)
+        {
+            if (auto* paper = std::get_if<pdf::SolidBackground>(&page.background); darkPaper && paper)
+                paper->paper = DarkColors::Sheet;
+            for (auto& element : page.elements)
+            {
+                if (auto* picture = std::get_if<pdf::Picture>(&element))
+                {
+                    try
+                    {
+                        std::shared_ptr<CpuBitmap> pixels;
+                        if (XoppImage::IsPdf(picture->data))
+                        {
+                            auto const& placement = picture->placement;
+                            auto const& transform = placement.transform;
+                            auto magnification = std::sqrt(std::abs(transform.m11 * transform.m22 - transform.m12 * transform.m21));
+                            auto size = FitPixels(placement.size.width, placement.size.height, scale * magnification, 512);
+                            auto document = Bitmaps::LoadPdf(picture->data);
+                            pixels = renderer.Render(document.GetPage(0), size.width, size.height, true);
+                        }
+                        if (pixels)
+                        {
+                            DarkPdf::Recolor(*pixels);
+                            picture->data = Bitmaps::EncodePng(*pixels);
+                        }
+                    }
+                    catch (...)
+                    {
+                        LogException("page thumbnails: dark PDF picture (using its original colors)");
+                    }
+                }
+                else if (!darkPaper) continue;
+                else if (auto* stroke = std::get_if<StrokeShape>(&element))
+                {
+                    auto opacity = stroke->highlighter && stroke->fill >= 0 ?
+                        static_cast<std::uint8_t>(std::clamp(stroke->fill, 0, 255)) : stroke->color.a;
+                    stroke->color = DarkColors::Ink(stroke->color, opacity, stroke->highlighter);
+                }
+                else if (auto* text = std::get_if<XoppText>(&element))
+                    text->color = DarkColors::Ink(text->color, text->color.a);
+            }
+        }
+
         bool UploadThumbnail(std::shared_ptr<CpuBitmap>& pixels, std::shared_ptr<ThumbnailBitmap>& layer)
         {
             if (!pixels) return false;
@@ -56,6 +101,7 @@ namespace xournal::app
         if (!doc || index < 0 || index >= static_cast<int>(doc->Pages().size())) return layers;
         auto const& page = doc->Pages()[index];
         layers.aspect = page->Height() / std::max(1.0, page->Width());
+        layers.darkPaper = darkPaper && !page->IsImageBackground();
         if (auto it = thumbs.find(page.get()); it != thumbs.end())
         {
             layers.background = it->second.background;
@@ -107,6 +153,26 @@ namespace xournal::app
         for (auto& [page, thumb] : thumbs) Cancel(thumb);
         thumbs.clear();
         keep.clear();
+        if (active) refresh.Restart();
+    }
+
+    void PageThumbnails::SetDarkPaper(bool dark)
+    {
+        if (darkPaper == dark) return;
+        darkPaper = dark;
+        for (auto& [page, thumb] : thumbs)
+        {
+            Cancel(thumb);
+            thumb.contentStale = true;
+            thumb.content.reset();
+            thumb.contentForUpload.reset();
+            if (page->IsPdf())
+            {
+                thumb.background.reset();
+                thumb.backgroundForUpload.reset();
+                thumb.backgroundTried = false;
+            }
+        }
         if (active) refresh.Restart();
     }
 
@@ -222,7 +288,7 @@ namespace xournal::app
         SIZE size = ThumbnailSize(box, page.Height() / std::max(1.0, page.Width()));
         std::uint64_t asked = generation;
         XoppPage const* id = key.get();
-        view.Pdf()->RenderPage(request, page.PdfPageIndex(), static_cast<UINT>(size.cx), static_cast<UINT>(size.cy), index,
+        view.Pdf()->RenderPage(request, page.PdfPageIndex(), static_cast<UINT>(size.cx), static_cast<UINT>(size.cy), index, darkPaper,
             [this, alive = std::weak_ptr<bool>(alive), asked, id, request](std::shared_ptr<CpuBitmap> bitmap)
         {
             if (alive.expired() || asked != generation) return;
@@ -254,11 +320,13 @@ namespace xournal::app
             return;
         }
         auto picture = page->BackgroundImagePath();
+        bool dark = darkPaper;
+        bool darkInk = dark && !page->IsImageBackground();
         std::uint64_t asked = generation;
         XoppPage const* id = page.get();
         auto request = thumb.contentRequest = ContentKey(generation);
         view.Queue().Submit(request, index, std::format("thumbnail of page {}", index + 1),
-            [this, alive = std::weak_ptr<bool>(alive), asked, id, request, snapshot, picture, width, height, transparent](PdfPageRenderer& renderer)
+            [this, alive = std::weak_ptr<bool>(alive), asked, id, request, snapshot, picture, width, height, transparent, dark, darkInk](PdfPageRenderer& renderer)
         {
             std::shared_ptr<CpuBitmap> bitmap;
             try
@@ -269,6 +337,8 @@ namespace xournal::app
                 pdf::DocumentExportSource source{ root, std::nullopt, { picture } };
                 pdf::ExportResult result;
                 auto pages = pdf::PagesOf(source, result);
+                if (dark) for (auto& exportPage : pages)
+                    DarkenPreview(exportPage, renderer, 2.0f * width / static_cast<float>(std::max(1.0, exportPage.width)), darkInk);
                 auto bytes = pdf::ExportToMemory(pages, result);
                 auto document = Bitmaps::LoadPdf(bytes);
                 bitmap = renderer.RenderThumbnail(document.GetPage(0), width, height, transparent);

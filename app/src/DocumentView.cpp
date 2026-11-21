@@ -17,6 +17,7 @@ namespace xournal::app
             inkpages::PageSpec spec;
             spec.size = { static_cast<float>(page.Width()), static_cast<float>(page.Height()) };
             spec.paper.kind = inkpages::PaperKind::Plain;
+            spec.allowDarkPaper = !page.IsImageBackground();
             Color c = page.IsPdf() || page.IsImageBackground() ? Colors::White : page.BackgroundColor();
             spec.paper.sheetColor = { c.a, c.r, c.g, c.b };
             return spec;
@@ -232,6 +233,23 @@ namespace xournal::app
         return index >= 0 && index < static_cast<int>(pages.size()) ? pages[index] : nullptr;
     }
 
+    void DocumentView::SetDarkPaper(bool dark)
+    {
+        if (darkPaper == dark) return;
+        darkPaper = dark;
+        surface.SetDarkPaper(dark);
+        // InkPages invalidates the pages whose paper darkens. On image-paper pages only embedded PDFs darken.
+        auto document = Document();
+        if (!document) return;
+        std::set<int> imagePages;
+        auto const& pages = document->Pages();
+        for (int i = 0; i < static_cast<int>(pages.size()); ++i)
+        {
+            if (pages[i]->IsImageBackground()) imagePages.insert(i);
+        }
+        if (!imagePages.empty()) surface.InvalidatePages(imagePages);
+    }
+
     void DocumentView::DrawUnderlay(int page, ID2D1DeviceContext* dc, inkpages::RectF area)
     {
         auto bridge = bridges->Current();
@@ -243,7 +261,7 @@ namespace xournal::app
         auto const& pages = bridge->Document().Pages();
         if (page >= 0 && page < static_cast<int>(pages.size()))
         {
-            underlay->Draw(page, *pages[page], dc, area, surface.RenderScale());
+            underlay->Draw(page, *pages[page], dc, area, surface.RenderScale(), darkPaper);
         }
     }
 

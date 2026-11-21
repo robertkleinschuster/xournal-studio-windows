@@ -1,4 +1,5 @@
 #include "TaskListView.h"
+#include "DarkColors.h"
 
 #include "ChildControls.h"
 #include "UiQueue.h"
@@ -18,6 +19,39 @@ namespace xournal::app
     {
         enum GroupId : int { Overdue = 1, Open, Done };
         constexpr wchar_t DueColumnTitle[] = L"Fällig";
+        constexpr wchar_t const* ColumnTitles[] = { L"Aufgabe", DueColumnTitle };
+
+        LRESULT CALLBACK DrawTaskHeader(HWND list, UINT message, WPARAM wp, LPARAM lp, UINT_PTR, DWORD_PTR)
+        {
+            if (message == WM_NOTIFY && DarkColors::Enabled(list))
+            {
+                auto const& note = *reinterpret_cast<NMHDR const*>(lp);
+                if (note.code == NM_CUSTOMDRAW && note.hwndFrom == ListView_GetHeader(list))
+                {
+                    auto const& draw = reinterpret_cast<NMCUSTOMDRAW const&>(note);
+                    if (draw.dwDrawStage == CDDS_PREPAINT)
+                    {
+                        if (DarkColors::PaintBackground(note.hwndFrom, draw.hdc)) return CDRF_NOTIFYITEMDRAW;
+                        LogError("FillRect (task header background)");
+                    }
+                    if (draw.dwDrawStage == CDDS_ITEMPREPAINT && draw.dwItemSpec < ARRAYSIZE(ColumnTitles))
+                    {
+                        auto color = draw.uItemState & CDIS_HOT ? DarkColors::Selected : DarkColors::Input;
+                        if (FillRect(draw.hdc, &draw.rc, DarkColors::ControlBrush(draw.hdc, color)))
+                        {
+                            RECT label = draw.rc;
+                            label.left += MulDiv(6, GetDpiForWindow(note.hwndFrom), 96);
+                            SetBkMode(draw.hdc, TRANSPARENT);
+                            DrawTextW(draw.hdc, ColumnTitles[draw.dwItemSpec], -1, &label,
+                                DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX);
+                            return CDRF_SKIPDEFAULT;
+                        }
+                        LogError("FillRect (task header item)");
+                    }
+                }
+            }
+            return DefSubclassProc(list, message, wp, lp);
+        }
 
         int GroupOf(TaskRow const& row) { return row.task.done ? Done : row.overdue ? Overdue : Open; }
 
@@ -53,11 +87,12 @@ namespace xournal::app
         {
             LogError(std::format("tasks: list theme not set: {}", DescribeHr(hr)));
         }
-        wchar_t const* titles[] = { L"Aufgabe", DueColumnTitle };
+        if (!SetWindowSubclass(list, DrawTaskHeader, 1, 0))
+            ThrowHr("SetWindowSubclass (task header)", E_FAIL);
         for (int i = 0; i < 2; ++i)
         {
             LVCOLUMNW column{ LVCF_TEXT | LVCF_WIDTH };
-            column.pszText = const_cast<wchar_t*>(titles[i]);
+            column.pszText = const_cast<wchar_t*>(ColumnTitles[i]);
             column.cx = 100;
             if (ListView_InsertColumn(list, i, &column) < 0) ThrowLastError("ListView_InsertColumn (tasks)");
         }
@@ -151,7 +186,7 @@ namespace xournal::app
     LRESULT TaskListView::OnCustomDraw(NMLVCUSTOMDRAW& draw)
     {
         if (draw.nmcd.dwDrawStage == CDDS_PREPAINT) return CDRF_NOTIFYITEMDRAW;
-        if (draw.dwItemType != LVCDI_ITEM) return CDRF_DODEFAULT; // group headers as the theme draws them
+        if (draw.dwItemType != LVCDI_ITEM) return CDRF_DODEFAULT;
         if (draw.nmcd.dwDrawStage == CDDS_ITEMPREPAINT) return CDRF_NOTIFYSUBITEMDRAW;
         if (draw.nmcd.dwDrawStage == (CDDS_ITEMPREPAINT | CDDS_SUBITEM))
         {
@@ -160,6 +195,14 @@ namespace xournal::app
             {
                 TaskRow const& row = rows[index];
                 bool dueColumn = draw.iSubItem == 1;
+                if (DarkColors::Enabled(list))
+                {
+                    draw.clrText = row.task.done ? RGB(170, 172, 178)
+                        : dueColumn && row.overdue ? RGB(255, 153, 146)
+                        : dueColumn && row.dueSoon ? RGB(153, 198, 255)
+                        : DarkColors::Text;
+                    return CDRF_DODEFAULT;
+                }
                 draw.clrText = row.task.done ? GetSysColor(COLOR_GRAYTEXT)
                     : dueColumn && row.overdue ? RGB(0xC4, 0x2B, 0x1C)
                     : dueColumn && row.dueSoon ? GetSysColor(COLOR_HOTLIGHT)

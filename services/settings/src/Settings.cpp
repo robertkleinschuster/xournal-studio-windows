@@ -94,6 +94,7 @@ namespace xournal::settings
         if (auto last = String(o, L"lastFile")) settings.lastFile = *last;
         if (auto folder = String(o, L"projectFolder")) settings.projectFolder = *folder;
         settings.paneOpen = Boolean(o, L"paneOpen", false);
+        settings.darkMode = Boolean(o, L"darkMode", false);
         settings.paneTab = static_cast<int>(Number(o, L"paneTab", 0));
         settings.doneTasksShown = Boolean(o, L"doneTasksShown", false);
         settings.penHasWritten = Boolean(o, L"penHasWritten", false);
@@ -165,6 +166,7 @@ namespace xournal::settings
         set(L"lastFile", pathValue(lastFile));
         set(L"projectFolder", pathValue(projectFolder));
         set(L"paneOpen", JsonValue::CreateBooleanValue(paneOpen));
+        set(L"darkMode", JsonValue::CreateBooleanValue(darkMode));
         set(L"paneTab", JsonValue::CreateNumberValue(paneTab));
         set(L"doneTasksShown", JsonValue::CreateBooleanValue(doneTasksShown));
         set(L"penHasWritten", JsonValue::CreateBooleanValue(penHasWritten));

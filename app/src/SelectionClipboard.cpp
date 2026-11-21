@@ -1,4 +1,5 @@
 #include "SelectionClipboard.h"
+#include "MainMenu.h"
 
 #include "Bitmaps.h"
 #include "ErrorText.h"
@@ -157,7 +158,7 @@ namespace xournal::app
         if (!GetCursorPos(&at)) ThrowLastError("GetCursorPos (PDF area)");
         std::weak_ptr<bool> guard = alive;
         Log("clipboard: PDF area menu shown");
-        if (TrackPopupMenu(popup.menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, at.x, at.y, 0, owner, nullptr) != CopyArea
+        if (TrackContextMenu(popup.menu, owner, at) != CopyArea
             || guard.expired()) return;
 
         auto request = std::make_shared<PendingArea>();

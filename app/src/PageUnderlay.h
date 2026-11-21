@@ -31,7 +31,7 @@ namespace xournal::app
             std::function<void(std::set<int> const&)> invalidateBatch,
             FilePictures const& pictures, std::function<void()> pdfLoaded);
 
-        void Draw(int page, XoppPage const& content, ID2D1DeviceContext* dc, inkpages::RectF area, float pixelsPerUnit);
+        void Draw(int page, XoppPage const& content, ID2D1DeviceContext* dc, inkpages::RectF area, float pixelsPerUnit, bool darkPaper);
 
         /// Pages were inserted, removed or moved: the caches follow.
         void Remap(inkpages::PageMap const& map);
@@ -53,8 +53,9 @@ namespace xournal::app
         int TextSelectionPage() const { return textSelection.page; }
 
     private:
-        void DrawBackground(int page, XoppPage const& content, ID2D1DeviceContext* dc, inkpages::RectF area, float pixelsPerUnit);
-        void DrawPicture(int page, XmlElementPtr const& picture, ID2D1DeviceContext* dc, float pixelsPerUnit);
+        void DrawBackground(int page, XoppPage const& content, ID2D1DeviceContext* dc, inkpages::RectF area,
+            float pixelsPerUnit, bool darkPaper);
+        void DrawPicture(int page, XmlElementPtr const& picture, ID2D1DeviceContext* dc, float pixelsPerUnit, bool dark);
         struct Mark
         {
             int page = -1;

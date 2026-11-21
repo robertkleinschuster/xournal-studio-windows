@@ -25,6 +25,7 @@ namespace xournal::app
         PagesPane& operator=(PagesPane const&) = delete;
 
         HWND Window() const { return window; }
+        void SetDarkMode(bool dark);
 
         /// The document has `count` pages now (the list is drawn anew).
         void SetCount(int count);
@@ -52,6 +53,7 @@ namespace xournal::app
         void Layout();
         void PositionItem(int index);
         void UpdateSizes();
+        void UpdateBarImages();
         void ReleaseImageLists();
         SIZE Box() const; // the thumbnails' box in an item's image slot
         void UpdateButtons();
@@ -66,6 +68,7 @@ namespace xournal::app
         PageThumbnails& thumbnails;
         int count = 0;
         bool selecting = false;          // a selection set in code: no navigation
+        bool darkMode = false;
         int thumbWidth = 0, thumbHeight = 0;
         int itemX = 0, itemPitch = 0, wheelRemainder = 0;
     };

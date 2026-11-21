@@ -5,6 +5,14 @@
 #   UiTests\Run-AppTest.ps1 -Test UiTests\ClipboardTest.ps1
 . C:\sbx\TestKit.ps1
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public static class ClipboardThemeProbe {
+    [DllImport("user32")] public static extern uint GetClipboardSequenceNumber();
+    [DllImport("user32")] public static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr wp, IntPtr lp);
+}
+"@
 
 function Ctrl($k, $label) { [Inj]::Ctrl($k); Start-Sleep -Milliseconds 1500; "ctrl+$label" }
 function Read-Doc($file) {
@@ -18,6 +26,11 @@ function Read-Doc($file) {
 }
 function Count($file, $xpath) { (Read-Doc $file).SelectNodes($xpath).Count }
 function Formats { [Windows.Forms.Clipboard]::GetDataObject().GetFormats() -join ', ' }
+function PngBytes($data) {
+    if ($data -is [IO.MemoryStream]) { return [Convert]::ToBase64String($data.ToArray()) }
+    if ($data -is [byte[]]) { return [Convert]::ToBase64String($data) }
+    throw 'The clipboard does not contain PNG bytes.'
+}
 
 Invoke-Test {
     New-Item -ItemType Directory -Force C:\work | Out-Null
@@ -48,6 +61,15 @@ Invoke-Test {
     $bitmap = [Windows.Forms.Clipboard]::GetImage()
     if (-not $bitmap) { throw 'no bitmap for other apps' }
     "bitmap: $($bitmap.Width) x $($bitmap.Height)"
+    $lightPng = PngBytes $png
+    [ClipboardThemeProbe]::SendMessage($script:h, 0x111, [IntPtr]409, [IntPtr]::Zero) | Out-Null
+    Shot '01-dark-selection'
+    if (!(Get-Content "$out\config\settings-native.json" -Raw | ConvertFrom-Json).darkMode) { throw 'Dark mode did not enable.' }
+    $sequence = [ClipboardThemeProbe]::GetClipboardSequenceNumber()
+    Ctrl 0x43 'C'
+    Start-Sleep -Seconds 3
+    if ([ClipboardThemeProbe]::GetClipboardSequenceNumber() -eq $sequence) { throw 'Dark mode did not copy the selection.' }
+    if ((PngBytes ([Windows.Forms.Clipboard]::GetData('PNG'))) -cne $lightPng) { throw 'Clipboard PNG changed with the theme.' }
     Ctrl 0x56 'V'
     Shot '02-pasted'
     Ctrl 0x53 'S'

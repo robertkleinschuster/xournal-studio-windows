@@ -7,6 +7,7 @@
 // bitmaps or the XML.
 
 #include "Bitmaps.h"
+#include "DarkPdf.h"
 #include "RenderQueue.h"
 
 #include "xournal/model/Xml.h"
@@ -28,7 +29,7 @@ namespace xournal::app
         PictureBitmaps(RenderQueue& queue, std::uint64_t generation, std::function<void(int page)> ready);
 
         /// Draws a picture element over `size` (its placement's size, page units) for document page `page`.
-        void DrawElement(ID2D1DeviceContext* dc, XmlElementPtr const& element, int page, D2D1_SIZE_F size, float pixelsPerUnit);
+        void DrawElement(ID2D1DeviceContext* dc, XmlElementPtr const& element, int page, D2D1_SIZE_F size, float pixelsPerUnit, bool dark);
 
         /// Draws a picture file (a picture background) over `size`.
         void DrawFile(ID2D1DeviceContext* dc, std::filesystem::path const& file, D2D1_SIZE_F size);
@@ -53,6 +54,7 @@ namespace xournal::app
 
         void RequestPdf(Entry& entry, int page, PixelSize size);
 
+        DarkPdf::Drawing darkDrawing;
         RenderQueue& queue;
         std::uint64_t generation;
         std::function<void(int)> ready;

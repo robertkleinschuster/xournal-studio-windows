@@ -1,6 +1,8 @@
 #include "ExplorerTree.h"
 
 #include "ChildControls.h"
+#include "DarkColors.h"
+#include "MainMenu.h"
 #include "UiQueue.h"
 
 #include "xournal/base/Error.h"
@@ -21,9 +23,8 @@ namespace xournal::app
     {
         // Git colors of the explorer (as code editors' git views): new green, modified blue - darker on a light window
         // background, lighter on a dark one, so they stay readable either way.
-        COLORREF GitColor(git::FileState state)
+        COLORREF GitColor(git::FileState state, COLORREF background)
         {
-            COLORREF background = GetSysColor(COLOR_WINDOW);
             bool dark = (GetRValue(background) * 299 + GetGValue(background) * 587 + GetBValue(background) * 114) / 1000 < 128;
             if (state == git::FileState::New)
             {
@@ -349,8 +350,7 @@ namespace xournal::app
             add(MenuShowInExplorer, L"Im &Explorer anzeigen", onFile);
             add(MenuCopyPath, L"Als &Pfad kopieren\tStrg+Umschalt+C");
         }
-        UINT chosen = static_cast<UINT>(TrackPopupMenuEx(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, screen.x, screen.y,
-            GetParent(tree), nullptr));
+        UINT chosen = TrackContextMenu(menu, GetParent(tree), screen);
         // The menu pumps messages. The copied node remains valid if a refresh replaces the tree.
         auto const& target = node;
         switch (chosen)
@@ -452,18 +452,42 @@ namespace xournal::app
             return CDRF_NOTIFYITEMDRAW;
         case CDDS_ITEMPREPAINT:
         {
+            COLORREF background = TreeView_GetBkColor(tree);
+            if (background == CLR_NONE) background = GetSysColor(COLOR_WINDOW);
+            COLORREF text = TreeView_GetTextColor(tree);
+            if (text == CLR_NONE) text = GetSysColor(COLOR_WINDOWTEXT);
+            bool selected = (draw.nmcd.uItemState & (CDIS_SELECTED | CDIS_DROPHILITED)) != 0;
+            bool dark = DarkColors::Enabled(tree);
+            bool hot = dark && (draw.nmcd.uItemState & CDIS_HOT);
+            if (selected)
+            {
+                draw.clrText = text;
+                const bool focused = GetFocus() == tree;
+                if (dark)
+                    draw.clrTextBk = focused ? DarkColors::Selected : RGB(53, 55, 60);
+                else
+                {
+                    draw.clrText = focused ? GetSysColor(COLOR_HIGHLIGHTTEXT) : text;
+                    draw.clrTextBk = GetSysColor(focused ? COLOR_HIGHLIGHT : COLOR_BTNFACE);
+                }
+            }
+            else if (hot)
+            {
+                draw.clrText = text;
+                draw.clrTextBk = DarkColors::Input;
+            }
             auto index = static_cast<size_t>(draw.nmcd.lItemlParam);
             if (index < nodes.size())
             {
                 git::FileState state = snapshot.StateOf(nodes[index].path);
-                if (state != git::FileState::Unchanged)
+                if (!selected && !hot && state != git::FileState::Unchanged)
                 {
-                    draw.clrText = GitColor(state);
+                    draw.clrText = GitColor(state, background);
                 }
                 if (nodes[index].missing)
                 {
                     // Deleted: struck through in the deleted color (custom draw's documented font change).
-                    draw.clrText = GitColor(git::FileState::Deleted);
+                    if (!selected && !hot) draw.clrText = GitColor(git::FileState::Deleted, background);
                     if (!struckFont)
                     {
                         return CDRF_DODEFAULT; // not available (logged): the color alone

@@ -56,6 +56,7 @@ add_executable(XournalStudio WIN32
     src/PdfPageRenderer.cpp
     src/RenderQueue.cpp
     src/Bitmaps.cpp
+    src/DarkPdf.cpp
     src/PdfBackground.cpp
     src/PictureBitmaps.cpp
     src/TextDrawing.cpp
@@ -69,7 +70,7 @@ target_link_options(XournalStudio PRIVATE /MANIFEST:NO) # the manifest is a reso
 # The pen cursors come from InkPages' demo (a dot per palette color x width step), included by app.rc.
 target_include_directories(XournalStudio PRIVATE src ${INKPAGES_DIR}/demo)
 target_link_libraries(XournalStudio PRIVATE XournalIo XournalPdf XournalSearch XournalImport
-    XournalProject XournalGit XournalTasks XournalRecovery XournalSettings InkPages shell32 ole32 windowsapp comctl32 shlwapi d2d1 dwrite d3d11 dxgi windowscodecs windows.data.pdf dwmapi uxtheme msimg32)
+    XournalProject XournalGit XournalTasks XournalRecovery XournalSettings InkPages shell32 ole32 windowsapp comctl32 shlwapi d2d1 dwrite d3d11 dxgi dxguid windowscodecs windows.data.pdf dwmapi uxtheme msimg32)
 # Search reads the PDF's text with PDFium (delay-loaded): pdfium.dll and its licenses next to the exe (install.ps1 stages
 # the DLLs it finds there).
 xournal_deploy_pdfium(XournalStudio)
