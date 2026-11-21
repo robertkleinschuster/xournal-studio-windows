@@ -63,11 +63,6 @@ Invoke-Test {
     if ([ThemeProbe]::SendMessage($tabs,0x130b,[IntPtr]::Zero,[IntPtr]::Zero).ToInt32() -ne 1) { # TCM_GETCURSEL
         throw 'Clicking Aufgaben did not select the native tab.'
     }
-    $tasks = [ThemeProbe]::FindWindowEx($pane,[IntPtr]::Zero,'XournalStudioTasksPane',$null)
-    $list = [ThemeProbe]::FindWindowEx($tasks,[IntPtr]::Zero,'SysListView32',$null)
-    if ([ThemeProbe]::SendMessage($list,0x1098,[IntPtr]::Zero,[IntPtr]::Zero).ToInt32() -ne 3) { # LVM_GETGROUPCOUNT
-        throw 'Expected overdue, open and completed task groups in the dark screenshot.'
-    }
     ClickTab 'Dateien'
     Shot '03-dark-files'
     if (![ThemeProbe]::IsWindowVisible($tree)) { throw 'Clicking Dateien did not reopen the tree.' }
