@@ -58,14 +58,13 @@ Invoke-Test {
     Start-Sleep 3
 
     # 1. a new text: the Text tool, a pen tap, typing, a tap beside; Ctrl+S
-    # The Text button: uiaprobe finds a name by a part of it ("Text" is in "Textmarker"), so it is found between its
-    # neighbors (the icon left of the middle, the options arrow right of it).
-    $select = & C:\sbx\data\uiaprobe.exe XournalStudioWindow "Ausw$($ae)hlen"
-    $ruler = & C:\sbx\data\uiaprobe.exe XournalStudioWindow 'Lineal'
-    $sx, $sy = "$select".Trim() -split ' '; $rx, $ry = "$ruler".Trim() -split ' '
-    $textButtonX = [int](([int]$sx + [int]$rx) / 2) - 8
-    [Inj]::ClickPixel($textButtonX, [int]$sy); Start-Sleep -Milliseconds 800; [Inj]::MoveMouse(980, 500)
-    "toolbar: Text between $sx and $rx"
+    # The exact name distinguishes Text from Textmarker. Click on the icon side of the split button.
+    $textButton = & C:\sbx\data\uiaprobe.exe XournalStudioWindow 'Text' --exact
+    if ($LASTEXITCODE -ne 0 -or -not $textButton) { throw "toolbar button 'Text' not found by uiaprobe" }
+    $tx, $ty = "$textButton".Trim() -split ' '
+    $textButtonX = [int]$tx - 8
+    [Inj]::ClickPixel($textButtonX, [int]$ty); Start-Sleep -Milliseconds 800; [Inj]::MoveMouse(980, 500)
+    "toolbar: Text at $textButtonX,$ty"
     PenTap 'new text' 150 290
     Write-Typed "Gr$($ue)n und K$($ae)se`nZeile 2"
     Shot '01-typing'
@@ -126,7 +125,7 @@ Invoke-Test {
     $touchMoved = @(Texts $file)[$textsBefore]
     $x3 = [double]::Parse($touchMoved.GetAttribute('x'), [Globalization.CultureInfo]::InvariantCulture)
     if ($x3 -le $x2 + 5) { throw "the finger did not move the selected text: x $x2 -> $x3" }
-    [Inj]::ClickPixel($textButtonX, [int]$sy); Start-Sleep -Milliseconds 800
+    [Inj]::ClickPixel($textButtonX, [int]$ty); Start-Sleep -Milliseconds 800
 
     # 4. leaving while a text is typed: closing the window asks (the typed text is a change), Speichern writes it
     PenTap 'another new text' 150 450
