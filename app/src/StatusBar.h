@@ -6,8 +6,6 @@
 // show them. A double-click on the page part asks for "Gehe zu Seite". Nothing interactive at the right edge.
 
 #include <windows.h>
-#include <oleacc.h>
-#include <wrl/client.h>
 
 #include <functional>
 #include <string>
@@ -18,7 +16,6 @@ namespace xournal::app
     {
     public:
         explicit StatusBar(HWND parent);
-        ~StatusBar();
 
         HWND Window() const { return bar; }
         int Height() const;
@@ -29,8 +26,6 @@ namespace xournal::app
         void ShowMessage(std::wstring const& text, MessageKind kind);
         /// WM_NOTIFY from the bar; true when handled.
         bool OnNotify(NMHDR const& header);
-        void SetDarkMode(bool dark);
-        bool DrawPart(DRAWITEMSTRUCT const& item) const;
 
         std::function<void()> pageDoubleClicked;
 
@@ -40,9 +35,6 @@ namespace xournal::app
         HWND bar = nullptr;
         UINT partsDpi = 0;
         void UpdatePart(int part, std::wstring const& text);
-        void ClearAccessibleNames();
-        Microsoft::WRL::ComPtr<IAccPropServices> accessibleNames;
         std::wstring pageText, zoomText, messageText;
-        bool darkMode = false;
     };
 }

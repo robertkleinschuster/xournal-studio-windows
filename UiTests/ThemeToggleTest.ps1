@@ -42,6 +42,19 @@ Invoke-Test {
     $darkColors = @(TreeColors)
     if ($darkColors[0] -ne 0x242120 -or $darkColors[1] -ne 0xf0eeee) { throw "Wrong dark tree colors: $darkColors" }
     Shot '01-dark'
+    $status = [ThemeProbe]::FindWindowEx($script:h,[IntPtr]::Zero,'msctls_statusbar32',$null)
+    $part = [ThemeProbe]::SendMessage($status,0x40c,[IntPtr]1,[IntPtr]::Zero).ToInt64() # SB_GETTEXTLENGTHW
+    if (($part -band 0xffff) -eq 0 -or ($part -band 0x10000000) -ne 0) {
+        throw 'Zoom status must expose its text through the native status bar in dark mode.'
+    }
+    ClickAnywhere 'Aufgaben'
+    Shot '02-dark-tasks'
+    if ([ThemeProbe]::SendMessage($tabs,0x130b,[IntPtr]::Zero,[IntPtr]::Zero).ToInt32() -ne 1) { # TCM_GETCURSEL
+        throw 'Clicking Aufgaben did not select the native tab.'
+    }
+    ClickAnywhere 'Dateien'
+    Shot '03-dark-files'
+    if (![ThemeProbe]::IsWindowVisible($tree)) { throw 'Clicking Dateien did not reopen the tree.' }
     [ThemeProbe]::SendMessage($script:h,0x111,[IntPtr]409,[IntPtr]::Zero) | Out-Null
     Start-Sleep -Milliseconds 300
     Shot '04-after-click'

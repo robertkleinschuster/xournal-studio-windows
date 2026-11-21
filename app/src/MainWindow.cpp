@@ -646,8 +646,6 @@ namespace xournal::app
         Log("appearance: list and tree colors updated");
         toolbar->SetColors(dark ? std::optional{ inkpages::ToolbarColors{ DarkColors::Background, DarkColors::Text,
             DarkColors::Selected } } : std::nullopt);
-        statusBar->SetDarkMode(dark);
-        Log("appearance: status bar updated");
         pane->SetDarkMode(dark);
         linkHover->SetDarkMode(dark);
         pagesPane->SetDarkMode(dark);
@@ -820,9 +818,6 @@ namespace xournal::app
             return 0;
         case WM_NOTIFY:
             if (statusBar && statusBar->OnNotify(*reinterpret_cast<NMHDR const*>(lp))) return 0;
-            break;
-        case WM_DRAWITEM:
-            if (statusBar && statusBar->DrawPart(*reinterpret_cast<DRAWITEMSTRUCT const*>(lp))) return TRUE;
             break;
         case WM_CONTEXTMENU:
             // The pages' menu (InkPages leaves the right click to the parent); other children have their own.

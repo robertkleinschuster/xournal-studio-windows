@@ -6,7 +6,6 @@
 #include "xournal/base/Log.h"
 
 #include <commctrl.h>
-#include <dwmapi.h>
 #include <shobjidl.h>
 #include <wrl/client.h>
 
@@ -26,44 +25,6 @@ namespace xournal::app::Dialogs
         {
             NativeTheme::ApplyDialog(dialog);
         }
-    }
-
-    bool DrawDarkPushButton(NMHDR const& header)
-    {
-        if (header.code != NM_CUSTOMDRAW) return false;
-        HWND button = header.hwndFrom;
-        wchar_t type[16]{};
-        if (!GetClassNameW(button, type, ARRAYSIZE(type)) || wcscmp(type, WC_BUTTONW) != 0) return false;
-        auto style = GetWindowLongPtrW(button, GWL_STYLE) & BS_TYPEMASK;
-        if (style != BS_PUSHBUTTON && style != BS_DEFPUSHBUTTON) return false;
-        auto const& draw = reinterpret_cast<NMCUSTOMDRAW const&>(header);
-        if (draw.dwDrawStage != CDDS_PREPAINT) return false;
-
-        wchar_t caption[512]{};
-        if (!GetWindowTextW(button, caption, ARRAYSIZE(caption))) return false;
-        HDC dc = draw.hdc;
-        int saved = SaveDC(dc);
-        if (!saved) ThrowHr("SaveDC (dark button)", E_FAIL);
-        auto brush = static_cast<HBRUSH>(GetStockObject(DC_BRUSH));
-        bool focused = (draw.uItemState & CDIS_FOCUS) != 0 || GetFocus() == button;
-        bool selected = (draw.uItemState & (CDIS_HOT | CDIS_SELECTED)) != 0;
-        SetDCBrushColor(dc, selected ? DarkColors::Selected : DarkColors::Input);
-        FillRect(dc, &draw.rc, brush);
-        SetDCBrushColor(dc, focused || style == BS_DEFPUSHBUTTON ? RGB(134, 181, 255) : RGB(98, 102, 110));
-        FrameRect(dc, &draw.rc, brush);
-        auto font = reinterpret_cast<HFONT>(SendMessageW(button, WM_GETFONT, 0, 0));
-        if (font) SelectObject(dc, font);
-        SetTextColor(dc, IsWindowEnabled(button) ? DarkColors::Text : RGB(157, 159, 165));
-        SetBkMode(dc, TRANSPARENT);
-        UINT flags = DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS;
-        auto cues = SendMessageW(button, WM_QUERYUISTATE, 0, 0);
-        if (cues & UISF_HIDEACCEL) flags |= DT_HIDEPREFIX;
-        RECT label = draw.rc;
-        InflateRect(&label, -4, -2);
-        DrawTextW(dc, caption, -1, &label, flags);
-        if (focused && !(cues & UISF_HIDEFOCUS)) DrawFocusRect(dc, &label);
-        if (!RestoreDC(dc, saved)) LogError("RestoreDC (dark button)");
-        return true;
     }
 
     void SetDarkCalendarPalette(NMHDR const& header)
@@ -92,11 +53,7 @@ namespace xournal::app::Dialogs
         {
             auto const& note = *reinterpret_cast<NMHDR const*>(lp);
             SetDarkCalendarPalette(note);
-            if (!DrawDarkPushButton(note)) return 0;
-            SetLastError(ERROR_SUCCESS);
-            if (!SetWindowLongPtrW(dialog, DWLP_MSGRESULT, CDRF_SKIPDEFAULT) && GetLastError() != ERROR_SUCCESS)
-                ThrowLastError("SetWindowLongPtr (dark dialog button)");
-            return TRUE;
+            return 0;
         }
         auto context = reinterpret_cast<HDC>(wp);
         COLORREF bg = (message == WM_CTLCOLOREDIT || message == WM_CTLCOLORLISTBOX) ? DarkColors::Input : DarkColors::Background;

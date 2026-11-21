@@ -13,7 +13,6 @@ namespace xournal::app::Dialogs
     // Store the WM_INITDIALOG parameter for subsequent dialog messages.
     void SetState(HWND dialog, LPARAM state);
     INT_PTR ControlColor(HWND dialog, UINT message, WPARAM wp, LPARAM lp);
-    bool DrawDarkPushButton(NMHDR const& header);
     void SetDarkCalendarPalette(NMHDR const& header);
 
     /// Öffnen: a .xopp, a MrWriter .moj or a PDF; nothing when cancelled.

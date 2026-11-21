@@ -313,11 +313,7 @@ namespace xournal::app
         case WM_NOTIFY:
         {
             auto const& note = *reinterpret_cast<NMHDR const*>(lp);
-            if (DarkColors::Enabled(window))
-            {
-                Dialogs::SetDarkCalendarPalette(note);
-                if (Dialogs::DrawDarkPushButton(note)) return CDRF_SKIPDEFAULT;
-            }
+            if (DarkColors::Enabled(window)) Dialogs::SetDarkCalendarPalette(note);
             if (note.hwndFrom == list->Window())
             {
                 return list->OnNotify(note);
