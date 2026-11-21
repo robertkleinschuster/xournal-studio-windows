@@ -24,7 +24,6 @@ namespace xournal::app
         constexpr wchar_t ClassName[] = L"XournalStudioPagesPane";
         constexpr int ListId = 1, BarId = 2;
         constexpr int ThumbWidthDip = 150;
-        constexpr int PreviewColumn = 1, LabelWidthDip = 65;
         enum MenuCommand : UINT { MenuBefore = 1, MenuAfter, MenuFromFile, MenuUp, MenuDown, MenuDelete };
         enum BarCommand : int { BarUp = 101, BarDown };
         constexpr wchar_t GlyphUp = 0xE74A, GlyphDown = 0xE74B; // Segoe Fluent Icons "Up" / "Down"
@@ -66,21 +65,15 @@ namespace xournal::app
         if (!window) ThrowLastError("CreateWindowEx(pages pane)");
         ChildControls::PendingPaneWindow pending(window);
         CreateBar();
-        list = CreateWindowExW(0, WC_LISTVIEWW, L"Seiten", WS_CHILD | WS_VISIBLE | WS_TABSTOP | LVS_REPORT | LVS_SHAREIMAGELISTS |
-            LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_NOCOLUMNHEADER, 0, 0, 0, 0, window,
+        list = CreateWindowExW(0, WC_LISTVIEWW, L"Seiten", WS_CHILD | WS_VISIBLE | WS_TABSTOP | LVS_ICON | LVS_SHAREIMAGELISTS |
+            LVS_SINGLESEL | LVS_SHOWSELALWAYS, 0, 0, 0, 0, window,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(ListId)), instance, nullptr);
         if (!list) ThrowLastError("CreateWindowEx(pages list)");
         HRESULT hr = SetWindowTheme(list, L"Explorer", nullptr); // File Explorer's selection look
         if (FAILED(hr)) LogError(std::format("pages pane: theme not set: {}", DescribeHr(hr)));
-        ListView_SetExtendedListViewStyle(list, LVS_EX_DOUBLEBUFFER | LVS_EX_FULLROWSELECT);
-        LVCOLUMNW column{ LVCF_WIDTH | LVCF_SUBITEM };
-        for (int index : { 0, PreviewColumn })
-        {
-            column.cx = Scaled(LabelWidthDip, window);
-            column.iSubItem = index;
-            if (ListView_InsertColumn(list, index, &column) == -1)
-                ThrowHr("LVM_INSERTCOLUMN (page thumbnails)", E_FAIL);
-        }
+        ListView_SetExtendedListViewStyle(list, LVS_EX_DOUBLEBUFFER);
+        if (!SetWindowSubclass(list, ListProc, 0, reinterpret_cast<DWORD_PTR>(this)))
+            ThrowHr("SetWindowSubclass (page thumbnails)", E_FAIL);
         try
         {
             UpdateSizes();
@@ -95,6 +88,7 @@ namespace xournal::app
 
     PagesPane::~PagesPane()
     {
+        if (IsWindow(list)) RemoveWindowSubclass(list, ListProc, 0);
         if (window && IsWindow(window)) ChildControls::SetWindowData(window, nullptr);
         ReleaseImageLists();
     }
@@ -103,7 +97,7 @@ namespace xournal::app
     {
         if (images)
         {
-            if (IsWindow(list)) ListView_SetImageList(list, nullptr, LVSIL_SMALL);
+            if (IsWindow(list)) ListView_SetImageList(list, nullptr, LVSIL_NORMAL);
             if (!ImageList_Destroy(images)) LogError("ImageList_Destroy (page thumbnails) failed");
             images = nullptr;
         }
@@ -147,11 +141,11 @@ namespace xournal::app
         ChildControls::UseMessageFont(bar);
         SendMessageW(bar, TB_AUTOSIZE, 0, 0);
 
-        // Use the small image list for native row height. Draw each thumbnail in the preview column.
+        // The native image slot establishes hit testing and leaves the page label below the preview.
         thumbWidth = Scaled(ThumbWidthDip, window);
         thumbHeight = static_cast<int>(std::lround(thumbWidth * 1.4142));
-        HIMAGELIST created = CreateSlotImages({ 1, thumbHeight });
-        ListView_SetImageList(list, created, LVSIL_SMALL);
+        HIMAGELIST created = CreateSlotImages({ thumbWidth, thumbHeight });
+        ListView_SetImageList(list, created, LVSIL_NORMAL);
         if (images) ImageList_Destroy(images);
         images = created;
         thumbnails.SetBox(Box());
@@ -172,10 +166,22 @@ namespace xournal::app
         MoveWindow(bar, gap, gap, rc.right - 2 * gap, barHeight, TRUE);
         int top = barHeight + 2 * gap;
         MoveWindow(list, 0, top, rc.right, std::max(0, static_cast<int>(rc.bottom) - top), TRUE);
-        if (!ListView_SetColumnWidth(list, 0, Scaled(LabelWidthDip, window)) ||
-            !ListView_SetColumnWidth(list, PreviewColumn, LVSCW_AUTOSIZE_USEHEADER))
-            ThrowHr("LVM_SETCOLUMNWIDTH (page thumbnails)", E_FAIL);
+        int width = rc.right - GetSystemMetricsForDpi(SM_CXVSCROLL, GetDpiForWindow(list));
+        int x = std::max(Scaled(4, window), (width - thumbWidth) / 2);
+        int pitch = thumbHeight + Scaled(32, window);
+        if (x != itemX || pitch != itemPitch)
+        {
+            itemX = x;
+            itemPitch = pitch;
+            ListView_SetIconSpacing(list, thumbWidth + Scaled(8, window), pitch);
+            for (int index = 0; index < count; ++index) PositionItem(index);
+        }
         UpdateThumbnailFocus();
+    }
+
+    void PagesPane::PositionItem(int index)
+    {
+        ListView_SetItemPosition32(list, index, itemX, Scaled(4, window) + index * itemPitch);
     }
 
     void PagesPane::SetCount(int pages)
@@ -191,12 +197,12 @@ namespace xournal::app
             LVITEMW item{ LVIF_TEXT | LVIF_IMAGE, n };
             item.pszText = LPSTR_TEXTCALLBACKW;
             item.iImage = 0;
-            if (ListView_InsertItem(list, &item) < 0) LogError(std::format("pages pane: item {} not inserted", n + 1));
+            int inserted = ListView_InsertItem(list, &item);
+            if (inserted < 0) LogError(std::format("pages pane: item {} not inserted", n + 1));
+            else PositionItem(inserted);
         }
         selecting = false;
         count = ListView_GetItemCount(list);
-        if (!ListView_SetColumnWidth(list, PreviewColumn, LVSCW_AUTOSIZE_USEHEADER))
-            ThrowHr("LVM_SETCOLUMNWIDTH (page thumbnails)", E_FAIL);
         UpdateThumbnailFocus();
         InvalidateRect(list, nullptr, TRUE);
         UpdateButtons();
@@ -246,7 +252,17 @@ namespace xournal::app
 
     void PagesPane::UpdateThumbnailFocus()
     {
-        thumbnails.SetPaneFocus(count ? ListView_GetTopIndex(list) : -1);
+        int first = 0, end = count;
+        while (first < end)
+        {
+            int index = first + (end - first) / 2;
+            RECT bounds{};
+            if (!ListView_GetItemRect(list, index, &bounds, LVIR_BOUNDS))
+                ThrowHr("LVM_GETITEMRECT (page thumbnails)", E_FAIL);
+            if (bounds.bottom <= 0) first = index + 1;
+            else end = index;
+        }
+        thumbnails.SetPaneFocus(first < count ? first : -1);
     }
 
     LRESULT PagesPane::OnCustomDraw(NMLVCUSTOMDRAW& draw)
@@ -261,8 +277,7 @@ namespace xournal::app
         {
             int index = static_cast<int>(draw.nmcd.dwItemSpec);
             RECT preview{};
-            if (ListView_GetSubItemRect(list, index, PreviewColumn, LVIR_BOUNDS, &preview) &&
-                preview.right - preview.left >= Box().cx)
+            if (ListView_GetItemRect(list, index, &preview, LVIR_ICON))
             {
                 DrawThumbnail(draw.nmcd.hdc, preview, index);
             }
@@ -270,6 +285,34 @@ namespace xournal::app
         }
         }
         return CDRF_DODEFAULT;
+    }
+
+    LRESULT CALLBACK PagesPane::ListProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp, UINT_PTR id, DWORD_PTR data)
+    {
+        if (message == WM_NCDESTROY) RemoveWindowSubclass(hwnd, ListProc, id);
+        if (message != WM_MOUSEWHEEL || GET_KEYSTATE_WPARAM(wp) & (MK_CONTROL | MK_SHIFT))
+            return DefSubclassProc(hwnd, message, wp, lp);
+        auto& pane = *reinterpret_cast<PagesPane*>(data);
+        try
+        {
+            UINT lines = 0;
+            if (!SystemParametersInfoW(SPI_GETWHEELSCROLLLINES, 0, &lines, 0))
+                ThrowLastError("SPI_GETWHEELSCROLLLINES (page thumbnails)");
+            RECT viewport{};
+            if (!GetClientRect(hwnd, &viewport)) ThrowLastError("GetClientRect (page thumbnails)");
+            int pixels = lines == WHEEL_PAGESCROLL ? viewport.bottom
+                : static_cast<int>(std::min<long long>(viewport.bottom, static_cast<long long>(lines) * Scaled(16, hwnd)));
+            pane.wheelRemainder -= GET_WHEEL_DELTA_WPARAM(wp) * pixels;
+            int dy = pane.wheelRemainder / WHEEL_DELTA;
+            pane.wheelRemainder %= WHEEL_DELTA;
+            if (dy && !ListView_Scroll(hwnd, 0, dy)) LogError("LVM_SCROLL (page thumbnails) failed");
+            return 0;
+        }
+        catch (...)
+        {
+            LogException("pages pane: wheel scroll");
+            return DefSubclassProc(hwnd, message, wp, lp);
+        }
     }
 
     void PagesPane::ShowMenu(int index, POINT screen)

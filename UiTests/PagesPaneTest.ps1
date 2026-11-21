@@ -11,6 +11,22 @@
 # Names with umlauts are built from character codes (this script is read as ANSI by PS 5.1).
 . C:\sbx\TestKit.ps1
 
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class PagesWheel
+{
+    [DllImport("user32", CharSet = CharSet.Unicode)]
+    public static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string className, string title);
+    [DllImport("user32")] private static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr wp, IntPtr lp);
+    [DllImport("user32")] public static extern int GetScrollPos(IntPtr window, int bar);
+    public static void SendDelta(IntPtr window, short delta)
+    {
+        SendMessage(window, 0x020A, new IntPtr((int)(ushort)delta << 16), IntPtr.Zero);
+    }
+}
+'@
+
 $ae = [string][char]0xE4; $ue = [string][char]0xFC; $oe = [string][char]0xF6
 function Ctrl($k, $label) { [Inj]::Ctrl($k); Start-Sleep -Milliseconds 1500; "ctrl+$label" }
 # The center of an element (by part of its name) in screen pixels, found by the native UI Automation client.
@@ -53,15 +69,29 @@ Invoke-Test {
 
     $env:XOURNAL_STUDIO_CONFIG_DIR = "$out\config"
     $env:XOURNAL_STUDIO_LOG = "$out\app.log"
+    New-Item -ItemType Directory -Force $env:XOURNAL_STUDIO_CONFIG_DIR | Out-Null
+    '{"paneOpen":true,"paneTab":2}' | Set-Content -Encoding Ascii "$env:XOURNAL_STUDIO_CONFIG_DIR\settings-native.json"
     Start-TestApp 'XournalStudio.exe' "`"$file`""
     Start-Sleep 3
 
     # The pane with the Seiten tab.
-    Ctrl 0x42 'B'
-    $tab = Probe 'Seiten' # the comctl32 tab, seen by the native client only
-    [Inj]::ClickPixel($tab[0], $tab[1]); Start-Sleep 5
     Shot '01-pages-pane'
     & C:\sbx\data\uiaprobe.exe XournalStudioWindow | Out-File "$out\uia-tree.txt" -Encoding utf8
+
+    # A partial wheel delta moves the page by pixels, well below one thumbnail height.
+    $sidePane = [PagesWheel]::FindWindowEx($script:h, [IntPtr]::Zero, 'XournalStudioSidePane', $null)
+    $pagesPane = [PagesWheel]::FindWindowEx($sidePane, [IntPtr]::Zero, 'XournalStudioPagesPane', $null)
+    $list = [PagesWheel]::FindWindowEx($pagesPane, [IntPtr]::Zero, 'SysListView32', 'Seiten')
+    if ($list -eq [IntPtr]::Zero) { throw 'native pages list window not found' }
+    $p1 = Probe 'Seite 1' -Exact
+    $scrollBefore = [PagesWheel]::GetScrollPos($list, 1)
+    [PagesWheel]::SendDelta($list, -30)
+    Start-Sleep -Milliseconds 400
+    $offset = $p1[1] - (Probe 'Seite 1' -Exact)[1]
+    "partial wheel delta moved the first thumbnail by $offset pixels (scroll bar $scrollBefore -> $([PagesWheel]::GetScrollPos($list, 1)))"
+    if ($offset -le 0 -or $offset -ge 100) { throw 'expected pixel scrolling below one thumbnail height' }
+    [PagesWheel]::SendDelta($list, 30)
+    Start-Sleep -Milliseconds 400
 
     # A tap on page 2's thumbnail goes there (a thumbnail in view: one scrolled out of view has its center outside).
     $p2 = Probe 'Seite 2' -Exact
