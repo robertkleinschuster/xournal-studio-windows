@@ -9,6 +9,7 @@ public static class ThemeProbe {
     [DllImport("user32",CharSet=CharSet.Unicode)] public static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string cls, string title);
     [DllImport("user32")] public static extern IntPtr GetMenu(IntPtr w);
     [DllImport("user32")] public static extern bool IsWindowVisible(IntPtr w);
+    [DllImport("user32")] public static extern bool IsWindowEnabled(IntPtr w);
     [DllImport("user32")] public static extern IntPtr GetSubMenu(IntPtr m, int item);
     [DllImport("user32")] public static extern uint GetMenuState(IntPtr m, uint item, uint flags);
 }
@@ -81,4 +82,10 @@ Invoke-Test {
     if (![ThemeProbe]::IsWindowVisible($tabs)) { throw 'Native side pane tabs did not survive the toggle.' }
     if ((@(TreeColors) -join ',') -ne ($darkColors -join ',')) { throw 'Dark tree colors did not restore.' }
     if (!(Get-Content "$out\config\settings-native.json" -Raw | ConvertFrom-Json).darkMode) { throw 'Dark appearance did not restore.' }
+
+    if (![ThemeProbe]::PostMessage($script:h,0x111,[IntPtr]302,[IntPtr]::Zero)) { throw 'Could not request page deletion.' }
+    Shot '06-dark-confirmation'
+    if ([ThemeProbe]::IsWindowEnabled($script:h)) { throw 'Expected a modal page-deletion confirmation.' }
+    Escape
+    if (![ThemeProbe]::IsWindowEnabled($script:h)) { throw 'Escape did not dismiss the confirmation.' }
 }

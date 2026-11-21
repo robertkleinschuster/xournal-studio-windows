@@ -39,7 +39,11 @@ namespace xournal::app::NativeTheme
     HRESULT ShowTaskDialog(TASKDIALOGCONFIG const& config, int* button)
     {
         if (dmlib::isEnabled())
-            return dmlib::darkTaskDialogIndirect(&config, button, nullptr, nullptr);
+        {
+            TASKDIALOGCONFIG themed = config;
+            themed.pfCallback = dmlib::DarkTaskDlgCallback;
+            return dmlib::darkTaskDialogIndirect(&themed, button, nullptr, nullptr);
+        }
         return TaskDialogIndirect(&config, button, nullptr, nullptr);
     }
 }
