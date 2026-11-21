@@ -16,6 +16,7 @@ namespace xournal::app
     struct DocumentSearch::Shared
     {
         search::HandwritingCache cache;
+        std::shared_ptr<search::VisualTextCache> visualText = search::CreateVisualTextCache();
         std::mutex lock;
         std::optional<std::filesystem::path> pdfPath;
         std::shared_ptr<pdftext::TextDocument const> pdfText;
@@ -161,6 +162,7 @@ namespace xournal::app
         UiQueue::RunInBackground("search", [post, addHits, finished, snapshot, text, keep = shared, token = stop.get_token()]() mutable
         {
             snapshot.pdf = keep->PdfText();
+            snapshot.visualText = keep->visualText;
             bool completed = false;
             try
             {

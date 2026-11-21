@@ -1,12 +1,15 @@
 #include "xournal/search/Search.h"
 
 #include "TextMatch.h"
+#include "Recognition.h"
 
 #include "xournal/base/Error.h"
 #include "xournal/base/Log.h"
+#include "xournal/io/Files.h"
 #include "xournal/model/Background.h"
 #include "xournal/model/Snapshot.h"
 #include "xournal/model/XoppFormat.h"
+#include "xournal/model/XoppImage.h"
 #include "xournal/model/XoppText.h"
 #include "xournal/pdf/TextBoxLayout.h"
 
@@ -113,7 +116,7 @@ namespace xournal::search
             return corpus;
         }
 
-        Corpus HandwritingCorpus(std::vector<RecognizedWord> const& words)
+        Corpus WordCorpus(std::vector<RecognizedWord> const& words)
         {
             Corpus corpus;
             for (auto const& w : words)
@@ -132,6 +135,17 @@ namespace xournal::search
                 }
             }
             return corpus;
+        }
+
+        Corpus PlacedWords(std::vector<RecognizedWord> words, Size size, Matrix const& transform)
+        {
+            for (auto& word : words)
+            {
+                auto r = word.bounds;
+                word.bounds = XoppImage::Transform({ r.x * size.width, r.y * size.height,
+                    r.width * size.width, r.height * size.height }, transform);
+            }
+            return WordCorpus(words);
         }
 
         Rect Transformed(Matrix const& m, double x, double y, double width, double height)
@@ -208,7 +222,9 @@ namespace xournal::search
 
     SearchDocument PrepareSearch(XoppDocument& doc, std::shared_ptr<pdftext::TextDocument const> pdf)
     {
-        return { TakeSnapshot(doc, doc.ReferenceBase()), std::move(pdf) };
+        SearchDocument source{ TakeSnapshot(doc, doc.ReferenceBase()), std::move(pdf), doc.PdfPath(), {}, {} };
+        for (auto const& page : doc.Pages()) source.backgroundImages.push_back(page->BackgroundImagePath());
+        return source;
     }
 
     bool RecognizeAll(SearchDocument const& doc, HandwritingCache& cache, std::stop_token stop)
@@ -229,6 +245,8 @@ namespace xournal::search
         if (!doc.snapshot) ThrowInvalidData("search: no snapshot");
         ComScope com;
         TextSearch texts;
+        auto visualCache = doc.visualText ? doc.visualText : CreateVisualTextCache();
+        detail::VisualText visual(doc, *visualCache);
         int index = 0;
         for (auto const& page : doc.snapshot->Elements(L"page"))
         {
@@ -242,12 +260,44 @@ namespace xournal::search
                 int pdfPage = Background::PdfPageIndex(*background);
                 if (pdfPage >= 0 && pdfPage < doc.pdf->PageCount())
                 {
-                    AddHits(hits, HitKind::Pdf, index, PdfCorpus(*doc.pdf, pdfPage, width, height), query, options);
+                    auto corpus = PdfCorpus(*doc.pdf, pdfPage, width, height);
+                    AddHits(hits, HitKind::Pdf, index, corpus, query, options);
+                    bool textless = corpus.text.find_first_not_of(L" \t\r\n\f") == std::wstring::npos;
+                    auto [words, ink] = visual.PdfPage(pdfPage, options.handwriting, textless, options.images);
+                    AddHits(hits, ink ? HitKind::Handwriting : HitKind::PdfOcr, index,
+                        PlacedWords(std::move(words), { width, height }, {}), query, options);
                 }
             }
             if (options.texts) texts.AddHits(hits, *page, index, query, options);
             if (stop.stop_requested()) return false;
-            if (options.handwriting) AddHits(hits, HitKind::Handwriting, index, HandwritingCorpus(Handwriting(*page, cache)), query, options);
+            if (options.handwriting) AddHits(hits, HitKind::Handwriting, index, WordCorpus(Handwriting(*page, cache)), query, options);
+            if (options.images)
+            {
+                if (static_cast<size_t>(index) < doc.backgroundImages.size() && doc.backgroundImages[index])
+                {
+                    try
+                    {
+                        auto data = io::Files::ReadAll(*doc.backgroundImages[index]);
+                        AddHits(hits, HitKind::Image, index, PlacedWords(visual.Image(data), { width, height }, {}), query, options);
+                    }
+                    catch (...) { LogException(std::format("search: background image on page {}", index + 1)); }
+                }
+                for (auto const& layer : page->Elements(L"layer"))
+                {
+                    for (auto const& e : layer->Elements())
+                    {
+                        if (stop.stop_requested()) return false;
+                        if (!XoppImage::IsImage(*e)) continue;
+                        auto data = XoppImage::GetData(*e);
+                        if (data.empty() || XoppImage::IsPdf(data)) continue;
+                        auto placement = XoppImage::GetPlacement(*e);
+                        if (placement.size.width <= 0 || placement.size.height <= 0) continue;
+                        AddHits(hits, HitKind::Image, index,
+                            PlacedWords(visual.Image(data), placement.size, placement.transform), query, options);
+                    }
+                }
+            }
+            if (stop.stop_requested()) return false;
             onPage(index, std::move(hits));
             ++index;
         }

@@ -1,7 +1,7 @@
 #pragma once
 
 // Searching a document (Strg+F): the background PDF's text (pdftext / PDFium), the file's texts (<text>, <link>) and the
-// handwriting, recognised by Windows (InkAnalyzer, as OneNote finds handwriting). Hits come page by page, cancellable;
+// handwriting (Windows InkAnalyzer) and pictures and scans (Windows OCR). Hits come page by page, cancellable;
 // everything runs off the UI thread. No UI here.
 //
 //   auto doc = search::PrepareSearch(xopp, pdfText);           // where the ink may be read (a snapshot)
@@ -15,6 +15,7 @@
 #include "xournal/pdftext/PdfText.h"
 
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <map>
 #include <memory>
@@ -27,7 +28,7 @@
 
 namespace xournal::search
 {
-    enum class HitKind { Pdf, Text, Handwriting };
+    enum class HitKind { Pdf, Text, Handwriting, Image, PdfOcr };
 
     struct SearchHit
     {
@@ -41,11 +42,10 @@ namespace xournal::search
     {
         bool matchCase = false;
         bool wholeWord = false;
-        bool pdf = true, texts = true, handwriting = true;
+        bool pdf = true, texts = true, handwriting = true, images = true;
     };
 
-    /// A word Windows recognised in a page's handwriting: its text, the bounds of its strokes (page coordinates) and
-    /// its line (words of one line share it; lines numbered top to bottom).
+    /// Recognized text with word bounds in the source's coordinate space and a zero-based line number.
     struct RecognizedWord
     {
         std::wstring text;
@@ -69,12 +69,18 @@ namespace xournal::search
         std::map<std::uint64_t, std::vector<RecognizedWord>> pages;
     };
 
+    class VisualTextCache;
+    std::shared_ptr<VisualTextCache> CreateVisualTextCache();
+
     /// What a search reads: the pages as they are now (a snapshot of the <xournal> element) and, if the document has
     /// a PDF and PDFium is available, its text (the app's pdftext document; may be null).
     struct SearchDocument
     {
         XmlElementPtr snapshot;
         std::shared_ptr<pdftext::TextDocument const> pdf;
+        std::optional<std::filesystem::path> pdfPath;
+        std::vector<std::optional<std::filesystem::path>> backgroundImages;
+        std::shared_ptr<VisualTextCache> visualText;
     };
 
     /// Takes the snapshot (call it where the document's ink may be read).
@@ -90,9 +96,8 @@ namespace xournal::search
     /// false when stopped.
     bool RecognizeAll(SearchDocument const& doc, HandwritingCache& cache, std::stop_token stop = {});
 
-    /// Searches page by page: `onPage(page, hits)` after each page, its hits PDF text first, then texts, then
-    /// handwriting (recognised now when the cache does not know the page). Returns false when stopped (checked between
-    /// pages and between the kinds of a page). Throws xournal::Error.
+    /// Searches page by page: `onPage(page, hits)` receives text and recognition hits in page order.
+    /// Returns false when stopped between pages or sources. Throws xournal::Error.
     bool Search(SearchDocument const& doc, std::wstring_view query, SearchOptions const& options, HandwritingCache& cache,
                 std::function<void(int page, std::vector<SearchHit> hits)> const& onPage, std::stop_token stop = {});
 }

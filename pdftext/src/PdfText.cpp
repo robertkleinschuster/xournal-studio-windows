@@ -5,12 +5,15 @@
 #include "xournal/base/Error.h"
 #include "xournal/base/Log.h"
 #include "xournal/pdf/PageFrame.h"
+#include <fpdf_annot.h>
 
 #include <fpdf_edit.h>
 #include <fpdf_text.h>
 #include <fpdfview.h>
 
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <cstdlib>
 #include <format>
 
@@ -161,6 +164,90 @@ namespace xournal::pdftext
         std::lock_guard lock(PdfiumLock());
         LoadedPage open(impl->doc, page);
         return open.frame.Shown();
+    }
+
+    std::vector<std::vector<Point>> TextDocument::PenPaths(int page, bool joinSegments) const
+    {
+        if (page < 0 || page >= impl->pages) ThrowInvalidData(std::format("PDF paths: page {} of {}", page + 1, impl->pages));
+        std::lock_guard lock(PdfiumLock());
+        LoadedPage open(impl->doc, page);
+        std::vector<std::vector<Point>> paths;
+        for (int i = 0, count = FPDFPage_GetAnnotCount(open.page); i < count; ++i)
+        {
+            std::unique_ptr<std::remove_pointer_t<FPDF_ANNOTATION>, decltype(&FPDFPage_CloseAnnot)> annotation(
+                FPDFPage_GetAnnot(open.page, i), FPDFPage_CloseAnnot);
+            if (!annotation) ThrowInvalidData("PDF paths: could not load annotation");
+            if (FPDFAnnot_GetSubtype(annotation.get()) != FPDF_ANNOT_INK ||
+                (FPDFAnnot_GetFlags(annotation.get()) & (FPDF_ANNOT_FLAG_INVISIBLE | FPDF_ANNOT_FLAG_HIDDEN | FPDF_ANNOT_FLAG_NOVIEW)))
+                continue;
+            for (unsigned long j = 0, pathCount = FPDFAnnot_GetInkListCount(annotation.get()); j < pathCount; ++j)
+            {
+                auto length = FPDFAnnot_GetInkListPath(annotation.get(), j, nullptr, 0);
+                if (!length) continue;
+                std::vector<FS_POINTF> points(length);
+                if (FPDFAnnot_GetInkListPath(annotation.get(), j, points.data(), length) != length)
+                    ThrowInvalidData("PDF paths: could not read ink annotation");
+                auto& path = paths.emplace_back();
+                for (auto p : points)
+                    if (std::isfinite(p.x) && std::isfinite(p.y)) path.push_back(open.frame.FromUserSpace(p.x, p.y));
+                if (path.size() < 2) paths.pop_back();
+            }
+        }
+        if (!joinSegments) return paths;
+        std::vector<Point> run;
+        std::array<unsigned, 4> lastColor{};
+        auto finish = [&] {
+            // Standalone rules and strokes too short to infer a pen run are not handwriting.
+            if (run.size() >= 3) paths.push_back(std::move(run));
+            run.clear();
+        };
+        const int count = FPDFPage_CountObjects(open.page);
+        for (int i = 0; i < count; ++i)
+        {
+            auto object = FPDFPage_GetObject(open.page, i);
+            if (FPDFPageObj_GetType(object) != FPDF_PAGEOBJ_PATH || FPDFPath_CountSegments(object) != 2)
+            {
+                finish();
+                continue;
+            }
+            int fill = 0;
+            FPDF_BOOL stroked = false;
+            auto a = FPDFPath_GetPathSegment(object, 0), b = FPDFPath_GetPathSegment(object, 1);
+            if (!FPDFPath_GetDrawMode(object, &fill, &stroked) || !stroked || fill != FPDF_FILLMODE_NONE ||
+                FPDFPathSegment_GetType(a) != FPDF_SEGMENT_MOVETO || FPDFPathSegment_GetType(b) != FPDF_SEGMENT_LINETO ||
+                FPDFPathSegment_GetClose(b))
+            {
+                finish();
+                continue;
+            }
+            FS_MATRIX m{};
+            std::array<unsigned, 4> color{};
+            float x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+            if (!FPDFPageObj_GetMatrix(object, &m) || !FPDFPathSegment_GetPoint(a, &x0, &y0) ||
+                !FPDFPathSegment_GetPoint(b, &x1, &y1) ||
+                !FPDFPageObj_GetStrokeColor(object, &color[0], &color[1], &color[2], &color[3]))
+                ThrowInvalidData("PDF paths: could not read a stroked line");
+            Matrix transform{ m.a, m.b, m.c, m.d, m.e, m.f };
+            auto shown = [&](Point local) {
+                auto p = transform.Apply(local);
+                return open.frame.FromUserSpace(p.x, p.y);
+            };
+            Point start = shown({ x0, y0 }), end = shown({ x1, y1 });
+            if (!std::isfinite(start.x) || !std::isfinite(start.y) || !std::isfinite(end.x) || !std::isfinite(end.y) ||
+                start == end || color[3] == 0)
+            {
+                finish();
+                continue;
+            }
+            if (!run.empty() && (color != lastColor || std::abs(run.back().x - start.x) > 0.01 ||
+                std::abs(run.back().y - start.y) > 0.01))
+                finish();
+            if (run.empty()) run.push_back(start);
+            run.push_back(end);
+            lastColor = color;
+        }
+        finish();
+        return paths;
     }
 
     PageText TextDocument::Text(int page) const

@@ -27,6 +27,8 @@ namespace xournal::app
             {
             case search::HitKind::Pdf: return L"PDF";
             case search::HitKind::Text: return L"Text";
+            case search::HitKind::Image: return L"Bild-OCR";
+            case search::HitKind::PdfOcr: return L"PDF-OCR";
             default: return L"Handschrift";
             }
         }
@@ -54,7 +56,7 @@ namespace xournal::app
         field = CreateWindowExW(0, WC_EDITW, L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, 0, 0, 0, 0,
             window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(FieldId)), instance, nullptr);
         if (!field) ThrowLastError("CreateWindowEx(search field)");
-        Edit_SetCueBannerTextFocused(field, L"Suchen: PDF, Texte, Handschrift", TRUE);
+        Edit_SetCueBannerTextFocused(field, L"Suchen: PDF, Text, Handschrift, Bilder", TRUE);
         status = CreateWindowExW(0, WC_STATICW, L"", WS_CHILD | WS_VISIBLE | SS_LEFT | SS_ENDELLIPSIS, 0, 0, 0, 0, window,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(StatusId)), instance, nullptr);
         if (!status) ThrowLastError("CreateWindowEx(search status)");

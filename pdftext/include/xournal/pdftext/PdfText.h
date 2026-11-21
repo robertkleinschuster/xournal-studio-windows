@@ -101,6 +101,8 @@ namespace xournal::pdftext
         int PageCount() const;
         /// The shown page's size (points).
         Size PageSize(int page) const;
+        /// Ink annotations and, optionally, consecutive stroked segments in shown page coordinates.
+        std::vector<std::vector<Point>> PenPaths(int page, bool joinSegments = true) const;
 
         /// The page's text with character boxes; empty for a page without text (e.g. scanned).
         PageText Text(int page) const;

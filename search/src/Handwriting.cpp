@@ -2,6 +2,7 @@
 // the model's strokes turned into InkStrokes with InkStrokeBuilder, and the cache of recognised pages.
 
 #include "xournal/search/Search.h"
+#include "Recognition.h"
 
 #include "xournal/base/Error.h"
 #include "xournal/base/Log.h"
@@ -24,6 +25,39 @@ namespace xournal::search
     {
         using namespace winrt::Windows::UI::Input::Inking;
         using namespace winrt::Windows::UI::Input::Inking::Analysis;
+
+        std::vector<RecognizedWord> Analyze(std::vector<InkStroke> const& strokes)
+        {
+            std::vector<RecognizedWord> words;
+            if (strokes.empty()) return words;
+
+            InkAnalyzer analyzer;
+            analyzer.AddDataForStrokes(strokes);
+            auto result = analyzer.AnalyzeAsync().get();
+            if (result.Status() != InkAnalysisStatus::Updated)
+            {
+                Log(std::format("search: ink analysis of a page ended with status {}", static_cast<int>(result.Status())));
+            }
+            // Lines top to bottom, their words in the analyzer's (reading) order.
+            std::vector<IInkAnalysisNode> lines;
+            for (auto const& node : analyzer.AnalysisRoot().FindNodes(InkAnalysisNodeKind::Line)) lines.push_back(node);
+            std::stable_sort(lines.begin(), lines.end(), [](IInkAnalysisNode const& a, IInkAnalysisNode const& b) {
+                return a.BoundingRect().Y < b.BoundingRect().Y;
+            });
+            int number = 0;
+            for (auto const& line : lines)
+            {
+                for (auto const& child : line.Children())
+                {
+                    if (child.Kind() != InkAnalysisNodeKind::InkWord) continue;
+                    auto word = child.as<InkAnalysisInkWord>();
+                    auto r = word.BoundingRect();
+                    words.push_back({ std::wstring(word.RecognizedText()), Rect{ r.X, r.Y, r.Width, r.Height }, number });
+                }
+                ++number;
+            }
+            return words;
+        }
 
         void Hash(std::uint64_t& h, std::wstring_view s)
         {
@@ -102,39 +136,26 @@ namespace xournal::search
                 }
                 strokes.push_back(builder.CreateStrokeFromInkPoints(points, winrt::Windows::Foundation::Numerics::float3x2::identity()));
             }
-            std::vector<RecognizedWord> words;
-            if (strokes.empty()) return words;
-
-            InkAnalyzer analyzer;
-            analyzer.AddDataForStrokes(strokes);
-            auto result = analyzer.AnalyzeAsync().get();
-            if (result.Status() != InkAnalysisStatus::Updated)
-            {
-                Log(std::format("search: ink analysis of a page ended with status {}", static_cast<int>(result.Status())));
-            }
-            // Lines top to bottom, their words in the analyzer's (reading) order.
-            std::vector<IInkAnalysisNode> lines;
-            for (auto const& node : analyzer.AnalysisRoot().FindNodes(InkAnalysisNodeKind::Line)) lines.push_back(node);
-            std::stable_sort(lines.begin(), lines.end(), [](IInkAnalysisNode const& a, IInkAnalysisNode const& b) {
-                return a.BoundingRect().Y < b.BoundingRect().Y;
-            });
-            int number = 0;
-            for (auto const& line : lines)
-            {
-                for (auto const& child : line.Children())
-                {
-                    if (child.Kind() != InkAnalysisNodeKind::InkWord) continue;
-                    auto word = child.as<InkAnalysisInkWord>();
-                    auto r = word.BoundingRect();
-                    words.push_back({ std::wstring(word.RecognizedText()), Rect{ r.X, r.Y, r.Width, r.Height }, number });
-                }
-                ++number;
-            }
-            return words;
+            return Analyze(strokes);
         }
         catch (winrt::hresult_error const& e)
         {
             ThrowHr(std::format("search: handwriting recognition ({})", ToUtf8(std::wstring(e.message()))), e.code());
         }
+    }
+
+    std::vector<RecognizedWord> detail::RecognizePenPaths(std::vector<std::vector<Point>> const& paths)
+    {
+        InkStrokeBuilder builder;
+        std::vector<InkStroke> strokes;
+        strokes.reserve(paths.size());
+        for (auto const& path : paths)
+        {
+            std::vector<winrt::Windows::Foundation::Point> points;
+            points.reserve(path.size());
+            for (auto p : path) points.push_back({ static_cast<float>(p.x), static_cast<float>(p.y) });
+            strokes.push_back(builder.CreateStroke(points));
+        }
+        return Analyze(strokes);
     }
 }

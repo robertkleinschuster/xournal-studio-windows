@@ -9,6 +9,9 @@
 #include "xournal/base/Text.h"
 #include "xournal/model/XoppDocument.h"
 #include "xournal/model/XoppFormat.h"
+#include "xournal/model/XoppImage.h"
+#include "xournal/pdf/PdfAreaRenderer.h"
+#include "xournal/pdf/PdfExport.h"
 #include "xournal/search/Search.h"
 
 #include <qpdf/Buffer.hh>
@@ -99,7 +102,7 @@ namespace xournal::tests
 
         // ------------------------------------------------------------------ documents
 
-        std::vector<std::uint8_t> TextPdf()
+        std::vector<std::uint8_t> TextPdf(std::string content = "BT /F1 12 Tf 100 742 Td (Die Stra\337e der Induktivit\344t) Tj ET\n")
         {
             QPDF pdf;
             pdf.emptyPDF();
@@ -116,7 +119,7 @@ namespace xournal::tests
             page.replaceKey("/Type", QPDFObjectHandle::newName("/Page"));
             page.replaceKey("/MediaBox", QPDFObjectHandle::newArray(QPDFObjectHandle::Rectangle(0, 0, 595, 842)));
             page.replaceKey("/Resources", resources);
-            page.replaceKey("/Contents", pdf.newStream("BT /F1 12 Tf 100 742 Td (Die Stra\337e der Induktivit\344t) Tj ET\n"));
+            page.replaceKey("/Contents", pdf.newStream(content));
             pdf.addPage(pdf.makeIndirectObject(page), false);
             QPDFWriter writer(pdf);
             writer.setOutputMemory();
@@ -225,6 +228,52 @@ und zur Induktivität</text></layer></page>
         EXPECT_EQ(cache.Size(), 2u);
         auto changed = PrepareSearch(*Document(Handwriting(L"Hallo Welt", 61, 200)), nullptr);
         EXPECT_NE(StrokesKey(*changed.snapshot->Elements(L"page")[1]), StrokesKey(*source.snapshot->Elements(L"page")[1]));
+    }
+
+    TEST(Search, PdfPenSegmentsJoinInShownCoordinates)
+    {
+        auto data = TextPdf("q 1 0 0 1 10 20 cm 0 0 0 RG\n"
+            "100 742 m 102 744 l S\n102 744 m 104 742 l S\n0 0 m 50 0 l S\nQ\n");
+        pdftext::TextDocument pdf(data);
+        auto paths = pdf.PenPaths(0);
+        ASSERT_EQ(paths.size(), 1u);
+        EXPECT_EQ(paths[0], (std::vector<Point>{ {110, 80}, {112, 78}, {114, 80} }));
+    }
+
+    TEST(Search, ImageOcrFindsWordsAtTheirPlacement)
+    {
+        auto data = TextPdf("BT /F1 24 Tf 100 742 Td (SOLAR BATTERY) Tj ET\n");
+        pdf::PdfAreaRenderer render(data);
+        auto png = render.Render(0, { 80, 62, 280, 62 }, 3.0);
+        auto root = Xml("<xournal fileversion=\"4\"><page width=\"595\" height=\"842\">"
+            "<background type=\"solid\" color=\"#ffffffff\" style=\"plain\"/><layer/></page></xournal>");
+        auto layer = root->Element(L"page")->Element(L"layer");
+        layer->Append(XoppImage::Create({ 120, 180, 280, 62 }, png.png, png.width, png.height));
+        auto doc = XoppDocument::FromXml(root, std::filesystem::temp_directory_path() / L"search-image.xopp");
+        auto source = PrepareSearch(*doc, nullptr);
+        HandwritingCache cache;
+        auto hits = SearchAll(source, L"solar", { .handwriting = false }, cache);
+        ASSERT_EQ(hits.size(), 1u);
+        EXPECT_EQ(hits[0].kind, HitKind::Image);
+        ASSERT_EQ(hits[0].rects.size(), 1u);
+        EXPECT_NEAR(hits[0].rects[0].x, 140, 5);
+        EXPECT_GT(hits[0].rects[0].y, 180);
+        EXPECT_LT(hits[0].rects[0].Bottom(), 242);
+        EXPECT_TRUE(SearchAll(source, L"solar", { .handwriting = false, .images = false }, cache).empty());
+
+        TempFolder folder;
+        pdf::ExportPage scan{ 595, 842, pdf::SolidBackground{},
+            { pdf::Picture{ std::move(png.png), { {280, 62}, Matrix::Translation(120, 180) } } } };
+        auto scanPath = folder / L"scan.pdf";
+        pdf::ExportResult result;
+        auto scanData = pdf::ExportToMemory(std::span(&scan, 1), result);
+        WriteBytes(scanPath, { reinterpret_cast<char const*>(scanData.data()), scanData.size() });
+        auto scanDoc = PrepareSearch(*Document(""), std::make_shared<pdftext::TextDocument const>(scanData));
+        scanDoc.pdfPath = scanPath;
+        auto scanHits = SearchAll(scanDoc, L"solar", { .texts = false, .handwriting = false }, cache);
+        ASSERT_EQ(scanHits.size(), 1u);
+        EXPECT_EQ(scanHits[0].kind, HitKind::PdfOcr);
+        EXPECT_EQ(scanHits[0].page, 0);
     }
 
     TEST(Search, Cancellable)
