@@ -8,7 +8,7 @@ name: Build
 # - Third-party code comes from the dependency cache (cmake/DependencyCache.cmake), the own code through ccache; both
 #   are kept with actions/cache. build.ps1 builds with Ninja.
 # - Failures: the failing tests (names and output) and compiler errors are listed in the job summary (gh run view).
-# A tag v* also zips the staged app, builds the MSI and publishes a GitHub pre-release (the only job that may write).
+# A tag v* also zips the staged app, builds the MSI and publishes the latest GitHub release (the only job that may write).
 on:
   push:
     branches: [main]
@@ -218,7 +218,7 @@ jobs:
         with:
           name: release
 
-      - name: GitHub pre-release
+      - name: Publish latest GitHub release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -226,7 +226,7 @@ jobs:
           $version = $env:GITHUB_REF_NAME.TrimStart('v')
           $hash = (Get-Content exe.sha256).Trim()
           $notes = @"
-          The first release of the native C++/Win32 Xournal Studio for Windows 11 (x64): a small pen note app that reads
+          Xournal Studio for Windows 11 (x64) is a native C++/Win32 pen note app that reads
           and writes Xournal++ ``.xopp`` files in the upstream format (nothing it does not understand is lost).
 
           - Windows ink with the pen (pressure, eraser end, barrel button = lasso); finger and touchpad pan and zoom, the
@@ -251,4 +251,4 @@ jobs:
 
           The earlier C#/WinUI version stays available at the tag ``csharp-final`` and the release v0.1.0.
           "@
-          gh release create $env:GITHUB_REF_NAME "XournalStudio-Win32-$version-x64.msi" "XournalStudio-Win32-$version-x64.zip" --repo $env:GITHUB_REPOSITORY --title "Xournal Studio (Win32) $version" --notes $notes --prerelease
+          gh release create $env:GITHUB_REF_NAME "XournalStudio-Win32-$version-x64.msi" "XournalStudio-Win32-$version-x64.zip" --repo $env:GITHUB_REPOSITORY --title "Xournal Studio (Win32) $version" --notes $notes --generate-notes --verify-tag --latest

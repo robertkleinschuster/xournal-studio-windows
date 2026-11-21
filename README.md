@@ -42,7 +42,7 @@ UiTests\Run-AppTest.ps1 -Test UiTests\TasksTest.ps1 -Extra <InkPages' uiaprobe.e
 
 CI (`.github/workflows/build.yml`) builds and runs the unit tests on every push to main (docs-only pushes excepted)
 and uploads the staged app; `.github/workflows/ui-tests.yml` then runs the UI tests on GitHub-hosted runners. A tag
-`v*` publishes the app as an MSI (see Installer) and a portable zip in a GitHub pre-release.
+`v*` publishes the app as an MSI (see Installer) and a portable zip in a regular GitHub release marked Latest.
 
 ## Layout
 
