@@ -10,6 +10,7 @@
 #include "xournal/model/Strokes.h"
 #include "xournal/model/XoppClip.h"
 #include "xournal/model/XoppImage.h"
+#include "xournal/model/XoppText.h"
 #include "xournal/model/XoppPage.h"
 
 #include <gtest/gtest.h>
@@ -17,6 +18,25 @@
 namespace xournal::tests
 {
     using namespace io::DocumentFile;
+
+    TEST(FormatCompatibility, RotatedPicturesAndTextKeepTheirAffinePlacementOnSave)
+    {
+        auto doc = XoppDocument::FromXml(Xml(R"(<xournal fileversion="4"><page width="100" height="100"><layer>
+            <image left="10" top="20" right="30" bottom="60" natural_size="10 20"/>
+            <text x="10" y="20" size="12">test</text></layer></page></xournal>)"), {});
+        auto layer = doc->Pages().front()->Layers().front();
+        auto image = layer->Element(L"image");
+        auto text = layer->Element(L"text");
+        Matrix rotate{ 0, 1, -1, 0, 80, 0 };
+        XoppImage::Transform(*image, rotate, XoppImage::NaturalSize(*image));
+        XoppText::Transform(*text, rotate);
+        auto snapshot = TakeSnapshot(*doc, {});
+        EXPECT_EQ(L"5", snapshot->AttributeOr(L"fileversion", L""));
+        auto saved = snapshot->Element(L"page")->Element(L"layer");
+        EXPECT_EQ((Rect{ 20, 10, 40, 20 }), XoppImage::GetBounds(*saved->Element(L"image")));
+        EXPECT_EQ((Point{ 20, 30 }), XoppImage::GetPlacement(*saved->Element(L"image")).transform.Apply({ 10, 20 }));
+        EXPECT_EQ((Point{ 60, 11 }), XoppText::Read(*saved->Element(L"text")).transform.Apply({ 1, 0 }));
+    }
 
     namespace
     {

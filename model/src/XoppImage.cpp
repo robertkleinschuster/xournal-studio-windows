@@ -15,25 +15,19 @@
 
 namespace xournal::XoppImage
 {
+    std::optional<Size> NaturalSize(XmlElement const& e)
+    {
+        std::wstring text = e.AttributeOr(L"natural_size", L""); // the parts are views into it
+        auto parts = Split(text, L' ');
+        if (parts.size() != 2) return std::nullopt;
+        auto w = XoppFormat::ReadNumber(parts[0]);
+        auto h = XoppFormat::ReadNumber(parts[1]);
+        if (!w || !h || *w <= 0 || *h <= 0) return std::nullopt;
+        return Size{ *w, *h };
+    }
+
     namespace
     {
-        std::optional<Size> NaturalSize(XmlElement const& e)
-        {
-            std::wstring text = e.AttributeOr(L"natural_size", L""); // the parts are views into it
-            auto parts = Split(text, L' ');
-            if (parts.size() != 2)
-            {
-                return std::nullopt;
-            }
-            auto w = XoppFormat::ReadNumber(parts[0]);
-            auto h = XoppFormat::ReadNumber(parts[1]);
-            if (!w || !h || *w <= 0 || *h <= 0)
-            {
-                return std::nullopt;
-            }
-            return Size{ *w, *h };
-        }
-
         Rect LegacyBounds(XmlElement const& e)
         {
             double left = XoppFormat::ReadNumber(e, L"left", 0), top = XoppFormat::ReadNumber(e, L"top", 0);
@@ -131,9 +125,31 @@ namespace xournal::XoppImage
         SetLegacyBounds(e, bounds);
     }
 
+    void Transform(XmlElement& e, Matrix const& m, std::optional<Size> intrinsic)
+    {
+        if (auto matrix = XoppFormat::ReadMatrix(e))
+        {
+            XoppFormat::WriteMatrix(e, *matrix * m);
+            return;
+        }
+        Rect b = LegacyBounds(e);
+        if (!intrinsic)
+        {
+            SetLegacyBounds(e, Transform(b, m));
+            return;
+        }
+        e.SetAttribute(L"natural_size", XoppFormat::FormatNumber(intrinsic->width, 6) + L" " +
+            XoppFormat::FormatNumber(intrinsic->height, 6));
+        XoppFormat::WriteMatrix(e, Matrix::Scale(b.width / intrinsic->width, b.height / intrinsic->height) *
+            Matrix::Translation(b.x, b.y) * m);
+    }
+
     Rect Transform(Rect bounds, Matrix const& m)
     {
-        return Rect::FromCorners(m.Apply({ bounds.Left(), bounds.Top() }), m.Apply({ bounds.Right(), bounds.Bottom() }));
+        Point a = m.Apply({ bounds.Left(), bounds.Top() }), b = m.Apply({ bounds.Right(), bounds.Bottom() });
+        Point c = m.Apply({ bounds.Right(), bounds.Top() }), d = m.Apply({ bounds.Left(), bounds.Bottom() });
+        return Rect::FromCorners({ std::min({ a.x, b.x, c.x, d.x }), std::min({ a.y, b.y, c.y, d.y }) },
+            { std::max({ a.x, b.x, c.x, d.x }), std::max({ a.y, b.y, c.y, d.y }) });
     }
 
     std::vector<std::uint8_t> GetData(XmlElement const& e)

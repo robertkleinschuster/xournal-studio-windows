@@ -33,9 +33,8 @@ namespace xournal::app
             }
         }
 
-        std::shared_ptr<CpuBitmap> Decode(std::span<std::uint8_t const> data)
+        static ComPtr<IWICBitmapFrameDecode> OpenFrame(IWICImagingFactory& factory, std::span<std::uint8_t const> data)
         {
-            auto factory = Factory();
             ComPtr<IStream> stream;
             stream.Attach(SHCreateMemStream(data.data(), static_cast<UINT>(data.size())));
             if (!stream)
@@ -44,9 +43,25 @@ namespace xournal::app
             }
             ComPtr<IWICBitmapDecoder> decoder;
             Check("IWICImagingFactory::CreateDecoderFromStream",
-                factory->CreateDecoderFromStream(stream.Get(), nullptr, WICDecodeMetadataCacheOnDemand, &decoder));
+                factory.CreateDecoderFromStream(stream.Get(), nullptr, WICDecodeMetadataCacheOnDemand, &decoder));
             ComPtr<IWICBitmapFrameDecode> frame;
             Check("IWICBitmapDecoder::GetFrame", decoder->GetFrame(0, &frame));
+            return frame;
+        }
+
+        Size NaturalSize(std::span<std::uint8_t const> data)
+        {
+            auto factory = Factory();
+            auto frame = OpenFrame(*factory.Get(), data);
+            UINT width = 0, height = 0;
+            Check("IWICBitmapFrameDecode::GetSize", frame->GetSize(&width, &height));
+            return { static_cast<double>(width), static_cast<double>(height) };
+        }
+
+        std::shared_ptr<CpuBitmap> Decode(std::span<std::uint8_t const> data)
+        {
+            auto factory = Factory();
+            auto frame = OpenFrame(*factory.Get(), data);
             ComPtr<IWICFormatConverter> converter;
             Check("IWICImagingFactory::CreateFormatConverter", factory->CreateFormatConverter(&converter));
             Check("IWICFormatConverter::Initialize", converter->Initialize(frame.Get(), GUID_WICPixelFormat32bppPBGRA,

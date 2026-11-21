@@ -75,9 +75,9 @@ long formulas in several colors. For open pen/UI design questions, propose how O
   viewer. The Text tool takes its clicks and taps. System cursors show the mouse's action on the page. The pen
   operates every control in its normal mouse size.
 - **Pen buttons:** eraser end / eraser button erases with any tool (exact or whole strokes, following the toggle).
-  Barrel button (user, 2026-11-15/16): hold barrel = lasso, always, with every tool and without switching the toolbar;
-  a barrel drag inside the selection moves it, on a corner handle scales it, a barrel tap clears it. The tip hovering
-  over the selection moves/scales it too, elsewhere it inks.
+  The barrel button lassos with every tool. A barrel tap inside an existing selection duplicates it. The tip moves
+  the selection, scales it at a corner and rotates it at the rotation handle. The frame also offers delete and
+  duplicate. An inside tap keeps the selection; a tap outside clears it.
 - **Simple, flat and honest – no magic** (user, 2026-11-15). Show things as they are and do exactly what the user asked:
   the explorer shows every file and folder (only what Windows marks hidden/system is left out), nothing is paired,
   filtered, renamed or deleted "along with" something else, opening a PDF does not redirect to a .xopp of the same name

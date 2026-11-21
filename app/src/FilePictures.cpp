@@ -1,5 +1,9 @@
 #include "FilePictures.h"
 
+#include "Bitmaps.h"
+#include "xournal/base/Error.h"
+#include "xournal/pdf/PdfNavigation.h"
+
 #include "xournal/base/Log.h"
 #include "xournal/model/XoppImage.h"
 #include "xournal/model/XoppText.h"
@@ -70,7 +74,18 @@ namespace xournal::app
     {
         if (XoppImage::IsImage(element))
         {
-            XoppImage::SetBounds(element, XoppImage::Transform(XoppImage::GetBounds(element), m));
+            std::optional<Size> intrinsic;
+            if ((m.m12 != 0 || m.m21 != 0 || m.m11 < 0 || m.m22 < 0) && !element.Attribute(L"matrix"))
+            {
+                intrinsic = XoppImage::NaturalSize(element);
+                if (!intrinsic)
+                {
+                    auto data = XoppImage::GetData(element);
+                    intrinsic = XoppImage::IsPdf(data) ? pdf::PdfNavigation(data).PageSize(0) : Bitmaps::NaturalSize(data);
+                    if (!(intrinsic->width > 0 && intrinsic->height > 0)) ThrowInvalidData("picture of size 0");
+                }
+            }
+            XoppImage::Transform(element, m, intrinsic);
         }
         else
         {
@@ -231,14 +246,13 @@ namespace xournal::app
                 pages.insert(page);
                 if (target < 0 || target == page)
                 {
-                    if (XoppImage::IsImage(*element)) doc->Pages()[page]->Images().Transform({ element }, onPage);
-                    else XoppText::Transform(*element, onPage);
+                    TransformInPlace(*element, onPage);
                     continue;
                 }
                 // Onto another page: into that page's units, then into its top layer.
                 Point t = Origin(target);
-                doc->Pages()[page]->Images().Remove({ element }); // any element: its layer and place
                 TransformInPlace(*element, onPage * Matrix::Translation(o.x - t.x, o.y - t.y));
+                doc->Pages()[page]->Images().Remove({ element }); // any element: its layer and place
                 doc->Pages()[target]->Images().Add({ element });
                 pages.insert(target);
             }

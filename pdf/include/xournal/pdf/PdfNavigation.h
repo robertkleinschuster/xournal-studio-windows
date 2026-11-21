@@ -50,6 +50,7 @@ namespace xournal::pdf
         PdfNavigation& operator=(PdfNavigation const&) = delete;
 
         int PageCount() const;
+        Size PageSize(int pageIndex) const;
 
         /// The outline as a tree; named destinations (/Dests, /Names) resolved. An entry whose destination cannot be
         /// resolved is logged; it stays (without destination) when it groups others, otherwise it is left out.

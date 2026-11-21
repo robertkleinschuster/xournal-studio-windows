@@ -165,6 +165,11 @@ namespace xournal
             return;
         }
         XoppText now = Read(e);
+        if (m.m12 != 0 || m.m21 != 0 || m.m11 < 0 || m.m22 < 0)
+        {
+            XoppFormat::WriteMatrix(e, now.transform * m);
+            return;
+        }
         Point at = m.Apply(now.transform.Translation());
         e.SetAttribute(L"x", XoppFormat::FormatNumber(at.x));
         e.SetAttribute(L"y", XoppFormat::FormatNumber(at.y));

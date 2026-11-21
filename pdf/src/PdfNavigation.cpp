@@ -160,6 +160,7 @@ namespace xournal::pdf
     PdfNavigation::~PdfNavigation() = default;
 
     int PdfNavigation::PageCount() const { return static_cast<int>(impl->pages.size()); }
+    Size PdfNavigation::PageSize(int pageIndex) const { return impl->frames.at(pageIndex).Shown(); }
 
     std::vector<OutlineEntry> PdfNavigation::Outline() const
     {

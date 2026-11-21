@@ -9,6 +9,7 @@
 #include "xournal/model/Xml.h"
 
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -36,6 +37,8 @@ namespace xournal::XoppImage
     void SetBounds(XmlElement& e, Rect bounds);
 
     /// The bounds after scaling/moving by `m` (pictures stay upright).
+    std::optional<Size> NaturalSize(XmlElement const& e);
+    void Transform(XmlElement& e, Matrix const& m, std::optional<Size> intrinsic);
     Rect Transform(Rect bounds, Matrix const& m);
 
     /// The picture's data (base64 content decoded by Windows' CryptStringToBinary); empty when it is not base64 - the

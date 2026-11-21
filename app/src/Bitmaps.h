@@ -4,6 +4,7 @@
 // or delete, as with the C# app), and memory bitmaps uploaded to the Direct2D device that draws them.
 
 #include "PdfPageRenderer.h"
+#include "xournal/model/Geometry.h"
 
 #include <d2d1_1.h>
 #include <wrl/client.h>
@@ -20,6 +21,7 @@ namespace xournal::app
     namespace Bitmaps
     {
         /// A PNG/JPEG/... decoded by WIC (premultiplied BGRA). Throws when it is not a picture WIC can read.
+        Size NaturalSize(std::span<std::uint8_t const> data);
         std::shared_ptr<CpuBitmap> Decode(std::span<std::uint8_t const> data);
         std::shared_ptr<CpuBitmap> DecodeFile(std::filesystem::path const& file);
         /// A memory bitmap (premultiplied BGRA) as PNG with straight alpha (WIC).

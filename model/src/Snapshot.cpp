@@ -20,6 +20,16 @@ namespace xournal
         for (auto const& page : doc.Pages())
         {
             auto element = page->Snapshot();
+            if (XoppFormat::ReadNumber(*output, L"fileversion", 4) < 5)
+            {
+                for (auto const& layer : element->Elements(L"layer"))
+                {
+                    for (auto const& object : layer->Elements())
+                    {
+                        if (object->Attribute(L"matrix")) output->SetAttribute(L"fileversion", L"5");
+                    }
+                }
+            }
             if (auto background = element->Element(L"background"))
             {
                 if (Background::IsPdf(*background))
