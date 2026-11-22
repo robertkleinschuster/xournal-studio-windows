@@ -254,6 +254,23 @@ namespace xournal::app
         pendingSelection = p;
     }
 
+    HTREEITEM ExplorerTree::FindFile(std::filesystem::path const& p) const
+    {
+        auto item = Find(p);
+        auto node = NodeOf(item);
+        return node && !node->missing && !node->isFolder ? item : nullptr;
+    }
+
+    void ExplorerTree::FocusFile(std::filesystem::path const& p)
+    {
+        auto item = FindFile(p);
+        if (!item) return;
+        if (!TreeView_SelectItem(tree, item)) ThrowHr("TVM_SELECTITEM (open file)", E_FAIL);
+        TreeView_EnsureVisible(tree, item);
+        SetFocus(tree);
+        if (GetFocus() != tree) ThrowHr("SetFocus (explorer tree)", E_FAIL);
+    }
+
     void ExplorerTree::BeginRename(std::filesystem::path const& p)
     {
         if (HTREEITEM item = Find(p))

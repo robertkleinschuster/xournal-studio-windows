@@ -34,6 +34,8 @@ namespace xournal::app
         void SetSyncing(bool syncing);
         /// The button's text when no sync runs ("Synchronisieren   3  ↑1  ↓2") and its tooltip (one fact per line).
         void SetSyncStatus(std::wstring text, std::wstring const& details);
+        void SetCurrentFile(std::optional<std::filesystem::path> file);
+        void UpdateCurrentFileButton();
 
         /// The Seiten tab's content (a child window of this pane), in place of its placeholder.
         void SetPagesContent(HWND content);
@@ -63,6 +65,8 @@ namespace xournal::app
         HWND tabs = nullptr;
         HWND syncButton = nullptr;
         HWND syncTip = nullptr;
+        HWND currentFileButton = nullptr;
+        std::optional<std::filesystem::path> currentFile;
         std::wstring syncText = L"Synchronisieren";
         bool syncing = false;
         bool darkMode = false;

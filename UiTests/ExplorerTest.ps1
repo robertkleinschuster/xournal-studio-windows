@@ -91,6 +91,10 @@ Invoke-Test {
     Start-TestApp 'XournalStudio.exe' "`"$work\test.xopp`""
     Start-Sleep 3
     At 'XournalStudioWindow' 'test.xopp' | Out-Null   # the tree shows the folder
+    ClickAt 'XournalStudioWindow' 'todo.txt' | Out-Null
+    ClickAt 'XournalStudioWindow' ('Ge' + [char]0x00F6 + 'ffnete Datei anzeigen') | Out-Null
+    $focused = & C:\sbx\data\uiaprobe.exe --focus
+    if ("$focused" -notmatch "name 'test\.xopp'") { throw "The open file did not receive focus: $focused" }
     Shot '01-explorer'
 
     # 0. The sync button: one local commit to push, two on the server after the start's fetch, no changed file.

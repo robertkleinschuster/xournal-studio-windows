@@ -15,8 +15,8 @@ namespace xournal::app
     namespace
     {
         constexpr wchar_t ClassName[] = L"XournalStudioSidePane";
-        constexpr int TabsId = 1, TreeId = 2, SyncId = 3;
-        constexpr int SyncButtonHeightDip = 32;
+        constexpr int TabsId = 1, TreeId = 2, SyncId = 3, CurrentFileId = 4;
+        constexpr int FileButtonHeightDip = 32;
         constexpr wchar_t const* TabTitles[] = { L"Dateien", L"Aufgaben", L"Seiten", L"Suche", L"Gliederung" };
         constexpr int OutlineTab = 4, FixedTabs = 4; // Suche is SidePane::SearchTab
         void InsertTab(HWND tabs, int index)
@@ -74,6 +74,11 @@ namespace xournal::app
             InsertTab(tabs, i);
         explorer = std::make_unique<ExplorerTree>(window, TreeId);
         ChildControls::UseMessageFont(explorer->Window());
+        currentFileButton = CreateWindowExW(0, WC_BUTTONW, L"Geöffnete Datei anzeigen",
+            WS_CHILD | WS_TABSTOP | WS_DISABLED | BS_PUSHBUTTON, 0, 0, 0, 0, window,
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(CurrentFileId)), instance, nullptr);
+        if (!currentFileButton) ThrowLastError("CreateWindowEx (show open file button)");
+        ChildControls::UseMessageFont(currentFileButton);
         syncButton = CreateWindowExW(0, WC_BUTTONW, L"Synchronisieren", WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON, 0, 0, 0, 0,
             window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(SyncId)), instance, nullptr);
         if (!syncButton)
@@ -202,6 +207,7 @@ namespace xournal::app
         if (!SetWindowPos(tabs, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE))
             ThrowLastError("SetWindowPos (tab background)");
         ShowWindow(explorer->Window(), tab == 0 ? SW_SHOW : SW_HIDE);
+        ShowWindow(currentFileButton, tab == 0 ? SW_SHOW : SW_HIDE);
         ShowWindow(syncButton, tab == 0 ? SW_SHOW : SW_HIDE);
         ShowWindow(tasks->Window(), tab == 1 ? SW_SHOW : SW_HIDE);
         ShowWindow(pagesContent, tab == 2 ? SW_SHOW : SW_HIDE);
@@ -223,13 +229,28 @@ namespace xournal::app
             if (child && !MoveWindow(child, page.left, page.top, width, height, TRUE))
                 ThrowLastError("MoveWindow (side pane content)");
         }
-        // The tree leaves room for the sync button below it.
-        int button = MulDiv(SyncButtonHeightDip, static_cast<int>(GetDpiForWindow(window)), 96);
+        // Show the open file above the tree and keep sync below it.
+        int button = MulDiv(FileButtonHeightDip, static_cast<int>(GetDpiForWindow(window)), 96);
         int gap = button / 4;
-        if (!MoveWindow(explorer->Window(), page.left, page.top, width, std::max(0L, height - button - 2 * gap), TRUE))
+        if (!MoveWindow(currentFileButton, page.left + gap, page.top + gap, std::max(0L, width - 2 * gap), button, TRUE))
+            ThrowLastError("MoveWindow (show open file button)");
+        if (!MoveWindow(explorer->Window(), page.left, page.top + button + 2 * gap,
+            width, std::max(0L, height - 2 * button - 4 * gap), TRUE))
             ThrowLastError("MoveWindow (explorer tree)");
         if (!MoveWindow(syncButton, page.left + gap, page.bottom - button - gap, std::max(0L, width - 2 * gap), button, TRUE))
             ThrowLastError("MoveWindow (sync button)");
+    }
+
+    void SidePane::SetCurrentFile(std::optional<std::filesystem::path> file)
+    {
+        if (file == currentFile) return;
+        currentFile = std::move(file);
+        UpdateCurrentFileButton();
+    }
+
+    void SidePane::UpdateCurrentFileButton()
+    {
+        EnableWindow(currentFileButton, currentFile && explorer->HasFile(*currentFile));
     }
 
     void SidePane::SetSyncing(bool value)
@@ -276,6 +297,11 @@ namespace xournal::app
             }
             break;
         case WM_COMMAND:
+            if (LOWORD(wp) == CurrentFileId && HIWORD(wp) == BN_CLICKED && currentFile)
+            {
+                explorer->FocusFile(*currentFile);
+                return 0;
+            }
             if (LOWORD(wp) == SyncId && syncRequested)
             {
                 syncRequested();
@@ -293,6 +319,7 @@ namespace xournal::app
             ChildControls::UseMessageFont(tabs);
             ChildControls::UseMessageFont(explorer->Window());
             ChildControls::UseMessageFont(syncButton);
+            ChildControls::UseMessageFont(currentFileButton);
             SendMessageW(syncTip, TTM_SETMAXTIPWIDTH, 0, MulDiv(320, static_cast<int>(GetDpiForWindow(window)), 96));
             Layout();
             return 0;

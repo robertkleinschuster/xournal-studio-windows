@@ -464,6 +464,7 @@ namespace xournal::app
         if (!session) return;
         SetWindowTextW(window, session->Title().c_str());
         settings.lastFile = session->FilePath();
+        if (pane) pane->SetCurrentFile(session->PlaceKey());
         if (recovery) recovery->Update();
     }
 
@@ -588,6 +589,7 @@ namespace xournal::app
         projectExplorer->refreshed = [this]
         {
             pane->Tasks().Reload();
+            pane->UpdateCurrentFileButton();
             UpdateSyncButton();
         };
         explorerCommands = std::make_unique<ExplorerCommands>(window, *session, *sync, *projectExplorer, pane->Explorer(), messages);

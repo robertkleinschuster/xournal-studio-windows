@@ -62,6 +62,8 @@ namespace xournal::app
 
         /// Selects this item at the next Show (or now, if shown), e.g. a folder just created or renamed.
         void Select(std::filesystem::path const& p);
+        bool HasFile(std::filesystem::path const& p) const { return FindFile(p) != nullptr; }
+        void FocusFile(std::filesystem::path const& p);
         /// Starts editing the label of this item (rename), e.g. a document just created.
         void BeginRename(std::filesystem::path const& p);
         /// The folder the selection stands for: a selected folder, or a selected file's folder; none when nothing (or
@@ -89,6 +91,7 @@ namespace xournal::app
         void Add(HTREEITEM parent, project::ProjectEntry const& entry);
         Node const* NodeOf(HTREEITEM item) const;
         HTREEITEM Find(std::filesystem::path const& p) const;
+        HTREEITEM FindFile(std::filesystem::path const& p) const;
         void Request(ExplorerCommand command, Node const& node, std::wstring newName = {});
         void ShowMenu(Node node, bool onItem, POINT screen);
         LRESULT CustomDraw(NMTVCUSTOMDRAW& draw);
