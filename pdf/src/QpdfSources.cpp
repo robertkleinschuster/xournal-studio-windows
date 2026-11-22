@@ -142,7 +142,7 @@ namespace xournal::pdf::detail
 
 namespace xournal::pdf
 {
-    std::vector<std::uint8_t> CropPdfArea(std::span<std::uint8_t const> bytes, int pageIndex, Rect area)
+    std::vector<std::uint8_t> CropPdfArea(std::span<std::uint8_t const> bytes, int pageIndex, Rect area, bool withBackground)
     {
         try
         {
@@ -165,7 +165,9 @@ namespace xournal::pdf
             xobjects.replaceKey("/Area", output.copyForeignObject(form));
             resources.replaceKey("/XObject", xobjects);
             detail::ContentStream stream;
-            stream.Save().Rectangle(0, 0, width, height).Raw("W n\n")
+            stream.Save();
+            if (withBackground) stream.Save().Raw("1 g\n").Rectangle(0, 0, width, height).FillNonZero().Restore();
+            stream.Rectangle(0, 0, width, height).Raw("W n\n")
                 .Transform(1, 0, 0, 1, -box.llx - area.x * w, -box.ury + area.Bottom() * h)
                 .Draw("/Area").Restore();
             auto result = QPDFObjectHandle::newDictionary();

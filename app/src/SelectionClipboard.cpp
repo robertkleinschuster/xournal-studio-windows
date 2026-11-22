@@ -128,7 +128,7 @@ namespace xournal::app
         AddPicturesLater(xml, GetClipboardSequenceNumber());
     }
 
-    void SelectionClipboard::CopyPdfArea(int page, inkpages::RectF area, std::function<void(std::wstring)> completed)
+    void SelectionClipboard::CopyPdfArea(int page, inkpages::RectF area, bool withBackground, std::function<void(std::wstring)> completed)
     {
         auto document = view.Document();
         auto content = view.PageAt(page);
@@ -149,7 +149,8 @@ namespace xournal::app
         auto request = std::make_shared<PendingArea>();
         request->sequence = GetClipboardSequenceNumber();
         double scale = std::min(PicturePixelsPerPoint, 4096.0 / std::max(source.width, source.height));
-        background->RenderArea(pdfPage, page, source, scale, [this, guard, request, bounds, completed, data, pdfPage, fractions](
+        background->RenderArea(pdfPage, page, source, scale, !withBackground,
+            [this, guard, request, bounds, completed, data, pdfPage, fractions, withBackground](
             std::shared_ptr<CpuBitmap> picture, std::exception_ptr error) {
             auto encodingFailed = [this, guard, request, completed] {
                 LogException("prepare PDF area for clipboard");
@@ -163,13 +164,13 @@ namespace xournal::app
             {
                 if (error) std::rethrow_exception(error);
                 UiQueue::RunInBackground("encode PDF clipboard area", [this, guard, request, bounds, completed,
-                    picture = std::move(picture), encodingFailed, data, pdfPage, fractions] {
+                    picture = std::move(picture), encodingFailed, data, pdfPage, fractions, withBackground] {
                     try
                     {
                         Check("CoInitializeEx (PDF clipboard encoding)", CoInitializeEx(nullptr, COINIT_MULTITHREADED));
                         struct Uninit { ~Uninit() { CoUninitialize(); } } uninit;
                         auto png = Bitmaps::EncodePng(*picture);
-                        auto image = XoppImage::CreatePdf(bounds, pdf::CropPdfArea(*data, pdfPage, fractions));
+                        auto image = XoppImage::CreatePdf(bounds, pdf::CropPdfArea(*data, pdfPage, fractions, withBackground));
                         auto xml = io::SerializeXml(*XoppClip::Create(bounds, { image }));
                         auto dib = DibOnWhite(*picture);
                         UiQueue::Post("copy PDF area", [this, guard, request, completed, xml = std::move(xml),

@@ -218,6 +218,16 @@ Invoke-Test {
         Start-Sleep -Milliseconds 300
     }
     if (-not (Select-String "$out\app.log" -Pattern 'clipboard: PDF area copied' -Quiet)) { throw 'PDF rectangle was not copied' }
+    $inklog = "$out\app.log.inkpages.log"
+    for ($i = 0; $i -lt 30 -and @(Select-String "$out\app.log" -Pattern 'clipboard: pasted 0 strokes, 1 pictures/texts').Count -lt 2; $i++) {
+        Start-Sleep -Milliseconds 100
+    }
+    $tool = Select-String $inklog -Pattern 'toolbar: ' | Select-Object -Last 1
+    if ($tool.Line -notmatch ';tool=3;') { throw 'Pasting a PDF area did not activate the normal selection tool' }
+    [Inj]::MouseDrag(@(($cx + 20), ($cy + 20), ($cx + 70), ($cy + 20)))
+    if (-not (Select-String $inklog -Pattern 'selection: drag begins \(1\)' -Quiet)) {
+        throw 'The pasted PDF area did not start a move'
+    }
     $previousWrite = (Get-Item -LiteralPath $saved).LastWriteTimeUtc
     Ctrl 0x53 'S'
     for ($i = 0; $i -lt 20 -and (Get-Item -LiteralPath $saved).LastWriteTimeUtc -eq $previousWrite; $i++) {
@@ -239,7 +249,6 @@ Invoke-Test {
     Mark 'one-finger pan away from the selection'
     Click ("Ausw" + [char]0x00E4 + "hlen")
     $pan = 'touch: no tap \((the view moves|DirectManipulation took the contact)\)'
-    $inklog = "$out\app.log.inkpages.log"
     $before = @(Select-String $inklog -Pattern $pan).Count
     [Inj]::TouchDrag(([Inj]::W * 0.19), ($cy + 105), ([Inj]::W * 0.19), ($cy - 100), 30)
     Start-Sleep -Milliseconds 800
@@ -248,7 +257,15 @@ Invoke-Test {
     }
 
     Mark 'copy a PDF rectangle with the pen over pasted objects'
-    Click 'PDF-Bereich kopieren'
+    $areaButton = Probe 'PDF-Bereich kopieren'
+    $laserButton = Probe 'Laserpointer'
+    [Inj]::ClickPixel([int](($areaButton[0] + $laserButton[0]) / 2) - 5, $areaButton[1])
+    Start-Sleep -Milliseconds 250
+    [Inj]::Key(0x23)
+    [Inj]::Key(0x0D)
+    Start-Sleep -Milliseconds 300
+    $tool = Select-String $inklog -Pattern 'toolbar: ' | Select-Object -Last 1
+    if ($tool.Line -notmatch ';tool=7;.*;copyAreaBackground=1$') { throw 'The PDF background option was not activated' }
     $copied = @(Select-String "$out\app.log" -Pattern 'clipboard: PDF area copied').Count
     1..12 | ForEach-Object { [Inj]::PenFrame(($cx - 45), ($cy - 35), 0x22002, 0, 0) }
     [Inj]::PenFrame(($cx - 45), ($cy - 35), 0x12016, 0, 600)

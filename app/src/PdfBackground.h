@@ -60,7 +60,7 @@ namespace xournal::app
         void RenderPage(std::uint64_t key, int pdfPage, UINT width, UINT height, int priorityPage, bool dark,
             std::function<void(std::shared_ptr<CpuBitmap>)> done);
         /// Explicit copy of an area from the loaded PDF. Completion runs on the render thread.
-        void RenderArea(int pdfPage, int documentPage, Rect area, double scale,
+        void RenderArea(int pdfPage, int documentPage, Rect area, double scale, bool transparent,
             std::function<void(std::shared_ptr<CpuBitmap>, std::exception_ptr)> done);
 
         /// Pages were inserted, removed or moved: the document pages showing each PDF page follow.

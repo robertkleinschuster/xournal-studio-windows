@@ -434,13 +434,13 @@ namespace xournal::app
         }
     }
 
-    void PdfBackground::RenderArea(int pdfPage, int documentPage, Rect area, double scale,
+    void PdfBackground::RenderArea(int pdfPage, int documentPage, Rect area, double scale, bool transparent,
         std::function<void(std::shared_ptr<CpuBitmap>, std::exception_ptr)> done)
     {
         auto document = source->Document();
         // An explicit copy may finish after the user opens another document.
         queue.Submit(NextRequest() | (std::uint64_t{1} << 63), documentPage, "render PDF area for clipboard",
-            [document, pdfPage, area, scale, done = std::move(done)](PdfPageRenderer& renderer) {
+            [document, pdfPage, area, scale, transparent, done = std::move(done)](PdfPageRenderer& renderer) {
                 std::shared_ptr<CpuBitmap> bitmap;
                 try
                 {
@@ -451,7 +451,7 @@ namespace xournal::app
                         static_cast<float>((area.x + area.width) * dip), static_cast<float>((area.y + area.height) * dip) };
                     auto size = FitPixels(area.width, area.height, scale, 4096);
                     bitmap = renderer.Render(document.GetPage(static_cast<UINT>(pdfPage)), size.width, size.height,
-                        true, sourceRect);
+                        transparent, sourceRect);
                 }
                 catch (...)
                 {

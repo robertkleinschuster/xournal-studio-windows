@@ -167,6 +167,8 @@ the window's parts to feature classes:
 - **PDF-Bereich kopieren** is a toolbar tool. Drag a rectangle on a PDF page with the pen or mouse and release to
   copy it. Xournal Studio pastes it as a standard `<teximage>` containing a clipped one-page PDF. Other apps can
   paste the clipboard's PNG or CF_DIB representation.
+  The tool's dropdown sets whether the empty parts of the region stay transparent or receive the PDF page's white
+  backing. After pasting, the app activates Auswählen so the new object can be moved immediately.
 - `PdfExportCommand` (Datei -> Als PDF exportieren with the pdf module), `PageCommands` (Seite einfügen: a graph page of
   the size of the page in view after it; Seite löschen: asked, cannot be undone, the last page stays; Seite nach oben /
   nach unten: one place, the view follows). Page operations keep the ink's undo history (InkPages'
