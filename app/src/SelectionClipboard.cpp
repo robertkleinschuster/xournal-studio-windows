@@ -1,5 +1,4 @@
 #include "SelectionClipboard.h"
-#include "MainMenu.h"
 
 #include "Bitmaps.h"
 #include "ErrorText.h"
@@ -16,6 +15,7 @@
 #include "xournal/model/XoppClip.h"
 #include "xournal/model/XoppImage.h"
 #include "xournal/pdf/ClipPicture.h"
+#include "xournal/pdf/PdfAreaRenderer.h"
 
 #include <algorithm>
 #include <cstring>
@@ -128,7 +128,7 @@ namespace xournal::app
         AddPicturesLater(xml, GetClipboardSequenceNumber());
     }
 
-    void SelectionClipboard::OfferPdfArea(int page, inkpages::RectF area, std::function<void(std::wstring)> failed)
+    void SelectionClipboard::CopyPdfArea(int page, inkpages::RectF area, std::function<void(std::wstring)> completed)
     {
         auto document = view.Document();
         auto content = view.PageAt(page);
@@ -140,54 +140,39 @@ namespace xournal::app
         double sx = size->width / content->Width(), sy = size->height / content->Height();
         Rect source{ area.left * sx, area.top * sy, area.Width() * sx, area.Height() * sy };
         Rect bounds{ 0, 0, area.Width(), area.Height() };
-
-        struct Popup
-        {
-            HMENU menu = CreatePopupMenu();
-            ~Popup()
-            {
-                if (menu && !DestroyMenu(menu))
-                    LogError("DestroyMenu (PDF area): " + DescribeHr(HRESULT_FROM_WIN32(GetLastError())));
-            }
-        } popup;
-        if (!popup.menu) ThrowLastError("CreatePopupMenu (PDF area)");
-        constexpr UINT CopyArea = 1;
-        if (!AppendMenuW(popup.menu, MF_STRING, CopyArea, L"PDF-Bereich als &Bild kopieren"))
-            ThrowLastError("AppendMenu (PDF area)");
-        POINT at{};
-        if (!GetCursorPos(&at)) ThrowLastError("GetCursorPos (PDF area)");
+        auto data = background->Data();
+        if (!data) return;
+        Rect fractions{ area.left / content->Width(), area.top / content->Height(),
+            area.Width() / content->Width(), area.Height() / content->Height() };
         std::weak_ptr<bool> guard = alive;
-        Log("clipboard: PDF area menu shown");
-        if (TrackContextMenu(popup.menu, owner, at) != CopyArea
-            || guard.expired()) return;
 
         auto request = std::make_shared<PendingArea>();
         request->sequence = GetClipboardSequenceNumber();
         double scale = std::min(PicturePixelsPerPoint, 4096.0 / std::max(source.width, source.height));
-        background->RenderArea(pdfPage, page, source, scale, [this, guard, request, bounds, failed](
+        background->RenderArea(pdfPage, page, source, scale, [this, guard, request, bounds, completed, data, pdfPage, fractions](
             std::shared_ptr<CpuBitmap> picture, std::exception_ptr error) {
-            auto encodingFailed = [this, guard, request, failed] {
+            auto encodingFailed = [this, guard, request, completed] {
                 LogException("prepare PDF area for clipboard");
-                UiQueue::Post("copy PDF area failed", [this, guard, request, failed, error = ErrorText()] {
+                UiQueue::Post("copy PDF area failed", [this, guard, request, completed, error = ErrorText()] {
                     if (guard.expired() || pendingArea != request) return;
                     pendingArea.reset();
-                    failed(error);
+                    completed(error);
                 });
             };
             try
             {
                 if (error) std::rethrow_exception(error);
-                UiQueue::RunInBackground("encode PDF clipboard area", [this, guard, request, bounds, failed,
-                    picture = std::move(picture), encodingFailed] {
+                UiQueue::RunInBackground("encode PDF clipboard area", [this, guard, request, bounds, completed,
+                    picture = std::move(picture), encodingFailed, data, pdfPage, fractions] {
                     try
                     {
                         Check("CoInitializeEx (PDF clipboard encoding)", CoInitializeEx(nullptr, COINIT_MULTITHREADED));
                         struct Uninit { ~Uninit() { CoUninitialize(); } } uninit;
                         auto png = Bitmaps::EncodePng(*picture);
-                        auto image = XoppImage::Create(bounds, png, static_cast<int>(picture->width), static_cast<int>(picture->height));
+                        auto image = XoppImage::CreatePdf(bounds, pdf::CropPdfArea(*data, pdfPage, fractions));
                         auto xml = io::SerializeXml(*XoppClip::Create(bounds, { image }));
                         auto dib = DibOnWhite(*picture);
-                        UiQueue::Post("copy PDF area", [this, guard, request, failed, xml = std::move(xml),
+                        UiQueue::Post("copy PDF area", [this, guard, request, completed, xml = std::move(xml),
                             png = std::move(png), dib = std::move(dib)] {
                             if (guard.expired() || pendingArea != request) return;
                             pendingArea.reset();
@@ -202,6 +187,7 @@ namespace xournal::app
                                     open.SetBytes(CF_DIB, dib);
                                 }
                                 Log("clipboard: PDF area copied");
+                                completed({});
                                 auto document = view.Document();
                                 if (!document) return;
                                 auto const& pages = document->Pages();
@@ -218,7 +204,7 @@ namespace xournal::app
                             catch (...)
                             {
                                 LogException("copy PDF area to clipboard");
-                                failed(ErrorText());
+                                completed(ErrorText());
                             }
                         });
                     }

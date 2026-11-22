@@ -18,6 +18,9 @@
 
 namespace xournal::pdf
 {
+    /// A one-page vector PDF of a rectangle in fractions of the shown page, measured from its top left.
+    std::vector<std::uint8_t> CropPdfArea(std::span<std::uint8_t const> pdf, int pageIndex, Rect area);
+
     struct RenderedArea
     {
         std::vector<std::uint8_t> png;

@@ -207,17 +207,11 @@ Invoke-Test {
     }
     Memory 'end'
 
-    Mark 'copy a PDF rectangle as a picture'
+    Mark 'copy a PDF rectangle as an embedded PDF'
     Ctrl 0x32 '2'
-    Click ("Ausw" + [char]0x00E4 + "hlen")
+    Click 'PDF-Bereich kopieren'
     "draw rectangle at $cx,$cy DIPs"
     [Inj]::MouseDrag(@(($cx - 55), ($cy - 45), ($cx + 55), ($cy + 45)))
-    for ($i = 0; $i -lt 20 -and -not (Select-String "$out\app.log" -Pattern 'clipboard: PDF area menu shown' -Quiet); $i++) {
-        Start-Sleep -Milliseconds 200
-    }
-    if (-not (Select-String "$out\app.log" -Pattern 'clipboard: PDF area menu shown' -Quiet)) { throw 'no menu for the PDF rectangle' }
-    [Inj]::Key(0x28)
-    [Inj]::Key(0x0D)
     [Inj]::Ctrl(0x56)
     [Inj]::Ctrl(0x56)
     for ($i = 0; $i -lt 30 -and -not (Select-String "$out\app.log" -Pattern 'clipboard: PDF area copied' -Quiet); $i++) {
@@ -234,11 +228,28 @@ Invoke-Test {
         $gzip = New-Object IO.Compression.GZipStream($stream, [IO.Compression.CompressionMode]::Decompress)
         $reader = New-Object IO.StreamReader($gzip, [Text.Encoding]::UTF8)
         try { [xml]$savedDoc = $reader.ReadToEnd() } finally { $reader.Dispose() }
-        $images = $savedDoc.SelectNodes('/xournal/page[4]/layer/image')
-        if ($images.Count -ne 2 -or @($images | Where-Object { $_.InnerText.Trim() -notlike 'iVBORw0KGgo*' }).Count) {
-            throw 'both paste requests must produce upstream PNG images on page 4'
+        $images = $savedDoc.SelectNodes('/xournal/page[4]/layer/teximage')
+        if ($images.Count -ne 2 -or @($images | Where-Object { $_.InnerText.Trim() -notlike 'JVBERi0*' }).Count) {
+            throw 'both paste requests must produce upstream embedded PDFs on page 4'
         }
     } finally { $stream.Dispose() }
+
+    Mark 'copy a PDF rectangle with the pen over pasted objects'
+    Click 'PDF-Bereich kopieren'
+    $copied = @(Select-String "$out\app.log" -Pattern 'clipboard: PDF area copied').Count
+    1..12 | ForEach-Object { [Inj]::PenFrame(($cx - 45), ($cy - 35), 0x22002, 0, 0) }
+    [Inj]::PenFrame(($cx - 45), ($cy - 35), 0x12016, 0, 600)
+    1..24 | ForEach-Object { [Inj]::PenFrame(($cx - 45 + 90 * $_ / 24), ($cy - 35 + 70 * $_ / 24), 0x22016, 0, 600) }
+    [Inj]::PenFrame(($cx + 45), ($cy + 35), 0x42002, 0, 0)
+    [Inj]::PenFrame(($cx + 45), ($cy + 35), 0x22000, 0, 0)
+    for ($i = 0; $i -lt 30 -and @(Select-String "$out\app.log" -Pattern 'clipboard: PDF area copied').Count -le $copied; $i++) {
+        Start-Sleep -Milliseconds 300
+    }
+    if (@(Select-String "$out\app.log" -Pattern 'clipboard: PDF area copied').Count -ne $copied + 1) {
+        throw 'the pen did not copy a PDF rectangle'
+    }
+
+    Copy-Item $saved, 'C:\work\Render.pdf' $out
 
     Mark 'one-finger pan away from the selection'
     $pan = 'touch: no tap \((the view moves|DirectManipulation took the contact)\)'

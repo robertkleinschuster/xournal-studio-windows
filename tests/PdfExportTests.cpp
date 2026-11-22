@@ -10,8 +10,10 @@
 #include "xournal/base/Error.h"
 #include "xournal/base/Text.h"
 #include "xournal/pdf/PdfExport.h"
+#include "xournal/pdf/PdfAreaRenderer.h"
 
 #include <qpdf/Buffer.hh>
+#include <qpdf/QPDFWriter.hh>
 
 #include <gtest/gtest.h>
 #include <winrt/Windows.Data.Pdf.h>
@@ -78,6 +80,30 @@ namespace xournal::tests
         detail::ContentStream c;
         c.Transform(1.000049, 0, 0, -1, 0, 841.889763).MoveTo({ 1.23456, 2 });
         EXPECT_EQ(c.Text(), "1.00005 0 0 -1 0 841.88976 cm\n1.235 2 m\n");
+    }
+
+    TEST_F(PdfExportTest, CroppedPdfUsesTheShownRotatedPageAndKeepsVectorContent)
+    {
+        auto original = Open(sourceFile);
+        auto page = original.pages[0].getObjectHandle();
+        page.replaceKey("/CropBox", QPDFObjectHandle::newArray(QPDFObjectHandle::Rectangle(20, 30, 420, 630)));
+        page.replaceKey("/Rotate", QPDFObjectHandle::newInteger(90));
+        QPDFWriter writer(*original.pdf);
+        writer.setOutputMemory();
+        writer.write();
+        auto input = writer.getBufferSharedPointer();
+        auto result = CropPdfArea({ input->getBuffer(), input->getSize() }, 0, { 0.25, 0.25, 0.5, 0.5 });
+        QPDF cropped;
+        cropped.processMemoryFile("cropped", reinterpret_cast<char const*>(result.data()), result.size());
+        auto const& pages = cropped.getAllPages();
+        ASSERT_EQ(pages.size(), 1u);
+        auto box = MediaBox(QPDFPageObjectHelper(pages.front()));
+        EXPECT_DOUBLE_EQ(300, box.urx);
+        EXPECT_DOUBLE_EQ(200, box.ury);
+        auto contents = Inspect(QPDFPageObjectHelper(pages.front()));
+        EXPECT_GE(contents.forms, 1);
+        EXPECT_TRUE(Contains(contents.text, "BACKGROUNDTEXT"));
+        EXPECT_EQ(contents.operators["W"], 1);
     }
 
     TEST(PdfFontTables, OnlyThePdfTablesStayWithValidChecksums)

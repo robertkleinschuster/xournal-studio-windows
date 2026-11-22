@@ -187,16 +187,17 @@ namespace xournal::app
         surface->textEditingChanged = [this](bool) { textSelection->Clear(); };
         clipboard = std::make_unique<SelectionClipboard>(window, *surface, *view);
         surface->deferPaste = [this](inkpages::PointF at) { return clipboard->DeferPaste(at); };
-        surface->emptyRectangle = [this](int page, inkpages::RectF area)
+        surface->copyArea = [this](int page, inkpages::RectF area)
         {
-            auto failed = [this](std::wstring const& error) {
-                Message(std::format(L"PDF-Bereich konnte nicht kopiert werden: {}", error), MessageKind::Error);
+            auto completed = [this](std::wstring const& error) {
+                if (error.empty()) Message(L"PDF-Bereich kopiert.", MessageKind::Info);
+                else Message(std::format(L"PDF-Bereich konnte nicht kopiert werden: {}", error), MessageKind::Error);
             };
-            try { clipboard->OfferPdfArea(page, area, failed); }
+            try { clipboard->CopyPdfArea(page, area, completed); }
             catch (...)
             {
-                LogException("offer PDF area copy");
-                failed(ErrorText());
+                LogException("copy PDF area");
+                completed(ErrorText());
             }
         };
         surface->copyToClipboard = [this](inkpages::Clip const& clip)
@@ -891,7 +892,7 @@ namespace xournal::app
             {
                 surface->tapped = nullptr;
                 surface->mouseClaims = nullptr;
-                surface->emptyRectangle = nullptr;
+                surface->copyArea = nullptr;
                 surface->deferPaste = nullptr;
                 surface->firstPenStroke = nullptr;
                 surface->mousePannedWithWriteTool = nullptr;

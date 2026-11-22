@@ -1,4 +1,6 @@
 #include "QpdfSources.h"
+#include "ContentStream.h"
+#include "xournal/pdf/PdfAreaRenderer.h"
 
 #include "xournal/base/Error.h"
 #include "xournal/base/Log.h"
@@ -8,6 +10,7 @@
 #include <qpdf/Constants.h>
 #include <qpdf/QPDFMatrix.hh>
 #include <qpdf/QPDFPageDocumentHelper.hh>
+#include <qpdf/QPDFWriter.hh>
 
 #include <algorithm>
 #include <cwctype>
@@ -134,5 +137,51 @@ namespace xournal::pdf::detail
             matrix = QPDFMatrix(dict.getKey("/Matrix").getArrayAsMatrix());
         }
         return matrix.transformRectangle(bbox.getArrayAsRectangle());
+    }
+}
+
+namespace xournal::pdf
+{
+    std::vector<std::uint8_t> CropPdfArea(std::span<std::uint8_t const> bytes, int pageIndex, Rect area)
+    {
+        try
+        {
+            auto source = detail::OpenFlattened(bytes, "PDF area source");
+            if (pageIndex < 0 || static_cast<size_t>(pageIndex) >= source.pages.size() ||
+                !(area.width > 0 && area.height > 0))
+                ThrowInvalidData("PDF area: invalid page or bounds");
+            auto& page = source.pages[static_cast<size_t>(pageIndex)];
+            auto form = page.getFormXObjectForPage();
+            form.getDict().replaceKey("/BBox", page.getCropBox().shallowCopy());
+            auto box = detail::ForeignPages::TransformedBox(form);
+            double w = box.urx - box.llx, h = box.ury - box.lly;
+            double width = area.width * w, height = area.height * h;
+            if (!(width > 0 && height > 0)) ThrowInvalidData("PDF area: empty crop box");
+
+            QPDF output;
+            output.emptyPDF();
+            auto resources = QPDFObjectHandle::newDictionary();
+            auto xobjects = QPDFObjectHandle::newDictionary();
+            xobjects.replaceKey("/Area", output.copyForeignObject(form));
+            resources.replaceKey("/XObject", xobjects);
+            detail::ContentStream stream;
+            stream.Save().Rectangle(0, 0, width, height).Raw("W n\n")
+                .Transform(1, 0, 0, 1, -box.llx - area.x * w, -box.ury + area.Bottom() * h)
+                .Draw("/Area").Restore();
+            auto result = QPDFObjectHandle::newDictionary();
+            result.replaceKey("/Type", QPDFObjectHandle::newName("/Page"));
+            result.replaceKey("/MediaBox", QPDFObjectHandle::newArray(QPDFObjectHandle::Rectangle(0, 0, width, height)));
+            result.replaceKey("/Resources", resources);
+            result.replaceKey("/Contents", output.newStream(stream.Text()));
+            output.addPage(output.makeIndirectObject(result), false);
+            QPDFWriter writer(output);
+            writer.setOutputMemory();
+            writer.write();
+            detail::LogWarnings(*source.pdf, "PDF area source");
+            auto buffer = writer.getBufferSharedPointer();
+            return { buffer->getBuffer(), buffer->getBuffer() + buffer->getSize() };
+        }
+        catch (Error const&) { throw; }
+        catch (std::exception const& e) { ThrowInvalidData(std::format("crop PDF area: {}", e.what())); }
     }
 }

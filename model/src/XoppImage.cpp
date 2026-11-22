@@ -67,6 +67,15 @@ namespace xournal::XoppImage
 
     bool IsImage(XmlElement const& e) { return e.Name() == L"image" || e.Name() == L"teximage"; }
 
+    XmlElementPtr CreatePdf(Rect bounds, std::span<std::uint8_t const> pdf)
+    {
+        auto e = XmlElement::Make(L"teximage");
+        e->SetAttribute(L"text", L"");
+        SetLegacyBounds(*e, bounds);
+        e->SetValue(ToBase64(pdf));
+        return e;
+    }
+
     XmlElementPtr Create(Rect bounds, std::span<std::uint8_t const> png, int pixelWidth, int pixelHeight)
     {
         auto e = XmlElement::Make(L"image");

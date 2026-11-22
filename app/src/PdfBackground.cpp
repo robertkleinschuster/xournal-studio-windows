@@ -85,18 +85,19 @@ namespace xournal::app
             if (weak.expired()) return;
             try
             {
-                auto data = io::Files::ReadAll(pdf);
-                auto document = Bitmaps::LoadPdf(data);
+                auto data = std::make_shared<std::vector<std::uint8_t> const>(io::Files::ReadAll(pdf));
+                auto document = Bitmaps::LoadPdf(*data);
                 {
                     std::scoped_lock guard(source->lock);
                     source->document = document;
+                    source->data = data;
                 }
                 Log(std::format("pdf background: {} loaded, {} pages", ToUtf8(pdf.native()), document.PageCount()));
                 // The navigation from the same bytes; a PDF whose outline qpdf cannot read still shows its pages.
                 try
                 {
                     auto start = std::chrono::steady_clock::now();
-                    auto navigation = std::make_shared<pdf::PdfNavigation const>(data);
+                    auto navigation = std::make_shared<pdf::PdfNavigation const>(*data);
                     auto outline = navigation->Outline();
                     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
                     std::scoped_lock guard(source->lock);
@@ -149,6 +150,12 @@ namespace xournal::app
     {
         std::scoped_lock guard(source->lock);
         return source->navigation;
+    }
+
+    std::shared_ptr<std::vector<std::uint8_t> const> PdfBackground::Data() const
+    {
+        std::scoped_lock guard(source->lock);
+        return source->data;
     }
 
     void PdfBackground::Draw(ID2D1DeviceContext* dc, int page, int pdfPage, D2D1_SIZE_F size, D2D1_RECT_F area, float pixelsPerUnit, bool dark)

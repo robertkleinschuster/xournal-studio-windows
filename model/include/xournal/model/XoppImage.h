@@ -15,6 +15,7 @@
 
 namespace xournal::XoppImage
 {
+    XmlElementPtr CreatePdf(Rect bounds, std::span<std::uint8_t const> pdf);
     bool IsImage(XmlElement const& e);
 
     XmlElementPtr Create(Rect bounds, std::span<std::uint8_t const> png, int pixelWidth, int pixelHeight);

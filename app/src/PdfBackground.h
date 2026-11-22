@@ -72,6 +72,7 @@ namespace xournal::app
 
         /// The PDF's outline and links once loaded (nothing before, or when they could not be read).
         std::shared_ptr<pdf::PdfNavigation const> Navigation() const;
+        std::shared_ptr<std::vector<std::uint8_t> const> Data() const;
 
         /// Whether the PDF is loaded (thumbnails asked before are asked again then).
         bool Loaded() const;
@@ -93,6 +94,7 @@ namespace xournal::app
             mutable std::mutex lock;
             winrt::Windows::Data::Pdf::PdfDocument document{ nullptr };
             std::shared_ptr<pdf::PdfNavigation const> navigation;
+            std::shared_ptr<std::vector<std::uint8_t> const> data;
             std::atomic<bool> failed = false;
 
             winrt::Windows::Data::Pdf::PdfDocument Document() const;

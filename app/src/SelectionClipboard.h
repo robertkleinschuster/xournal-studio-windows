@@ -26,8 +26,8 @@ namespace xournal::app
         SelectionClipboard(HWND owner, inkpages::WritingSurface& surface, DocumentView& view);
 
         void Copy(inkpages::Clip const& clip);
-        /// Offers the native copy command for an empty rectangle on a PDF page.
-        void OfferPdfArea(int page, inkpages::RectF area, std::function<void(std::wstring)> failed);
+        /// Copies the rectangle as an embedded PDF and provides raster clipboard formats for other apps.
+        void CopyPdfArea(int page, inkpages::RectF area, std::function<void(std::wstring)> completed);
         bool DeferPaste(inkpages::PointF at);
         std::optional<inkpages::Clip> Paste(inkpages::PointF at);
 
