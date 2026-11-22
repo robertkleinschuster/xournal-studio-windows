@@ -362,13 +362,14 @@ namespace xournal::app
         GetClientRect(window, &rc);
         statusBar->Layout();
         rc.bottom = std::max(0L, rc.bottom - statusBar->Height());
-        int top = toolbar->Height();
+        int top = toolbar->HeightForWidth(rc.right);
         MoveWindow(toolbar->Window(), 0, 0, rc.right, top, TRUE);
         // 280 DIP, but never narrower than the tabs need (one row, no scroll arrows - with the font they really have).
         int paneWidth = settings.paneOpen
             ? std::max(MulDiv(PaneWidthDip, static_cast<int>(GetDpiForWindow(window)), 96), pane->TabsWidth()) : 0;
-        MoveWindow(pane->Window(), 0, top, paneWidth, rc.bottom - top, TRUE);
-        MoveWindow(surface->Window(), paneWidth, top, rc.right - paneWidth, rc.bottom - top, TRUE);
+        LONG height = std::max(0L, rc.bottom - top);
+        MoveWindow(pane->Window(), 0, top, paneWidth, height, TRUE);
+        MoveWindow(surface->Window(), paneWidth, top, std::max(0L, rc.right - paneWidth), height, TRUE);
     }
 
     void MainWindow::SetPaneOpen(bool open)

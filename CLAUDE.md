@@ -106,7 +106,7 @@ long formulas in several colors. For open pen/UI design questions, propose how O
   the modules where the unit tests reach it. Module dependencies only in the direction the README shows.
 - **Iterative.** Only features in actual use, simplest version first. Ask before large new areas.
 - **Windows 11 only**, this machine's version (26200) – no compatibility layers.
-- **Right-handed UI:** nothing interactive at the right screen edge; one toolbar row, left-aligned; menu bar visible;
+- **Right-handed UI:** nothing interactive at the right screen edge; toolbar left-aligned and wraps when needed; menu bar visible;
   the left side is for the side pane (Dateien, Aufgaben, Seiten).
 - German UI texts; code, comments and commits in English.
 

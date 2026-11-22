@@ -70,6 +70,7 @@ jobs:
               @{ test = 'RecoveryTest' }
               @{ test = 'TasksTest' }
               @{ test = 'TextToolTest' }
+              @{ test = 'ToolbarWrapTest' }
               @{ test = 'ThemeToggleTest' }
           )
           $tests = $all
