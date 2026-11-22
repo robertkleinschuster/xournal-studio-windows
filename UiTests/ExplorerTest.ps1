@@ -92,7 +92,12 @@ Invoke-Test {
     Start-Sleep 3
     At 'XournalStudioWindow' 'test.xopp' | Out-Null   # the tree shows the folder
     ClickAt 'XournalStudioWindow' 'todo.txt' | Out-Null
-    ClickAt 'XournalStudioWindow' ('Ge' + [char]0x00F6 + 'ffnete Datei anzeigen') | Out-Null
+    $reveal = 'Ge' + [char]0x00F6 + 'ffnete Datei anzeigen'
+    $position = & C:\sbx\data\uiaprobe.exe XournalStudioWindow $reveal --exact
+    if ($LASTEXITCODE -ne 0) { throw 'Open file button not found' }
+    $x, $y = "$position".Trim() -split ' '
+    [Inj]::ClickPixel([int]$x, [int]$y)
+    Start-Sleep -Milliseconds 500
     $focused = & C:\sbx\data\uiaprobe.exe --focus
     if ("$focused" -notmatch "name 'test\.xopp'") { throw "The open file did not receive focus: $focused" }
     Shot '01-explorer'
