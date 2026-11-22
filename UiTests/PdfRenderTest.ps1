@@ -259,9 +259,17 @@ Invoke-Test {
     Mark 'copy a PDF rectangle with the pen over pasted objects'
     Click 'PDF-Bereich kopieren'
     Click 'PDF-Bereich kopieren'
-    ClickAnywhere ("Wei" + [char]0x00DF + "er Hintergrund")
+    Shot 'pdf-crop-options'
+    [Inj]::Key(0x28)
+    [Inj]::Key(0x28)
+    [Inj]::Key(0x0D)
+    Start-Sleep -Milliseconds 400
     Click 'PDF-Bereich kopieren'
-    ClickAnywhere 'Rahmen'
+    [Inj]::Key(0x28)
+    [Inj]::Key(0x28)
+    [Inj]::Key(0x28)
+    [Inj]::Key(0x0D)
+    Start-Sleep -Milliseconds 400
     $tool = Select-String $inklog -Pattern 'toolbar: ' | Select-Object -Last 1
     if ($tool.Line -notmatch ';tool=7;.*;copyAreaBackground=1;copyAreaFrame=1$') {
         throw 'The white background and frame options were not activated'
