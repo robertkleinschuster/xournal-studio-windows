@@ -95,7 +95,7 @@ namespace xournal::app
 
         TBBUTTON buttons[]{
             { 0, SyncId, TBSTATE_ENABLED, BTNS_BUTTON, {}, 0, reinterpret_cast<INT_PTR>(L"Synchronisieren") },
-            { 1, CurrentFileId, 0, BTNS_BUTTON, {}, 0, reinterpret_cast<INT_PTR>(L"Ge?ffnete Datei anzeigen") }
+            { 1, CurrentFileId, 0, BTNS_BUTTON, {}, 0, reinterpret_cast<INT_PTR>(L"Geöffnete Datei anzeigen") }
         };
         if (!SendMessageW(fileBar, TB_ADDBUTTONSW, std::size(buttons), reinterpret_cast<LPARAM>(buttons)))
             ThrowHr("TB_ADDBUTTONS (file toolbar)", E_FAIL);
@@ -293,7 +293,7 @@ namespace xournal::app
 
     void SidePane::UpdateSyncLabel()
     {
-        if (!SetWindowTextW(syncLabel, syncing ? L"Synchronisiert ?" : syncText.c_str()))
+        if (!SetWindowTextW(syncLabel, syncing ? L"Synchronisiert …" : syncText.c_str()))
             ThrowLastError("SetWindowText (sync status)");
     }
 

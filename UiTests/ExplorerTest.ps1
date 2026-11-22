@@ -95,7 +95,11 @@ Invoke-Test {
     ClickAt 'XournalStudioWindow' 'todo.txt' | Out-Null
     $reveal = 'Ge' + [char]0x00F6 + 'ffnete Datei anzeigen'
     $position = & C:\sbx\data\uiaprobe.exe XournalStudioWindow $reveal --exact
-    if ($LASTEXITCODE -ne 0) { throw 'Open file button not found' }
+    if ($LASTEXITCODE -ne 0) {
+        & C:\sbx\data\uiaprobe.exe XournalStudioWindow | Out-File "$out\uia-tree.txt" -Encoding utf8
+        Shot 'missing-file-toolbar'
+        throw 'Open file button not found'
+    }
     $x, $y = "$position".Trim() -split ' '
     $syncPosition = & C:\sbx\data\uiaprobe.exe XournalStudioWindow 'Synchronisieren' --exact
     if ($LASTEXITCODE -ne 0) { throw 'Sync button not found' }
