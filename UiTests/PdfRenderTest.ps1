@@ -234,6 +234,19 @@ Invoke-Test {
         }
     } finally { $stream.Dispose() }
 
+    Copy-Item $saved, 'C:\work\Render.pdf' $out
+
+    Mark 'one-finger pan away from the selection'
+    Click ("Ausw" + [char]0x00E4 + "hlen")
+    $pan = 'touch: no tap \((the view moves|DirectManipulation took the contact)\)'
+    $inklog = "$out\app.log.inkpages.log"
+    $before = @(Select-String $inklog -Pattern $pan).Count
+    [Inj]::TouchDrag(([Inj]::W * 0.19), ($cy + 105), ([Inj]::W * 0.19), ($cy - 100), 30)
+    Start-Sleep -Milliseconds 800
+    if (@(Select-String $inklog -Pattern $pan).Count -le $before) {
+        throw 'a finger drag beside the selection did not go to DirectManipulation'
+    }
+
     Mark 'copy a PDF rectangle with the pen over pasted objects'
     Click 'PDF-Bereich kopieren'
     $copied = @(Select-String "$out\app.log" -Pattern 'clipboard: PDF area copied').Count
@@ -247,18 +260,6 @@ Invoke-Test {
     }
     if (@(Select-String "$out\app.log" -Pattern 'clipboard: PDF area copied').Count -ne $copied + 1) {
         throw 'the pen did not copy a PDF rectangle'
-    }
-
-    Copy-Item $saved, 'C:\work\Render.pdf' $out
-
-    Mark 'one-finger pan away from the selection'
-    $pan = 'touch: no tap \((the view moves|DirectManipulation took the contact)\)'
-    $inklog = "$out\app.log.inkpages.log"
-    $before = @(Select-String $inklog -Pattern $pan).Count
-    [Inj]::TouchDrag(([Inj]::W * 0.19), ($cy + 105), ([Inj]::W * 0.19), ($cy - 100), 30)
-    Start-Sleep -Milliseconds 800
-    if (@(Select-String $inklog -Pattern $pan).Count -le $before) {
-        throw 'a finger drag beside the selection did not go to DirectManipulation'
     }
 
     'pdf render: done'
