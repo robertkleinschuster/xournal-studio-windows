@@ -47,30 +47,9 @@ function MenuOnRow($row, $item) {
     Start-Sleep -Milliseconds 600
     "menu $row -> $item"
 }
-# Read the native sync status label beside the file toolbar.
-Add-Type @"
-using System;
-using System.Text;
-using System.Runtime.InteropServices;
-public static class FileToolbarStatus {
-    delegate bool EnumProc(IntPtr hwnd, IntPtr lp);
-    [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr parent, EnumProc proc, IntPtr lp);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr hwnd, StringBuilder text, int max);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr hwnd, StringBuilder text, int max);
-    [DllImport("user32.dll")] static extern int GetDlgCtrlID(IntPtr hwnd);
-    public static string Text(IntPtr main) {
-        string found = null;
-        EnumChildWindows(main, delegate (IntPtr h, IntPtr lp) {
-            StringBuilder c = new StringBuilder(64), t = new StringBuilder(256);
-            GetClassName(h, c, 64); GetWindowText(h, t, 256);
-            if (c.ToString() == "Static" && GetDlgCtrlID(h) == 6) { found = t.ToString(); return false; }
-            return true;
-        }, IntPtr.Zero);
-        return found;
-    }
+function SyncPosition($counts) {
+    & C:\sbx\data\uiaprobe.exe XournalStudioWindow $counts --exact
 }
-"@
-function SyncText { [FileToolbarStatus]::Text($script:p.MainWindowHandle) }
 
 function WaitFor($what, [scriptblock]$condition) {
     for ($i = 0; $i -lt 20 -and -not (& $condition); $i++) { Start-Sleep -Milliseconds 500 }
@@ -101,8 +80,10 @@ Invoke-Test {
         throw 'Open file button not found'
     }
     $x, $y = "$position".Trim() -split ' '
-    $syncPosition = & C:\sbx\data\uiaprobe.exe XournalStudioWindow 'Synchronisieren' --exact
-    if ($LASTEXITCODE -ne 0) { throw 'Sync button not found' }
+    # One local commit to push and two to pull after the initial fetch.
+    $up = [char]0x2191; $down = [char]0x2193
+    WaitFor 'sync button counts' { SyncPosition "${up}1  ${down}2" }
+    $syncPosition = SyncPosition "${up}1  ${down}2"
     $syncX, $syncY = "$syncPosition".Trim() -split ' '
     if ([int]$syncY -ne [int]$y -or [int]$syncX -ge [int]$x -or [int]$y -ge $fileRow[1]) {
         throw 'File actions must be side by side above the tree'
@@ -113,17 +94,11 @@ Invoke-Test {
     if ("$focused" -notmatch "name 'test\.xopp'") { throw "The open file did not receive focus: $focused" }
     Shot '01-explorer'
 
-    # 0. The sync status: one local commit to push, two on the server after the start's fetch, no changed file.
-    $up = [char]0x2191; $down = [char]0x2193
-    WaitFor 'sync status' { (SyncText) -eq "${up}1  ${down}2" }
-    "sync status: $(SyncText)"
-
     # 1. Discard: a stroke, saved (modified in git: blue), then Änderungen verwerfen -> the committed content, reopened.
     Stroke 600 300 850 330
     [Inj]::Ctrl(0x53); Start-Sleep 3   # Strg+S
     "saved: $(Hash "$work\test.xopp")"
-    WaitFor 'sync status with a changed file' { (SyncText) -eq "1  ${up}1  ${down}2" }
-    "sync status: $(SyncText)"
+    WaitFor 'sync button with a changed file' { SyncPosition "1  ${up}1  ${down}2" }
     Shot '02-modified-blue'
     MenuOnRow 'test.xopp' 'verwerfen'
     Shot '03-discard-question'

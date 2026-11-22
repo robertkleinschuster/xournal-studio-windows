@@ -151,7 +151,7 @@ the window's parts to feature classes:
   clipboard still holds the copy). Paste: the own format, else another app's picture (PNG, else a DIB) as a new
   `<image>`, else InkPages pastes Windows ink.
 - Under Dateien, a native toolbar above the file tree offers Synchronisieren and Geöffnete Datei anzeigen with
-  shared InkPages icons. The Git counts appear beside the buttons.
+  shared InkPages icons. The toolbar is aligned to the right, with Git counts on the sync button.
 - The project folder: `ProjectExplorer` reads it (`ProjectSnapshot`: files, git status, the sync counts) on the
   thread pool - on start, after a save or sync, 400 ms after changes on disk (`FolderWatcher`), on activation;
   `ExplorerTree` shows it (git colors; deleted files red and struck through, custom draw's font change) and asks;

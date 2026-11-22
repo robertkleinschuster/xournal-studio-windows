@@ -63,13 +63,12 @@ namespace xournal::app
         void ShowPage(int tab);
         void CreateFileToolbar();
         void UpdateFileToolbarImages();
-        void UpdateSyncLabel();
+        void UpdateSyncButton();
 
         HWND window = nullptr;
         HWND tabs = nullptr;
         HWND fileBar = nullptr;
         std::unique_ptr<std::remove_pointer_t<HIMAGELIST>, decltype(&ImageList_Destroy)> fileBarImages{ nullptr, ImageList_Destroy };
-        HWND syncLabel = nullptr;
         HWND syncTip = nullptr;
         std::optional<std::filesystem::path> currentFile;
         std::wstring syncText;

@@ -18,7 +18,7 @@ namespace xournal::app
     {
         constexpr wchar_t ClassName[] = L"XournalStudioSidePane";
         constexpr int TabsId = 1, TreeId = 2, SyncId = 3, CurrentFileId = 4;
-        constexpr int FileBarId = 5, SyncLabelId = 6;
+        constexpr int FileBarId = 5;
         constexpr wchar_t const* TabTitles[] = { L"Dateien", L"Aufgaben", L"Seiten", L"Suche", L"Gliederung" };
         constexpr int OutlineTab = 4, FixedTabs = 4; // Suche is SidePane::SearchTab
         void InsertTab(HWND tabs, int index)
@@ -102,15 +102,12 @@ namespace xournal::app
 
         syncTip = reinterpret_cast<HWND>(SendMessageW(fileBar, TB_GETTOOLTIPS, 0, 0));
         if (!syncTip) ThrowHr("TB_GETTOOLTIPS (file toolbar)", E_FAIL);
-        syncLabel = CreateWindowExW(0, WC_STATICW, L"", WS_CHILD | SS_LEFT | SS_CENTERIMAGE | SS_NOPREFIX,
-            0, 0, 0, 0, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(SyncLabelId)), GetModuleHandleW(nullptr), nullptr);
-        if (!syncLabel) ThrowLastError("CreateWindowEx (sync status)");
         UpdateFileToolbarImages();
     }
 
     void SidePane::UpdateFileToolbarImages()
     {
-        ChildControls::UseMessageFont(syncLabel);
+        ChildControls::UseMessageFont(fileBar);
         int dpi = static_cast<int>(GetDpiForWindow(window));
         SendMessageW(syncTip, TTM_SETMAXTIPWIDTH, 0, MulDiv(320, dpi, 96));
         int size = MulDiv(20, dpi, 96);
@@ -235,7 +232,6 @@ namespace xournal::app
             ThrowLastError("SetWindowPos (tab background)");
         ShowWindow(explorer->Window(), tab == 0 ? SW_SHOW : SW_HIDE);
         ShowWindow(fileBar, tab == 0 ? SW_SHOW : SW_HIDE);
-        ShowWindow(syncLabel, tab == 0 ? SW_SHOW : SW_HIDE);
         ShowWindow(tasks->Window(), tab == 1 ? SW_SHOW : SW_HIDE);
         ShowWindow(pagesContent, tab == 2 ? SW_SHOW : SW_HIDE);
         if (searchContent) ShowWindow(searchContent, tab == SidePane::SearchTab ? SW_SHOW : SW_HIDE);
@@ -261,11 +257,8 @@ namespace xournal::app
             ThrowHr("TB_GETMAXSIZE (file toolbar)", E_FAIL);
         LONG barWidth = std::min(width, toolbar.cx);
         LONG barHeight = std::min(height, toolbar.cy);
-        LONG statusLeft = std::min(width, barWidth + MulDiv(8, static_cast<int>(GetDpiForWindow(window)), 96));
-        if (!MoveWindow(fileBar, page.left, page.top, barWidth, barHeight, TRUE))
+        if (!MoveWindow(fileBar, page.right - barWidth, page.top, barWidth, barHeight, TRUE))
             ThrowLastError("MoveWindow (file toolbar)");
-        if (!MoveWindow(syncLabel, page.left + statusLeft, page.top, width - statusLeft, barHeight, TRUE))
-            ThrowLastError("MoveWindow (sync status)");
         if (!MoveWindow(explorer->Window(), page.left, page.top + barHeight, width, height - barHeight, TRUE))
             ThrowLastError("MoveWindow (explorer tree)");
     }
@@ -288,13 +281,21 @@ namespace xournal::app
         syncing = value;
         if (!SendMessageW(fileBar, TB_ENABLEBUTTON, SyncId, MAKELPARAM(!syncing, 0)))
             ThrowHr("TB_ENABLEBUTTON (sync)", E_FAIL);
-        UpdateSyncLabel();
+        UpdateSyncButton();
     }
 
-    void SidePane::UpdateSyncLabel()
+    void SidePane::UpdateSyncButton()
     {
-        if (!SetWindowTextW(syncLabel, syncing ? L"Synchronisiert …" : syncText.c_str()))
-            ThrowLastError("SetWindowText (sync status)");
+        std::wstring text = syncing ? L"Synchronisiert …" : syncText;
+        bool showText = !text.empty();
+        if (!showText) text = L"Synchronisieren";
+        TBBUTTONINFOW info{ sizeof(info), TBIF_TEXT | TBIF_STYLE };
+        info.pszText = text.data();
+        info.fsStyle = static_cast<BYTE>(BTNS_BUTTON | BTNS_AUTOSIZE | (showText ? BTNS_SHOWTEXT : 0));
+        if (!SendMessageW(fileBar, TB_SETBUTTONINFOW, SyncId, reinterpret_cast<LPARAM>(&info)))
+            ThrowHr("TB_SETBUTTONINFO (sync)", E_FAIL);
+        SendMessageW(fileBar, TB_AUTOSIZE, 0, 0);
+        Layout();
     }
 
     void SidePane::SetSyncStatus(std::wstring text, std::wstring const& details)
@@ -307,7 +308,7 @@ namespace xournal::app
             if (c == L'\n') syncDetails += L'\r';
             syncDetails += c;
         }
-        UpdateSyncLabel();
+        UpdateSyncButton();
     }
 
     LRESULT SidePane::Handle(UINT message, WPARAM wp, LPARAM lp)
@@ -325,10 +326,6 @@ namespace xournal::app
                     ThrowHr("FillRect (side pane background)", E_FAIL);
                 return TRUE;
             }
-            break;
-        case WM_CTLCOLORSTATIC:
-            if (darkMode && reinterpret_cast<HWND>(lp) == syncLabel)
-                return reinterpret_cast<LRESULT>(DarkColors::ControlBrush(reinterpret_cast<HDC>(wp), DarkColors::Background));
             break;
         case WM_COMMAND:
             if (LOWORD(wp) == CurrentFileId && reinterpret_cast<HWND>(lp) == fileBar && currentFile)
@@ -378,8 +375,10 @@ namespace xournal::app
                 }
                 if (draw.nmcd.dwDrawStage == CDDS_ITEMPREPAINT)
                 {
+                    draw.clrText = draw.nmcd.uItemState & CDIS_DISABLED ? RGB(157, 159, 165) : DarkColors::Text;
+                    draw.clrTextHighlight = DarkColors::Text;
                     draw.clrHighlightHotTrack = DarkColors::Selected;
-                    return TBCDRF_HILITEHOTTRACK;
+                    return TBCDRF_USECDCOLORS | TBCDRF_HILITEHOTTRACK;
                 }
             }
             if (header.hwndFrom == fileBar && header.code == TBN_GETINFOTIPW)
