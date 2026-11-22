@@ -625,7 +625,7 @@ namespace xournal::app
     {
         git::SyncStatus status = projectExplorer->SyncStatus();
         status.remoteKnown = remoteFetch->RemoteKnown();
-        pane->SetSyncStatus(status.ButtonText(), status.Details());
+        pane->SetSyncStatus(status.CountsText(), status.Details());
     }
 
     void MainWindow::OnSyncStateChanged()

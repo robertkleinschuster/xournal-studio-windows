@@ -1,6 +1,6 @@
 #pragma once
 
-// The left side pane: a tab control with Dateien (the project folder's tree and the sync button), Aufgaben (todo.txt),
+// The left side pane: a tab control with Dateien (the project folder's tree and its toolbar), Aufgaben (todo.txt),
 // Seiten (the pages pane), Suche (the search pane) and - only while the document's PDF has an outline - Gliederung (the
 // outline pane); the window puts those three in. The tabs keep their indices: Gliederung is the last one when shown.
 
@@ -8,6 +8,7 @@
 #include "TasksPane.h"
 
 #include <windows.h>
+#include <commctrl.h>
 
 #include <functional>
 #include <memory>
@@ -60,14 +61,19 @@ namespace xournal::app
         LRESULT Handle(UINT message, WPARAM wp, LPARAM lp);
         void Layout();
         void ShowPage(int tab);
+        void CreateFileToolbar();
+        void UpdateFileToolbarImages();
+        void UpdateSyncLabel();
 
         HWND window = nullptr;
         HWND tabs = nullptr;
-        HWND syncButton = nullptr;
+        HWND fileBar = nullptr;
+        std::unique_ptr<std::remove_pointer_t<HIMAGELIST>, decltype(&ImageList_Destroy)> fileBarImages{ nullptr, ImageList_Destroy };
+        HWND syncLabel = nullptr;
         HWND syncTip = nullptr;
-        HWND currentFileButton = nullptr;
         std::optional<std::filesystem::path> currentFile;
-        std::wstring syncText = L"Synchronisieren";
+        std::wstring syncText;
+        std::wstring syncDetails;
         bool syncing = false;
         bool darkMode = false;
         HWND pagesContent = nullptr; // a placeholder until the window puts the pages pane in

@@ -150,7 +150,9 @@ the window's parts to feature classes:
   windows, plus a picture for other apps (PNG and CF_DIB on white; `pdf::RenderClip` in the background, added while the
   clipboard still holds the copy). Paste: the own format, else another app's picture (PNG, else a DIB) as a new
   `<image>`, else InkPages pastes Windows ink.
-- The project folder: `ProjectExplorer` reads it (`ProjectSnapshot`: files, git status, the sync button's counts) on the
+- Under Dateien, a native toolbar above the file tree offers Synchronisieren and Ge?ffnete Datei anzeigen with
+  shared InkPages icons. The Git counts appear beside the buttons.
+- The project folder: `ProjectExplorer` reads it (`ProjectSnapshot`: files, git status, the sync counts) on the
   thread pool - on start, after a save or sync, 400 ms after changes on disk (`FolderWatcher`), on activation;
   `ExplorerTree` shows it (git colors; deleted files red and struck through, custom draw's font change) and asks;
   `ExplorerCommands` carries it out (open, new, rename, delete, Änderungen verwerfen of a file or folder, Ausschneiden/

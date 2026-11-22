@@ -497,12 +497,12 @@ namespace xournal::tests
 
     TEST(SyncStatus, ButtonShowsWhatIsPendingLikeCodeEditors)
     {
-        EXPECT_EQ(L"Synchronisieren", SyncStatus{}.ButtonText());
-        EXPECT_EQ(L"Synchronisieren", (SyncStatus{ true, 0, Divergence{ 0, 0 } }.ButtonText()));
-        EXPECT_EQ(L"Synchronisieren   3  ↑1  ↓2", (SyncStatus{ true, 3, Divergence{ 1, 2 } }.ButtonText()));
-        EXPECT_EQ(L"Synchronisieren   ↓2", (SyncStatus{ true, 0, Divergence{ 0, 2 } }.ButtonText()));
-        EXPECT_EQ(L"Synchronisieren   1  ↓?", (SyncStatus{ true, 1, Divergence{ 0, 2 }, false }.ButtonText()));
-        EXPECT_EQ(L"Synchronisieren   4", (SyncStatus{ true, 4, std::nullopt }.ButtonText()));
+        EXPECT_EQ(L"", SyncStatus{}.CountsText());
+        EXPECT_EQ(L"", (SyncStatus{ true, 0, Divergence{ 0, 0 } }.CountsText()));
+        EXPECT_EQ(L"3  ↑1  ↓2", (SyncStatus{ true, 3, Divergence{ 1, 2 } }.CountsText()));
+        EXPECT_EQ(L"↓2", (SyncStatus{ true, 0, Divergence{ 0, 2 } }.CountsText()));
+        EXPECT_EQ(L"1  ↓?", (SyncStatus{ true, 1, Divergence{ 0, 2 }, false }.CountsText()));
+        EXPECT_EQ(L"4", (SyncStatus{ true, 4, std::nullopt }.CountsText()));
     }
 
     TEST(SyncStatus, DetailsSayItInWords)

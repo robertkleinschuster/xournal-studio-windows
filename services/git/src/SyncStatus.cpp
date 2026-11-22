@@ -14,12 +14,11 @@ namespace xournal::git
         }
     }
 
-    std::wstring SyncStatus::ButtonText() const
+    std::wstring SyncStatus::CountsText() const
     {
-        std::wstring text = L"Synchronisieren";
         if (!repository)
         {
-            return text;
+            return {};
         }
         std::wstring pending;
         if (changedFiles > 0)
@@ -38,7 +37,7 @@ namespace xournal::git
         {
             pending += std::format(L"  ↓{}", divergence->behind);
         }
-        return pending.empty() ? text : text + L" " + pending;
+        return pending.empty() ? pending : pending.substr(2);
     }
 
     std::wstring SyncStatus::Details() const
