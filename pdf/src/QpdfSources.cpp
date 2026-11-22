@@ -142,7 +142,7 @@ namespace xournal::pdf::detail
 
 namespace xournal::pdf
 {
-    std::vector<std::uint8_t> CropPdfArea(std::span<std::uint8_t const> bytes, int pageIndex, Rect area, bool withBackground)
+    std::vector<std::uint8_t> CropPdfArea(std::span<std::uint8_t const> bytes, int pageIndex, Rect area, PdfCropAppearance appearance)
     {
         try
         {
@@ -166,10 +166,16 @@ namespace xournal::pdf
             resources.replaceKey("/XObject", xobjects);
             detail::ContentStream stream;
             stream.Save();
-            if (withBackground) stream.Save().Raw("1 g\n").Rectangle(0, 0, width, height).FillNonZero().Restore();
+            if (appearance.whiteBackground) stream.Save().Raw("1 g\n").Rectangle(0, 0, width, height).FillNonZero().Restore();
             stream.Rectangle(0, 0, width, height).Raw("W n\n")
                 .Transform(1, 0, 0, 1, -box.llx - area.x * w, -box.ury + area.Bottom() * h)
                 .Draw("/Area").Restore();
+            if (appearance.frame)
+            {
+                double line = std::min({ PdfCropAppearance::BorderWidth, width / 2, height / 2 });
+                stream.Save().Raw("0 G\n").LineWidth(line)
+                    .Rectangle(line / 2, line / 2, width - line, height - line).StrokePath().Restore();
+            }
             auto result = QPDFObjectHandle::newDictionary();
             result.replaceKey("/Type", QPDFObjectHandle::newName("/Page"));
             result.replaceKey("/MediaBox", QPDFObjectHandle::newArray(QPDFObjectHandle::Rectangle(0, 0, width, height)));

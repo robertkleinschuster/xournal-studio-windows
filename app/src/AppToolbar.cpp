@@ -58,7 +58,8 @@ namespace xournal::app
         t.laser = L"Laserpointer";
         t.copyArea = L"PDF-Bereich kopieren";
         t.copyAreaTransparent = L"Transparent";
-        t.copyAreaWithBackground = L"Mit PDF-Hintergrund";
+        t.copyAreaWithBackground = L"Weißer Hintergrund";
+        t.copyAreaFrame = L"Rahmen";
         t.textTip = L"Text: auf die Seite tippen und schreiben (die Tastatur tippt), auf einen Text tippen, um ihn zu "
             L"bearbeiten, daneben tippen, um fertig zu sein. Der Pfeil: Schrift, Größe und Farbe.\n"
             L"Tippen oder Klicken setzt einen Text – mit Stift, Maus oder Finger.";

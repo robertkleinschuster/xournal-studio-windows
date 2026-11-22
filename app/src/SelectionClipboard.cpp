@@ -18,6 +18,7 @@
 #include "xournal/pdf/PdfAreaRenderer.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <format>
 #include <span>
@@ -30,6 +31,19 @@ namespace xournal::app
         constexpr wchar_t ClipFormatName[] = L"Xournal Studio Clip";
         constexpr double PicturePixelsPerPoint = 2;  // the copy's picture for other apps: 192 DPI
         constexpr double PointsPerPixel = 72.0 / 96; // a pasted picture's pixel = a DIP
+
+        void DrawFrame(CpuBitmap& picture, double scale)
+        {
+            auto border = static_cast<UINT>(std::max(1.0, std::round(scale * pdf::PdfCropAppearance::BorderWidth)));
+            for (UINT y = 0; y < picture.height; ++y)
+            for (UINT x = 0; x < picture.width; ++x)
+            {
+                if (x >= border && picture.width - x > border && y >= border && picture.height - y > border) continue;
+                auto pixel = picture.pixels.data() + (static_cast<size_t>(y) * picture.width + x) * 4;
+                std::fill_n(pixel, 3, std::uint8_t{});
+                pixel[3] = 255;
+            }
+        }
 
         UINT Register(wchar_t const* name)
         {
@@ -128,7 +142,8 @@ namespace xournal::app
         AddPicturesLater(xml, GetClipboardSequenceNumber());
     }
 
-    void SelectionClipboard::CopyPdfArea(int page, inkpages::RectF area, bool withBackground, std::function<void(std::wstring)> completed)
+    void SelectionClipboard::CopyPdfArea(int page, inkpages::RectF area, pdf::PdfCropAppearance appearance,
+        std::function<void(std::wstring)> completed)
     {
         auto document = view.Document();
         auto content = view.PageAt(page);
@@ -149,8 +164,8 @@ namespace xournal::app
         auto request = std::make_shared<PendingArea>();
         request->sequence = GetClipboardSequenceNumber();
         double scale = std::min(PicturePixelsPerPoint, 4096.0 / std::max(source.width, source.height));
-        background->RenderArea(pdfPage, page, source, scale, !withBackground,
-            [this, guard, request, bounds, completed, data, pdfPage, fractions, withBackground](
+        background->RenderArea(pdfPage, page, source, scale, !appearance.whiteBackground,
+            [this, guard, request, bounds, completed, data, pdfPage, fractions, appearance, scale](
             std::shared_ptr<CpuBitmap> picture, std::exception_ptr error) {
             auto encodingFailed = [this, guard, request, completed] {
                 LogException("prepare PDF area for clipboard");
@@ -164,13 +179,14 @@ namespace xournal::app
             {
                 if (error) std::rethrow_exception(error);
                 UiQueue::RunInBackground("encode PDF clipboard area", [this, guard, request, bounds, completed,
-                    picture = std::move(picture), encodingFailed, data, pdfPage, fractions, withBackground] {
+                    picture = std::move(picture), encodingFailed, data, pdfPage, fractions, appearance, scale] {
                     try
                     {
                         Check("CoInitializeEx (PDF clipboard encoding)", CoInitializeEx(nullptr, COINIT_MULTITHREADED));
                         struct Uninit { ~Uninit() { CoUninitialize(); } } uninit;
+                        if (appearance.frame) DrawFrame(*picture, scale);
                         auto png = Bitmaps::EncodePng(*picture);
-                        auto image = XoppImage::CreatePdf(bounds, pdf::CropPdfArea(*data, pdfPage, fractions, withBackground));
+                        auto image = XoppImage::CreatePdf(bounds, pdf::CropPdfArea(*data, pdfPage, fractions, appearance));
                         auto xml = io::SerializeXml(*XoppClip::Create(bounds, { image }));
                         auto dib = DibOnWhite(*picture);
                         UiQueue::Post("copy PDF area", [this, guard, request, completed, xml = std::move(xml),

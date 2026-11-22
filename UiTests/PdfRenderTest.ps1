@@ -259,13 +259,22 @@ Invoke-Test {
     Mark 'copy a PDF rectangle with the pen over pasted objects'
     $areaButton = Probe 'PDF-Bereich kopieren'
     $laserButton = Probe 'Laserpointer'
-    [Inj]::ClickPixel([int](($areaButton[0] + $laserButton[0]) / 2) - 5, $areaButton[1])
+    $dropdownX = [int](($areaButton[0] + $laserButton[0]) / 2) - 5
+    [Inj]::ClickPixel($dropdownX, $areaButton[1])
+    Start-Sleep -Milliseconds 250
+    [Inj]::Key(0x24)
+    [Inj]::Key(0x28)
+    [Inj]::Key(0x0D)
+    Start-Sleep -Milliseconds 300
+    [Inj]::ClickPixel($dropdownX, $areaButton[1])
     Start-Sleep -Milliseconds 250
     [Inj]::Key(0x23)
     [Inj]::Key(0x0D)
     Start-Sleep -Milliseconds 300
     $tool = Select-String $inklog -Pattern 'toolbar: ' | Select-Object -Last 1
-    if ($tool.Line -notmatch ';tool=7;.*;copyAreaBackground=1$') { throw 'The PDF background option was not activated' }
+    if ($tool.Line -notmatch ';tool=7;.*;copyAreaBackground=1;copyAreaFrame=1$') {
+        throw 'The white background and frame options were not activated'
+    }
     $copied = @(Select-String "$out\app.log" -Pattern 'clipboard: PDF area copied').Count
     1..12 | ForEach-Object { [Inj]::PenFrame(($cx - 45), ($cy - 35), 0x22002, 0, 0) }
     [Inj]::PenFrame(($cx - 45), ($cy - 35), 0x12016, 0, 600)

@@ -18,8 +18,15 @@
 
 namespace xournal::pdf
 {
+    struct PdfCropAppearance
+    {
+        static constexpr double BorderWidth = 0.75; // points
+        bool whiteBackground = false;
+        bool frame = false;
+    };
+
     /// A one-page vector PDF of a rectangle in fractions of the shown page, measured from its top left.
-    std::vector<std::uint8_t> CropPdfArea(std::span<std::uint8_t const> pdf, int pageIndex, Rect area, bool withBackground = false);
+    std::vector<std::uint8_t> CropPdfArea(std::span<std::uint8_t const> pdf, int pageIndex, Rect area, PdfCropAppearance appearance = {});
 
     struct RenderedArea
     {

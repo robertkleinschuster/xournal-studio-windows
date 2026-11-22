@@ -10,6 +10,7 @@
 // What is pasted lands with its top left at the point InkPages gives (the view's center). UI thread.
 
 #include "DocumentView.h"
+#include "xournal/pdf/PdfAreaRenderer.h"
 
 #include "inkpages/WritingSurface.h"
 
@@ -27,7 +28,8 @@ namespace xournal::app
 
         void Copy(inkpages::Clip const& clip);
         /// Copies the rectangle as an embedded PDF and provides raster clipboard formats for other apps.
-        void CopyPdfArea(int page, inkpages::RectF area, bool withBackground, std::function<void(std::wstring)> completed);
+        void CopyPdfArea(int page, inkpages::RectF area, pdf::PdfCropAppearance appearance,
+            std::function<void(std::wstring)> completed);
         bool DeferPaste(inkpages::PointF at);
         std::optional<inkpages::Clip> Paste(inkpages::PointF at);
 

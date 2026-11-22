@@ -193,7 +193,8 @@ namespace xournal::app
                 if (error.empty()) Message(L"PDF-Bereich kopiert.", MessageKind::Info);
                 else Message(std::format(L"PDF-Bereich konnte nicht kopiert werden: {}", error), MessageKind::Error);
             };
-            try { clipboard->CopyPdfArea(page, area, toolbar->Choices().copyAreaBackground, completed); }
+            auto const& choices = toolbar->Choices();
+            try { clipboard->CopyPdfArea(page, area, { choices.copyAreaBackground, choices.copyAreaFrame }, completed); }
             catch (...)
             {
                 LogException("copy PDF area");

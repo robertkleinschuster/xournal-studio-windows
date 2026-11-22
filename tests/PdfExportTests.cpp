@@ -104,12 +104,13 @@ namespace xournal::tests
         EXPECT_GE(contents.forms, 1);
         EXPECT_TRUE(Contains(contents.text, "BACKGROUNDTEXT"));
         EXPECT_EQ(contents.operators["W"], 1);
-        auto backed = CropPdfArea({ input->getBuffer(), input->getSize() }, 0, { 0.25, 0.25, 0.5, 0.5 }, true);
+        auto backed = CropPdfArea({ input->getBuffer(), input->getSize() }, 0, { 0.25, 0.25, 0.5, 0.5 }, { true, true });
         QPDF opaque;
         opaque.processMemoryFile("opaque crop", reinterpret_cast<char const*>(backed.data()), backed.size());
         auto opaqueContents = Inspect(QPDFPageObjectHelper(opaque.getAllPages().front()));
         EXPECT_EQ(opaqueContents.operators["f"], contents.operators["f"] + 1);
         EXPECT_EQ(opaqueContents.operators["g"], contents.operators["g"] + 1);
+        EXPECT_EQ(opaqueContents.operators["S"], contents.operators["S"] + 1);
         EXPECT_EQ(opaqueContents.text, contents.text);
     }
 
