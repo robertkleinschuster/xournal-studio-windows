@@ -66,7 +66,12 @@ Invoke-Test {
     [Inj]::ClickPixel($textButtonX, [int]$ty); Start-Sleep -Milliseconds 800; [Inj]::MoveMouse(980, 500)
     "toolbar: Text at $textButtonX,$ty"
     PenTap 'new text' 150 290
-    Write-Typed "Gr$($ue)n und K$($ae)se`nZeile 2"
+    Write-Typed "Gr$($ue)n"
+    Key 0x20 # physical Space produces WM_KEYDOWN as well as WM_CHAR
+    Write-Typed "und K$($ae)se`nZeile 2"
+    if ((Get-Content "$out\app.log.inkpages.log" -Raw) -match 'viewer: key 0x20 scrolls') {
+        throw 'Space scrolled the document while editing'
+    }
     Shot '01-typing'
     PenTap 'beside' 700 420
     Shot '02-ended'
@@ -115,6 +120,22 @@ Invoke-Test {
     if ($x2 -le $x + 10) { throw "the text did not move: x $x -> $x2" }
     if (@(Texts $file).Count -ne $textsBefore + 1) { throw 'texts were added or lost by the move' }
     if ((StrokeCount $file) -ne $strokesBefore) { throw 'the strokes changed' }
+
+    $inkLog = Get-Content "$out\app.log.inkpages.log" -Raw
+    $zoom = [regex]::Matches($inkLog, 'viewport: .*?\(zoom ([\d.]+) offset') | Select-Object -Last 1
+    $dpi = [regex]::Match($inkLog, 'surface: created \(DPI scale ([\d.]+)\)')
+    $invariant = [Globalization.CultureInfo]::InvariantCulture
+    $pixel = 1 / ([double]::Parse($zoom.Groups[1].Value, $invariant) * [double]::Parse($dpi.Groups[1].Value, $invariant))
+    Key 0x27 # Right moves the selection by one screen pixel.
+    Ctrl 0x53 'S'
+    $nudged = @(Texts $file)[$textsBefore]
+    $nudgedX = [double]::Parse($nudged.GetAttribute('x'), [Globalization.CultureInfo]::InvariantCulture)
+    if ([Math]::Abs($nudgedX - $x2 - $pixel) -gt 0.005 -or $nudged.GetAttribute('y') -ne $moved.GetAttribute('y')) {
+        throw "Right arrow did not nudge x by $pixel page units: $x2 -> $nudgedX"
+    }
+    Ctrl 0x5A 'undo nudge'
+    Ctrl 0x53 'S'
+    if ((@(Texts $file)[$textsBefore]).GetAttribute('x') -ne $moved.GetAttribute('x')) { throw 'Undo did not restore x' }
 
     # A finger tap selects the text with Auswaehlen and a finger drag on it moves it.
     ToolbarButton "Ausw$($ae)hlen"
