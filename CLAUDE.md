@@ -140,6 +140,7 @@ git submodule update --init                              # InkPages (external/In
 gh workflow run ui-tests.yml -f tests=TasksTest,TextToolTest [--ref <branch>] [-f build_run=<id>]
 UiTests\Run-AppTest.ps1 -FromCi -Test UiTests\<Test>.ps1 -Extra <uiaprobe.exe>   # local sandbox, for debugging
 installer\Build-Msi.ps1 -Version 0.2.0                   # MSI from .local-build\install-stage (install.ps1 -SkipInstall)
+installer\Build-Msi.ps1                                   # local MSI numbered as the next release (newest tag + 1 patch)
 ```
 
 - `install.ps1` installs to `%LOCALAPPDATA%\Programs\Xournal Studio (Win32)` + Start menu entry, then a start check; it

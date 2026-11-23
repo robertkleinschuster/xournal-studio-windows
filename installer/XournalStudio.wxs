@@ -15,7 +15,7 @@
            Language="1031"
            Codepage="1252">
     <SummaryInformation Description="Xournal Studio (Win32) $(Version)" />
-    <MajorUpgrade DowngradeErrorMessage="Eine neuere Version von Xournal Studio (Win32) ist bereits installiert." />
+    <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="Eine neuere Version von Xournal Studio (Win32) ist bereits installiert." />
     <MediaTemplate EmbedCab="yes" />
 
     <!-- Apps & Features: icon, publisher (Manufacturer), version; no "Ändern" (there is nothing to choose). -->
