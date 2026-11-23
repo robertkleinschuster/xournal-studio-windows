@@ -78,7 +78,7 @@ Invoke-Test {
     if ($darkColors[0] -ne 0x242120 -or $darkColors[1] -ne 0xf0eeee) { throw "Wrong dark tree colors: $darkColors" }
     Shot '01-dark'
     $status = [ThemeProbe]::FindWindowEx($script:h,[IntPtr]::Zero,'msctls_statusbar32',$null)
-    $part = [ThemeProbe]::SendMessage($status,0x40c,[IntPtr]1,[IntPtr]::Zero).ToInt64() # SB_GETTEXTLENGTHW
+    $part = [ThemeProbe]::SendMessage($status,0x40c,[IntPtr]3,[IntPtr]::Zero).ToInt64() # SB_GETTEXTLENGTHW of the zoom part (git, message, page, zoom)
     if (($part -band 0xffff) -eq 0 -or ($part -band 0x10000000) -ne 0) {
         throw 'Zoom status must expose its text through the native status bar in dark mode.'
     }
@@ -102,7 +102,9 @@ Invoke-Test {
             if ($bright -lt 5) { throw "Dark group heading above '$row' lacks light text ($bright pixels at $dpi DPI)." }
         }
     } finally { $bitmap.Dispose() }
-    if ([ThemeProbe]::SendMessage($tabs,0x130b,[IntPtr]::Zero,[IntPtr]::Zero).ToInt32() -ne 1) { # TCM_GETCURSEL
+    # Aufgaben is the last tab (TCM_GETITEMCOUNT - 1; TCM_GETCURSEL).
+    $lastTab = [ThemeProbe]::SendMessage($tabs,0x1304,[IntPtr]::Zero,[IntPtr]::Zero).ToInt32() - 1
+    if ([ThemeProbe]::SendMessage($tabs,0x130b,[IntPtr]::Zero,[IntPtr]::Zero).ToInt32() -ne $lastTab) {
         throw 'Clicking Aufgaben did not select the native tab.'
     }
     ClickTab 'Dateien'

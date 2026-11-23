@@ -6,13 +6,16 @@
 
 #include <commctrl.h>
 
+#include <algorithm>
 #include <format>
+#include <utility>
 
 namespace xournal::app
 {
     namespace
     {
-        constexpr int PagePartDip = 140, ZoomPartDip = 70, MessagePart = 2;
+        constexpr int GitPart = 0, MessagePart = 1, PagePart = 2, ZoomPart = 3;
+        constexpr int GitPartDip = 190, PagePartDip = 120, ZoomPartDip = 60;
     }
 
     StatusBar::StatusBar(HWND parent)
@@ -34,19 +37,42 @@ namespace xournal::app
     {
         SendMessageW(bar, WM_SIZE, 0, 0); // the bar sizes itself to the parent's bottom
         UINT windowDpi = GetDpiForWindow(bar);
-        if (!windowDpi || partsDpi == windowDpi) return;
+        RECT client{};
+        if (!GetClientRect(bar, &client)) ThrowLastError("GetClientRect (status bar)");
+        int width = client.right;
+        if (!windowDpi || (partsDpi == windowDpi && partsWidth == width)) return;
         int dpi = static_cast<int>(windowDpi);
-        int page = MulDiv(PagePartDip, dpi, 96);
-        int parts[] = { page, page + MulDiv(ZoomPartDip, dpi, 96), -1 };
+        // The git status stands at the left, the message takes what is left, the page and zoom end at the right.
+        int zoom = MulDiv(ZoomPartDip, dpi, 96), page = MulDiv(PagePartDip, dpi, 96), git = MulDiv(GitPartDip, dpi, 96);
+        int zoomStart = std::max(git, width - zoom);
+        int pageStart = std::max(git, zoomStart - page);
+        int parts[4]{};
+        parts[GitPart] = git;
+        parts[MessagePart] = pageStart; // a part's value is its right edge
+        parts[PagePart] = zoomStart;
+        parts[ZoomPart] = -1;
         if (!SendMessageW(bar, SB_SETPARTS, ARRAYSIZE(parts), reinterpret_cast<LPARAM>(parts)))
             ThrowHr("SB_SETPARTS (status bar)", E_FAIL);
         partsDpi = windowDpi;
+        partsWidth = width;
+        for (auto const& [part, text] : { std::pair(GitPart, &gitText), std::pair(MessagePart, &messageText),
+                                           std::pair(PagePart, &pageText), std::pair(ZoomPart, &zoomText) })
+        {
+            if (!text->empty()) UpdatePart(part, *text); // the parts were set anew: draw what they show
+        }
     }
 
     void StatusBar::Show(int page, int count, int percent)
     {
-        SetPart(0, page >= 0 && count > 0 ? std::format(L"Seite {} von {}", page + 1, count) : L"", pageText);
-        SetPart(1, std::format(L"{} %", percent), zoomText);
+        SetPart(PagePart, page >= 0 && count > 0 ? std::format(L"Seite {} von {}", page + 1, count) : L"", pageText);
+        SetPart(ZoomPart, std::format(L"{} %", percent), zoomText);
+    }
+
+    void StatusBar::ShowGit(std::wstring const& text, std::wstring const& details)
+    {
+        SetPart(GitPart, text, gitText);
+        gitTip = details; // kept: the control may refer to the text instead of copying it
+        SendMessageW(bar, SB_SETTIPTEXTW, GitPart, reinterpret_cast<LPARAM>(gitTip.c_str()));
     }
 
     void StatusBar::SetPart(int part, std::wstring const& text, std::wstring& shown)
@@ -77,7 +103,7 @@ namespace xournal::app
     {
         if (header.hwndFrom != bar || header.code != NM_DBLCLK) return false;
         auto const& mouse = reinterpret_cast<NMMOUSE const&>(header);
-        if (mouse.dwItemSpec == 0 && pageDoubleClicked) pageDoubleClicked();
+        if (mouse.dwItemSpec == PagePart && pageDoubleClicked) pageDoubleClicked();
         return true;
     }
 }

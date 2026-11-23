@@ -98,6 +98,21 @@ namespace xournal::git
             return git_status_list_entrycount(list.get()) > 0;
         }
 
+        // Changes to files git knows (modified, deleted, renamed, staged); new untracked files do not count - they do
+        // not stand in the way of a rebase.
+        bool HasTrackedChanges(git_repository* repo)
+        {
+            StatusList list = Status(repo, 0);
+            for (size_t i = 0, n = git_status_list_entrycount(list.get()); i < n; i++)
+            {
+                if (git_status_byindex(list.get(), i)->status & ~static_cast<unsigned int>(GIT_STATUS_WT_NEW | GIT_STATUS_IGNORED))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         void CommitAll(git_repository* repo, git_signature const* signature, std::string const& message)
         {
             git_index* rawIndex = nullptr;
@@ -419,6 +434,41 @@ namespace xournal::git
         return all;
     }
 
+    SyncResult GitSync::Pull(path const& root, CredentialProvider const& credentials, Moment now)
+    {
+        std::lock_guard network(upstream::NetworkLock());
+        Library library;
+        Repository repo = Open(root.native());
+        Track(repo.get()); // no upstream branch: nothing to pull
+        Remote remote = upstream::RemoteOf(repo.get(), Head(repo.get()).get());
+        upstream::Fetch(remote.get(), credentials);
+
+        SyncResult result;
+        Tracking tracking = Track(repo.get());
+        if (tracking.behind == 0)
+        {
+            return result; // the server has nothing new
+        }
+        git_oid before = tracking.local;
+        if (tracking.ahead > 0)
+        {
+            if (HasTrackedChanges(repo.get()))
+            {
+                ThrowMessage("Es gibt ungesicherte Änderungen: Synchronisieren committet sie zuerst und holt dann; "
+                    "Holen allein ändert nur, was auf dem Server neu ist.");
+            }
+            Signature signature = MakeSignature(repo.get(), now);
+            RebaseOntoUpstream(repo.get(), tracking, signature.get());
+        }
+        else
+        {
+            FastForward(repo.get(), tracking);
+        }
+        tracking = Track(repo.get());
+        result.pulledFiles = ChangedFiles(repo.get(), before, tracking.remote);
+        return result;
+    }
+
     SyncResult GitSync::Sync(path const& root, CredentialProvider const& credentials, std::wstring const& machineName, Moment now)
     {
         std::lock_guard network(upstream::NetworkLock());
@@ -436,29 +486,52 @@ namespace xournal::git
         }
 
         Remote remote = upstream::RemoteOf(repo.get(), Head(repo.get()).get());
-        upstream::Fetch(remote.get(), credentials);
 
-        Tracking tracking = Track(repo.get());
-        git_oid before = tracking.local;
-        if (tracking.behind > 0 && tracking.ahead > 0)
+        // Other clients push while we work: fetch, bring their commits in (rebase or fast-forward), push. A push the
+        // server refuses because it moved since our fetch starts over (a few times); a refusal with nothing new on the
+        // server is a real one (a hook, permissions) and is thrown.
+        constexpr int MaxAttempts = 4;
+        std::optional<git_oid> before; // our tip before the first pull: what the pulled files are measured from
+        std::string rejected;
+        for (int attempt = 1;; ++attempt)
         {
-            RebaseOntoUpstream(repo.get(), tracking, signature.get());
-        }
-        else if (tracking.behind > 0)
-        {
-            FastForward(repo.get(), tracking);
-        }
+            upstream::Fetch(remote.get(), credentials);
 
-        tracking = Track(repo.get());
-        if (!git_oid_equal(&tracking.local, &before))
-        {
-            result.pulledFiles = ChangedFiles(repo.get(), before, tracking.remote);
+            Tracking tracking = Track(repo.get());
+            if (!rejected.empty() && tracking.behind == 0)
+            {
+                ThrowMessage(std::format("git push rejected: {}", rejected));
+            }
+            if (!before) before = tracking.local;
+            if (tracking.behind > 0 && tracking.ahead > 0)
+            {
+                RebaseOntoUpstream(repo.get(), tracking, signature.get());
+            }
+            else if (tracking.behind > 0)
+            {
+                FastForward(repo.get(), tracking);
+            }
+
+            tracking = Track(repo.get());
+            if (!git_oid_equal(&tracking.local, &*before))
+            {
+                result.pulledFiles = ChangedFiles(repo.get(), *before, tracking.remote);
+            }
+            if (tracking.ahead == 0)
+            {
+                return result;
+            }
+            rejected = upstream::Push(repo.get(), remote.get(), tracking.head.get(), credentials);
+            if (rejected.empty())
+            {
+                result.pushed = true;
+                return result;
+            }
+            if (attempt == MaxAttempts)
+            {
+                ThrowMessage(std::format("git push rejected {} times, the server keeps changing: {}", attempt, rejected));
+            }
+            Log(std::format("git: the server moved during the sync, fetching again (attempt {})", attempt + 1));
         }
-        if (tracking.ahead > 0)
-        {
-            upstream::Push(repo.get(), remote.get(), tracking.head.get(), credentials);
-            result.pushed = true;
-        }
-        return result;
     }
 }

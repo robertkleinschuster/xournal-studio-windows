@@ -27,8 +27,14 @@ namespace xournal::app
             return name;
         }
 
-        std::wstring Describe(git::SyncResult const& result)
+        std::wstring Describe(git::SyncResult const& result, bool pullOnly)
         {
+            if (pullOnly)
+            {
+                return result.pulledFiles.empty() ? L"Schon aktuell: der Server hat nichts Neues." :
+                    result.pulledFiles.size() == 1 ? L"Vom Server geholt: 1 Datei." :
+                    std::format(L"Vom Server geholt: {} Dateien.", result.pulledFiles.size());
+            }
             std::wstring text;
             if (!result.pulledFiles.empty())
             {
@@ -85,7 +91,11 @@ namespace xournal::app
         if (stateChanged) stateChanged();
     }
 
-    void SyncController::Sync(std::optional<std::filesystem::path> const& folder)
+    void SyncController::Sync(std::optional<std::filesystem::path> const& folder) { Run(folder, false); }
+
+    void SyncController::Pull(std::optional<std::filesystem::path> const& folder) { Run(folder, true); }
+
+    void SyncController::Run(std::optional<std::filesystem::path> const& folder, bool pullOnly)
     {
         if (syncing)
         {
@@ -113,7 +123,8 @@ namespace xournal::app
             return;
         }
         session.EndTextEditing(); // a text being typed counts as a change
-        if (session.IsModified())
+        // Pulling uploads nothing: the open document's unsaved notes are asked about only if the pull changes it.
+        if (!pullOnly && session.IsModified())
         {
             int choice = Questions::Choose(owner, L"Vor dem Synchronisieren speichern?",
                 L"Hochgeladen wird nur, was gespeichert ist. Ohne Speichern bleiben die Änderungen ungespeichert im Fenster.",
@@ -129,25 +140,26 @@ namespace xournal::app
         }
         SetSyncing(true);
         Log(std::format("sync: {}", ToUtf8(root->native())));
-        UiQueue::RunInBackground("sync", [this, root = *root, machine = MachineName()]
+        UiQueue::RunInBackground(pullOnly ? "pull" : "sync", [this, pullOnly, root = *root, machine = MachineName()]
         {
             std::optional<git::SyncResult> result;
             std::exception_ptr error;
             try
             {
-                result = git::GitSync::Sync(root, git::GitCredentials::FromCredentialManager(), machine, git::Moment::Now());
+                result = pullOnly ? git::GitSync::Pull(root, git::GitCredentials::FromCredentialManager(), git::Moment::Now())
+                    : git::GitSync::Sync(root, git::GitCredentials::FromCredentialManager(), machine, git::Moment::Now());
             }
             catch (...)
             {
                 error = std::current_exception();
             }
-            UiQueue::Post("sync finished", [this, result, error]
+            UiQueue::Post("sync finished", [this, pullOnly, result, error]
             {
                 SetSyncing(false);
                 if (finished) finished(!error);
                 if (!error)
                 {
-                    Finish(*result);
+                    Finish(*result, pullOnly);
                     SaveIfRequested();
                     return;
                 }
@@ -158,18 +170,20 @@ namespace xournal::app
                 }
                 catch (git::SyncConflict const& conflict)
                 {
-                    messages(std::format(L"Konflikt beim Synchronisieren: {}. Die eigenen Änderungen sind committet, aber "
-                        L"nicht hochgeladen; den Konflikt mit Git lösen.", FromUtf8(conflict.what())), MessageKind::Error);
+                    messages(std::format(L"Konflikt beim {}: {}. Die eigenen Änderungen sind committet, aber "
+                        L"nicht hochgeladen; den Konflikt mit Git lösen.", pullOnly ? L"Holen" : L"Synchronisieren",
+                        FromUtf8(conflict.what())), MessageKind::Error);
                 }
                 catch (...)
                 {
-                    messages(std::format(L"Synchronisieren fehlgeschlagen: {}", ErrorText()), MessageKind::Error);
+                    messages(std::format(L"{} fehlgeschlagen: {}", pullOnly ? L"Holen" : L"Synchronisieren", ErrorText()),
+                        MessageKind::Error);
                 }
             });
         });
     }
 
-    void SyncController::Finish(git::SyncResult const& result)
+    void SyncController::Finish(git::SyncResult const& result, bool pullOnly)
     {
         auto doc = session.Document();
         bool documentChanged = false;
@@ -179,7 +193,7 @@ namespace xournal::app
         }
         if (!documentChanged || ResolvePulledDocument())
         {
-            messages(Describe(result), MessageKind::Success);
+            messages(Describe(result, pullOnly), MessageKind::Success);
         }
     }
 

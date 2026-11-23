@@ -10,6 +10,7 @@
 #define CmdImportPdf 105
 #define CmdOpenFolder 106
 #define CmdSync 107
+#define CmdPull 109
 #define CmdExit 108
 #define CmdUndo 200
 #define CmdRedo 201

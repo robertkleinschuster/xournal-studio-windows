@@ -121,8 +121,8 @@ the window's parts to feature classes:
 - `MainMenu` (Datei/Bearbeiten/Seite/Ansicht with the C# app's shortcuts (tag `csharp-final`); features of later phases shown disabled),
   `AppToolbar` (InkPages' toolbar in German with the exe's pen cursors and the shared command and tool icons rendered
   as bitmaps at the toolbar's DPI; wraps into more rows when needed; Ansicht → Große Werkzeugleistensymbole switches
-  from 16 to 32 DIP), `SidePane` (Dateien, Aufgaben,
-  Seiten), `StatusBar` (page, zoom and the latest app message with a tooltip),
+  from 16 to 32 DIP), `SidePane` (Dateien, Seiten,
+  Gliederung, Suche, Aufgaben), `StatusBar` (git status at the left, the latest app message with a tooltip, page and zoom at the right),
   `Dialogs` (file dialogs, the leave question).
 - `DocumentSession`: new, open (.xopp, .moj, or a PDF as a new document; loaded on the thread pool), save, Save As with
   attachments, the leave question (Speichern / Nicht speichern / Abbrechen); saving only by choice.
@@ -188,7 +188,7 @@ the window's parts to feature classes:
   info tips, in-place editing (F2; the priority read back as todo.txt writes it, due: and doc: kept - `TodoTxt::EditText`/`WithEditText`) - and "Erledigte anzeigen" below; `TaskEditDialog` (a double-click on a
   row or Bearbeiten in its context menu) edits all of a task. Only the changed line is rewritten (`TaskFile`).
 - The viewer (PDF-viewer behaviour with mouse and keyboard; InkPages scrolls with the keys, pans with the middle
-  button and gives the cursor over links): `StatusBar` (comctl32, no grip: "Seite n von m" and the zoom, 100 % = the
+  button and gives the cursor over links): `StatusBar` (comctl32, no grip; right-aligned "Seite n von m" and the zoom, 100 % = the
   page's real size; a double-click on the page asks for Gehe zu Seite), `ViewNavigation` (zoom commands - Strg+Plus/
   Minus, Strg+1 Originalgröße, Strg+0 Ganze Seite, Strg+2 Seitenbreite as Acrobat and SumatraPDF -, Gehe zu Seite
   with `GoToPageDialog` (Strg+G), Zurück/Vorwärts over InkPages' `ViewHistory`: links, outline entries, Gehe zu Seite,

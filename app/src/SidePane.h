@@ -1,8 +1,9 @@
 #pragma once
 
-// The left side pane: a tab control with Dateien (the project folder's tree and its toolbar), Aufgaben (todo.txt),
-// Seiten (the pages pane), Suche (the search pane) and - only while the document's PDF has an outline - Gliederung (the
-// outline pane); the window puts those three in. The tabs keep their indices: Gliederung is the last one when shown.
+// The left side pane: a tab control with Dateien (the project folder's tree and its toolbar), Seiten (the pages pane),
+// Gliederung (the outline pane, only while the document's PDF has an outline), Suche (the search pane) and Aufgaben
+// (todo.txt) - in that order; the window puts the pages, outline and search panes in. Each tab has a fixed id
+// (Tab()/SetTab() use it, also the saved setting), independent of its place in the strip.
 
 #include "ExplorerTree.h"
 #include "TasksPane.h"
@@ -31,10 +32,12 @@ namespace xournal::app
 
         /// The sync button was pressed.
         std::function<void()> syncRequested;
+        /// The pull button was pressed (fetch and bring the server's commits in, no upload).
+        std::function<void()> pullRequested;
         /// While a sync runs the button says so and waits.
         void SetSyncing(bool syncing);
-        /// The button's text when no sync runs ("Synchronisieren   3  ↑1  ↓2") and its tooltip (one fact per line).
-        void SetSyncStatus(std::wstring text, std::wstring const& details);
+        /// The button's tooltip after "Synchronisieren" (one fact per line); the counts are the status bar's.
+        void SetSyncDetails(std::wstring const& details);
         void SetCurrentFile(std::optional<std::filesystem::path> file);
         void UpdateCurrentFileButton();
 
@@ -63,7 +66,6 @@ namespace xournal::app
         void ShowPage(int tab);
         void CreateFileToolbar();
         void UpdateFileToolbarImages();
-        void UpdateSyncButton();
 
         HWND window = nullptr;
         HWND tabs = nullptr;
@@ -71,7 +73,6 @@ namespace xournal::app
         std::unique_ptr<std::remove_pointer_t<HIMAGELIST>, decltype(&ImageList_Destroy)> fileBarImages{ nullptr, ImageList_Destroy };
         HWND syncTip = nullptr;
         std::optional<std::filesystem::path> currentFile;
-        std::wstring syncText;
         std::wstring syncDetails;
         bool syncing = false;
         bool darkMode = false;

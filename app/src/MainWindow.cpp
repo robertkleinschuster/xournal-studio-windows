@@ -490,6 +490,7 @@ namespace xournal::app
         }
         menu.Enable(CmdClearSelection, selection || text);
         menu.Enable(CmdSync, !sync->IsSyncing());
+        menu.Enable(CmdPull, !sync->IsSyncing());
         menu.Enable(CmdMovePageUp, pageCommands->CanMoveCurrent(-1));
         menu.Enable(CmdMovePageDown, pageCommands->CanMoveCurrent(1));
         menu.Enable(CmdBack, navigation->CanGoBack());
@@ -598,6 +599,7 @@ namespace xournal::app
         explorerCommands->scrollToPage = [this](int page) { surface->ScrollToPage(page); };
         pane->Explorer().requested = [this](ExplorerRequest const& request) { explorerCommands->Run(request); };
         pane->syncRequested = [this] { OnCommand(CmdSync); };
+        pane->pullRequested = [this] { OnCommand(CmdPull); };
 
         TasksPane& tasks = pane->Tasks();
         tasks.currentPage = [this] { return std::pair(session->FilePath(), surface->PageInView().value_or(-1)); };
@@ -625,7 +627,14 @@ namespace xournal::app
     {
         git::SyncStatus status = projectExplorer->SyncStatus();
         status.remoteKnown = remoteFetch->RemoteKnown();
-        pane->SetSyncStatus(status.CountsText(), status.Details());
+        pane->SetSyncDetails(status.Details());
+        if (!statusBar) return;
+        // The status bar's git part: nothing without a repository, else the counts or that everything is in sync.
+        std::wstring counts = status.CountsText();
+        std::wstring text;
+        if (status.repository)
+            text = !counts.empty() ? L"Git: " + counts : status.divergence ? L"Git: aktuell" : L"Git: kein Upstream-Zweig";
+        statusBar->ShowGit(text, status.Details());
     }
 
     void MainWindow::OnSyncStateChanged()
@@ -634,6 +643,7 @@ namespace xournal::app
         if (sync->IsSyncing())
         {
             remoteFetch->Cancel(); // the sync fetches itself; it would wait behind a slow background fetch
+            if (statusBar) statusBar->ShowGit(L"Git: synchronisiere …", L"");
         }
         else
         {
@@ -708,6 +718,7 @@ namespace xournal::app
         case CmdMovePageDown: pageCommands->MoveCurrent(1); break;
         case CmdOpenFolder: OpenFolder(); break;
         case CmdSync: sync->Sync(projectExplorer->Folder()); break;
+        case CmdPull: sync->Pull(projectExplorer->Folder()); break;
         case CmdExit:
             if (!PostMessageW(window, WM_CLOSE, 0, 0)) ThrowLastError("PostMessageW (close main window)");
             break;

@@ -28,21 +28,21 @@ namespace xournal::app
         constexpr int ThumbWidthDip = 150;
         enum MenuCommand : UINT { MenuBefore = 1, MenuAfter, MenuFromFile, MenuUp, MenuDown, MenuDelete };
         enum BarCommand : int { BarUp = 101, BarDown };
-        constexpr wchar_t GlyphUp = 0xE74A, GlyphDown = 0xE74B; // Segoe Fluent Icons "Up" / "Down"
 
         int Scaled(int dip, HWND window) { return MulDiv(dip, static_cast<int>(GetDpiForWindow(window)), 96); }
 
-        HIMAGELIST PageButtonImages(int size, COLORREF color)
+        // InkPages' shared toolbar symbols (Seite nach oben / unten), rendered at the toolbar's DPI.
+        HIMAGELIST PageButtonImages(int size)
         {
             std::unique_ptr<std::remove_pointer_t<HIMAGELIST>, decltype(&ImageList_Destroy)> images(
                 ImageList_Create(size, size, ILC_COLOR32, 2, 0), ImageList_Destroy);
             if (!images) ThrowHr("ImageList_Create (page buttons)", E_FAIL);
-            for (wchar_t glyph : { GlyphUp, GlyphDown })
+            for (auto symbol : { inkpages::ToolbarSymbol::MovePageUp, inkpages::ToolbarSymbol::MovePageDown })
             {
-                HBITMAP bitmap = inkpages::CreateFluentGlyphBitmap(glyph, color, size);
-                if (!bitmap) ThrowHr("CreateFluentGlyphBitmap (page buttons)", E_FAIL);
+                HBITMAP bitmap = inkpages::CreateToolbarSymbolBitmap(symbol, size);
+                if (!bitmap) ThrowHr("CreateToolbarSymbolBitmap (page buttons)", E_FAIL);
                 int index = ImageList_Add(images.get(), bitmap, nullptr);
-                if (!DeleteObject(bitmap)) LogError("DeleteObject (page button glyph) failed");
+                if (!DeleteObject(bitmap)) LogError("DeleteObject (page button symbol) failed");
                 if (index < 0) ThrowHr("ImageList_Add (page buttons)", E_FAIL);
             }
             return images.release();
@@ -59,7 +59,7 @@ namespace xournal::app
             wc.lpfnWndProc = Proc;
             wc.hInstance = instance;
             wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-            wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+            wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1);
             wc.lpszClassName = ClassName;
             if (!RegisterClassExW(&wc)) ThrowLastError("RegisterClassEx(pages pane)");
         }
@@ -145,7 +145,7 @@ namespace xournal::app
 
     void PagesPane::UpdateBarImages()
     {
-        HIMAGELIST glyphs = PageButtonImages(Scaled(16, window), darkMode ? DarkColors::Text : GetSysColor(COLOR_BTNTEXT));
+        HIMAGELIST glyphs = PageButtonImages(Scaled(20, window));
         SendMessageW(bar, TB_SETIMAGELIST, 0, reinterpret_cast<LPARAM>(glyphs));
         if (barImages && !ImageList_Destroy(barImages)) LogError("ImageList_Destroy (previous page toolbar images) failed");
         barImages = glyphs;

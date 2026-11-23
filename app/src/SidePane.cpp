@@ -17,16 +17,33 @@ namespace xournal::app
     namespace
     {
         constexpr wchar_t ClassName[] = L"XournalStudioSidePane";
-        constexpr int TabsId = 1, TreeId = 2, SyncId = 3, CurrentFileId = 4;
+        constexpr int TabsId = 1, TreeId = 2, SyncId = 3, CurrentFileId = 4, PullId = 6;
         constexpr int FileBarId = 5;
+        // A tab's id (kept in its item's lParam) never changes; the strip shows them in the order Dateien, the document's
+        // tabs (Seiten, Gliederung, Suche) and Aufgaben last. Pages = SidePane::PagesTab, Search = SidePane::SearchTab.
+        constexpr int FilesTab = 0, TasksTab = 1, OutlineTab = 4, FixedTabs = 4;
         constexpr wchar_t const* TabTitles[] = { L"Dateien", L"Aufgaben", L"Seiten", L"Suche", L"Gliederung" };
-        constexpr int OutlineTab = 4, FixedTabs = 4; // Suche is SidePane::SearchTab
-        void InsertTab(HWND tabs, int index)
+        constexpr int FixedOrder[FixedTabs] = { FilesTab, SidePane::PagesTab, SidePane::SearchTab, TasksTab };
+
+        void InsertTab(HWND tabs, int position, int id)
         {
-            TCITEMW item{ TCIF_TEXT };
-            item.pszText = const_cast<wchar_t*>(TabTitles[index]);
-            if (TabCtrl_InsertItem(tabs, index, &item) == -1)
+            TCITEMW item{ TCIF_TEXT | TCIF_PARAM };
+            item.pszText = const_cast<wchar_t*>(TabTitles[id]);
+            item.lParam = id;
+            if (TabCtrl_InsertItem(tabs, position, &item) == -1)
                 ThrowHr("TCM_INSERTITEM (side pane)", E_FAIL);
+        }
+
+        /// The strip position of the tab with this id, -1 when it is not shown.
+        int PositionOf(HWND tabs, int id)
+        {
+            for (int i = 0, count = TabCtrl_GetItemCount(tabs); i < count; ++i)
+            {
+                TCITEMW item{ TCIF_PARAM };
+                if (!TabCtrl_GetItem(tabs, i, &item)) ThrowHr("TCM_GETITEM (side pane)", E_FAIL);
+                if (static_cast<int>(item.lParam) == id) return i;
+            }
+            return -1;
         }
 
         HWND Placeholder(HWND parent, wchar_t const* text)
@@ -52,7 +69,7 @@ namespace xournal::app
             wc.lpfnWndProc = Proc;
             wc.hInstance = instance;
             wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-            wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+            wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1);
             wc.lpszClassName = ClassName;
             if (!RegisterClassExW(&wc))
             {
@@ -73,7 +90,7 @@ namespace xournal::app
         }
         ChildControls::UseMessageFont(tabs);
         for (int i = 0; i < FixedTabs; ++i)
-            InsertTab(tabs, i);
+            InsertTab(tabs, i, FixedOrder[i]);
         explorer = std::make_unique<ExplorerTree>(window, TreeId);
         ChildControls::UseMessageFont(explorer->Window());
         CreateFileToolbar();
@@ -94,6 +111,7 @@ namespace xournal::app
         SendMessageW(fileBar, TB_SETEXTENDEDSTYLE, 0, TBSTYLE_EX_MIXEDBUTTONS);
 
         TBBUTTON buttons[]{
+            { 2, PullId, TBSTATE_ENABLED, BTNS_BUTTON, {}, 0, reinterpret_cast<INT_PTR>(L"Vom Server holen (ohne Hochladen)") },
             { 0, SyncId, TBSTATE_ENABLED, BTNS_BUTTON, {}, 0, reinterpret_cast<INT_PTR>(L"Synchronisieren") },
             { 1, CurrentFileId, 0, BTNS_BUTTON, {}, 0, reinterpret_cast<INT_PTR>(L"Geöffnete Datei anzeigen") }
         };
@@ -112,9 +130,9 @@ namespace xournal::app
         SendMessageW(syncTip, TTM_SETMAXTIPWIDTH, 0, MulDiv(320, dpi, 96));
         int size = MulDiv(20, dpi, 96);
         std::unique_ptr<std::remove_pointer_t<HIMAGELIST>, decltype(&ImageList_Destroy)> images(
-            ImageList_Create(size, size, ILC_COLOR32, 2, 0), ImageList_Destroy);
+            ImageList_Create(size, size, ILC_COLOR32, 3, 0), ImageList_Destroy);
         if (!images) ThrowHr("ImageList_Create (file toolbar)", E_FAIL);
-        for (auto symbol : { inkpages::ToolbarSymbol::Sync, inkpages::ToolbarSymbol::RevealFile })
+        for (auto symbol : { inkpages::ToolbarSymbol::Sync, inkpages::ToolbarSymbol::RevealFile, inkpages::ToolbarSymbol::Pull })
         {
             HBITMAP bitmap = inkpages::CreateToolbarSymbolBitmap(symbol, size);
             if (!bitmap) ThrowHr("CreateToolbarSymbolBitmap (file toolbar)", E_FAIL);
@@ -162,24 +180,33 @@ namespace xournal::app
 
     void SidePane::ShowOutlineTab(bool shown)
     {
-        if (shown == (TabCtrl_GetItemCount(tabs) > OutlineTab)) return;
+        int position = PositionOf(tabs, OutlineTab);
+        if (shown == (position >= 0)) return;
+        // Gliederung lies between Seiten and Suche: the strip's selection is kept on the same tab by id (the control's
+        // own adjustment of the selected position when an item before it comes or goes is not documented).
+        int current = Tab();
         if (shown)
         {
-            InsertTab(tabs, OutlineTab);
+            InsertTab(tabs, PositionOf(tabs, SidePane::SearchTab), OutlineTab); // Seiten, Gliederung, Suche
+            TabCtrl_SetCurSel(tabs, PositionOf(tabs, current));
             Layout(); // a new row of tabs may change the content's area
             return;
         }
-        bool wasShown = Tab() == OutlineTab;
-        if (!TabCtrl_DeleteItem(tabs, OutlineTab)) ThrowHr("TCM_DELETEITEM (Gliederung)", E_FAIL);
-        if (wasShown)
-        {
-            SetTab(0);
-            if (tabChanged) tabChanged(0);
-        }
+        if (!TabCtrl_DeleteItem(tabs, position)) ThrowHr("TCM_DELETEITEM (Gliederung)", E_FAIL);
+        bool wasShown = current == OutlineTab;
+        SetTab(wasShown ? FilesTab : current);
+        if (wasShown && tabChanged) tabChanged(FilesTab);
         Layout();
     }
 
-    int SidePane::Tab() const { return TabCtrl_GetCurSel(tabs); }
+    int SidePane::Tab() const
+    {
+        int position = TabCtrl_GetCurSel(tabs);
+        if (position < 0) return FilesTab;
+        TCITEMW item{ TCIF_PARAM };
+        if (!TabCtrl_GetItem(tabs, position, &item)) ThrowHr("TCM_GETITEM (side pane)", E_FAIL);
+        return static_cast<int>(item.lParam);
+    }
 
     void SidePane::SetDarkMode(bool dark)
     {
@@ -220,8 +247,9 @@ namespace xournal::app
 
     void SidePane::SetTab(int tab)
     {
-        if (tab < 0 || tab >= TabCtrl_GetItemCount(tabs)) tab = 0;
-        TabCtrl_SetCurSel(tabs, tab);
+        int position = PositionOf(tabs, tab);
+        if (position < 0) { tab = FilesTab; position = PositionOf(tabs, tab); }
+        TabCtrl_SetCurSel(tabs, position);
         if (Tab() != tab) ThrowHr("TCM_SETCURSEL (side pane)", E_FAIL);
         ShowPage(tab);
     }
@@ -230,10 +258,10 @@ namespace xournal::app
     {
         if (!SetWindowPos(tabs, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE))
             ThrowLastError("SetWindowPos (tab background)");
-        ShowWindow(explorer->Window(), tab == 0 ? SW_SHOW : SW_HIDE);
-        ShowWindow(fileBar, tab == 0 ? SW_SHOW : SW_HIDE);
-        ShowWindow(tasks->Window(), tab == 1 ? SW_SHOW : SW_HIDE);
-        ShowWindow(pagesContent, tab == 2 ? SW_SHOW : SW_HIDE);
+        ShowWindow(explorer->Window(), tab == FilesTab ? SW_SHOW : SW_HIDE);
+        ShowWindow(fileBar, tab == FilesTab ? SW_SHOW : SW_HIDE);
+        ShowWindow(tasks->Window(), tab == TasksTab ? SW_SHOW : SW_HIDE);
+        ShowWindow(pagesContent, tab == SidePane::PagesTab ? SW_SHOW : SW_HIDE);
         if (searchContent) ShowWindow(searchContent, tab == SidePane::SearchTab ? SW_SHOW : SW_HIDE);
         if (outlineContent) ShowWindow(outlineContent, tab == OutlineTab ? SW_SHOW : SW_HIDE);
     }
@@ -282,29 +310,16 @@ namespace xournal::app
     void SidePane::SetSyncing(bool value)
     {
         syncing = value;
+        if (!SendMessageW(fileBar, TB_ENABLEBUTTON, PullId, MAKELPARAM(!syncing, 0)))
+            ThrowHr("TB_ENABLEBUTTON (pull)", E_FAIL);
         if (!SendMessageW(fileBar, TB_ENABLEBUTTON, SyncId, MAKELPARAM(!syncing, 0)))
             ThrowHr("TB_ENABLEBUTTON (sync)", E_FAIL);
-        // The button keeps its text and width while a sync runs (a wider text made the toolbar cut it off); the
-        // greyed button shows the sync.
+        // The greyed button shows the sync.
     }
 
-    void SidePane::UpdateSyncButton()
+    void SidePane::SetSyncDetails(std::wstring const& details)
     {
-        std::wstring text = syncText;
-        bool showText = !text.empty();
-        if (!showText) text = L"Synchronisieren";
-        TBBUTTONINFOW info{ sizeof(info), TBIF_TEXT | TBIF_STYLE };
-        info.pszText = text.data();
-        info.fsStyle = static_cast<BYTE>(BTNS_BUTTON | BTNS_AUTOSIZE | (showText ? BTNS_SHOWTEXT : 0));
-        if (!SendMessageW(fileBar, TB_SETBUTTONINFOW, SyncId, reinterpret_cast<LPARAM>(&info)))
-            ThrowHr("TB_SETBUTTONINFO (sync)", E_FAIL);
-        SendMessageW(fileBar, TB_AUTOSIZE, 0, 0);
-        Layout();
-    }
-
-    void SidePane::SetSyncStatus(std::wstring text, std::wstring const& details)
-    {
-        syncText = std::move(text);
+        // The button is an icon of fixed size; the status itself (counts) stands in the window's status bar.
         syncDetails = L"Synchronisieren";
         if (!details.empty()) syncDetails += L"\r\n";
         for (wchar_t c : details)
@@ -312,7 +327,6 @@ namespace xournal::app
             if (c == L'\n') syncDetails += L'\r';
             syncDetails += c;
         }
-        UpdateSyncButton();
     }
 
     LRESULT SidePane::Handle(UINT message, WPARAM wp, LPARAM lp)
@@ -335,6 +349,11 @@ namespace xournal::app
             if (LOWORD(wp) == CurrentFileId && reinterpret_cast<HWND>(lp) == fileBar && currentFile)
             {
                 explorer->FocusFile(*currentFile);
+                return 0;
+            }
+            if (LOWORD(wp) == PullId && reinterpret_cast<HWND>(lp) == fileBar && pullRequested)
+            {
+                pullRequested();
                 return 0;
             }
             if (LOWORD(wp) == SyncId && reinterpret_cast<HWND>(lp) == fileBar && syncRequested)

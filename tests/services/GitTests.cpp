@@ -113,6 +113,31 @@ namespace xournal::tests
                 git_repository_free(repo);
             }
 
+            // A local commit of everything staged, not pushed.
+            void CommitStaged(path const& root, char const* message)
+            {
+                git_repository* repo = nullptr;
+                Ok(git_repository_open(&repo, Utf8(root).c_str()));
+                git_index* index = nullptr;
+                Ok(git_repository_index(&index, repo));
+                git_oid treeId{}, headId{}, commitId{};
+                Ok(git_index_write_tree(&treeId, index));
+                git_tree* tree = nullptr;
+                Ok(git_tree_lookup(&tree, repo, &treeId));
+                Ok(git_reference_name_to_id(&headId, repo, "HEAD"));
+                git_commit* parent = nullptr;
+                Ok(git_commit_lookup(&parent, repo, &headId));
+                git_signature* sig = nullptr;
+                Ok(git_signature_now(&sig, "Test", "test@example.com"));
+                git_commit const* parents[] = { parent };
+                Ok(git_commit_create(&commitId, repo, "HEAD", sig, sig, nullptr, message, tree, 1, parents));
+                git_signature_free(sig);
+                git_commit_free(parent);
+                git_tree_free(tree);
+                git_index_free(index);
+                git_repository_free(repo);
+            }
+
             struct HeadInfo
             {
                 std::string summary;
@@ -405,6 +430,118 @@ namespace xournal::tests
             EXPECT_EQ(E_ABORT, e.Code());
         }
         EXPECT_EQ("b", ReadText(b / L"start.xopp"));
+        EXPECT_EQ(GIT_REPOSITORY_STATE_NONE, Head(b).state);
+    }
+
+    TEST_F(Repos, SyncBringsInSeveralForeignCommitsAndPushesOnTop)
+    {
+        auto [a, b] = TwoClones();
+        WriteBytes(a / L"one.xopp", "1");
+        GitSync::Sync(a, {}, L"PC-A", Now);
+        WriteBytes(a / L"two.xopp", "2");
+        GitSync::Sync(a, {}, L"PC-A", Now);
+        WriteBytes(a / L"start.xopp", "changed by a");
+        GitSync::Sync(a, {}, L"PC-A", Now);
+        WriteBytes(b / L"mine.xopp", "mine");
+
+        SyncResult result = GitSync::Sync(b, {}, L"PC-B", Now);
+
+        EXPECT_TRUE(result.committed);
+        EXPECT_TRUE(result.pushed);
+        EXPECT_EQ(3u, result.pulledFiles.size()); // every file the foreign commits changed, once
+        EXPECT_EQ("changed by a", ReadText(b / L"start.xopp"));
+        EXPECT_EQ("mine", ReadText(b / L"mine.xopp"));
+        HeadInfo head = Head(b);
+        EXPECT_EQ(0u, head.ahead);
+        EXPECT_EQ(GIT_REPOSITORY_STATE_NONE, head.state);
+        // a gets b's file on its next sync: the pushed history is a straight line on top of a's commits
+        SyncResult back = GitSync::Sync(a, {}, L"PC-A", Now);
+        EXPECT_EQ(std::vector<path>{ a / L"mine.xopp" }, back.pulledFiles);
+    }
+
+    TEST_F(Repos, ARepeatedConflictKeepsTheRepositoryCleanAndTheLocalWork)
+    {
+        auto [a, b] = TwoClones();
+        WriteBytes(a / L"start.xopp", "a");
+        GitSync::Sync(a, {}, L"PC-A", Now);
+
+        for (int round = 1; round <= 3; ++round)
+        {
+            WriteBytes(b / L"start.xopp", std::format("b{}", round));
+            WriteBytes(b / std::format(L"own{}.xopp", round), "own");
+            EXPECT_THROW(GitSync::Sync(b, {}, L"PC-B", Now), SyncConflict) << "round " << round;
+            EXPECT_EQ(GIT_REPOSITORY_STATE_NONE, Head(b).state) << "round " << round;
+            EXPECT_EQ(std::format("b{}", round), ReadText(b / L"start.xopp"));
+            EXPECT_EQ("own", ReadText(b / std::format(L"own{}.xopp", round)));
+        }
+        EXPECT_EQ(3u, Head(b).ahead); // the local commits stay, nothing was pushed
+    }
+
+    TEST_F(Repos, PullBringsTheServersCommitsInAndNeverUploadsOrCommits)
+    {
+        auto [a, b] = TwoClones();
+        WriteBytes(a / L"new.xopp", "from a");
+        GitSync::Sync(a, {}, L"PC-A", Now);
+        WriteBytes(b / L"note.txt", "uncommitted"); // not touched by the pull
+
+        SyncResult result = GitSync::Pull(b, {}, Now);
+
+        EXPECT_EQ(std::vector<path>{ b / L"new.xopp" }, result.pulledFiles);
+        EXPECT_FALSE(result.committed);
+        EXPECT_FALSE(result.pushed);
+        EXPECT_EQ("from a", ReadText(b / L"new.xopp"));
+        EXPECT_EQ("uncommitted", ReadText(b / L"note.txt"));
+        EXPECT_EQ("Sync from PC-A (2026-11-15 16:30)", Head(b).summary);
+        EXPECT_TRUE(GitSync::Pull(b, {}, Now).pulledFiles.empty()); // nothing new: nothing happens
+    }
+
+    TEST_F(Repos, PullKeepsUncommittedChangesOfFilesTheServerDidNotTouch)
+    {
+        auto [a, b] = TwoClones();
+        WriteBytes(a / L"new.xopp", "from a");
+        GitSync::Sync(a, {}, L"PC-A", Now);
+        WriteBytes(b / L"start.xopp", "edited by b"); // a tracked file, uncommitted
+
+        EXPECT_NO_THROW(GitSync::Pull(b, {}, Now)); // a fast-forward over other files
+        EXPECT_EQ("edited by b", ReadText(b / L"start.xopp"));
+        EXPECT_EQ("from a", ReadText(b / L"new.xopp"));
+    }
+
+    TEST_F(Repos, PullRebasesOwnCommitsButDoesNotPushThem)
+    {
+        auto [a, b] = TwoClones();
+        WriteBytes(b / L"mine.xopp", "mine");
+        Stage(b, "mine.xopp");
+        CommitStaged(b, "mine\n");
+        WriteBytes(a / L"theirs.xopp", "theirs");
+        GitSync::Sync(a, {}, L"PC-A", Now);
+
+        SyncResult result = GitSync::Pull(b, {}, Now);
+
+        EXPECT_EQ(std::vector<path>{ b / L"theirs.xopp" }, result.pulledFiles);
+        EXPECT_FALSE(result.pushed);
+        HeadInfo head = Head(b);
+        EXPECT_EQ("mine", head.summary);
+        EXPECT_EQ(1u, head.ahead); // still to push
+        EXPECT_EQ(GIT_REPOSITORY_STATE_NONE, head.state);
+        EXPECT_EQ("theirs", ReadText(b / L"theirs.xopp"));
+        GitSync::Pull(a, {}, Now);
+        EXPECT_FALSE(std::filesystem::exists(a / L"mine.xopp")); // nothing of b reached the server
+    }
+
+    TEST_F(Repos, PullWithOwnCommitsAndUncommittedChangesLeavesEverythingAsItWas)
+    {
+        auto [a, b] = TwoClones();
+        WriteBytes(b / L"mine.xopp", "mine");
+        Stage(b, "mine.xopp");
+        CommitStaged(b, "mine\n");
+        WriteBytes(a / L"theirs.xopp", "theirs");
+        GitSync::Sync(a, {}, L"PC-A", Now);
+        WriteBytes(b / L"start.xopp", "edited by b"); // a rebase would need a clean tree
+
+        EXPECT_THROW(GitSync::Pull(b, {}, Now), Error);
+        EXPECT_EQ("edited by b", ReadText(b / L"start.xopp"));
+        EXPECT_FALSE(std::filesystem::exists(b / L"theirs.xopp"));
         EXPECT_EQ(GIT_REPOSITORY_STATE_NONE, Head(b).state);
     }
 

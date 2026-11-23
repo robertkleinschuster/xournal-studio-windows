@@ -22,6 +22,7 @@ BEGIN
         MENUITEM "Zuletzt &geöffnet", CmdRecentFirst
         MENUITEM SEPARATOR
         MENUITEM "O&rdner öffnen…", CmdOpenFolder
+        MENUITEM "&Vom Server holen", CmdPull
         MENUITEM "S&ynchronisieren", CmdSync
         MENUITEM SEPARATOR
         MENUITEM "&Beenden\tAlt+F4", CmdExit

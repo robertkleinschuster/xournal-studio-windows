@@ -159,7 +159,7 @@ namespace xournal::git
         CheckWithCallbacks("fetch", git_remote_fetch(remote, nullptr, &options, nullptr), callbacks);
     }
 
-    void upstream::Push(git_repository* repo, git_remote* remote, git_reference* head, CredentialProvider const& credentials)
+    std::string upstream::Push(git_repository* repo, git_remote* remote, git_reference* head, CredentialProvider const& credentials)
     {
         Buffer merge;
         Check("upstream of branch", git_branch_upstream_merge(&merge.buf, repo, git_reference_name(head)));
@@ -173,10 +173,9 @@ namespace xournal::git
         CheckWithCallbacks("push", git_remote_push(remote, &refspecs, &options), callbacks);
         if (!callbacks.rejected.empty())
         {
-            std::string message = std::format("git push rejected: {}", callbacks.rejected);
-            LogError(message);
-            throw Error(message, E_FAIL);
+            Log(std::format("git push rejected: {}", callbacks.rejected)); // the caller decides: retry or throw
         }
+        return callbacks.rejected;
     }
 
     std::optional<Divergence> GitSync::GetDivergence(path const& root)

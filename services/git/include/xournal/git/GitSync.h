@@ -115,6 +115,14 @@ namespace xournal::git
         /// empty (remotes that need no sign-in).
         SyncResult Sync(path const& root, CredentialProvider const& credentials, std::wstring const& machineName, Moment now);
 
+        /// Only brings the server's commits in, never uploads and never commits: fetches, then fast-forwards, or - when
+        /// the branch has own commits - rebases them onto the upstream branch. Uncommitted changes stay: a fast-forward
+        /// that would overwrite one throws (libgit2's message names the file), a rebase needs a clean working tree and
+        /// throws when there are changes (Sync commits them first). A rebase conflict is aborted and thrown as
+        /// SyncConflict. `pulledFiles` of the result are the files the server's commits changed; committed and pushed
+        /// stay false.
+        SyncResult Pull(path const& root, CredentialProvider const& credentials, Moment now);
+
         /// Commits HEAD's branch has that its upstream branch has not (ahead) and the other way round (behind), from the
         /// local references (no network: "behind" is as of the last fetch). Nothing when HEAD is unborn, detached or has
         /// no upstream branch.

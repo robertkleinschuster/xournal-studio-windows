@@ -107,7 +107,7 @@ long formulas in several colors. For open pen/UI design questions, propose how O
 - **Iterative.** Only features in actual use, simplest version first. Ask before large new areas.
 - **Windows 11 only**, this machine's version (26200) – no compatibility layers.
 - **Right-handed UI:** nothing interactive at the right screen edge; toolbar left-aligned and wraps when needed; menu bar visible;
-  the left side is for the side pane (Dateien, Aufgaben, Seiten).
+  the left side is for the side pane (Dateien, Seiten, Gliederung, Suche, Aufgaben).
 - German UI texts; code, comments and commits in English.
 
 ## Process (agreed with the user, 2026-11-20)
@@ -238,10 +238,20 @@ code). In short: `base ← model ← io ← pdf, pdftext, search, import, servic
 - Git (libgit2): sign-in = the credential Git Credential Manager / wincred stores in the Windows Credential Manager
   (generic `git:https://host`, GCM as UTF-8, wincred as UTF-16); the app never asks for credentials itself. Sync =
   commit all, fetch, rebase or fast-forward, push; a conflict is aborted.
-- **Sync button status** (user, 2026-11-20, like VS Code's sync item): "Synchronisieren   3  ↑1  ↓2" = changed files
-  (what a sync commits), commits to push, commits to pull as of the last fetch; tooltip in words. Counted with every
-  explorer refresh; a background fetch (remote-tracking refs only) at start, on folder change and on window activation
-  at most every 5 minutes (time check, no timer); a sync counts as a fetch; a failed fetch is logged and shows "↓?".
+- **Git status in the status bar** (user, 2026-11-23; first as the sync button's text like VS Code's sync item, 2026-11-20): the
+  window's status bar has four parts, left to right: git ("Git: 3  ↑1  ↓2" = changed files a sync commits, commits to
+  push, commits to pull as of the last fetch; "Git: aktuell"; tooltip in words; nothing without a repository), the latest
+  message, "Seite n von m" and the zoom (right-aligned). The sync button is an icon of fixed size (its text made the
+  toolbar jump). Counted with every explorer refresh; a background fetch (remote-tracking refs only) at start, on folder
+  change and on window activation at most every 5 minutes (time check, no timer); a sync counts as a fetch; a failed fetch
+  is logged and shows "↓?".
+- **Vom Server holen** (user, 2026-11-23): a pull-only button next to Synchronisieren (Datei → Vom Server holen too):
+  fetch, then fast-forward or rebase own commits; no commit, no upload, no question about saving first. Uncommitted
+  changes stay (a fast-forward over a file they touch throws with libgit2's message); a rebase needs a clean tree of
+  tracked files and says so. A pull that changes the open document is handled as after a sync (reload / keep mine / copy).
+- **Sync with other clients pushing:** fetch, rebase (or fast-forward) and push run in a loop: a push the server refuses
+  because it moved since the fetch starts over (up to 4 times); a refusal with nothing new on the server is thrown. A
+  rebase conflict is aborted (the local commits stay, the repository is never mid-rebase) and reported as a conflict.
 - **Explorer git** (user, 2026-11-20, like IDEs): deleted files of the last commit stay in the tree, red and struck
   through; Änderungen verwerfen on a file or folder: tracked files back from HEAD (deleted ones restored), new files to
   the recycle bin, after a question naming the files; a staged rename = old path restored, new path to the bin.

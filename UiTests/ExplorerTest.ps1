@@ -82,8 +82,13 @@ Invoke-Test {
     $x, $y = "$position".Trim() -split ' '
     # One local commit to push and two to pull after the initial fetch.
     $up = [char]0x2191; $down = [char]0x2193
-    WaitFor 'sync button counts' { SyncPosition "${up}1  ${down}2" }
-    $syncPosition = SyncPosition "${up}1  ${down}2"
+    # The counts stand in the window's status bar (git part, left); the sync button is an icon beside the other file action.
+    WaitFor 'git status counts' { SyncPosition "Git: ${up}1  ${down}2" }
+    $statusPosition = SyncPosition "Git: ${up}1  ${down}2"
+    $statusX, $statusY = "$statusPosition".Trim() -split ' '
+    if ([int]$statusY -le [int]$fileRow[1]) { throw 'The git counts must stand in the status bar below the tree' }
+    $syncPosition = & C:\sbx\data\uiaprobe.exe XournalStudioWindow 'Synchronisieren' --exact
+    if ($LASTEXITCODE -ne 0) { throw 'Sync button not found' }
     $syncX, $syncY = "$syncPosition".Trim() -split ' '
     if ([int]$syncY -ne [int]$y -or [int]$syncX -ge [int]$x -or [int]$y -ge $fileRow[1]) {
         throw 'File actions must be side by side above the tree'
@@ -98,7 +103,7 @@ Invoke-Test {
     Stroke 600 300 850 330
     [Inj]::Ctrl(0x53); Start-Sleep 3   # Strg+S
     "saved: $(Hash "$work\test.xopp")"
-    WaitFor 'sync button with a changed file' { SyncPosition "1  ${up}1  ${down}2" }
+    WaitFor 'sync button with a changed file' { SyncPosition "Git: 1  ${up}1  ${down}2" }
     Shot '02-modified-blue'
     MenuOnRow 'test.xopp' 'verwerfen'
     Shot '03-discard-question'

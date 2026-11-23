@@ -31,6 +31,10 @@ namespace xournal::app
         /// Syncs the repository holding `folder` (nothing: no project folder - said).
         void Sync(std::optional<std::filesystem::path> const& folder);
 
+        /// Only fetches and brings the server's commits in (Datei → Vom Server holen): no commit, no upload, no question
+        /// about saving first; the same handling of the open document if the pull changed it.
+        void Pull(std::optional<std::filesystem::path> const& folder);
+
         /// While a sync runs: tells the user that `what` waits for it ("Öffnen", "Das Ändern von Dateien") and returns
         /// true.
         bool RefusedWhileSyncing(std::wstring const& what) const;
@@ -45,7 +49,8 @@ namespace xournal::app
         std::function<void(bool succeeded)> finished;
 
     private:
-        void Finish(git::SyncResult const& result);
+        void Run(std::optional<std::filesystem::path> const& folder, bool pullOnly);
+        void Finish(git::SyncResult const& result, bool pullOnly);
         bool ResolvePulledDocument();
         void SetSyncing(bool value);
         void SaveIfRequested();

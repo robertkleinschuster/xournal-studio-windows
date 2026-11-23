@@ -23,6 +23,8 @@ namespace xournal::git::upstream
     /// `cancelled` (may be empty) is asked by the progress callbacks; yes stops the fetch (Error, E_ABORT).
     void Fetch(git_remote* remote, CredentialProvider const& credentials, std::function<bool()> const& cancelled = {});
 
-    /// Pushes `head` to its upstream branch; a reference the remote rejects is thrown.
-    void Push(git_repository* repo, git_remote* remote, git_reference* head, CredentialProvider const& credentials);
+    /// Pushes `head` to its upstream branch. Returns what the remote refused ("<ref>: <reason>"), empty when it took
+    /// everything - a rejection is usually another client's push since the last fetch, so the caller fetches and retries.
+    /// Transport and sign-in errors are thrown.
+    std::string Push(git_repository* repo, git_remote* remote, git_reference* head, CredentialProvider const& credentials);
 }
