@@ -5,7 +5,7 @@
 #   $vs = Enter-XournalVsDevEnv      # once per process; the environment stays for the rest of the script
 
 function Get-XournalVs {
-    $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+    $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath
     if (-not $vs) { throw 'Visual Studio not found (vswhere)' }
     $vs
 }

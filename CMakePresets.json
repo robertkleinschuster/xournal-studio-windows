@@ -1,0 +1,29 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "default",
+      "displayName": "Ninja Multi-Config, ccache",
+      "description": "The project's build: Ninja Multi-Config, the own code through ccache, dependencies from the shared cache. Needs the x64 developer environment (build.ps1 and Visual Studio's CMake support enter it; Ninja is on its PATH).",
+      "generator": "Ninja Multi-Config",
+      "binaryDir": "${sourceDir}/.local-build/cmake",
+      "architecture": { "value": "x64", "strategy": "external" },
+      "toolset": { "value": "host=x64", "strategy": "external" },
+      "cacheVariables": {
+        "XOURNAL_CCACHE": "ON",
+        "XOURNAL_DEPS_CONFIGS": "Release"
+      }
+    },
+    {
+      "name": "with-debug",
+      "displayName": "Ninja Multi-Config, ccache, Release and Debug dependencies",
+      "inherits": "default",
+      "cacheVariables": { "XOURNAL_DEPS_CONFIGS": "Release;Debug" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "release", "configurePreset": "default", "configuration": "Release" },
+    { "name": "debug", "configurePreset": "with-debug", "configuration": "Debug" }
+  ]
+}

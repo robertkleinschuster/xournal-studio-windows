@@ -1,4 +1,6 @@
 # Builds the native Xournal Studio with Visual Studio's CMake, Ninja (Multi-Config) and MSVC, and runs the unit tests.
+# The configuration lives in CMakePresets.json (also what Visual Studio, VS Code and CLion use); this script adds the
+# developer environment, the build lock, ccache statistics, the build log and the test run.
 # - Third-party code comes from the shared dependency cache (cmake/DependencyCache.cmake): built once per pin,
 #   configuration and toolchain into %LOCALAPPDATA%\XournalStudioBuildCache ($env:XOURNAL_DEPS_CACHE).
 # - The project's own code is compiled through ccache (pinned, XOURNAL_CCACHE): one cache for all worktrees
@@ -41,8 +43,14 @@ try {
     }
     if (-not (Test-Path (Join-Path $build 'build.ninja')) -or $configs -notcontains $Config) {
         $configs = @($configs + $Config | Select-Object -Unique)
-        & $cmake -S $PSScriptRoot -B $build -G 'Ninja Multi-Config' "-DCMAKE_MAKE_PROGRAM=$(Get-XournalNinja $vs)" `
-            -DXOURNAL_CCACHE=ON "-DXOURNAL_DEPS_CONFIGS=$($configs -join ';')"
+        # The project's configuration is CMakePresets.json (generator, build folder, ccache); the script adds only what
+        # depends on this machine and tree: Visual Studio's Ninja and the configurations whose dependencies get built.
+        Push-Location $PSScriptRoot
+        try
+        {
+            & $cmake --preset default "-DCMAKE_MAKE_PROGRAM=$(Get-XournalNinja $vs)" "-DXOURNAL_DEPS_CONFIGS=$($configs -join ';')"
+        }
+        finally { Pop-Location }
         if ($LASTEXITCODE) { throw "configure failed ($LASTEXITCODE)" }
     }
     $line = Select-String -Path $cacheFile -Pattern '^XOURNAL_CCACHE_EXE:INTERNAL=(.*)$' | Select-Object -First 1
