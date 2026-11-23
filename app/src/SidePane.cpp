@@ -284,12 +284,13 @@ namespace xournal::app
         syncing = value;
         if (!SendMessageW(fileBar, TB_ENABLEBUTTON, SyncId, MAKELPARAM(!syncing, 0)))
             ThrowHr("TB_ENABLEBUTTON (sync)", E_FAIL);
-        UpdateSyncButton();
+        // The button keeps its text and width while a sync runs (a wider text made the toolbar cut it off); the
+        // greyed button shows the sync.
     }
 
     void SidePane::UpdateSyncButton()
     {
-        std::wstring text = syncing ? L"Synchronisiert …" : syncText;
+        std::wstring text = syncText;
         bool showText = !text.empty();
         if (!showText) text = L"Synchronisieren";
         TBBUTTONINFOW info{ sizeof(info), TBIF_TEXT | TBIF_STYLE };
