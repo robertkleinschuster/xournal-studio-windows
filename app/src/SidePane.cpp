@@ -253,11 +253,14 @@ namespace xournal::app
                 ThrowLastError("MoveWindow (side pane content)");
         }
         SIZE toolbar{};
+        SendMessageW(fileBar, TB_SETINDENT, 0, 0); // the buttons' own width, without an earlier indent
         if (!SendMessageW(fileBar, TB_GETMAXSIZE, 0, reinterpret_cast<LPARAM>(&toolbar)))
             ThrowHr("TB_GETMAXSIZE (file toolbar)", E_FAIL);
-        LONG barWidth = std::min(width, toolbar.cx);
+        // The toolbar spans the whole row, so one background (the pane's, like the tree below) fills it; its buttons
+        // sit at the right end through the toolbar's own indent.
         LONG barHeight = std::min(height, toolbar.cy);
-        if (!MoveWindow(fileBar, page.right - barWidth, page.top, barWidth, barHeight, TRUE))
+        SendMessageW(fileBar, TB_SETINDENT, std::max(0L, width - toolbar.cx), 0);
+        if (!MoveWindow(fileBar, page.left, page.top, width, barHeight, TRUE))
             ThrowLastError("MoveWindow (file toolbar)");
         if (!MoveWindow(explorer->Window(), page.left, page.top + barHeight, width, height - barHeight, TRUE))
             ThrowLastError("MoveWindow (explorer tree)");
