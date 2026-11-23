@@ -51,11 +51,6 @@
       "execution": {
         "noTestsAction": "error",
         "jobs": ""
-      },
-      "filter": {
-        "exclude": {
-          "name": "^InkPagesTests_NOT_BUILT$"
-        }
       }
     },
     {
@@ -69,11 +64,6 @@
       "execution": {
         "noTestsAction": "error",
         "jobs": ""
-      },
-      "filter": {
-        "exclude": {
-          "name": "^InkPagesTests_NOT_BUILT$"
-        }
       }
     }
   ]

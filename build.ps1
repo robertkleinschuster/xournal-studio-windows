@@ -26,7 +26,7 @@ try {
     & $cmake --build --preset $preset @targets | Tee-Object (Join-Path $PSScriptRoot '.local-build/build-output.log') # CI's job summary lists its errors
     if ($LASTEXITCODE) { throw "build failed ($LASTEXITCODE)" }
     if (-not $NoTests -and (-not $Target -or $Tests)) {
-        $filter = @(); if ($Tests) { $filter += '-R', $Tests }; if ($env:XOURNAL_TEST_EXCLUDE) { $filter += '-E', "^InkPagesTests_NOT_BUILT`$|$env:XOURNAL_TEST_EXCLUDE" } # -E replaces the preset's own exclusion
+        $filter = @(); if ($Tests) { $filter += '-R', $Tests }; if ($env:XOURNAL_TEST_EXCLUDE) { $filter += '-E', $env:XOURNAL_TEST_EXCLUDE }
         & (Get-XournalCMake $vs 'ctest') --preset $preset @filter; if ($LASTEXITCODE) { throw "unit tests failed ($LASTEXITCODE)" }
     }
 }
