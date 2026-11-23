@@ -26,7 +26,10 @@ find_path(PROTOZERO_INCLUDE_DIR protozero/pbf_reader.hpp REQUIRED) # header-only
 
 # qpdf's CMake package names its dependencies without a path (zlib, jpeg, and the debug names zlibd, jpeg): the linker
 # finds them in vcpkg's library folder of the configuration being built.
-link_directories("${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/$<$<CONFIG:Debug>:debug/>lib")
+# That is the vcpkg port's export, so the library folder is told to the imported target that carries these names (not
+# to every target of the project).
+set_property(TARGET qpdf::libqpdf APPEND PROPERTY
+    INTERFACE_LINK_DIRECTORIES "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/$<$<CONFIG:Debug>:debug/>lib")
 
 # The license texts of the libraries linked statically (vcpkg: share/<port>/copyright) go to <build>/licenses/<port>;
 # install.ps1 stages them next to the exe.
