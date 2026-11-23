@@ -1,6 +1,6 @@
 # Visual Studio for the build scripts: the installation (vswhere), its CMake/CTest/Ninja, and the compiler environment
 # of its x64 developer prompt (Microsoft's DevShell module) - the Ninja generator calls cl.exe directly, which needs
-# that environment (INCLUDE, LIB, PATH).
+# that environment (INCLUDE, LIB, PATH), and VCPKG_ROOT for the vcpkg toolchain file of the CMake preset.
 #   . (Join-Path $PSScriptRoot 'tools\VsDevEnv.ps1')
 #   $vs = Enter-XournalVsDevEnv      # once per process; the environment stays for the rest of the script
 
@@ -19,6 +19,9 @@ function Get-XournalNinja([string]$Vs) {
 }
 
 function Enter-XournalVsDevEnv {
+    # vcpkg (CMakePresets.json: $env{VCPKG_ROOT}); setx reaches new processes only, so read the user's value.
+    if (-not $env:VCPKG_ROOT) { $env:VCPKG_ROOT = [Environment]::GetEnvironmentVariable('VCPKG_ROOT', 'User') }
+    if (-not $env:VCPKG_ROOT) { throw 'VCPKG_ROOT is not set: clone https://github.com/microsoft/vcpkg and set it (see CLAUDE.md)' }
     $vs = Get-XournalVs
     if (-not $env:VSCMD_VER) {
         Import-Module (Join-Path $vs 'Common7\Tools\Microsoft.VisualStudio.DevShell.dll')

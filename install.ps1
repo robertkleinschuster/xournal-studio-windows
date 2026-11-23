@@ -47,32 +47,18 @@ if (-not $SkipInstall) { Assert-NotRunning; Assert-NoLegacyMsi }
 
 function Stage-LocalApp([string]$BuildDir, [string]$SourceDir) {
     # Stage: the exe, the DLLs the build put next to it (pdfium.dll), its licenses folder, and the license texts of the
-    # statically linked third-party code (the configure copies them from the dependency cache to <build>\licenses,
-    # cmake/DependencyCache.cmake).
+    # statically linked third-party code (the configure copies vcpkg's share/<port>/copyright to <build>\licenses/<port>,
+    # CMakeLists.txt; darkmodelib's come from app/Darkmodelib.cmake).
     $output = Join-Path $BuildDir "app\$Config"
     if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
     New-Item -ItemType Directory -Force $stage | Out-Null
     Copy-Item (Join-Path $output $exeName) $stage
     Get-ChildItem $output -Filter *.dll | Copy-Item -Destination $stage
     if (Test-Path (Join-Path $output 'licenses')) { Copy-Item -Recurse (Join-Path $output 'licenses') $stage }
-    $licenses = @(
-        @{ Name = 'zlib'; Files = @('LICENSE') },
-        @{ Name = 'qpdf'; Files = @('LICENSE.txt', 'NOTICE.md') },
-        @{ Name = 'libjpeg-turbo'; Files = @('LICENSE.md') },
-        @{ Name = 'protozero'; Files = @('LICENSE.md', 'LICENSE.from_folly') },
-        @{ Name = 'libgit2'; Files = @('COPYING') },
-        @{ Name = 'darkmodelib'; Files = @('LICENSE.md', 'LICENSE-MIT.md', 'LICENSE-PolyHook_2_0.md',
-            'LICENSE-UAHMenuBar.md', 'LICENSE-win32-darkmode.md') }
-    )
-    foreach ($license in $licenses) {
-        $folder = Join-Path $stage "licenses\$($license.Name)"
-        New-Item -ItemType Directory -Force $folder | Out-Null
-        foreach ($file in $license.Files) {
-            $text = Join-Path $BuildDir "licenses\$($license.Name)\$file"
-            if (-not (Test-Path $text)) { throw "license text missing: $text" }
-            Copy-Item $text $folder
-        }
+    foreach ($name in 'zlib', 'qpdf', 'libjpeg-turbo', 'protozero', 'libgit2', 'darkmodelib') {
+        if (-not (Test-Path (Join-Path $BuildDir "licenses\$name"))) { throw "license text missing: $BuildDir\licenses\$name" }
     }
+    Copy-Item -Recurse (Join-Path $BuildDir 'licenses\*') (New-Item -ItemType Directory -Force (Join-Path $stage 'licenses'))
     Copy-Item (Join-Path $SourceDir 'THIRD-PARTY.md') (Join-Path $stage 'licenses')
 }
 

@@ -30,7 +30,7 @@ target_compile_definitions(XournalTests PRIVATE XOURNAL_EXAMPLES_DIR=L"${CMAKE_S
 # The pdf tests build source PDFs and inspect results with qpdf, encode pictures with WIC and open results with
 # Windows.Data.Pdf.
 target_include_directories(XournalTests PRIVATE ../app/src ../external/InkPages/include)
-target_link_libraries(XournalTests PRIVATE XournalIo XournalPdf libqpdf GTest::gtest_main ole32 crypt32 windowscodecs windowsapp d2d1 dxguid)
+target_link_libraries(XournalTests PRIVATE XournalIo XournalPdf qpdf::libqpdf GTest::gtest_main ole32 crypt32 windowscodecs windowsapp d2d1 dxguid)
 include(GoogleTest)
 gtest_discover_tests(XournalTests)
 add_subdirectory(services)

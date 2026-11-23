@@ -6,7 +6,7 @@ add_executable(XournalPdfTextTests
 )
 target_include_directories(XournalPdfTextTests PRIVATE ..)
 target_compile_options(XournalPdfTextTests PRIVATE ${XOURNAL_COMPILE_OPTIONS})
-target_link_libraries(XournalPdfTextTests PRIVATE XournalPdfText libqpdf GTest::gtest_main)
+target_link_libraries(XournalPdfTextTests PRIVATE XournalPdfText qpdf::libqpdf GTest::gtest_main)
 xournal_deploy_pdfium(XournalPdfTextTests)
 include(GoogleTest)
 gtest_discover_tests(XournalPdfTextTests)

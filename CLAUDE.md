@@ -119,7 +119,7 @@ long formulas in several colors. For open pen/UI design questions, propose how O
   running build); local builds stay rare.
 - **One build at a time** on the machine (CPU, LNK1104 file locks across worktrees): `build.ps1`, `install.ps1` and
   `tools\with-build-lock.ps1 <command>` (for raw `cmake --build`/`ctest`) hold the named mutex `Global\XournalStudioBuild`
-  (`tools/BuildLock.ps1`); a second build waits and logs the holder (`%LOCALAPPDATA%\XournalStudioBuildCache\
+  (`tools/BuildLock.ps1`); a second build waits and logs the holder (`%LOCALAPPDATA%\XournalStudioLocks\
   build-lock-holder.txt`); Windows releases it when the script ends in any way. Never build outside the lock.
 - **Targeted tests for small changes:** build and test only what changed (`.\build.ps1 -Target XournalTests -Tests
   '^Pdf'`), so the lock is held briefly; leave the full run to CI.
@@ -146,25 +146,35 @@ installer\Build-Installer.ps1                              # local setup numbere
 - `install.ps1` installs to `%LOCALAPPDATA%\Programs\Xournal Studio (Win32)` + Start menu entry, then a start check; it
   refuses while the installed app runs and while the legacy MSI (releases up to 0.3.8) is installed. `-FromCi` downloads the artifact `app-<sha>`
   (`tools\CiArtifact.ps1`, gh) – same checks, folder and start check; it logs run and commit.
-- **Build system:** `build.ps1` configures `Ninja Multi-Config` (Visual Studio's ninja.exe) in the VS x64 developer
-  environment (`tools/VsDevEnv.ps1`; `with-build-lock.ps1` enters it too) and compiles the own code through ccache
-  4.14.2 (pinned, in the dependency cache; `XOURNAL_CCACHE`, `CMAKE_<LANG>_COMPILER_LAUNCHER`; `CCACHE_BASEDIR` = source
-  root, `CCACHE_NOHASHDIR`, `compiler_check=content` and the /showIncludes prefix of the installed MSVC language – a
-  German MSVC writes "Hinweis: Einlesen der Datei:" – so all worktrees share `%LOCALAPPDATA%\ccache` / `CCACHE_DIR`;
-  measured: a second worktree hits 100 %). Debug info `/Z7` (ccache cannot cache `/Zi`). Build folder
-  `.local-build\cmake` (outputs `app\<Config>`); an old Visual Studio-generator tree there is removed and reconfigured;
-  build.ps1 configures only a new tree or configuration. IDE: open the folder in Visual Studio (CMake).
-- **Dependency cache** (`cmake/DependencyCache.cmake`): zlib, libjpeg-turbo, qpdf and libgit2 are built once per pin,
-  recipe, configuration and toolchain into `%LOCALAPPDATA%\XournalStudioBuildCache\<name>-<version>-<key>\<config>`
-  (root `XOURNAL_DEPS_CACHE`); PDFium, protozero and ccache are downloaded once into `...\files`. The key hashes URL,
-  SHA-256, CMake arguments, the cache module and compiler/generator/SDK. Built at configure time under a file lock into
-  `<config>.tmp`, renamed when installed; logs `<config>-configure|build|install.log` beside it; a failure stops the
-  configure. Only `XOURNAL_DEPS_CONFIGS` are built. Delete old key folders by hand. GoogleTest is built per tree
-  (InkPages declares it). Filling the cache locally took 359 s (12 threads; qpdf 237, libgit2 85); before, every fresh
-  tree spent ~12 min on third-party code.
+- **Build system:** `CMakePresets.json` holds the configuration (also what Visual Studio, VS Code and CLion use):
+  configure preset `default` = `Ninja Multi-Config`, binary dir `.local-build\cmake` (outputs `app\<Config>`), the vcpkg
+  toolchain (`CMAKE_TOOLCHAIN_FILE=$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake`, `VCPKG_TARGET_TRIPLET=
+  x64-windows-static`) and ccache; build and test presets `release` / `debug` (tests: parallel, output on failure,
+  JUnit file `.local-build\ctest-junit.xml`, no tests found = error; `-R`/`-E` on the command line still work).
+  `build.ps1` is a thin wrapper: it enters the VS x64 developer environment (`tools/VsDevEnv.ps1`, also reads
+  `VCPKG_ROOT` from the user environment because `setx` reaches new processes only; `with-build-lock.ps1` enters it
+  too), holds the build lock and calls `cmake --preset default`, `cmake --build --preset`, `ctest --preset`.
+- **Third-party libraries: vcpkg in manifest mode** (`vcpkg.json`, `builtin-baseline` = a commit of the vcpkg clone at
+  `VCPKG_ROOT`; zlib pinned to 1.3.1 by `overrides`): zlib, libjpeg-turbo, qpdf, libgit2 (default features: WinHTTP,
+  no SSH; external PCRE and http-parser ports), protozero (header-only, found with `find_path`). They are built for
+  `x64-windows-static` (static libs, static CRT) at configure time into `<build>\vcpkg_installed` and come from vcpkg's
+  **binary cache** (default `%LOCALAPPDATA%\vcpkg\archives`, shared by all worktrees; CI: files provider
+  `VCPKG_DEFAULT_BINARY_CACHE` + actions/cache). The configure copies each port's `share/<port>/copyright` to
+  `<build>\licenses\<port>` (install.ps1 stages them). qpdf's CMake package names `zlib`/`jpeg` without path: a
+  `link_directories` on vcpkg's lib folder resolves them. PDFium (prebuilt, no port): `FetchContent` URL + SHA-256 in
+  `pdftext/CMakeLists.txt`. GoogleTest: FetchContent per tree. ccache is the installed tool (`find_program`), not a
+  library; the launcher settings (`CCACHE_BASEDIR` = source root, `CCACHE_NOHASHDIR`, `compiler_check=content`, the
+  /showIncludes prefix of the installed MSVC language – a German MSVC writes "Hinweis: Einlesen der Datei:") let all
+  worktrees share `%LOCALAPPDATA%\ccache` / `CCACHE_DIR`. Debug info `/Z7` (ccache cannot cache `/Zi`).
+- **New machine:** `winget install Microsoft.VisualStudio.BuildTools --override "--passive --config <repo>\.vsconfig"`
+  (or Visual Studio 2026 with C++ and CMake), `winget install Ccache.Ccache --scope user`, `git clone
+  https://github.com/microsoft/vcpkg D:\src\vcpkg` + `D:\src\vcpkg\bootstrap-vcpkg.bat -disableMetrics` + `setx
+  VCPKG_ROOT D:\src\vcpkg`, then `git submodule update --init` and `.\build.ps1`. The first build of the libraries
+  takes minutes (both configurations); later trees restore them from the binary cache in seconds.
 - **CI details** (`build.yml`, `windows-2025-vs2026`, actions pinned by SHA): push to main, tags `v*`, by hand;
-  docs-only pushes (`**.md`, `docs/**`, `examples/**/*.png`, ...) build nothing; tags are never cancelled. Dependency
-  cache and ccache via actions/cache (saved also from cancelled runs). Tests run in parallel; the job summary lists
+  docs-only pushes (`**.md`, `docs/**`, `examples/**/*.png`, ...) build nothing; tags are never cancelled. vcpkg
+  (the runner's clone, baseline commit fetched) with its binary cache folder, and ccache via actions/cache (saved
+  also from cancelled runs). Tests run in parallel; the job summary lists
   compiler errors and failed tests (`gh run view <id> [--log-failed]`). Every main push and tag runs `install.ps1
   -SkipInstall` and uploads `app-<sha>` (exe, pdfium.dll, licenses\; 5 days). A tag also builds the setup and a portable
   zip (+ THIRD-PARTY.md, README.txt); a separate job (the only one with `contents: write`) creates the pre-release

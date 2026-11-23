@@ -14,6 +14,6 @@ target_include_directories(XournalServicesTests PRIVATE ..)
 target_compile_options(XournalServicesTests PRIVATE ${XOURNAL_COMPILE_OPTIONS})
 # The git tests set up their repositories (bare remote, clones, first commit) with libgit2 itself.
 target_link_libraries(XournalServicesTests PRIVATE XournalProject XournalGit XournalTasks XournalRecovery
-    XournalSettings xournal_libgit2 GTest::gtest ole32 windowsapp)
+    XournalSettings libgit2::libgit2package GTest::gtest ole32 windowsapp)
 include(GoogleTest)
 gtest_discover_tests(XournalServicesTests)

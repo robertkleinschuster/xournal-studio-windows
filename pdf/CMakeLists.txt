@@ -3,7 +3,6 @@
 # qpdf does the PDF structure (page import, annotation flattening, writing);
 # Windows does text (DirectWrite, Font Subsetting API) and pictures (WIC). Depends on io (and so on model and base):
 # the export draws the model's StrokeShape parts and BackgroundRuling - model never depends on pdf.
-include(Dependencies.cmake)
 
 add_library(XournalPdf STATIC
     src/ContentStream.cpp
@@ -28,4 +27,4 @@ add_library(XournalPdf STATIC
 )
 target_include_directories(XournalPdf PUBLIC include PRIVATE src)
 target_compile_options(XournalPdf PRIVATE ${XOURNAL_COMPILE_OPTIONS})
-target_link_libraries(XournalPdf PUBLIC XournalIo PRIVATE libqpdf dwrite windowscodecs fontsub ole32 d3d11 dxgi windows.data.pdf windowsapp)
+target_link_libraries(XournalPdf PUBLIC XournalIo PRIVATE qpdf::libqpdf dwrite windowscodecs fontsub ole32 d3d11 dxgi windows.data.pdf windowsapp)

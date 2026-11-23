@@ -15,12 +15,33 @@ set(XOURNAL_COMPILE_OPTIONS /W4 /WX /permissive- /EHsc /utf-8)
 set(XOURNAL_DEFINITIONS UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 
 include(FetchContent)
-# Third-party code is built once into a shared cache outside the build tree and reused by every worktree and CI run
-# (cmake/DependencyCache.cmake); each module's Dependencies.cmake holds its pins.
-include(cmake/DependencyCache.cmake)
 
-# Compiler cache for the project's own code (build.ps1 turns it on): ccache (pinned release, downloaded into the
-# dependency cache) as the compiler launcher - launchers work with the Ninja generators only. CCACHE_BASEDIR makes the
+# Third-party libraries come from vcpkg in manifest mode (vcpkg.json, pinned by its builtin-baseline), built for the
+# triplet x64-windows-static (static libraries, static CRT) by the toolchain file CMakePresets.json sets, and reused
+# from vcpkg's binary cache. PDFium (prebuilt binaries, no vcpkg port) is fetched in pdftext/CMakeLists.txt.
+find_package(ZLIB REQUIRED)
+find_package(qpdf CONFIG REQUIRED)
+find_package(libgit2 CONFIG REQUIRED)
+find_path(PROTOZERO_INCLUDE_DIR protozero/pbf_reader.hpp REQUIRED) # header-only, vcpkg ships no CMake package
+
+# qpdf's CMake package names its dependencies without a path (zlib, jpeg, and the debug names zlibd, jpeg): the linker
+# finds them in vcpkg's library folder of the configuration being built.
+link_directories("${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/$<$<CONFIG:Debug>:debug/>lib")
+
+# The license texts of the libraries linked statically (vcpkg: share/<port>/copyright) go to <build>/licenses/<port>;
+# install.ps1 stages them next to the exe.
+file(GLOB xournal_vcpkg_licenses "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/share/*/copyright")
+if(NOT xournal_vcpkg_licenses)
+    message(FATAL_ERROR "no vcpkg copyright files in ${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/share")
+endif()
+foreach(license IN LISTS xournal_vcpkg_licenses)
+    get_filename_component(port "${license}" DIRECTORY)
+    get_filename_component(port "${port}" NAME)
+    file(COPY "${license}" DESTINATION "${CMAKE_BINARY_DIR}/licenses/${port}")
+endforeach()
+
+# Compiler cache for the project's own code (build.ps1 turns it on): the installed ccache (winget install
+# Ccache.Ccache) as the compiler launcher - launchers work with the Ninja generators only. CCACHE_BASEDIR makes the
 # paths relative to the source root, so every worktree hits the same cache (ccache's default directory, or CCACHE_DIR).
 # Debug information embedded in the objects (/Z7): ccache cannot cache /Zi's shared PDB.
 set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "$<$<CONFIG:Debug,RelWithDebInfo>:Embedded>")
@@ -29,32 +50,16 @@ if(XOURNAL_CCACHE)
     if(NOT CMAKE_GENERATOR MATCHES "Ninja")
         message(FATAL_ERROR "XOURNAL_CCACHE needs a Ninja generator (compiler launchers), not ${CMAKE_GENERATOR}")
     endif()
-    xournal_cached_dependency(ccache VERSION 4.14.2
-        URL https://github.com/ccache/ccache/releases/download/v4.14.2/ccache-4.14.2-windows-x86_64.zip
-        SHA256 6993ce645e53192cec592ee23186200b574ac4c59097ecde8d9cfd681b47ae84
-        DOWNLOAD_ONLY)
+    find_program(XOURNAL_CCACHE_EXE ccache REQUIRED) # winget install Ccache.Ccache
     # ccache settings for sharing between worktrees and CI machines: paths relative to the source root, the build
     # folder not hashed, the compiler identified by its content (not its file time), and the /showIncludes prefix of
     # the installed MSVC language (CMake detects it; a German MSVC writes "Hinweis: Einlesen der Datei:").
     set(XOURNAL_CCACHE_LAUNCHER ${CMAKE_COMMAND} -E env CCACHE_BASEDIR=${CMAKE_SOURCE_DIR} CCACHE_NOHASHDIR=1
-        CCACHE_COMPILERCHECK=content "CCACHE_MSVC_DEP_PREFIX=${CMAKE_CL_SHOWINCLUDES_PREFIX}" ${ccache_PREFIX}/ccache.exe)
+        CCACHE_COMPILERCHECK=content "CCACHE_MSVC_DEP_PREFIX=${CMAKE_CL_SHOWINCLUDES_PREFIX}" ${XOURNAL_CCACHE_EXE})
     set(CMAKE_C_COMPILER_LAUNCHER ${XOURNAL_CCACHE_LAUNCHER})
     set(CMAKE_CXX_COMPILER_LAUNCHER ${XOURNAL_CCACHE_LAUNCHER})
-    set(XOURNAL_CCACHE_EXE ${ccache_PREFIX}/ccache.exe CACHE INTERNAL "")
     message(STATUS "ccache: ${XOURNAL_CCACHE_EXE}")
 endif()
-
-# zlib: Windows has no public gzip API. The sources of the pinned release are compiled into a static library with the
-# project's runtime by a small wrapper project (cmake/deps/zlib), because zlib's own CMake setup builds a DLL too and
-# predates the policies this CMake needs.
-xournal_cached_dependency(zlib VERSION 1.3.1
-    URL https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.gz
-    SHA256 9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23
-    SOURCE_WRAPPER ${CMAKE_CURRENT_SOURCE_DIR}/cmake/deps/zlib
-    LICENSES LICENSE)
-add_library(zlib INTERFACE)
-target_include_directories(zlib SYSTEM INTERFACE ${zlib_PREFIX}/include)
-target_link_libraries(zlib INTERFACE ${zlib_PREFIX}/lib/zlib.lib)
 
 add_subdirectory(base)
 add_subdirectory(model)

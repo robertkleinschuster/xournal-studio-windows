@@ -1,6 +1,6 @@
 # Machine-wide locks across all worktrees: named mutexes, which Windows releases when their process ends (also on
 # Ctrl+C or a crash); the same thread may enter one again (install.ps1 holds the build lock while it runs the
-# worktree's build.ps1). Who holds a lock is written to <dependency cache root>\<lock>-holder.txt, so a waiting script
+# worktree's build.ps1). Who holds a lock is written to %LOCALAPPDATA%\XournalStudioLocks\<lock>-holder.txt, so a waiting script
 # can say whom it waits for.
 #   Global\XournalStudioBuild    build-lock     one build at a time (build.ps1, install.ps1, tools\with-build-lock.ps1)
 #   Global\XournalStudioSandbox  sandbox-lock   one sandbox UI test at a time (UiTests\Run-AppTest.ps1)
@@ -9,8 +9,7 @@
 #   try { ... } finally { Exit-XournalBuildLock $lock }
 
 function Enter-XournalMachineLock([string]$MutexName, [string]$Lock, [string]$What) {
-    $root = $env:XOURNAL_DEPS_CACHE
-    if (-not $root) { $root = Join-Path $env:LOCALAPPDATA 'XournalStudioBuildCache' }
+    $root = Join-Path $env:LOCALAPPDATA 'XournalStudioLocks'
     New-Item -ItemType Directory -Force $root | Out-Null
     $holderFile = Join-Path $root "$Lock-holder.txt"
     $mutex = New-Object System.Threading.Mutex($false, $MutexName)

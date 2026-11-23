@@ -5,8 +5,9 @@ name: Build
 # `install.ps1 -FromCi` and `UiTests\Run-AppTest.ps1 -FromCi` take instead of a local build.
 # - Batching: a newer push to the same branch cancels the running build (concurrency); tags are never cancelled.
 # - Docs-only pushes build nothing (paths-ignore).
-# - Third-party code comes from the dependency cache (cmake/DependencyCache.cmake), the own code through ccache; both
-#   are kept with actions/cache. build.ps1 builds with Ninja.
+# - Third-party libraries come from vcpkg (manifest mode, vcpkg.json; the runner's vcpkg clone, VCPKG_ROOT) through its
+#   binary cache (a files provider folder), the own code through ccache; both folders are kept with actions/cache.
+#   build.ps1 builds with CMakePresets.json (Ninja).
 # - Failures: the failing tests (names and output) and compiler errors are listed in the job summary (gh run view).
 # A tag v* also zips the staged app, builds the installer (Inno Setup) and publishes the latest GitHub release (the only job that may write).
 on:
@@ -26,7 +27,7 @@ concurrency:
 jobs:
   build:
     runs-on: windows-2025-vs2026
-    timeout-minutes: 25 # about twice a cold run (third-party code and ccache empty)
+    timeout-minutes: 40 # about twice a cold run (vcpkg binary cache and ccache empty)
     env:
       # Windows on the runner has only the en-US handwriting recognizer; the search test writes German words.
       XOURNAL_TEST_EXCLUDE: '^Search\.HandwritingIsRecognisedAndCached$'
@@ -41,31 +42,40 @@ jobs:
 
       # The runner's %TEMP% is an 8.3 short path (C:\Users\RUNNER~1\...), which the git tests' expected paths do not
       # match (libgit2 reports the long path); RUNNER_TEMP has long names only.
-      - name: Temp folder with long names, dependency cache key
+      - name: Temp folder with long names, vcpkg, caches
         id: deps
         shell: pwsh
         run: |
           "TEMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
           "TMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
-          "XOURNAL_DEPS_CACHE=$env:RUNNER_TEMP\xs-deps" >> $env:GITHUB_ENV
+          "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
+          "VCPKG_DEFAULT_BINARY_CACHE=$env:RUNNER_TEMP\vcpkg-archives" >> $env:GITHUB_ENV
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\vcpkg-archives" | Out-Null
+          # The manifest's builtin-baseline is read from the vcpkg clone's git history: fetch that commit.
+          $baseline = (Get-Content vcpkg.json -Raw | ConvertFrom-Json).'builtin-baseline'
+          git -C $env:VCPKG_INSTALLATION_ROOT fetch --quiet origin $baseline
+          if ($LASTEXITCODE) { throw "fetching the vcpkg baseline $baseline failed ($LASTEXITCODE)" }
+          if (-not (Get-Command ccache -ErrorAction SilentlyContinue)) {
+              choco install ccache -y --no-progress
+              if ($LASTEXITCODE) { throw "choco install ccache failed ($LASTEXITCODE)" }
+          }
           "CCACHE_DIR=$env:RUNNER_TEMP\ccache" >> $env:GITHUB_ENV
           "CCACHE_MAXSIZE=2G" >> $env:GITHUB_ENV
-          "XOURNAL_JOB_START=$((Get-Date).ToUniversalTime().ToString('o'))" >> $env:GITHUB_ENV
           $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
           if (-not $vs) { throw 'Visual Studio not found (vswhere)' }
           $msvc = (Get-Content "$vs\VC\Auxiliary\Build\Microsoft.VCToolsVersion.default.txt").Trim()
           "msvc=$msvc" >> $env:GITHUB_OUTPUT
 
-      # The cache's folder names carry their own keys (pin, recipe, toolchain): a restored folder is only used when it
-      # matches, so a partial hit (restore-keys: same toolset, other pins) reuses the unchanged dependencies. The hosted
-      # image pool has more than one MSVC version (seen: 14.51 and 14.52), so each version's caches warm up once.
-      - name: Restore the dependency cache
+      # vcpkg's binary cache (files provider): one archive per library, ABI-hashed by vcpkg (port, options, compiler,
+      # triplet), so a restored archive is only used when it matches; the key follows vcpkg.json. The hosted image pool
+      # has more than one MSVC version (seen: 14.51 and 14.52), whose archives never match each other's.
+      - name: Restore the vcpkg binary cache
         id: deps-restore
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ runner.temp }}\xs-deps
-          key: xs-deps-${{ runner.os }}-msvc${{ steps.deps.outputs.msvc }}-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'pdf/Dependencies.cmake', 'services/git/Dependencies.cmake', 'pdftext/CMakeLists.txt', 'import/CMakeLists.txt') }}
-          restore-keys: xs-deps-${{ runner.os }}-msvc${{ steps.deps.outputs.msvc }}-
+          path: ${{ runner.temp }}\vcpkg-archives
+          key: vcpkg-${{ runner.os }}-msvc${{ steps.deps.outputs.msvc }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: vcpkg-${{ runner.os }}-msvc${{ steps.deps.outputs.msvc }}-
 
       # ccache's directory: per MSVC version and branch (a new key per run - caches are immutable), falling back to
       # main's.
@@ -127,38 +137,13 @@ jobs:
           retention-days: 5
           if-no-files-found: error
 
-      # Pushes often cancel a running build (concurrency), so the caches are also saved from cancelled and failed runs -
-      # but the dependency cache only when it is complete: the configure builds every dependency, and a finished
-      # configure leaves build.ninja (an incomplete cache under the exact key would never be replaced). Only the
-      # folders this run used are kept (each configure touches its folders' last-used file); downloads are needed only
-      # to build.
-      - name: Save the dependency cache
-        id: deps-prune
+      # Pushes often cancel a running build (concurrency): the binary cache is also saved from cancelled and failed runs
+      # (every archive in it is complete - vcpkg writes one when a library is built).
+      - name: Save the vcpkg binary cache
         if: always() && steps.deps-restore.outcome == 'success' && steps.deps-restore.outputs.cache-hit != 'true'
-        shell: pwsh
-        run: |
-          $trees = @('.local-build\cmake', (Join-Path $env:RUNNER_TEMP 's\.local-build\cmake'))
-          if (-not ($trees | Where-Object { Test-Path (Join-Path $_ 'build.ninja') })) {
-              'the configure did not finish: the dependency cache may be incomplete and is not saved'; exit 0
-          }
-          $root = $env:XOURNAL_DEPS_CACHE
-          $start = [DateTime]::Parse($env:XOURNAL_JOB_START).ToUniversalTime()
-          $downloads = Join-Path $root 'downloads'
-          if (Test-Path $downloads) { Remove-Item -Recurse -Force $downloads }
-          foreach ($dir in Get-ChildItem $root -Directory) {
-              $stamp = Join-Path $dir.FullName 'last-used'
-              if (-not (Test-Path $stamp) -or (Get-Item $stamp).LastWriteTimeUtc -lt $start) {
-                  "not used by this run, left out: $($dir.Name)"
-                  Remove-Item -Recurse -Force $dir.FullName
-              }
-          }
-          Get-ChildItem $root -Directory | ForEach-Object { "kept: $($_.Name)" }
-          'complete=true' >> $env:GITHUB_OUTPUT
-      - name: Save the dependency cache (upload)
-        if: always() && steps.deps-prune.outputs.complete == 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ runner.temp }}\xs-deps
+          path: ${{ runner.temp }}\vcpkg-archives
           key: ${{ steps.deps-restore.outputs.cache-primary-key }}
 
       # Every result ccache stored is valid on its own: kept also from cancelled and failed runs.

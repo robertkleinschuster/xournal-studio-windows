@@ -27,11 +27,13 @@ a delay-loaded DLL. Licenses: [THIRD-PARTY.md](THIRD-PARTY.md). The earlier C#/W
 
 ## Build, test, install
 
-Requires Windows 11 and Visual Studio 2026 with C++ (its CMake is used). Clone with `--recurse-submodules` (or run
+Requires Windows 11, Visual Studio 2026 with C++ (its CMake is used; `.vsconfig` lists the components), ccache
+(`winget install Ccache.Ccache`) and a vcpkg clone whose path is in the environment variable `VCPKG_ROOT` (libraries come
+from `vcpkg.json`, see CLAUDE.md). Clone with `--recurse-submodules` (or run
 `git submodule update --init`).
 
 ```powershell
-.\build.ps1            # configure (Visual Studio's CMake, Ninja, ccache), build Release, run the unit tests
+.\build.ps1            # CMakePresets.json: configure (Ninja, vcpkg, ccache), build Release, run the unit tests
 .\build.ps1 -NoTests
 .\build.ps1 -Target XournalTests -Tests '^Xml'   # one target and the tests matching a CTest regex
 .\install.ps1          # the committed state (HEAD, built in a clean worktree): tests, Release build, install to
