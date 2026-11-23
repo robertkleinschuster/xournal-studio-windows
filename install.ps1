@@ -31,19 +31,19 @@ function Assert-NotRunning {
     $running = Get-Process XournalStudio -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$target\*" }
     if ($running) { throw 'Xournal Studio (Win32) is running; close it first or use -SkipInstall.' }
 }
-# install.ps1 is for development, the MSI (installer\, GitHub releases) for releases; both use the same folder and
-# Start menu entry. While the MSI is installed this script refuses: replacing the folder under Windows Installer's feet
-# would leave the MSI's registration pointing at files it no longer owns (repair or uninstall would remove this build).
-# The MSI is found by its UpgradeCode (installer\XournalStudio.wxs).
-function Assert-NoMsi {
+# install.ps1 is for development, the setup (installer\, GitHub releases) for releases; both use the same folder and Start
+# menu entry and may replace each other (Inno Setup's uninstall removes only files it installed). Only the legacy MSI of
+# the releases up to 0.3.8 is refused: replacing the folder under Windows Installer's feet would let its repair or
+# uninstall remove this build. It is found by its UpgradeCode.
+function Assert-NoLegacyMsi {
     $installer = New-Object -ComObject WindowsInstaller.Installer
     $products = @($installer.GetType().InvokeMember('RelatedProducts', 'GetProperty', $null, $installer,
         @('{2ED20F25-015E-4F3B-9B2A-7572D4BBBB6A}')))
     if ($products.Count -gt 0) {
-        throw "Xournal Studio (Win32) is installed from its MSI ($($products -join ', ')); uninstall it first (Apps & Features, or msiexec /x $($products[0])) or use -SkipInstall."
+        throw "Xournal Studio (Win32) is installed from the legacy MSI ($($products -join ', ')); uninstall it first (Apps & Features, or msiexec /x $($products[0])) or use -SkipInstall."
     }
 }
-if (-not $SkipInstall) { Assert-NotRunning; Assert-NoMsi }
+if (-not $SkipInstall) { Assert-NotRunning; Assert-NoLegacyMsi }
 
 function Stage-LocalApp([string]$BuildDir, [string]$SourceDir) {
     # Stage: the exe, the DLLs the build put next to it (pdfium.dll), its licenses folder, and the license texts of the

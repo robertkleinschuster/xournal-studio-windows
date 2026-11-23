@@ -10,7 +10,7 @@ name: UI tests
 #   newest green Build: gh workflow run ui-tests.yml [--ref <branch>] -f tests=TasksTest,TextToolTest
 # - One job per test, in parallel; uiaprobe.exe (InkPages' UI Automation probe) is compiled once per version of its
 #   source and kept in the Actions cache. The summary job lists PASS/FAIL per test with links to its results artifact
-#   (screenshots, transcript, app logs). MsiTest (the installer) needs MSIs and stays a sandbox test.
+#   (screenshots, transcript, app logs). InstallerTest needs setup files and stays a sandbox test.
 # The same test scripts run locally in Windows Sandbox for debugging (UiTests\Run-AppTest.ps1).
 on:
   workflow_run:

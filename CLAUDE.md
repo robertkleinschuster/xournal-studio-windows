@@ -124,7 +124,7 @@ long formulas in several colors. For open pen/UI design questions, propose how O
 - **Targeted tests for small changes:** build and test only what changed (`.\build.ps1 -Target XournalTests -Tests
   '^Pdf'`), so the lock is held briefly; leave the full run to CI.
 - **UI tests run on GitHub** (`.github/workflows/ui-tests.yml`) after each green Build; the local sandbox is for
-  debugging a test and for `MsiTest`.
+  debugging a test and for `InstallerTest`.
 - Joint round after a batch: wait for its CI run (`gh run watch`), send errors to their owners, install the CI build
   (`.\install.ps1 -FromCi`), check the UI test summary.
 
@@ -139,12 +139,12 @@ git submodule update --init                              # InkPages (external/In
 .\install.ps1                                            # build HEAD locally in .local-build\install-source, install
 gh workflow run ui-tests.yml -f tests=TasksTest,TextToolTest [--ref <branch>] [-f build_run=<id>]
 UiTests\Run-AppTest.ps1 -FromCi -Test UiTests\<Test>.ps1 -Extra <uiaprobe.exe>   # local sandbox, for debugging
-installer\Build-Msi.ps1 -Version 0.2.0                   # MSI from .local-build\install-stage (install.ps1 -SkipInstall)
-installer\Build-Msi.ps1                                   # local MSI numbered as the next release (newest tag + 1 patch)
+installer\Build-Installer.ps1 -Version 0.2.0              # setup from .local-build\install-stage (install.ps1 -SkipInstall)
+installer\Build-Installer.ps1                              # local setup numbered as the next release (newest tag + 1 patch)
 ```
 
 - `install.ps1` installs to `%LOCALAPPDATA%\Programs\Xournal Studio (Win32)` + Start menu entry, then a start check; it
-  refuses while the installed app runs and while the MSI is installed. `-FromCi` downloads the artifact `app-<sha>`
+  refuses while the installed app runs and while the legacy MSI (releases up to 0.3.8) is installed. `-FromCi` downloads the artifact `app-<sha>`
   (`tools\CiArtifact.ps1`, gh) – same checks, folder and start check; it logs run and commit.
 - **Build system:** `build.ps1` configures `Ninja Multi-Config` (Visual Studio's ninja.exe) in the VS x64 developer
   environment (`tools/VsDevEnv.ps1`; `with-build-lock.ps1` enters it too) and compiles the own code through ccache
@@ -166,7 +166,7 @@ installer\Build-Msi.ps1                                   # local MSI numbered a
   docs-only pushes (`**.md`, `docs/**`, `examples/**/*.png`, ...) build nothing; tags are never cancelled. Dependency
   cache and ccache via actions/cache (saved also from cancelled runs). Tests run in parallel; the job summary lists
   compiler errors and failed tests (`gh run view <id> [--log-failed]`). Every main push and tag runs `install.ps1
-  -SkipInstall` and uploads `app-<sha>` (exe, pdfium.dll, licenses\; 5 days). A tag also builds the MSI and a portable
+  -SkipInstall` and uploads `app-<sha>` (exe, pdfium.dll, licenses\; 5 days). A tag also builds the setup and a portable
   zip (+ THIRD-PARTY.md, README.txt); a separate job (the only one with `contents: write`) creates the pre-release
   "Xournal Studio (Win32) <version>". Measured (2026-11-20, 4-core runner, whole job): Ninja + ccache **2.0 min warm**
   (configure 12 s, build 1.5 min), 8.9–15.5 min cold (was ~15–16 min per push). The hosted images alternate between two
@@ -174,16 +174,17 @@ installer\Build-Msi.ps1                                   # local MSI numbered a
   image). Runner quirks: `%TEMP%` is an 8.3 path, so the workflow points TEMP/TMP at `RUNNER_TEMP` (libgit2 reports long
   paths; whether the app should compare paths independent of 8.3 names is open); only the en-US handwriting recognizer,
   so `XOURNAL_TEST_EXCLUDE` (a CTest regex passed to `ctest -E`) leaves out `Search.HandwritingIsRecognisedAndCached`.
-- **install.ps1 is for development, the MSI for releases.** Both use the same folder and Start menu entry. Replacing
-  files under Windows Installer's feet would let a repair or uninstall remove the development build, hence the refusal;
-  installing the MSI over an install.ps1 folder takes it over, uninstall then removes only the MSI's files.
-- **MSI** (`installer/XournalStudio.wxs`, WiX Toolset 6.0.2 as a pinned .NET tool in `installer/dotnet-tools.json`):
-  per-user, no admin rights, no dialogs (progress only), Start menu shortcut with the app icon, Apps & Features entry
-  (icon, version, publisher Robert Kleinschuster), fixed UpgradeCode + MajorUpgrade. Uninstall removes exactly what it
-  installed; settings, recovery copies and documents stay. Unsigned: SmartScreen warns on first run; in the sandbox
-  every install spent ~2 min in Windows Installer's software restriction check ("is not digitally signed", then
-  permitted) – run `MsiTest` with `-TimeoutSeconds 1200`. ICE38/64/91 suppressed (roaming-profile rules; it installs into
-  local AppData). WiX 7 needs an EULA (OSMF) acceptance – the user's decision.
+- **install.ps1 is for development, the setup for releases.** Both use the same folder and Start menu entry and may
+  replace each other (Inno Setup's uninstall removes only the files it installed). Only the legacy MSI of the releases
+  up to 0.3.8 is refused (Windows Installer's repair/uninstall would remove the development build): uninstall it once.
+- **Setup** (`installer/XournalStudio.iss`, Inno Setup 6.7.3 = ISCC.exe, a native compiler; locally `winget install
+  JRSoftware.InnoSetup --scope user`, on the CI `choco install innosetup`; replaced the WiX MSI 2026-11-23, no .NET needed):
+  per-user, no admin rights, one page ("Bereit zur Installation" – Inno shows it when no page came before; progress
+  after), Start menu shortcut with the app icon, Apps & Features entry (icon, version, publisher Robert Kleinschuster),
+  fixed AppId: a setup of the same or a newer version installs over the installed one. Local builds are numbered as the
+  next release (newest tag + 1 patch, `-local`). Uninstall removes exactly what it installed; settings, recovery copies
+  and documents stay. Unsigned: SmartScreen warns on first run. `InstallerTest` (sandbox only) installs an older
+  and the new setup over it, starts the app from the shortcut, uninstalls silently and with the wizard.
 
 ## Architecture
 
@@ -286,7 +287,7 @@ code). In short: `base ← model ← io ← pdf, pdftext, search, import, servic
 - **Unit tests** (`tests/`, GoogleTest via CTest): every module, ported from the C# tests with the same sample XML, plus
   a lossless round trip of `examples\*.xopp`; services tests in a single-threaded apartment.
 - **UI tests on GitHub (standard since 2026-11-20, user's decision):** `ui-tests.yml` runs every `UiTests\*Test.ps1`
-  except `MsiTest` after each green Build of a push to main (`workflow_run`; no Build for docs-only pushes, so no UI
+  except `InstallerTest` after each green Build of a push to main (`workflow_run`; no Build for docs-only pushes, so no UI
   tests; a newer Build cancels running UI tests), one `windows-2025` job per test in parallel, with the Build's artifact
   `app-<sha>` (no build) and `uiaprobe.exe` compiled only when its source changes (Actions cache). The summary job lists
   PASS/FAIL per test with links to the artifact `ui-<Test>` (screenshots, transcript, app logs). A job takes ~1–2 min.
@@ -297,10 +298,10 @@ code). In short: `base ← model ← io ← pdf, pdftext, search, import, servic
   `PdfTextSelectTest` (a generated PDF: double click = word on the clipboard, a drag = a piece, a drag on ink = lasso),
   `TextToolTest`, `ClipboardTest`, `TasksTest`, `RecoveryTest`, `ExplorerTest` (+ `New-TestRepository.ps1`: a bare
   upstream `remote.git` two commits ahead and one local commit – the sync button's counts; restore, cut/copy/paste),
-  `MsiTest` (the installer, sandbox only). A test declares extra files in a `# Data: examples\X.pdf` line
+  `InstallerTest` (the installer, sandbox only). A test declares extra files in a `# Data: examples\X.pdf` line
   (`UiTests\TestData.ps1`, used by both runners); `examples\Schaltungen.*` always comes along. Scripts dot-source
   `C:\sbx\TestKit.ps1` (InkPages); comctl32 controls and menus are found with InkPages' `uiaprobe.exe`.
-- **Local sandbox** (debugging, `MsiTest`): `UiTests\Run-AppTest.ps1 -Test UiTests\<Test>.ps1` (`-FromCi` = the CI
+- **Local sandbox** (debugging, `InstallerTest`): `UiTests\Run-AppTest.ps1 -Test UiTests\<Test>.ps1` (`-FromCi` = the CI
   exe, `-AppDir <folder>`, else the local build) runs InkPages' runner on a desktop of its own (`-Show`: on the user's
   desktop – tell the user first). One test at a time across all worktrees: it waits for the mutex
   `Global\XournalStudioSandbox` (holder logged) and refuses while `wsb list` is not empty. Results in
@@ -314,4 +315,4 @@ code). In short: `base ← model ← io ← pdf, pdftext, search, import, servic
 - The parity list in `docs/CPP-UMZUG.md` (to be ticked off with commits), file associations (not built yet), the device
   test by the user.
 - Questions for the user: an attached copy `<name>.xopp.bg.pdf` instead of appending to the original PDF (offered, not
-  chosen); WiX 7 (EULA) vs. staying on WiX 6; a code-signing certificate.
+  chosen); a code-signing certificate.

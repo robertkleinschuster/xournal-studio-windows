@@ -8,7 +8,7 @@ name: Build
 # - Third-party code comes from the dependency cache (cmake/DependencyCache.cmake), the own code through ccache; both
 #   are kept with actions/cache. build.ps1 builds with Ninja.
 # - Failures: the failing tests (names and output) and compiler errors are listed in the job summary (gh run view).
-# A tag v* also zips the staged app, builds the MSI and publishes the latest GitHub release (the only job that may write).
+# A tag v* also zips the staged app, builds the installer (Inno Setup) and publishes the latest GitHub release (the only job that may write).
 on:
   push:
     branches: [main]
@@ -169,17 +169,23 @@ jobs:
           path: ${{ runner.temp }}\ccache
           key: ccache-${{ runner.os }}-msvc${{ steps.deps.outputs.msvc }}-${{ github.ref_name }}-${{ github.run_id }}
 
-      - name: Release files (zip, MSI)
+      - name: Release files (zip, installer)
         if: github.ref_type == 'tag'
         shell: pwsh
         run: |
+          # Inno Setup 6 (ISCC.exe, a native compiler) unless the image has it.
+          if (-not (Get-Command ISCC.exe -ErrorAction SilentlyContinue) -and
+              -not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+              choco install innosetup --version=6.7.3 -y --no-progress
+              if ($LASTEXITCODE) { throw "choco install innosetup failed ($LASTEXITCODE)" }
+          }
           $version = $env:GITHUB_REF_NAME.TrimStart('v')
           $stage = '.local-build\install-stage'
           Copy-Item THIRD-PARTY.md $stage
           @"
           Xournal Studio (Win32) $version - Windows 11 x64
 
-          Installed with the MSI (XournalStudio-Win32-$version-x64.msi): start it from the Start menu entry
+          Installed with the setup (XournalStudio-Win32-$version-x64-setup.exe): start it from the Start menu entry
           "Xournal Studio (Win32)"; uninstall in Apps & Features.
           Portable (the zip): unzip this folder anywhere and start XournalStudio.exe. Nothing is registered and nothing
           else is needed (static C++ runtime); delete the folder to remove it.
@@ -189,7 +195,7 @@ jobs:
           "@ | Set-Content -Encoding utf8 (Join-Path $stage 'README.txt')
           $zip = "XournalStudio-Win32-$version-x64.zip"
           Compress-Archive -Path "$stage\*" -DestinationPath $zip
-          .\installer\Build-Msi.ps1 -Version $version -Stage $stage -Out "XournalStudio-Win32-$version-x64.msi"
+          .\installer\Build-Installer.ps1 -Version $version -Stage $stage -Out "XournalStudio-Win32-$version-x64-setup.exe"
           $hash = (Get-FileHash (Join-Path $stage 'XournalStudio.exe') -Algorithm SHA256).Hash
           "XournalStudio.exe SHA-256: $hash"
           $hash | Set-Content -Encoding ascii exe.sha256
@@ -200,7 +206,7 @@ jobs:
         with:
           name: release
           path: |
-            XournalStudio-Win32-*-x64.msi
+            XournalStudio-Win32-*-x64-setup.exe
             XournalStudio-Win32-*-x64.zip
             exe.sha256
           if-no-files-found: error
@@ -239,9 +245,9 @@ jobs:
           - Side pane: project folder explorer with git colors and sync, todo.txt tasks, page thumbnails.
           - Saving only by choice, with recovery copies of unsaved changes; iPad (PencilKit) markup import.
 
-          **Install:** ``XournalStudio-Win32-$version-x64.msi`` - per user, no admin rights: installs to
+          **Install:** ``XournalStudio-Win32-$version-x64-setup.exe`` - per user, no admin rights: installs to
           ``%LOCALAPPDATA%\Programs\Xournal Studio (Win32)`` with a Start menu entry "Xournal Studio (Win32)" and an entry in
-          Apps & Features (uninstall there; settings, recovery copies and documents stay). A newer MSI replaces an older one.
+          Apps & Features (uninstall there; settings, recovery copies and documents stay). A newer setup replaces an older installation.
           Portable alternative: unzip ``XournalStudio-Win32-$version-x64.zip`` anywhere and start ``XournalStudio.exe``.
 
           The files are not signed (no code-signing certificate yet): Windows SmartScreen warns on the first start - choose
@@ -251,4 +257,4 @@ jobs:
 
           The earlier C#/WinUI version stays available at the tag ``csharp-final`` and the release v0.1.0.
           "@
-          gh release create $env:GITHUB_REF_NAME "XournalStudio-Win32-$version-x64.msi" "XournalStudio-Win32-$version-x64.zip" --repo $env:GITHUB_REPOSITORY --title "Xournal Studio (Win32) $version" --notes $notes --generate-notes --verify-tag --latest
+          gh release create $env:GITHUB_REF_NAME "XournalStudio-Win32-$version-x64-setup.exe" "XournalStudio-Win32-$version-x64.zip" --repo $env:GITHUB_REPOSITORY --title "Xournal Studio (Win32) $version" --notes $notes --generate-notes --verify-tag --latest

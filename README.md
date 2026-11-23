@@ -45,7 +45,7 @@ UiTests\Run-AppTest.ps1 -Test UiTests\TasksTest.ps1 -Extra <InkPages' uiaprobe.e
 
 CI (`.github/workflows/build.yml`) builds and runs the unit tests on every push to main (docs-only pushes excepted)
 and uploads the staged app; `.github/workflows/ui-tests.yml` then runs the UI tests on GitHub-hosted runners. A tag
-`v*` publishes the app as an MSI (see Installer) and a portable zip in a regular GitHub release marked Latest.
+`v*` publishes the app as a setup (see Installer) and a portable zip in a regular GitHub release marked Latest.
 
 ## Layout
 
@@ -58,7 +58,7 @@ external/InkPages/  the writing surface and its tools (submodule; only its libra
 examples/           sanitized example documents (unit tests round-trip them; UI tests use Schaltungen)
 docs/               the C++ migration plan (CPP-UMZUG.md)
 tools/              make_examples.py (derives examples/), build lock, VS environment, CI artifact download
-installer/          the MSI (WiX source, Build-Msi.ps1, the pinned wix tool)
+installer/          the installer (Inno Setup script, Build-Installer.ps1)
 .github/workflows/  CI: build + unit tests, UI tests; releases on tags v*
 build.ps1 install.ps1 CMakeLists.txt
 ```
@@ -199,7 +199,7 @@ the window's parts to feature classes:
 - Logs: `XOURNAL_STUDIO_LOG` (InkPages' lines in `<log>.inkpages.log` beside it), errors always in
   `%LOCALAPPDATA%\XournalStudioForWindows\errors.log`; `XOURNAL_STUDIO_CONFIG_DIR` for tests.
 
-UI tests (`UiTests/`, InkPages' TestKit; on GitHub runners by `ui-tests.yml` after each green build, all but `MsiTest`;
+UI tests (`UiTests/`, InkPages' TestKit; on GitHub runners by `ui-tests.yml` after each green build, all but `InstallerTest`;
 locally in Windows Sandbox with `Run-AppTest.ps1`, which refuses while a sandbox runs and holds the machine-wide mutex
 `Global\XournalStudioSandbox`): `InkRoundTripTest` (write, move, undo, erase, save, reload: untouched strokes byte-identical,
 moved ones shifted exactly), `DocumentFlowsTest` (PDF as a new document, the leave question, Save As with an attachment,
@@ -209,8 +209,9 @@ installer: silent and interactive install, start from the shortcut, upgrade, cle
 
 ## Installer
 
-`installer/` builds a per-user MSI with the WiX Toolset (pinned .NET tool): `installer\Build-Msi.ps1 -Version <x.y.z>`
-from the staged app (`install.ps1 -SkipInstall`). It installs to the same folder as `install.ps1` with the same Start
-menu entry, without admin rights, and registers in Apps & Features; a newer version replaces the old one. The MSI is
-for releases, `install.ps1` for development: `install.ps1` refuses while the MSI is installed. Unsigned: SmartScreen
-warns on the first start ("Weitere Informationen" -> "Trotzdem ausführen").
+`installer/` builds a per-user setup with Inno Setup 6 (ISCC.exe, native; `winget install JRSoftware.InnoSetup --scope user`):
+`installer\Build-Installer.ps1 -Version <x.y.z>` from the staged app (`install.ps1 -SkipInstall`); without `-Version` a local
+build is numbered as the next release (newest tag + 1 patch). It installs to the same folder as `install.ps1` with the same
+Start menu entry, without admin rights, and registers in Apps & Features; a setup of the same or a newer version installs
+over the installed one. The setup is for releases, `install.ps1` for development (the two may replace each other).
+Unsigned: SmartScreen warns on the first start ("Weitere Informationen" -> "Trotzdem ausführen").
