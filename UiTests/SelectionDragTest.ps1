@@ -6,6 +6,8 @@
 #   UiTests\Run-AppTest.ps1 -Test UiTests\SelectionDragTest.ps1
 . C:\sbx\TestKit.ps1
 
+function Ctrl($k, $label) { [Inj]::Ctrl($k); Start-Sleep -Milliseconds 1500; "ctrl+$label" }
+
 function New-PictureBase64 {
     Add-Type -AssemblyName System.Drawing
     $bitmap = New-Object Drawing.Bitmap 60, 40
