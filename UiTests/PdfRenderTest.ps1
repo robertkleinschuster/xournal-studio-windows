@@ -271,8 +271,17 @@ Invoke-Test {
     [Inj]::Key(0x0D)
     Start-Sleep -Milliseconds 400
     $tool = Select-String $inklog -Pattern 'toolbar: ' | Select-Object -Last 1
-    if ($tool.Line -notmatch ';tool=7;.*;copyAreaBackground=1;copyAreaFrame=1$') {
+    if ($tool.Line -notmatch ';tool=7;.*;copyAreaBackground=1;copyAreaFrame=1;copyAreaObjects=0$') {
         throw 'The white background and frame options were not activated'
+    }
+    # "Beschriftung mitkopieren": the objects under the rectangle are copied too (the copy below then has them).
+    Click 'PDF-Bereich kopieren'
+    1..4 | ForEach-Object { [Inj]::Key(0x28) }
+    [Inj]::Key(0x0D)
+    Start-Sleep -Milliseconds 400
+    $tool = Select-String $inklog -Pattern 'toolbar: ' | Select-Object -Last 1
+    if ($tool.Line -notmatch ';tool=7;.*;copyAreaBackground=1;copyAreaFrame=1;copyAreaObjects=1$') {
+        throw 'The option to copy the annotations too was not activated'
     }
     $copied = @(Select-String "$out\app.log" -Pattern 'clipboard: PDF area copied').Count
     1..12 | ForEach-Object { [Inj]::PenFrame(($cx - 45), ($cy - 35), 0x22002, 0, 0) }
