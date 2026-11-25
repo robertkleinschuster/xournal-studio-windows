@@ -45,6 +45,21 @@ namespace xournal::app
             }
         }
 
+        // `top` (premultiplied) over `base`, the same area: sampled to base's size when the renderers rounded differently.
+        void CompositeOver(CpuBitmap& base, CpuBitmap const& top)
+        {
+            if (!top.width || !top.height) return;
+            for (UINT y = 0; y < base.height; ++y)
+            for (UINT x = 0; x < base.width; ++x)
+            {
+                UINT tx = std::min<UINT>(top.width - 1, static_cast<UINT>(static_cast<std::uint64_t>(x) * top.width / base.width));
+                UINT ty = std::min<UINT>(top.height - 1, static_cast<UINT>(static_cast<std::uint64_t>(y) * top.height / base.height));
+                auto from = top.pixels.data() + (static_cast<size_t>(ty) * top.width + tx) * 4;
+                auto to = base.pixels.data() + (static_cast<size_t>(y) * base.width + x) * 4;
+                for (int c = 0; c < 4; ++c) to[c] = static_cast<std::uint8_t>(from[c] + to[c] * (255 - from[3]) / 255);
+            }
+        }
+
         UINT Register(wchar_t const* name)
         {
             UINT format = RegisterClipboardFormatW(name);
@@ -193,6 +208,14 @@ namespace xournal::app
                     {
                         Check("CoInitializeEx (PDF clipboard encoding)", CoInitializeEx(nullptr, COINIT_MULTITHREADED));
                         struct Uninit { ~Uninit() { CoUninitialize(); } } uninit;
+                        if (!overlay.empty())
+                        {
+                            // The ink, pictures and texts on top, for the bitmap other apps paste (as the lasso's copy renders them).
+                            std::vector<XmlElementPtr> copies;
+                            for (auto const& e : overlay) copies.push_back(e->Clone());
+                            auto objects = XoppClip::Create(bounds, copies);
+                            CompositeOver(*picture, *Bitmaps::Decode(pdf::RenderClip(*objects, scale).png));
+                        }
                         if (appearance.frame) DrawFrame(*picture, scale);
                         auto png = Bitmaps::EncodePng(*picture);
                         auto image = XoppImage::CreatePdf(bounds, pdf::CropPdfArea(*data, pdfPage, fractions, appearance));
