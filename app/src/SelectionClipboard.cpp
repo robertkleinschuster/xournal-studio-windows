@@ -142,7 +142,7 @@ namespace xournal::app
         AddPicturesLater(xml, GetClipboardSequenceNumber());
     }
 
-    void SelectionClipboard::CopyPdfArea(int page, inkpages::RectF area, pdf::PdfCropAppearance appearance,
+    void SelectionClipboard::CopyPdfArea(int page, inkpages::RectF area, inkpages::Clip const& objects, pdf::PdfCropAppearance appearance,
         std::function<void(std::wstring)> completed)
     {
         auto document = view.Document();
@@ -161,11 +161,20 @@ namespace xournal::app
             area.Width() / content->Width(), area.Height() / content->Height() };
         std::weak_ptr<bool> guard = alive;
 
+        // The ink, pictures and texts inside the area (the toolbar's "Beschriftung mitkopieren"), as a lasso copies them;
+        // their copies are taken now, while the pictures are still on their pages.
+        std::vector<XmlElementPtr> overlay;
+        for (auto const& stroke : objects.strokes) overlay.push_back(Strokes::ToXml(InkConvert::FromInkStroke(stroke)));
+        if (FilePictures* pictures = view.Pictures(); pictures && !objects.pictures.empty())
+        {
+            for (auto& e : pictures->CopiesOf(objects.pictures, { objects.bounds.left, objects.bounds.top })) overlay.push_back(e);
+        }
+
         auto request = std::make_shared<PendingArea>();
         request->sequence = GetClipboardSequenceNumber();
         double scale = std::min(PicturePixelsPerPoint, 4096.0 / std::max(source.width, source.height));
         background->RenderArea(pdfPage, page, source, scale, !appearance.whiteBackground,
-            [this, guard, request, bounds, completed, data, pdfPage, fractions, appearance, scale](
+            [this, guard, request, bounds, completed, data, pdfPage, fractions, appearance, scale, overlay](
             std::shared_ptr<CpuBitmap> picture, std::exception_ptr error) {
             auto encodingFailed = [this, guard, request, completed] {
                 LogException("prepare PDF area for clipboard");
@@ -179,7 +188,7 @@ namespace xournal::app
             {
                 if (error) std::rethrow_exception(error);
                 UiQueue::RunInBackground("encode PDF clipboard area", [this, guard, request, bounds, completed,
-                    picture = std::move(picture), encodingFailed, data, pdfPage, fractions, appearance, scale] {
+                    picture = std::move(picture), encodingFailed, data, pdfPage, fractions, appearance, scale, overlay] {
                     try
                     {
                         Check("CoInitializeEx (PDF clipboard encoding)", CoInitializeEx(nullptr, COINIT_MULTITHREADED));
@@ -187,7 +196,9 @@ namespace xournal::app
                         if (appearance.frame) DrawFrame(*picture, scale);
                         auto png = Bitmaps::EncodePng(*picture);
                         auto image = XoppImage::CreatePdf(bounds, pdf::CropPdfArea(*data, pdfPage, fractions, appearance));
-                        auto xml = io::SerializeXml(*XoppClip::Create(bounds, { image }));
+                        std::vector<XmlElementPtr> elements{ image };
+                        elements.insert(elements.end(), overlay.begin(), overlay.end());
+                        auto xml = io::SerializeXml(*XoppClip::Create(bounds, elements));
                         auto dib = DibOnWhite(*picture);
                         UiQueue::Post("copy PDF area", [this, guard, request, completed, xml = std::move(xml),
                             png = std::move(png), dib = std::move(dib)] {

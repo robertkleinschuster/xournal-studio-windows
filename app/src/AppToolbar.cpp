@@ -60,6 +60,7 @@ namespace xournal::app
         t.copyAreaTransparent = L"Transparent";
         t.copyAreaWithBackground = L"Weißer Hintergrund";
         t.copyAreaFrame = L"Rahmen";
+        t.copyAreaObjects = L"Beschriftung mitkopieren";
         t.textTip = L"Text: auf die Seite tippen und schreiben (die Tastatur tippt), auf einen Text tippen, um ihn zu "
             L"bearbeiten, daneben tippen, um fertig zu sein. Der Pfeil: Schrift, Größe und Farbe.\n"
             L"Tippen oder Klicken setzt einen Text – mit Stift, Maus oder Finger.";

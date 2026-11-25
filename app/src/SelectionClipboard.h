@@ -28,7 +28,7 @@ namespace xournal::app
 
         void Copy(inkpages::Clip const& clip);
         /// Copies the rectangle as an embedded PDF and provides raster clipboard formats for other apps.
-        void CopyPdfArea(int page, inkpages::RectF area, pdf::PdfCropAppearance appearance,
+        void CopyPdfArea(int page, inkpages::RectF area, inkpages::Clip const& objects, pdf::PdfCropAppearance appearance,
             std::function<void(std::wstring)> completed);
         bool DeferPaste(inkpages::PointF at);
         std::optional<inkpages::Clip> Paste(inkpages::PointF at);

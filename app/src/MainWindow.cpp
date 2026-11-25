@@ -187,14 +187,14 @@ namespace xournal::app
         surface->textEditingChanged = [this](bool) { textSelection->Clear(); };
         clipboard = std::make_unique<SelectionClipboard>(window, *surface, *view);
         surface->deferPaste = [this](inkpages::PointF at) { return clipboard->DeferPaste(at); };
-        surface->copyArea = [this](int page, inkpages::RectF area)
+        surface->copyArea = [this](int page, inkpages::RectF area, inkpages::Clip objects)
         {
             auto completed = [this](std::wstring const& error) {
                 if (error.empty()) Message(L"PDF-Bereich kopiert.", MessageKind::Info);
                 else Message(std::format(L"PDF-Bereich konnte nicht kopiert werden: {}", error), MessageKind::Error);
             };
             auto const& choices = toolbar->Choices();
-            try { clipboard->CopyPdfArea(page, area, { choices.copyAreaBackground, choices.copyAreaFrame }, completed); }
+            try { clipboard->CopyPdfArea(page, area, objects, { choices.copyAreaBackground, choices.copyAreaFrame }, completed); }
             catch (...)
             {
                 LogException("copy PDF area");
