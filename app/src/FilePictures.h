@@ -20,6 +20,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <vector>
 
 namespace xournal::app
@@ -35,6 +36,14 @@ namespace xournal::app
 
         /// The transform a drag shows a picture with (page units of its page), if it is being dragged.
         std::optional<Matrix> PreviewOf(XmlElement const* picture) const;
+
+        /// Pictures and texts the drag layer shows meanwhile (the underlay leaves them out), see PictureHost::Lift.
+        bool IsLifted(XmlElement const* element) const { return lifted.contains(element); }
+        /// How the underlay draws one object of a page (set by the document view).
+        void SetObjectDrawer(std::function<void(int page, XmlElementPtr const&, ID2D1DeviceContext*, float pixelsPerUnit)> draw)
+        {
+            drawObject = std::move(draw);
+        }
 
         /// The text the Text tool edits (nothing: none); the underlay does not draw it.
         void SetEditing(XmlElement const* text) { editing = text; }
@@ -61,6 +70,8 @@ namespace xournal::app
         inkpages::RectF Bounds(inkpages::PictureId picture) override;
         std::optional<inkpages::PictureId> PictureAt(inkpages::PointF point) override;
         void Preview(std::vector<inkpages::PictureId> const& pictures, inkpages::Affine const& m) override;
+        bool DrawLifted(ID2D1DeviceContext* dc, std::vector<inkpages::PictureId> const& pictures, float pixelsPerUnit) override;
+        void Lift(std::vector<inkpages::PictureId> const& pictures, bool lifted) override;
         void Transform(std::vector<inkpages::PictureId> const& pictures, inkpages::Affine const& m) override;
         uint64_t Remove(std::vector<inkpages::PictureId> const& pictures) override;
         void Restore(uint64_t token) override;
@@ -87,6 +98,8 @@ namespace xournal::app
         std::map<XmlElement const*, inkpages::PictureId> idByElement;
         inkpages::PictureId nextId = 1;
         std::map<XmlElement const*, Matrix> previews;
+        std::set<XmlElement const*> lifted;
+        std::function<void(int, XmlElementPtr const&, ID2D1DeviceContext*, float)> drawObject;
         std::map<uint64_t, std::vector<std::pair<int, std::vector<ImagePlace>>>> removed;
         uint64_t nextToken = 1;
     };

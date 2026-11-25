@@ -83,6 +83,10 @@ namespace xournal::app
         texts = std::make_unique<FileTexts>(doc, bridge->Lock(), *pictures, invalidate);
         underlay = std::make_unique<PageUnderlay>(renderQueue, *doc, generation, invalidate, invalidateBatch, *pictures,
             [this] { if (pdfLoaded) pdfLoaded(); });
+        pictures->SetObjectDrawer([this, doc](int page, XmlElementPtr const& element, ID2D1DeviceContext* dc, float pixelsPerUnit) {
+            bool imagePaper = doc->Pages()[page]->IsImageBackground();
+            underlay->DrawObject(page, element, dc, pixelsPerUnit, darkPaper && !imagePaper, darkPaper);
+        });
         surface.SetPictureHost(pictures.get());
         surface.SetTextHost(texts.get());
         surface.SetPages(std::move(specs));

@@ -33,6 +33,10 @@ namespace xournal::app
 
         void Draw(int page, XoppPage const& content, ID2D1DeviceContext* dc, inkpages::RectF area, float pixelsPerUnit, bool darkPaper);
 
+        /// One picture or text of `page` as Draw draws it (page units; the drag layer draws the selection with it).
+        void DrawObject(int page, XmlElementPtr const& element, ID2D1DeviceContext* dc, float pixelsPerUnit, bool darkPaper,
+            bool darkPictures);
+
         /// Pages were inserted, removed or moved: the caches follow.
         void Remap(inkpages::PageMap const& map);
 

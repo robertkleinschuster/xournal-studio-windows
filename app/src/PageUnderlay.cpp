@@ -176,6 +176,19 @@ namespace xournal::app
         }
     }
 
+    void PageUnderlay::DrawObject(int page, XmlElementPtr const& element, ID2D1DeviceContext* dc, float pixelsPerUnit,
+        bool darkPaper, bool darkPictures)
+    {
+        if (XoppImage::IsImage(*element))
+        {
+            DrawPicture(page, element, dc, pixelsPerUnit, darkPictures);
+            return;
+        }
+        auto text = XoppText::Read(*element);
+        if (darkPaper) text.color = DarkColors::Ink(text.color, text.color.a);
+        texts.Draw(dc, text, pictures.PreviewOf(element.get()).value_or(Matrix{}));
+    }
+
     void PageUnderlay::DrawPicture(int page, XmlElementPtr const& picture, ID2D1DeviceContext* dc, float pixelsPerUnit, bool dark)
     {
         auto placement = XoppImage::GetPlacement(*picture);
@@ -273,18 +286,15 @@ namespace xournal::app
                         }
                     });
                 }
+                else if (pictures.IsLifted(element.get())) continue; // in the drag layer meanwhile
                 else if (XoppImage::IsImage(*element))
                 {
-                    guarded("a picture", [&] { DrawPicture(page, element, dc, pixelsPerUnit, darkPictures); });
+                    guarded("a picture", [&] { DrawObject(page, element, dc, pixelsPerUnit, darkPaper, darkPictures); });
                 }
                 else if (XoppText::IsText(*element) && !pictures.IsEditing(element.get()))
                 {
                     // The text the Text tool edits is the library's meanwhile; a dragged one shows its preview.
-                    guarded("a text", [&] {
-                        auto text = XoppText::Read(*element);
-                        if (darkPaper) text.color = DarkColors::Ink(text.color, text.color.a);
-                        texts.Draw(dc, text, pictures.PreviewOf(element.get()).value_or(Matrix{}));
-                    });
+                    guarded("a text", [&] { DrawObject(page, element, dc, pixelsPerUnit, darkPaper, darkPictures); });
                 }
             }
         }

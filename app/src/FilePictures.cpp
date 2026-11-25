@@ -237,6 +237,44 @@ namespace xournal::app
         for (int page : pages) invalidate(page);
     }
 
+    bool FilePictures::DrawLifted(ID2D1DeviceContext* dc, std::vector<inkpages::PictureId> const& ids, float pixelsPerUnit)
+    {
+        if (!drawObject) return false;
+        std::set<XmlElement const*> wanted;
+        for (auto id : ids) wanted.insert(pictures.at(id).get());
+        D2D1_MATRIX_3X2_F documentTransform;
+        dc->GetTransform(&documentTransform);
+        std::scoped_lock guard(documentLock);
+        for (int page = 0; page < static_cast<int>(doc->Pages().size()); ++page)
+        {
+            Point o = Origin(page);
+            dc->SetTransform(D2D1::Matrix3x2F::Translation(static_cast<float>(o.x), static_cast<float>(o.y)) * documentTransform);
+            for (auto const& object : ObjectsOf(page))
+            {
+                if (wanted.contains(object.get())) drawObject(page, object, dc, pixelsPerUnit); // bottom to top
+            }
+        }
+        dc->SetTransform(documentTransform);
+        return true;
+    }
+
+    void FilePictures::Lift(std::vector<inkpages::PictureId> const& ids, bool lift)
+    {
+        std::set<int> pages;
+        {
+            std::scoped_lock guard(documentLock);
+            for (auto id : ids)
+            {
+                auto const& element = pictures.at(id);
+                int page = PageOf(element.get());
+                if (lift) lifted.insert(element.get());
+                else lifted.erase(element.get());
+                if (page >= 0) pages.insert(page);
+            }
+        }
+        for (int page : pages) invalidate(page);
+    }
+
     void FilePictures::Transform(std::vector<inkpages::PictureId> const& ids, inkpages::Affine const& m)
     {
         struct Change
