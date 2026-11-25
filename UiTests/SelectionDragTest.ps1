@@ -24,7 +24,7 @@ function New-DragDocument($file, $count) {
     $png = New-PictureBase64
     $random = New-Object Random 7
     $strokes = for ($i = 0; $i -lt $count; $i++) {
-        $x = 40 + $random.NextDouble() * 500; $y = 40 + $random.NextDouble() * 740
+        $x = 120 + $random.NextDouble() * 300; $y = 120 + $random.NextDouble() * 560 # well inside the page: a stroke that leaves it is cut
         $points = for ($j = 0; $j -lt 12; $j++) {
             $x += $random.NextDouble() * 12 - 6; $y += $random.NextDouble() * 12 - 6
             '{0:0.0} {1:0.0}' -f $x, $y
@@ -73,7 +73,7 @@ Invoke-Test {
     Ctrl 0x41 'A' | Out-Null
     Shot '01-selected'
     $steps = 60
-    $path = @(); 0..$steps | ForEach-Object { $path += ($cx + 120 * $_ / $steps); $path += ($cy + 40 * $_ / $steps) }
+    $path = @(); 0..$steps | ForEach-Object { $path += ($cx + 80 * $_ / $steps); $path += ($cy + 30 * $_ / $steps) }
     [Inj]::MouseDrag([double[]]$path)
     Start-Sleep 2
     Shot '02-moved'
