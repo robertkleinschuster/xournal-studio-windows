@@ -40,7 +40,7 @@ namespace xournal::app
             if (ipad)
             {
                 text += std::format(L" {} Strich(e) auf {} Seite(n) sind auf dem iPad bearbeitbar", ipad->strokes, ipad->drawings);
-                text += ipad->flatStrokes > 0 ? std::format(L"; {} weitere (Textmarker, gestrichelt, gefüllt) sind fest in der Seite.", ipad->flatStrokes) : L".";
+                text += ipad->flatStrokes > 0 ? std::format(L"; {} weitere (z. B. Textmarker, gestrichelte, unter Bildern oder Texten) sind fest in der Seite.", ipad->flatStrokes) : L".";
                 return std::format(L"{}: {}", complete ? L"Für iPad exportiert" : L"Für iPad exportiert – unvollständig", text);
             }
             return std::format(L"{}: {}", complete ? L"Als PDF exportiert" : L"Als PDF exportiert – unvollständig", text);

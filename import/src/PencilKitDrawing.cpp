@@ -584,6 +584,7 @@ namespace xournal::import
             }
             double now = static_cast<double>(std::chrono::duration_cast<std::chrono::seconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count()) - 978307200.0; // since 2001-01-01 (Apple's epoch)
+            double startsAt = now; // a stroke starts after the one before it ended (as iPadOS' times run)
             for (size_t i = 0; i < strokes.size(); ++i)
             {
                 auto const& stroke = strokes[i];
@@ -603,6 +604,8 @@ namespace xournal::import
                     Put(points, Altitude);
                 }
                 Rect bounds = BoundsOf(stroke);
+                double thisStart = startsAt;
+                startsAt += PointInterval * static_cast<double>(stroke.points.size()) + 0.2;
                 drawing.add_bytes(5, Message([&](protozero::pbf_writer& s)
                 {
                     s.add_bytes(1, Triple(static_cast<std::uint32_t>(i), 0, static_cast<std::uint32_t>(i + 1)));
@@ -618,7 +621,7 @@ namespace xournal::import
                         b.add_float(4, static_cast<float>(bounds.height));
                     }));
                     s.add_uint32(9, 0);
-                    s.add_double(11, now + PointInterval * static_cast<double>(i));
+                    s.add_double(11, thisStart);
                     s.add_bytes(13, RandomId(random));
                     s.add_bytes(14, RandomId(random));
                 }));

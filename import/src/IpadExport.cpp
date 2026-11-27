@@ -56,12 +56,14 @@ namespace xournal::import
                     sizes[k] = (before + after) / 2 / PenWidthFactor;
                 }
             }
-            if (n == 1)
+            double length = 0;
+            for (size_t k = 0; k + 1 < n; ++k) length += std::hypot(shape.points[k + 1].x - shape.points[k].x, shape.points[k + 1].y - shape.points[k].y);
+            if (length < 0.1) // one point, or a tap (Xournal++ stores two equal points)
             {
                 // A dot: a stroke of a fraction of a point, round ends make it the circle.
                 for (int k = -8; k <= 8; ++k)
                 {
-                    stroke.points.push_back({ shape.points[0].x + 0.05 * k, shape.points[0].y });
+                    stroke.points.push_back({ shape.points[0].x + 0.02 * k, shape.points[0].y });
                     stroke.widths.push_back(sizes[0]);
                 }
                 return stroke;
@@ -97,6 +99,24 @@ namespace xournal::import
         bool Overlaps(Rect const& a, Rect const& b)
         {
             return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+        }
+
+        // A text's box, estimated (its real layout is the PDF export's): a line's length from its characters, a line's height
+        // from the size - generous, since a wrong guess only keeps a stroke flat.
+        Rect BoxOf(XoppText const& text)
+        {
+            double longest = 0;
+            int lines = 1;
+            double current = 0;
+            for (wchar_t c : text.content)
+            {
+                if (c == L'\n') { longest = std::max(longest, current); current = 0; ++lines; }
+                else ++current;
+            }
+            longest = std::max(longest, current);
+            double width = text.wrap ? *text.wrap : longest * text.size * 0.7;
+            Point origin = text.transform.Apply({ 0, 0 });
+            return { origin.x, origin.y, width, lines * text.size * 1.4 };
         }
 
         Rect BoxOf(pdf::Picture const& picture)
@@ -184,7 +204,7 @@ namespace xournal::import
                 Num(boxWidth), Num(boxHeight))));
             std::string rect = std::format("[{} {} {} {}]", Num(minX), Num(lly), Num(maxX), Num(height - minY));
             std::string date = std::format("({})", PdfDate());
-            std::string shared = std::format("/BS << /W 0 >> /Border [0 0 0] /DA (/Helvetica 12 Tf 0 g) /F 644 /M {} /Rect {} "
+            std::string shared = std::format("/BS << /W 0 >> /Border [0 0 0] /DA (/Helvetica 12 Tf 0 g) /F 644 /Ff 1 /M {} /Rect {} "
                                              "/Subtype /Stamp /T (Xournal Studio) /Type /Annot", date, rect);
             auto annotation = QPDFObjectHandle::parse(&pdf, std::format(
                 "<< {} /AAPL:AKExtras << /AAPL:AKAnnotationV2 ({}) /AAPL:AKPDFAnnotationDictionary << {} >> >> >>", shared,
@@ -222,11 +242,27 @@ namespace xournal::import
             for (size_t e = 0; e < elements.size(); ++e)
             {
                 auto* stroke = std::get_if<StrokeShape>(&elements[e]);
-                bool editable = stroke && IsEditable(*stroke) && Overlaps(BoxOf(*stroke), pageBox);
+                // Whole numbers of the bounds inside the page (as in every file of the user's).
+                bool editable = stroke && IsEditable(*stroke);
+                if (editable)
+                {
+                    Rect bounds = PencilKitDrawing::BoundsOf(Stroke(*stroke));
+                    editable = bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= pages[i].width &&
+                               bounds.y + bounds.height <= pages[i].height;
+                }
+                // Later elements that cover (pictures, texts, opaque strokes, fillings) must stay above the ink. A later
+                // highlighter lets the ink show through: it may lie over it.
                 for (size_t later = e + 1; editable && later < elements.size(); ++later)
                 {
-                    auto const* picture = std::get_if<pdf::Picture>(&elements[later]);
-                    if (picture && Overlaps(BoxOf(*stroke), BoxOf(*picture))) editable = false;
+                    Rect mine = BoxOf(*stroke);
+                    if (auto const* picture = std::get_if<pdf::Picture>(&elements[later]))
+                        editable = !Overlaps(mine, BoxOf(*picture));
+                    else if (auto const* text = std::get_if<XoppText>(&elements[later]))
+                        editable = !Overlaps(mine, BoxOf(*text));
+                    else if (auto const* other = std::get_if<StrokeShape>(&elements[later]);
+                             other && !IsEditable(*other) && !other->highlighter && !other->points.empty() &&
+                             (other->color.a == 0xFF || other->fill >= 0))
+                        editable = !Overlaps(mine, BoxOf(*other));
                 }
                 if (editable)
                 {

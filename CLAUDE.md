@@ -266,8 +266,11 @@ code). In short: `base ← model ← io ← pdf, pdftext, search, import, servic
   ~0.8 pt apart, 2.1 at most), so the polyline is written resampled to 0.8 pt (widths interpolated, a dot as a
   sub-point stroke) - found by the Opus review; the importer reads control points as a polyline, so a round trip
   test cannot see it. Stroke bounds, the archive's rectangle, /Rect and /BBox are the same whole numbers (as Apple's).
-  Highlighters, dashed, filled and square-ended strokes, strokes below a later picture (an annotation lies over the
-  page) and strokes off the page stay drawn in the page (the marker ink's layout is not known).
+  Highlighters, dashed, filled and square-ended strokes, strokes below a later picture, text, opaque stroke or filling
+  (an annotation lies over the page; a later highlighter may lie over ink) and strokes whose whole-number bounds leave
+  the page stay drawn in the page (the marker ink's layout is not known). A tap (two equal points) is written as a
+  sub-point stroke; stroke times run on one after the other; `/Ff 1` as Apple writes it (meaning unknown). Second Opus
+  review round 2026-11-27 done.
   **Not verified on an iPad** (none here): checked by reading it back with the importer and by rendering it with
   Windows.Data.Pdf.
 - **Explorer order:** names with numbers by value, as File Explorer (`CompareStringEx` + `SORT_DIGITSASNUMBERS`,

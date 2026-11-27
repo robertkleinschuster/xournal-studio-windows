@@ -694,6 +694,7 @@ namespace xournal::tests
         EXPECT_EQ(result.drawings, 1);
         EXPECT_EQ(result.strokes, 2);
         EXPECT_EQ(result.flatStrokes, 1); // the highlighter stays in the page
+        EXPECT_EQ(result.strokes + result.flatStrokes, 3); // every stroke of the page is somewhere, once
         EXPECT_EQ(Subtypes(target), (std::vector<std::string>{ "/Stamp" }));
 
         // Imported again (as an iPad PDF): the pen strokes are strokes again, where and as wide as they were.
@@ -737,6 +738,56 @@ namespace xournal::tests
         EXPECT_NEAR(second[second.size() - 2], 130, 1e-2);
         EXPECT_NEAR(second[second.size() - 1], 110, 1e-2);
         EXPECT_LE(spacing(second), 2.0);
+    }
+
+    TEST(IpadExport, StrokesThatCannotLieUnderWhatIsAboveThemStayInThePage)
+    {
+        TempFolder folder;
+        auto source = folder / L"notes.xopp";
+        WriteBytes(source, R"(<?xml version="1.0" standalone="no"?>
+<xournal creator="xournalpp 1.3.8" fileversion="5">
+<page width="400" height="300"><background type="solid" color="#ffffffff" style="plain"/><layer>
+<stroke tool="pen" color="#000000ff" width="1.2">10 20 30 40</stroke>
+<stroke tool="pen" color="#000000ff" width="1.2">-20 100 30 110</stroke>
+<stroke tool="pen" color="#000000ff" width="1.2">100 100 140 100</stroke>
+<stroke tool="pen" color="#000000ff" width="1.2">200 200 240 210</stroke>
+<stroke tool="pen" color="#000000ff" width="1.2" fill="128">300 20 340 20</stroke>
+<text font="Sans" size="12" x="95" y="95" color="#000000ff">Deckt zu</text>
+<stroke tool="pen" color="#ff0000ff" width="1.2" style="dash">150 200 250 200</stroke>
+</layer></page>
+</xournal>)");
+        auto doc = io::DocumentFile::Load(source);
+
+        auto result = import::ExportForIpad(pdf::PrepareExport(*doc), folder / L"ipad.pdf");
+
+        // The first one is free; the second leaves the page; the third lies under a text; the fourth lies under a dashed
+        // stroke that covers it; the filled one is drawn as before.
+        EXPECT_EQ(result.strokes + result.flatStrokes, 6);
+        EXPECT_EQ(result.strokes, 1);
+    }
+
+    TEST(IpadExport, ATapKeepsItsDot)
+    {
+        TempFolder folder;
+        auto source = folder / L"notes.xopp";
+        WriteBytes(source, R"(<?xml version="1.0" standalone="no"?>
+<xournal creator="xournalpp 1.3.8" fileversion="5">
+<page width="400" height="300"><background type="solid" color="#ffffffff" style="plain"/><layer>
+<stroke tool="pen" color="#000000ff" width="1.4">133.8 234.2 133.8 234.2</stroke>
+</layer></page>
+</xournal>)");
+        auto doc = io::DocumentFile::Load(source);
+        auto target = folder / L"ipad.pdf";
+        auto result = import::ExportForIpad(pdf::PrepareExport(*doc), target);
+        EXPECT_EQ(result.strokes, 1);
+        auto imported = Prepare(target, folder / L"clean.pdf", [&](int round) { return folder / std::format(L"pictures-{}.pdf", round); });
+        ASSERT_EQ(imported.drawings, 1);
+        for (auto const& e : imported.elements[0])
+        {
+            if (e->Name() != L"stroke") continue;
+            // Many points within a fraction of a point of the tap.
+            EXPECT_GT(e->Value().size(), 50u);
+        }
     }
 
     // The user's kind of document (the sanitized example): every editable stroke comes back as a stroke. With
