@@ -15,6 +15,7 @@
 #include <format>
 #include <map>
 #include <optional>
+#include <set>
 #include <random>
 #include <string>
 #include <string_view>
@@ -116,6 +117,17 @@ namespace xournal::import
                     if (f.number == number && f.isBytes) return f.bytes;
                 }
                 return std::nullopt;
+            }
+
+            /// Every length-delimited field, whatever its number.
+            std::vector<std::string_view> AllByteFields() const
+            {
+                std::vector<std::string_view> all;
+                for (auto const& f : fields)
+                {
+                    if (f.isBytes) all.push_back(f.bytes);
+                }
+                return all;
             }
 
             std::vector<std::string_view> AllBytes(std::uint32_t number) const
@@ -460,6 +472,177 @@ namespace xournal::import
             }
             std::erase_if(strokes, [](PencilKitStroke const& s) { return s.points.empty(); });
             return strokes;
+        }
+
+        // ---- PaperKit (the /PPK of iPadOS 26 and later): "crdt" + version + a protobuf message, an operation log of a
+        // replicated document. Undocumented; read from the user's iPad PDFs (2026-11-27, 3 annotations, 1513 strokes,
+        // checked against the older archive the same annotations still carried and against the .xopp the strokes came from:
+        // paths 421/421 and 18/18, colors 1072/1073). The body's items (#4) have an id (#5.#2: 17 bytes, 0x02 + 16) and a
+        // payload; what matters here:
+        //   - a stroke item: payload #10 holds a path with the records of the older format (#3 count, #4/#5 masks, #6
+        //     constants, #7 records) - the path message is found by its shape;
+        //   - an ink value item: a message {#1: color (20 bytes: 4 floats), #2: "com.apple.ink.pen"...} somewhere in it;
+        //   - an assignment item refers (by item id, anywhere in its payload) to the stroke and to the ink value item;
+        //   - a list item (payload #1 only, 35 bytes) refers to the assignment: the stroke belongs to the drawing.
+        // Not known (no sample had them): moved strokes' transform, erased strokes' tombstones - strokes not in a list item
+        // are left out, a transform is not applied.
+
+        // Parsing bytes that may be no message at all (every payload is searched for the shapes below): a failure is the
+        // answer "not one", not an error.
+        std::optional<Message> TryParse(std::string_view data)
+        {
+            try
+            {
+                return Message::Parse(data);
+            }
+            catch (protozero::exception const&)
+            {
+                return std::nullopt; // not protobuf
+            }
+            catch (Error const&)
+            {
+                return std::nullopt; // protobuf with a wire type the schema does not use
+            }
+        }
+
+        Ink InkOf(Message const& ink)
+        {
+            auto c = ink.Child(1);
+            auto channel = [&](std::uint32_t n, float fallback) {
+                float v = c ? c->Float(n).value_or(fallback) : fallback;
+                return static_cast<std::uint8_t>(std::lround(std::clamp(v, 0.0f, 1.0f) * 255));
+            };
+            auto id = ink.Bytes(2);
+            return { id ? std::string(*id) : std::string(), Color{ channel(4, 1), channel(1, 0), channel(2, 0), channel(3, 0) } };
+        }
+
+        std::optional<Ink> FindInk(std::string_view data, int depth = 0)
+        {
+            if (depth > 12) return std::nullopt;
+            auto m = TryParse(data);
+            if (!m) return std::nullopt;
+            auto id = m->Bytes(2);
+            auto color = m->Bytes(1);
+            if (id && id->starts_with("com.apple.ink") && color && color->size() == 20) return InkOf(*m);
+            for (auto child : m->AllByteFields())
+            {
+                if (child.size() > 2)
+                    if (auto found = FindInk(child, depth + 1)) return found;
+            }
+            return std::nullopt;
+        }
+
+        std::optional<std::vector<RawPoint>> FindPath(std::string_view data, int depth = 0)
+        {
+            if (depth > 12) return std::nullopt;
+            auto m = TryParse(data);
+            if (!m) return std::nullopt;
+            if (m->Varint(3) && m->Varint(4) && m->Varint(5) && m->Bytes(7))
+            {
+                try
+                {
+                    return Points(*m);
+                }
+                catch (Error const&)
+                {
+                    // Not a path after all (its records do not fit its masks): look further down.
+                }
+            }
+            for (auto child : m->AllByteFields())
+            {
+                if (child.size() > 2)
+                    if (auto found = FindPath(child, depth + 1)) return found;
+            }
+            return std::nullopt;
+        }
+
+        std::vector<PencilKitStroke> ReadPaperKit(std::string_view body)
+        {
+            auto root = Message::Parse(body);
+            struct Item
+            {
+                std::string_view payload;
+                std::string_view id;
+                std::vector<size_t> refs; // items named anywhere in the payload
+                std::optional<std::vector<RawPoint>> path;
+                std::optional<Ink> ink;
+                bool listed = false; // a payload of #1 only
+            };
+            std::vector<Item> items;
+            std::map<std::string_view, size_t> byId;
+            for (auto const& message : root.Children(4))
+            {
+                Item item;
+                item.payload = message.Bytes(4).value_or(std::string_view{});
+                if (auto id = message.Child(5)) item.id = id->Bytes(2).value_or(std::string_view{});
+                if (item.id.size() != 17) continue;
+                byId[item.id] = items.size();
+                items.push_back(std::move(item));
+            }
+            for (size_t i = 0; i < items.size(); ++i)
+            {
+                auto& item = items[i];
+                for (size_t at = 0; at + 17 <= item.payload.size(); ++at)
+                {
+                    if (item.payload[at] != '\x02') continue;
+                    auto it = byId.find(item.payload.substr(at, 17));
+                    if (it != byId.end() && it->second != i) item.refs.push_back(it->second);
+                }
+                auto message = TryParse(item.payload);
+                if (!message) continue;
+                if (message->Bytes(10))
+                {
+                    item.path = FindPath(*message->Bytes(10));
+                }
+                else if (message->Bytes(4))
+                {
+                    item.ink = FindInk(*message->Bytes(4));
+                }
+                else if (message->Bytes(1))
+                {
+                    item.listed = true;
+                }
+            }
+            bool anyListed = std::any_of(items.begin(), items.end(), [](Item const& i) { return i.listed; });
+            std::vector<PencilKitStroke> strokes;
+            std::set<size_t> done;
+            auto take = [&](size_t assignment)
+            {
+                std::optional<size_t> stroke, ink;
+                for (size_t r : items[assignment].refs)
+                {
+                    if (items[r].path && !stroke) stroke = r;
+                    if (items[r].ink && !ink) ink = r;
+                }
+                if (!stroke || !ink || !done.insert(*stroke).second) return;
+                Ink value = *items[*ink].ink;
+                if (value.color.a >= 250) value.color.a = 255; // PaperKit writes an opaque ink as 0.996 or so
+                strokes.push_back(Stroke(value, *items[*stroke].path, std::nullopt));
+            };
+            for (auto const& item : items)
+            {
+                if (anyListed && item.listed)
+                    for (size_t assignment : item.refs) take(assignment);
+            }
+            if (!anyListed)
+            {
+                for (size_t i = 0; i < items.size(); ++i) take(i); // no list items in this version: every assigned stroke
+            }
+            std::erase_if(strokes, [](PencilKitStroke const& s) { return s.points.empty(); });
+            return strokes;
+        }
+    }
+
+    std::vector<PencilKitStroke> PencilKitDrawing::ReadPaperKit(std::span<std::uint8_t const> data)
+    {
+        if (data.size() < 8 || std::memcmp(data.data(), "crdt", 4) != 0) ThrowInvalidData("PaperKit drawing: not a crdt document");
+        try
+        {
+            return ::xournal::import::ReadPaperKit(std::string_view(reinterpret_cast<char const*>(data.data()) + 8, data.size() - 8));
+        }
+        catch (protozero::exception const& e)
+        {
+            ThrowInvalidData(std::format("PaperKit drawing: damaged protobuf data ({})", e.what()));
         }
     }
 

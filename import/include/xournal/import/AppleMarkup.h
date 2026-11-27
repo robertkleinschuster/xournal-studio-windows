@@ -26,6 +26,9 @@ namespace xournal::import
         /// The archive's root object; throws xournal::Error (invalid data) when it is not such an archive.
         static AppleMarkup Read(std::string_view base64);
 
+        /// The bytes of a base64 text (as the PDF strings of /AAPL:AKExtras hold them); throws xournal::Error (invalid data).
+        static std::vector<std::uint8_t> DecodeBase64(std::string_view text);
+
         /// The archive of an ink annotation as iPadOS writes it (the object graph of the user's PDFs), base64: `drawing` = a
         /// PencilKit drawing in a coordinate space of `drawingWidth` x `drawingHeight`, `rectangle` = the annotation's
         /// place on the page (x, y = the lower left corner in PDF user space, width, height), `uuid` its identifier.

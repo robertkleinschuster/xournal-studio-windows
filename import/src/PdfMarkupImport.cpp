@@ -87,6 +87,26 @@ namespace xournal::import
             return std::nullopt;
         }
 
+        // The strokes of an annotation's PaperKit drawing (/PPK of iPadOS 26+, which writes it alone once a drawing was edited, and
+        // beside the older archive otherwise); nothing when it has none or cannot be read.
+        std::optional<std::vector<PencilKitStroke>> PaperKitStrokes(QPDFObjectHandle annotation)
+        {
+            auto extras = annotation.getKey("/AAPL:AKExtras");
+            if (!extras.isDictionary()) return std::nullopt;
+            auto ppk = extras.getKey("/PPK");
+            if (!ppk.isString() || ppk.getStringValue().empty()) return std::nullopt;
+            try
+            {
+                auto strokes = PencilKitDrawing::ReadPaperKit(AppleMarkup::DecodeBase64(ppk.getStringValue()));
+                if (!strokes.empty()) return strokes;
+            }
+            catch (Error const&)
+            {
+                LogException("import: /PPK of an ink annotation");
+            }
+            return std::nullopt;
+        }
+
         bool IsInkDrawing(std::optional<AppleMarkup> const& m) { return m && m->className == AppleMarkup::InkClass && m->drawing; }
 
         // Shown by a viewer: not hidden and an appearance with an area (Apple writes empty ones for emptied drawings).
@@ -272,11 +292,24 @@ namespace xournal::import
 
         enum class Taken { Kept, Removed, Strokes, Text };
 
-        Taken Take(QPDFObjectHandle annotation, std::optional<AppleMarkup> const& apple, PageFrame const& frame,
+        Taken Take(QPDFObjectHandle annotation, std::optional<AppleMarkup> const& apple,
+                   std::optional<std::vector<PencilKitStroke>> const& paper, PageFrame const& frame,
                    std::vector<XmlElementPtr>& added, bool& picture)
         {
             picture = false;
             if (!IsMarkup(annotation)) return Taken::Kept;
+            if (paper)
+            {
+                // PaperKit's coordinates are the page's (the archive's drawing size, where there is one, is the page's too).
+                AppleMarkup size;
+                size.drawingWidth = apple ? apple->drawingWidth : 0;
+                size.drawingHeight = apple ? apple->drawingHeight : 0;
+                for (auto const& s : *paper)
+                {
+                    if (auto e = StrokeElement(s, frame, size)) added.push_back(e);
+                }
+                return Taken::Strokes;
+            }
             if (IsInkDrawing(apple))
             {
                 try
@@ -413,11 +446,13 @@ namespace xournal::import
                 if (auto annotations = page.getKey("/Annots"); annotations.isArray()) items = annotations.getArrayAsVector();
                 // Apple's archive of each annotation, read once.
                 std::vector<std::optional<AppleMarkup>> markup;
+                std::vector<std::optional<std::vector<PencilKitStroke>>> paper;
                 std::vector<PdfBox> drawingAreas;
                 for (auto const& item : items)
                 {
                     markup.push_back(item.isDictionary() ? Markup(item) : std::nullopt);
-                    if (IsInkDrawing(markup.back())) drawingAreas.push_back(RectOf(item));
+                    paper.push_back(item.isDictionary() ? PaperKitStrokes(item) : std::nullopt);
+                    if (IsInkDrawing(markup.back()) || paper.back()) drawingAreas.push_back(RectOf(item));
                 }
                 for (size_t position = 0; position < items.size(); ++position)
                 {
@@ -429,7 +464,7 @@ namespace xournal::import
                     }
                     if (IsOlderCopyOfDrawing(annotation, drawingAreas)) continue; // removed: the drawing comes with its strokes
                     bool picture = false;
-                    switch (Take(annotation, markup[position], frame, added, picture))
+                    switch (Take(annotation, markup[position], paper[position], frame, added, picture))
                     {
                     case Taken::Strokes: ++import.drawings; break;
                     case Taken::Text: ++import.texts; break;

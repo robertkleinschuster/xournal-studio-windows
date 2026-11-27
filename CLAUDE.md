@@ -279,7 +279,15 @@ code). In short: `base ← model ← io ← pdf, pdftext, search, import, servic
   xopp functions should get one - FreeText/AKTextBox, AKImage, marker ink; the user's PDFs hold AKTextBoxAnnotation,
   AKImageAnnotation and AKRectangularShapeAnnotation samples). iPadOS 27 saves an edited drawing **only as `/PPK`**
   (PaperKit: `crdt` + protobuf op log; the stroke paths are the same records as in the older format, found by their
-  fields #3 count, #4/#5 masks, #7 records) without `AKAnnotationV2` - the import must read both (user: "beides").
+  fields #3 count, #4/#5 masks, #7 records) without `AKAnnotationV2` - the import reads both (user: "beides"):
+  `PencilKitDrawing::ReadPaperKit` (checked on the user's GET_UE_5 iPad file: 18/0/0/1074/421/326/119/560/0 strokes per
+  page = the original .xopp, ink colors 1072/1073). Item graph: list item (payload #1 only) -> assignment item (names
+  by item id, 0x02 + 16 bytes, the stroke item and the ink value item) ; stroke item payload #10 holds the path; ink
+  value item holds {#1 color 4 floats, #2 "com.apple.ink.pen"}. A PPK wins over a `AKAnnotationV2` of the same
+  annotation; PaperKit alpha >= 250 counts as opaque. Not seen in any sample: a moved stroke's transform (the ink
+  value item's second element holds 48 bytes), erased/deleted strokes' tombstones, markers - strokes outside a list
+  item are left out, transforms are ignored. Writing PPK is not done (iPadOS accepts the older archive alone and
+  converts it itself when the drawing is edited).
 - **Explorer order:** names with numbers by value, as File Explorer (`CompareStringEx` + `SORT_DIGITSASNUMBERS`,
   ignore case, ties ordinal).
 - Git (libgit2): sign-in = the credential Git Credential Manager / wincred stores in the Windows Credential Manager

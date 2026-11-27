@@ -61,6 +61,10 @@ namespace xournal::import
         /// The visible strokes in drawing order. Throws xournal::Error (invalid data) for data it cannot read.
         std::vector<PencilKitStroke> Read(std::span<std::uint8_t const> data);
 
+        /// The strokes of a PaperKit drawing (iPadOS 26+: the /PPK of an annotation, "crdt" + protobuf), in drawing order.
+        /// Throws xournal::Error (invalid data) for data that is no such document.
+        std::vector<PencilKitStroke> ReadPaperKit(std::span<std::uint8_t const> data);
+
         /// A drawing in the older variant (gzip) of `strokes` in drawing order (points in drawing coordinates, points, y
         /// down; `width` or `widths` = the brush size; the ink name and color from the stroke). Throws for no strokes.
         std::vector<std::uint8_t> WriteLegacy(std::span<PencilKitStroke const> strokes);

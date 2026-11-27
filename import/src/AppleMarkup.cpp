@@ -80,6 +80,8 @@ namespace xournal::import
         }
     }
 
+    std::vector<std::uint8_t> AppleMarkup::DecodeBase64(std::string_view text) { return FromBase64(text); }
+
     AppleMarkup AppleMarkup::Read(std::string_view base64)
     {
         auto bytes = FromBase64(base64);

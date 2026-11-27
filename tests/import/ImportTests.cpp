@@ -568,6 +568,129 @@ namespace xournal::tests
         EXPECT_EQ(images, 3u);
     }
 
+    // ------------------------------------------------------------------ PaperKit (/PPK, iPadOS 26+)
+
+    namespace
+    {
+        // An item of the replicated document the way iPadOS writes it: {#3 meta, #4 payload, #5 {#2 id}}.
+        std::string PpkItem(std::string const& id, std::string const& payload)
+        {
+            return Message([&](protozero::pbf_writer& o) {
+                o.add_bytes(3, std::string("\x0a\x05\x00\x01\x02\x03\x04", 7));
+                o.add_bytes(4, payload);
+                o.add_bytes(5, Message([&](protozero::pbf_writer& i) { i.add_bytes(2, id); }));
+            });
+        }
+
+        std::string PpkId(char tag) { return std::string("\x02", 1) + std::string(15, 'x') + tag; } // 17 bytes, 0x02 + 16
+
+        // A message that names an item (as the real ones do, nested: #8 {#5 {#2 id}}).
+        std::string PpkRef(std::string const& id)
+        {
+            return Message([&](protozero::pbf_writer& o) {
+                o.add_bytes(8, Message([&](protozero::pbf_writer& r) { r.add_bytes(5, Message([&](protozero::pbf_writer& i) { i.add_bytes(2, id); })); }));
+            });
+        }
+
+        std::vector<std::uint8_t> PpkDocument(std::vector<std::string> const& items)
+        {
+            std::string body = Message([&](protozero::pbf_writer& o) { for (auto const& item : items) o.add_bytes(4, item); });
+            std::vector<std::uint8_t> data{ 'c', 'r', 'd', 't', 6, 0, 3, 0 };
+            data.insert(data.end(), body.begin(), body.end());
+            return data;
+        }
+
+        // The four items of one stroke: its ink, the stroke, the assignment that names both, the list entry that names that.
+        std::vector<std::string> PpkStroke(char n, std::string const& ink, std::string const& path, bool listed)
+        {
+            std::string inkId = PpkId(static_cast<char>('a' + n)), strokeId = PpkId(static_cast<char>('A' + n)),
+                        assignId = PpkId(static_cast<char>('0' + n)), listId = PpkId(static_cast<char>('p' + n));
+            auto wrapInk = Message([&](protozero::pbf_writer& o) {
+                o.add_bytes(4, Message([&](protozero::pbf_writer& a) { a.add_bytes(2, Message([&](protozero::pbf_writer& b) { b.add_bytes(9, Message([&](protozero::pbf_writer& c) { c.add_bytes(1, ink); })); })); }));
+            });
+            auto stroke = Message([&](protozero::pbf_writer& o) {
+                o.add_bytes(10, Message([&](protozero::pbf_writer& a) { a.add_bytes(1, Message([&](protozero::pbf_writer& b) { b.add_bytes(2, path); })); }));
+            });
+            auto assign = Message([&](protozero::pbf_writer& o) {
+                o.add_bytes(4, Message([&](protozero::pbf_writer& a) { a.add_bytes(2, PpkRef(inkId)); a.add_bytes(2, PpkRef(strokeId)); }));
+            });
+            auto list = Message([&](protozero::pbf_writer& o) { o.add_bytes(1, PpkRef(assignId)); });
+            std::vector<std::string> items{ PpkItem(inkId, wrapInk), PpkItem(strokeId, stroke), PpkItem(assignId, assign) };
+            if (listed) items.push_back(PpkItem(listId, list));
+            return items;
+        }
+    }
+
+    TEST(PaperKit, StrokesAreFoundThroughTheirListEntryAssignmentAndInk)
+    {
+        std::vector<std::string> items;
+        for (auto const& i : PpkStroke(1, Ink("com.apple.ink.pen", 0.2f, 0.2f, 0.8f, 0.996f), Path(Line, 2.5f), true)) items.push_back(i);
+        for (auto const& i : PpkStroke(2, Ink("com.apple.ink.marker", 1, 1, 0, 0.5f), Path({ { 50.f, 50.f }, { 60.f, 50.f } }, 5), false)) items.push_back(i);
+        for (auto const& i : PpkStroke(3, Ink("com.apple.ink.pen", 1, 0, 0, 1), Path({ { 70.f, 70.f }, { 80.f, 75.f } }, 2.5f), true)) items.push_back(i);
+
+        auto strokes = PencilKitDrawing::ReadPaperKit(PpkDocument(items));
+
+        // The second stroke is in no list entry: not part of the drawing. The first keeps its blue (an opaque 0.996 is opaque).
+        ASSERT_EQ(strokes.size(), 2u);
+        EXPECT_EQ(strokes[0].color, (Color{ 0xFF, 51, 51, 204 }));
+        EXPECT_EQ(strokes[0].points.size(), 3u);
+        EXPECT_NEAR(strokes[0].points[2].x, 30, 1e-4);
+        EXPECT_NEAR(strokes[0].width, 2.5, 1e-9);
+        EXPECT_EQ(strokes[1].color, (Color{ 0xFF, 255, 0, 0 }));
+        EXPECT_NEAR(strokes[1].points[1].y, 75, 1e-4);
+        EXPECT_THROW(PencilKitDrawing::ReadPaperKit(std::vector<std::uint8_t>{ 'n', 'o', 'p', 'e', 0, 0, 0, 0, 1 }), Error);
+    }
+
+
+    // An edited drawing as iPadOS 26 saves it: the annotation has only /PPK (no archive, no drawing size) - the strokes
+    // come back all the same, on the page's coordinates.
+    TEST(PaperKit, AnAnnotationWithOnlyPpkImportsItsStrokes)
+    {
+        TempFolder folder;
+        auto source = folder / L"notes.xopp";
+        WriteBytes(source, R"(<?xml version="1.0" standalone="no"?>
+<xournal creator="xournalpp 1.3.8" fileversion="5">
+<page width="400" height="300"><background type="solid" color="#ffffffff" style="plain"/><layer>
+<stroke tool="pen" color="#3333ccff" width="1.2">10 20 30 40 50 20</stroke>
+</layer></page>
+</xournal>)");
+        auto doc = io::DocumentFile::Load(source);
+        auto ipad = folder / L"ipad.pdf";
+        import::ExportForIpad(pdf::PrepareExport(*doc), ipad);
+
+        // The iPad's edit: the older archive goes, /PPK comes.
+        std::vector<std::string> items = PpkStroke(1, Ink("com.apple.ink.pen", 0.2f, 0.2f, 0.8f, 0.996f), Path({ { 100.f, 100.f }, { 110.f, 105.f }, { 130.f, 110.f } }, 2.5f), true);
+        auto bytes = PpkDocument(items);
+        DWORD size = 0;
+        CryptBinaryToStringA(bytes.data(), static_cast<DWORD>(bytes.size()), CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, nullptr, &size);
+        std::string text(size, '\0');
+        CryptBinaryToStringA(bytes.data(), static_cast<DWORD>(bytes.size()), CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, text.data(), &size);
+        text.resize(size);
+        auto edited = folder / L"edited.pdf";
+        {
+            QPDF pdf;
+            pdf.processFile(ToUtf8(ipad.native()).c_str());
+            auto annotation = QPDFPageDocumentHelper(pdf).getAllPages()[0].getAnnotations()[0].getObjectHandle();
+            auto extras = annotation.getKey("/AAPL:AKExtras");
+            extras.removeKey("/AAPL:AKAnnotationV2");
+            extras.replaceKey("/PPK", QPDFObjectHandle::newString(text));
+            extras.replaceKey("/PPKType", QPDFObjectHandle::newString("draw"));
+            QPDFWriter writer(pdf, ToUtf8(edited.native()).c_str());
+            writer.write();
+        }
+
+        auto imported = Prepare(edited, folder / L"clean.pdf", [&](int round) { return folder / std::format(L"pictures-{}.pdf", round); });
+
+        EXPECT_EQ(imported.drawings, 1);
+        EXPECT_TRUE(imported.pictures.empty()); // not a picture of the drawing
+        std::vector<XmlElementPtr> strokes;
+        for (auto const& e : imported.elements[0]) if (e->Name() == L"stroke") strokes.push_back(e);
+        ASSERT_EQ(strokes.size(), 1u);
+        EXPECT_EQ(Attr(strokes[0], L"color"), L"#3333ccff");
+        EXPECT_EQ(strokes[0]->Value(), L"100 100 110 105 130 110");
+    }
+
+
     // ------------------------------------------------------------------ the iPad export
 
     TEST(BinaryPlistWriter, WritesWhatTheReaderReads)
