@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <cmath>
 #include <format>
+#include <mutex>
 
 namespace xournal::search
 {
@@ -26,11 +27,18 @@ namespace xournal::search
         using namespace winrt::Windows::UI::Input::Inking;
         using namespace winrt::Windows::UI::Input::Inking::Analysis;
 
+        // One analysis at a time in the process. Two analyzers working together (the recognition of the document that was
+        // just left is still stopping while the next one's starts - tabs) corrupted the heap inside the system's
+        // Windows.UI.Input.Inking.Analysis (CGuidTagList::InitContextNodeTypesGuidsList, measured in a dump,
+        // 2026-11-27, 0xC0000374): its first-use setup is not made for concurrent callers.
+        std::mutex analysisLock;
+
         std::vector<RecognizedWord> Analyze(std::vector<InkStroke> const& strokes)
         {
             std::vector<RecognizedWord> words;
             if (strokes.empty()) return words;
 
+            std::scoped_lock one(analysisLock);
             InkAnalyzer analyzer;
             analyzer.AddDataForStrokes(strokes);
             auto result = analyzer.AnalyzeAsync().get();
