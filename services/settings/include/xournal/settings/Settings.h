@@ -50,6 +50,8 @@ namespace xournal::settings
 
         std::optional<WindowState> window;
         std::optional<std::filesystem::path> lastFile;
+        /// The saved documents open in tabs when the window closed (left to right); lastFile is the shown one.
+        std::vector<std::filesystem::path> openFiles;
         /// The folder shown in the explorer (a git repository or any folder).
         std::optional<std::filesystem::path> projectFolder;
         bool paneOpen = false;

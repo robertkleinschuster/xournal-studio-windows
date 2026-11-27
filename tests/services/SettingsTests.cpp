@@ -37,6 +37,7 @@ namespace xournal::tests
         Settings settings = Settings::Load(file);
         settings.window = settings::WindowState{ { 10, 20, 810, 620 }, false };
         settings.lastFile = temp / L"\u00DCbung 1.xopp";
+        settings.openFiles = { temp / L"a.xopp", temp / L"b.pdf" };
         settings.projectFolder = temp.Path();
         settings.paneOpen = true;
         settings.darkMode = true;
@@ -59,6 +60,7 @@ namespace xournal::tests
         EXPECT_FALSE(read.window->maximized);
         EXPECT_EQ(settings.lastFile, read.lastFile);
         EXPECT_EQ(settings.projectFolder, read.projectFolder);
+        EXPECT_EQ(settings.openFiles, read.openFiles);
         EXPECT_TRUE(read.paneOpen);
         EXPECT_TRUE(read.darkMode);
         EXPECT_TRUE(read.largeToolbarIcons);

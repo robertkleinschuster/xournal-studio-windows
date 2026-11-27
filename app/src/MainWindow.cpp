@@ -154,6 +154,19 @@ namespace xournal::app
             if (projectExplorer) projectExplorer->Refresh(); // a save changes the git colors
         };
         session->message = [this](std::wstring const& text, MessageKind kind) { Message(text, kind); };
+        tabStrip = std::make_unique<TabStrip>(window);
+        tabStrip->chosen = [this](int tab)
+        {
+            if (!session->Activate(tab)) UpdateTabs(); // could not leave the shown one: the strip goes back to it
+        };
+        tabStrip->closeRequested = [this](int tab) { session->CloseTab(tab); };
+        tabStrip->closeOthersRequested = [this](int keep) { CloseOtherTabs(keep); };
+        session->tabsChanged = [this]
+        {
+            UpdateTabs();
+            if (recovery) recovery->Update(); // a tab dropped in the background ends its copy
+        };
+        tabStrip->dpiChanged = [this] { Layout(); };
         exportCommand = std::make_unique<PdfExportCommand>(window, *view,
             [this](std::wstring const& text, MessageKind kind) { Message(text, kind); });
         pageCommands = std::make_unique<PageCommands>(window, *surface, *view);
@@ -318,15 +331,25 @@ namespace xournal::app
 
         if (!recovery->OfferAtStart())
         {
-            auto file = startFile ? startFile : settings.lastFile;
-            if (file && std::filesystem::exists(*file))
+            // The command line's file, else the tabs of the last session (the shown one last, so it is the one in view).
+            std::vector<std::filesystem::path> files;
+            if (startFile)
             {
-                session->Open(*file);
+                files.push_back(*startFile);
             }
             else
             {
-                session->New();
+                for (auto const& file : settings.openFiles) files.push_back(file);
+                if (settings.lastFile) files.push_back(*settings.lastFile);
             }
+            bool any = false;
+            for (auto const& file : files)
+            {
+                if (!std::filesystem::exists(file)) continue;
+                session->Open(file);
+                any = true;
+            }
+            if (!any && session->TabCount() == 0) session->New();
         }
         UpdateTitle();
     }
@@ -354,7 +377,7 @@ namespace xournal::app
 
     void MainWindow::Layout()
     {
-        if (!surface || !toolbar || !pane || !statusBar)
+        if (!surface || !toolbar || !pane || !statusBar || !tabStrip)
         {
             return;
         }
@@ -369,7 +392,10 @@ namespace xournal::app
             ? std::max(MulDiv(PaneWidthDip, static_cast<int>(GetDpiForWindow(window)), 96), pane->TabsWidth()) : 0;
         LONG height = std::max(0L, rc.bottom - top);
         MoveWindow(pane->Window(), 0, top, paneWidth, height, TRUE);
-        MoveWindow(surface->Window(), paneWidth, top, std::max(0L, rc.right - paneWidth), height, TRUE);
+        int documentWidth = static_cast<int>(std::max(0L, rc.right - paneWidth));
+        int tabsHeight = std::min<int>(tabStrip->Height(), static_cast<int>(height));
+        MoveWindow(tabStrip->Window(), paneWidth, top, documentWidth, tabsHeight, TRUE);
+        MoveWindow(surface->Window(), paneWidth, top + tabsHeight, documentWidth, std::max(0, static_cast<int>(height) - tabsHeight), TRUE);
     }
 
     void MainWindow::SetPaneOpen(bool open)
@@ -466,7 +492,37 @@ namespace xournal::app
         SetWindowTextW(window, session->Title().c_str());
         settings.lastFile = session->FilePath();
         if (pane) pane->SetCurrentFile(session->PlaceKey());
+        UpdateTabs();
         if (recovery) recovery->Update();
+    }
+
+    void MainWindow::UpdateTabs()
+    {
+        if (!session || !tabStrip) return;
+        std::vector<TabEntry> entries;
+        for (int i = 0; i < session->TabCount(); ++i)
+        {
+            auto file = session->TabFile(i);
+            entries.push_back({ session->TabName(i), file ? file->native() : std::wstring(), session->TabModified(i) });
+        }
+        tabStrip->Set(entries, session->ActiveTab());
+    }
+
+    // "Andere schließen": every other tab is closed (each with changes asks; Abbrechen stops).
+    void MainWindow::CloseOtherTabs(int keep)
+    {
+        auto kept = session->Documents().at(static_cast<size_t>(keep));
+        while (session->TabCount() > 1)
+        {
+            int other = session->TabOf(kept) == 0 ? 1 : 0;
+            if (!session->CloseTab(other)) return;
+        }
+    }
+
+    void MainWindow::SwitchTab(int step)
+    {
+        int count = session->TabCount();
+        if (count > 1) session->Activate((session->ActiveTab() + step + count) % count);
     }
 
     void MainWindow::UpdateCommands()
@@ -707,6 +763,9 @@ namespace xournal::app
         {
         case CmdNew: session->New(); break;
         case CmdOpen: session->Open(); break;
+        case CmdCloseTab: session->CloseTab(session->ActiveTab()); break;
+        case CmdNextTab: SwitchTab(1); break;
+        case CmdPreviousTab: SwitchTab(-1); break;
         case CmdSave: session->Save(); break;
         case CmdSaveAs: session->SaveAs(); break;
         case CmdExportPdf: exportCommand->Export(session->Document()); break;
@@ -816,14 +875,22 @@ namespace xournal::app
     {
         // Ending the process mid fetch/rebase/push could leave the repository mid-rebase or locked: the window waits.
         if (sync->RefusedWhileSyncing(L"Schließen")) return false;
-        if (!session->ConfirmLeave())
+        auto shown = session->Document();
+        if (!session->ConfirmLeaveAll())
         {
             return false;
         }
         recovery->End(); // saved or discarded: nothing to recover
         RememberPlace();
         RememberWindow();
-        settings.lastFile = session->FilePath();
+        // The next start shows the same tabs again (documents never saved have no file and are not kept).
+        settings.openFiles.clear();
+        for (int i = 0; i < session->TabCount(); ++i)
+        {
+            if (auto file = session->TabFile(i); file && i != session->TabOf(shown)) settings.openFiles.push_back(*file);
+        }
+        // The tab that was shown (the questions may have shown others) is the one shown at the next start.
+        settings.lastFile = session->TabOf(shown) >= 0 ? session->TabFile(session->TabOf(shown)) : std::nullopt;
         SaveSettings();
         return true;
     }
@@ -853,6 +920,11 @@ namespace xournal::app
             return 0;
         case WM_NOTIFY:
             if (statusBar && statusBar->OnNotify(*reinterpret_cast<NMHDR const*>(lp))) return 0;
+            if (tabStrip)
+            {
+                LRESULT result = 0;
+                if (tabStrip->OnNotify(*reinterpret_cast<NMHDR const*>(lp), result)) return result;
+            }
             break;
         case WM_CONTEXTMENU:
             // The pages' menu (InkPages leaves the right click to the parent); other children have their own.
@@ -938,6 +1010,7 @@ namespace xournal::app
             pageCommands.reset();
             exportCommand.reset();
             session.reset();
+            tabStrip.reset();
             view.reset();
             textSelection.reset(); // after the view: its handlers call it
             toolbar.reset();

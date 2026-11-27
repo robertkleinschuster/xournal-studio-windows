@@ -15,6 +15,8 @@
 #include <windows.h>
 
 #include <functional>
+#include <memory>
+#include <vector>
 #include <optional>
 #include <string>
 #include <utility>
@@ -55,6 +57,15 @@ namespace xournal::app
             std::filesystem::path const& current) const;
 
         HWND owner;
+        struct TabAt
+        {
+            std::shared_ptr<XoppDocument> doc;
+            int position;
+        };
+        std::vector<TabAt> TabsAtOrBelow(std::filesystem::path const& item) const;
+        void ReopenTabs(std::vector<TabAt> const& tabs,
+            std::function<std::filesystem::path(std::filesystem::path const&)> const& place);
+
         DocumentSession& session;
         SyncController& sync;
         ProjectExplorer& explorer;

@@ -69,6 +69,7 @@ namespace xournal::app
             return false;
         }
         saveRequested = true;
+        saveFor = session.Document();
         messages(L"Synchronisierung läuft: gespeichert wird, sobald sie fertig ist.", MessageKind::Info);
         return true;
     }
@@ -78,8 +79,9 @@ namespace xournal::app
     {
         bool wanted = saveRequested;
         saveRequested = false;
-        auto doc = session.Document();
-        if (wanted && session.IsModified() && doc && doc->FilePath())
+        auto doc = std::move(saveFor);
+        int tab = doc ? session.TabOf(doc) : -1; // the document it was asked for, not the one shown now
+        if (wanted && tab >= 0 && session.TabModified(tab) && doc->FilePath() && session.Activate(tab))
         {
             session.Save();
         }
@@ -123,13 +125,13 @@ namespace xournal::app
             return;
         }
         session.EndTextEditing(); // a text being typed counts as a change
-        // Pulling uploads nothing: the open document's unsaved notes are asked about only if the pull changes it.
-        if (!pullOnly && session.IsModified())
+        // Pulling uploads nothing: the open documents' unsaved notes are asked about only if the pull changes one.
+        if (!pullOnly && session.AnyModified())
         {
             int choice = Questions::Choose(owner, L"Vor dem Synchronisieren speichern?",
                 L"Hochgeladen wird nur, was gespeichert ist. Ohne Speichern bleiben die Änderungen ungespeichert im Fenster.",
                 { L"Speichern", L"Nicht speichern", L"Abbrechen" });
-            if (choice == 0 && !session.Save())
+            if (choice == 0 && !session.SaveAll())
             {
                 return;
             }
@@ -185,21 +187,33 @@ namespace xournal::app
 
     void SyncController::Finish(git::SyncResult const& result, bool pullOnly)
     {
-        auto doc = session.Document();
-        bool documentChanged = false;
-        for (auto const& file : result.pulledFiles)
+        // The tabs the pull changed (also a picture background a document shows).
+        std::vector<std::pair<std::shared_ptr<XoppDocument>, int>> changedDocuments; // with their places among the tabs
+        auto documents = session.Documents();
+        for (size_t i = 0; i < documents.size(); ++i)
         {
-            documentChanged = documentChanged || (doc && doc->Uses(file)); // also a picture background it shows
+            for (auto const& file : result.pulledFiles)
+            {
+                if (documents[i]->Uses(file))
+                {
+                    changedDocuments.emplace_back(documents[i], static_cast<int>(i));
+                    break;
+                }
+            }
         }
-        if (!documentChanged || ResolvePulledDocument())
+        bool resolved = true;
+        for (auto const& [doc, position] : changedDocuments) resolved = ResolvePulledDocument(doc, position) && resolved;
+        if (resolved)
         {
             messages(Describe(result, pullOnly), MessageKind::Success);
         }
     }
 
-    bool SyncController::ResolvePulledDocument()
+    bool SyncController::ResolvePulledDocument(std::shared_ptr<XoppDocument> const& doc, int position)
     {
         saveRequested = false; // asked for before the document changed on disk: the user decides again
+        int tab = session.TabOf(doc);
+        if (tab < 0 || !session.Activate(tab)) return false; // shown, so the question and the copy are about it
         session.EndTextEditing(); // a text typed during the sync is one of the unsaved notes
         if (session.IsModified())
         {
@@ -219,19 +233,23 @@ namespace xournal::app
                 return false;
             }
         }
-        auto doc = session.Document();
+        // Opened again from the pulled file, in the same place among the tabs.
         if (doc->FilePath() && Paths::FileExists(*doc->FilePath()))
         {
-            session.Load(*doc->FilePath());
+            auto file = *doc->FilePath();
+            session.DropTab(tab);
+            session.Open(file, position);
             return true;
         }
         if (doc->PdfPath() && Paths::FileExists(*doc->PdfPath()))
         {
-            session.Load(*doc->PdfPath());
+            auto file = *doc->PdfPath();
+            session.DropTab(tab);
+            session.Open(file, position);
             return true;
         }
         auto gone = doc->FilePath();
-        session.ShowNew();
+        session.DropTab(tab);
         messages(std::format(L"Das Dokument wurde auf einem anderen Gerät gelöscht oder umbenannt: {} gibt es nach der "
             L"Synchronisierung nicht mehr.", gone ? gone->native() : std::wstring()), MessageKind::Warning);
         return false;

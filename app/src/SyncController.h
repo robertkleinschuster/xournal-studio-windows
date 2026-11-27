@@ -51,7 +51,7 @@ namespace xournal::app
     private:
         void Run(std::optional<std::filesystem::path> const& folder, bool pullOnly);
         void Finish(git::SyncResult const& result, bool pullOnly);
-        bool ResolvePulledDocument();
+        bool ResolvePulledDocument(std::shared_ptr<XoppDocument> const& document, int position);
         void SetSyncing(bool value);
         void SaveIfRequested();
 
@@ -59,6 +59,7 @@ namespace xournal::app
         DocumentSession& session;
         Messages messages;
         bool syncing = false;
+        std::shared_ptr<XoppDocument> saveFor; // the document Strg+S was pressed for during the sync
         bool saveRequested = false; // Strg+S during the sync
     };
 }

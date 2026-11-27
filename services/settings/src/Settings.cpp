@@ -92,6 +92,13 @@ namespace xournal::settings
         settings.readJson = text;
         settings.window = ReadWindow(o);
         if (auto last = String(o, L"lastFile")) settings.lastFile = *last;
+        if (Has(o, L"openFiles", JsonValueType::Array))
+        {
+            for (auto const& value : o.GetNamedArray(L"openFiles"))
+            {
+                if (value.ValueType() == JsonValueType::String) settings.openFiles.emplace_back(std::wstring(value.GetString()));
+            }
+        }
         if (auto folder = String(o, L"projectFolder")) settings.projectFolder = *folder;
         settings.paneOpen = Boolean(o, L"paneOpen", false);
         settings.darkMode = Boolean(o, L"darkMode", false);
@@ -165,6 +172,9 @@ namespace xournal::settings
             o.Remove(L"window");
         }
         set(L"lastFile", pathValue(lastFile));
+        JsonArray open;
+        for (auto const& path : openFiles) open.Append(JsonValue::CreateStringValue(path.native()));
+        o.SetNamedValue(L"openFiles", open);
         set(L"projectFolder", pathValue(projectFolder));
         set(L"paneOpen", JsonValue::CreateBooleanValue(paneOpen));
         set(L"darkMode", JsonValue::CreateBooleanValue(darkMode));

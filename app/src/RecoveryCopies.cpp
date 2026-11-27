@@ -11,6 +11,7 @@
 #include "xournal/io/DocumentFile.h"
 #include "xournal/model/Snapshot.h"
 
+#include <algorithm>
 #include <format>
 
 namespace xournal::app
@@ -86,14 +87,8 @@ namespace xournal::app
         DocumentView& documentView, Messages show)
         : owner(window), session(documentSession), view(documentView), messages(std::move(show)),
           store(recovery::Recovery::FolderIn(appFolder)), process(recovery::ProcessStamp::Current()),
-          delayed("recovery copy", CopyDelay, [this] { autosave->WriteNow(); })
+          delayed("recovery copy", CopyDelay, [this] { WriteAll(); })
     {
-        autosave = std::make_unique<recovery::Autosave>(store, [this] { return TakeCopy(); },
-            [this](std::string const&, std::exception_ptr error)
-            {
-                std::wstring text = std::format(L"Wiederherstellungskopie fehlgeschlagen: {}", ErrorText(error));
-                UiQueue::Post("recovery: report failure", [this, text] { messages(text, MessageKind::Warning); });
-            });
         // Windows starts the app again after a crash or an update restart (if it ran 60 s); the start offers the copy.
         HRESULT hr = RegisterApplicationRestart(L"", 0);
         if (FAILED(hr))
@@ -105,12 +100,29 @@ namespace xournal::app
     RecoveryCopies::~RecoveryCopies()
     {
         delayed.Cancel();
-        autosave.reset(); // finishes what is queued
+        entries.clear(); // each finishes what is queued
     }
 
-    recovery::Autosave::Copy RecoveryCopies::TakeCopy()
+    RecoveryCopies::Entry& RecoveryCopies::EntryOf(std::shared_ptr<XoppDocument> const& doc)
     {
-        auto doc = session.Document();
+        for (auto const& entry : entries)
+        {
+            if (entry->doc == doc) return *entry;
+        }
+        auto entry = std::make_unique<Entry>();
+        entry->doc = doc;
+        entry->autosave = std::make_unique<recovery::Autosave>(store, [this, doc] { return TakeCopy(doc); },
+            [this](std::string const&, std::exception_ptr error)
+            {
+                std::wstring text = std::format(L"Wiederherstellungskopie fehlgeschlagen: {}", ErrorText(error));
+                UiQueue::Post("recovery: report failure", [this, text] { messages(text, MessageKind::Warning); });
+            });
+        entries.push_back(std::move(entry));
+        return *entries.back();
+    }
+
+    recovery::Autosave::Copy RecoveryCopies::TakeCopy(std::shared_ptr<XoppDocument> const& doc)
+    {
         recovery::Autosave::Copy copy;
         copy.info.documentPath = doc->FilePath();
         copy.info.referenceBase = doc->ReferenceBase();
@@ -118,57 +130,73 @@ namespace xournal::app
         copy.info.createdAt = doc->CreatedAt();
         copy.info.savedAt = std::chrono::file_clock::now();
         copy.info.process = process;
-        view.CaptureInk([&] { copy.snapshot = TakeSnapshot(*doc, copy.info.referenceBase); });
+        if (doc == session.Document())
+        {
+            view.CaptureInk([&] { copy.snapshot = TakeSnapshot(*doc, copy.info.referenceBase); });
+        }
+        else
+        {
+            copy.snapshot = TakeSnapshot(*doc, copy.info.referenceBase); // a tab in the background: its ink is in the model
+        }
         return copy;
+    }
+
+    void RecoveryCopies::WriteAll()
+    {
+        for (auto const& entry : entries) entry->autosave->WriteNow();
     }
 
     void RecoveryCopies::Update()
     {
-        auto doc = session.Document();
-        if (doc.get() != shown)
+        auto documents = session.Documents();
+        auto shown = session.Document();
+        // A document that is no tab any more was left for good (saved, discarded or replaced): its copy goes.
+        std::erase_if(entries, [&](std::unique_ptr<Entry> const& entry)
         {
-            // Another document: the previous one was left for good (saved or discarded), so its copy goes.
-            delayed.Cancel();
-            autosave->StartNewDocument();
-            shown = doc.get();
-            copyWanted = false;
-        }
-        if (session.IsModified())
+            if (std::ranges::find(documents, entry->doc) != documents.end()) return false;
+            entry->autosave->Discard();
+            return true;
+        });
+        bool pending = false;
+        for (int i = 0; i < session.TabCount(); ++i)
         {
-            autosave->Changed();
-            delayed.Start(); // 5 s after the first change, not after the last
-            copyWanted = true;
+            Entry& entry = EntryOf(documents[static_cast<size_t>(i)]);
+            if (session.TabModified(i))
+            {
+                // A tab in the background has its copy already (written or pending): only the shown one changes.
+                if (entry.doc == shown || !entry.copyWanted) entry.autosave->Changed();
+                entry.copyWanted = true;
+            }
+            else if (entry.copyWanted)
+            {
+                entry.autosave->Discard(); // saved: nothing to recover
+                entry.copyWanted = false;
+            }
+            pending = pending || entry.autosave->Pending();
         }
-        else if (copyWanted)
-        {
-            delayed.Cancel();
-            autosave->Discard(); // saved: nothing to recover
-            copyWanted = false;
-        }
+        if (pending) delayed.Start(); // 5 s after the first change, not after the last
+        else delayed.Cancel();
     }
 
     void RecoveryCopies::Deactivated()
     {
-        if (session.IsModified())
-        {
-            delayed.Cancel();
-            autosave->WriteNow();
-        }
+        delayed.Cancel();
+        WriteAll();
     }
 
     void RecoveryCopies::End()
     {
         delayed.Cancel();
-        autosave->Discard();
-        autosave->WaitIdle();
+        for (auto const& entry : entries) entry->autosave->Discard();
+        for (auto const& entry : entries) entry->autosave->WaitIdle();
     }
 
     bool RecoveryCopies::OfferAtStart()
     {
-        std::vector<recovery::RecoveryEntry> entries;
+        std::vector<recovery::RecoveryEntry> abandoned;
         try
         {
-            entries = store.FindAbandoned();
+            abandoned = store.FindAbandoned();
         }
         catch (...)
         {
@@ -176,14 +204,12 @@ namespace xournal::app
             messages(std::format(L"Wiederherstellungskopien nicht lesbar: {}", ErrorText()), MessageKind::Error);
             return false;
         }
-        for (auto const& entry : entries)
+        bool restored = false;
+        for (auto const& entry : abandoned)
         {
-            if (Offer(entry))
-            {
-                return true;
-            }
+            restored = Offer(entry) || restored;
         }
-        return false;
+        return restored;
     }
 
     // True: restored. Verwerfen recycles the copy, Später keeps it for the next start.
@@ -217,9 +243,9 @@ namespace xournal::app
                 file = info.documentPath;
             }
             std::shared_ptr<XoppDocument> doc = io::DocumentFile::LoadCopy(entry.copyPath, file, info.referenceBase);
-            session.ShowRecovered(doc);
+            if (!session.ShowRecovered(doc)) return false; // the copy stays for the next start (the error is said)
             Update();
-            autosave->WriteNowReplacing(entry.id); // the restored state is this session's copy now
+            EntryOf(doc).autosave->WriteNowReplacing(entry.id); // the restored state is this session's copy now
             return true;
         }
         catch (...)

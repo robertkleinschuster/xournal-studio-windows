@@ -27,6 +27,7 @@
 #include "SidePane.h"
 #include "StatusBar.h"
 #include "SyncController.h"
+#include "TabStrip.h"
 #include "MessageKind.h"
 #include "ViewNavigation.h"
 
@@ -72,6 +73,9 @@ namespace xournal::app
         void ShowSearch();        // opens the pane on the Suche tab, the keyboard in its field
         void UpdatePagesPane(); // thumbnails only while the Seiten tab is shown
         void UpdateTitle();
+        void UpdateTabs();         // the tab strip shows the session's tabs
+        void CloseOtherTabs(int keep);
+        void SwitchTab(int step);
         void SetPaneOpen(bool open);
         void OpenFolder();
         void CreateProjectParts();
@@ -97,6 +101,7 @@ namespace xournal::app
         std::unique_ptr<inkpages::WritingSurface> surface;
         std::unique_ptr<inkpages::Toolbar> toolbar;
         std::unique_ptr<SidePane> pane;
+        std::unique_ptr<TabStrip> tabStrip;
         std::unique_ptr<StatusBar> statusBar;
         std::unique_ptr<ViewNavigation> navigation;
         std::unique_ptr<LinkHover> linkHover;

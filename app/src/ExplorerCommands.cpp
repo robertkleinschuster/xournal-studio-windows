@@ -17,6 +17,7 @@
 #include <shellapi.h>
 #include <shlobj.h>
 
+#include <algorithm>
 #include <format>
 #include <memory>
 
@@ -193,16 +194,12 @@ namespace xournal::app
     // (as File Explorer's "Neu" does).
     void ExplorerCommands::NewDocument(std::filesystem::path const& folder)
     {
-        if (!session.ConfirmLeave())
-        {
-            return;
-        }
         std::wstring name = project::ProjectFiles::UniqueName(folder, DocumentNames::DefaultName(DateTime::Now()),
             project::ProjectFiles::DocumentExtension);
         std::filesystem::path file = folder / name;
         auto doc = XoppDocument::CreateNew();
         io::DocumentFile::Save(*doc, file);
-        session.Load(file);
+        session.Open(file); // in a tab of its own
         explorer.RefreshNow();
         // After Run's own refresh (it rebuilds the tree, which would end the edit).
         UiQueue::Post("explorer: name the new document", [this, file] { tree.BeginRename(file); });
@@ -232,23 +229,38 @@ namespace xournal::app
             messages(*error, MessageKind::Warning);
             return;
         }
-        auto doc = session.Document();
-        auto openFile = doc ? doc->FilePath() : std::nullopt;
-        bool fileAffected = IsAtOrBelow(openFile, item);
-        if (fileAffected && !session.ConfirmLeave())
+        // Tabs whose own file is renamed (or lies in the renamed folder) are left first (each with changes asks).
+        auto reopening = TabsAtOrBelow(item);
+        for (auto const& tab : reopening)
         {
-            return;
+            if (!session.Activate(session.TabOf(tab.doc)) || !session.ConfirmLeave()) return;
         }
         auto renamed = project::ProjectFiles::Rename(item, newName);
         tree.Select(renamed);
-        if (fileAffected)
+        ReopenTabs(reopening, [&](std::filesystem::path const& file) { return project::ProjectFiles::MapRenamed(file, item, renamed); });
+        session.MoveFiles(item, renamed); // the PDF or a picture background (or a folder holding them) of the other tabs
+    }
+
+    // The tabs whose own file is `item` or lies below it, left to right.
+    std::vector<ExplorerCommands::TabAt> ExplorerCommands::TabsAtOrBelow(std::filesystem::path const& item) const
+    {
+        std::vector<TabAt> found;
+        auto documents = session.Documents();
+        for (size_t i = 0; i < documents.size(); ++i)
         {
-            session.Load(project::ProjectFiles::MapRenamed(*openFile, item, renamed));
+            if (IsAtOrBelow(documents[i]->FilePath(), item)) found.push_back({ documents[i], static_cast<int>(i) });
         }
-        else if (doc && doc->Uses(item))
-        {
-            session.MoveFiles(item, renamed); // its PDF or a picture background (or a folder holding them)
-        }
+        return found;
+    }
+
+    // The tabs are removed (their question was asked) and opened again from `place(file)`, each where it was.
+    void ExplorerCommands::ReopenTabs(std::vector<TabAt> const& tabs,
+        std::function<std::filesystem::path(std::filesystem::path const&)> const& place)
+    {
+        std::vector<std::pair<std::filesystem::path, int>> again;
+        for (auto const& tab : tabs) again.emplace_back(place(*tab.doc->FilePath()), tab.position);
+        for (auto const& tab : tabs) session.DropTab(session.TabOf(tab.doc));
+        for (auto const& [file, position] : again) session.Open(file, position);
     }
 
     // Exactly this file or folder to the recycle bin, after asking. If the open document uses it (its file, PDF or a
@@ -262,15 +274,14 @@ namespace xournal::app
         {
             return;
         }
-        auto doc = session.Document();
-        if (doc && doc->Uses(item))
+        auto using_ = session.TabsUsing(item);
+        std::vector<std::shared_ptr<XoppDocument>> leaving;
+        for (int tab : using_) leaving.push_back(session.Documents()[static_cast<size_t>(tab)]);
+        for (auto const& d : leaving)
         {
-            if (!session.ConfirmLeave())
-            {
-                return;
-            }
-            session.ShowNew();
+            if (!session.Activate(session.TabOf(d)) || !session.ConfirmLeave()) return;
         }
+        for (auto const& d : leaving) session.DropTab(session.TabOf(d));
         project::ProjectFiles::Recycle(item, owner);
     }
 
@@ -292,12 +303,26 @@ namespace xournal::app
             messages(std::format(L"„{}“ hat keine Änderungen.", NameOf(item)), MessageKind::Info);
             return;
         }
-        auto doc = session.Document();
-        auto open = doc ? (doc->FilePath() ? doc->FilePath() : doc->PdfPath()) : std::nullopt;
-        bool affected = false;
-        for (auto const* files : { &plan.restore, &plan.remove, &plan.unstage })
+        // The tabs that use one of the files: their unsaved changes go and they are opened again from the restored files.
+        std::vector<std::shared_ptr<XoppDocument>> affectedDocs;
+        for (auto const& d : session.Documents())
         {
-            for (auto const& file : *files) affected = affected || (doc && doc->Uses(file));
+            for (auto const* files : { &plan.restore, &plan.remove, &plan.unstage })
+            {
+                for (auto const& file : *files)
+                {
+                    if (d->Uses(file) && std::ranges::find(affectedDocs, d) == affectedDocs.end()) affectedDocs.push_back(d);
+                }
+            }
+        }
+        std::vector<std::pair<std::filesystem::path, int>> reopen; // each with its place among the tabs
+        std::wstring unsaved;
+        for (auto const& d : affectedDocs)
+        {
+            int tab = session.TabOf(d);
+            if (tab == session.ActiveTab()) session.EndTextEditing(); // a text being typed counts among the unsaved changes
+            if (session.TabModified(tab)) unsaved += L"\n  " + session.TabName(tab);
+            if (auto open = d->FilePath() ? d->FilePath() : d->PdfPath(); open) reopen.emplace_back(*open, tab);
         }
         std::wstring text;
         auto list = [&text](std::vector<std::filesystem::path> const& files, wchar_t const* heading)
@@ -320,10 +345,9 @@ namespace xournal::app
             text += L"Die jetzigen Fassungen kommen in den Papierkorb.\n";
         }
         list(plan.remove, L"Neu seit dem letzten Commit – kommen in den Papierkorb:");
-        if (affected) session.EndTextEditing(); // a text being typed counts among the unsaved changes
-        if (affected && session.IsModified())
+        if (!unsaved.empty())
         {
-            text += L"\nAuch die ungespeicherten Änderungen im offenen Dokument gehen verloren.";
+            text += L"\nAuch die ungespeicherten Änderungen in diesen offenen Dokumenten gehen verloren:" + unsaved;
         }
         if (!Questions::Confirm(owner, std::format(L"Änderungen an „{}“ verwerfen?", NameOf(item)), text, L"Verwerfen"))
         {
@@ -335,11 +359,11 @@ namespace xournal::app
         project::ProjectFiles::RecycleCopies(plan.overwritten, owner); // the current versions, to take back from the bin
         project::ProjectFiles::Recycle(plan.remove, owner);
         git::GitSync::Discard(*root, plan);
-        if (affected)
+        // Opened again from the restored files (their unsaved changes go, as the question said), each where it was.
+        for (auto const& d : affectedDocs) session.DropTab(session.TabOf(d));
+        for (auto const& [open, position] : reopen)
         {
-            // Opened again from the restored files (its unsaved changes go, as the question said).
-            if (open && Paths::FileExists(*open)) session.Load(*open);
-            else session.ShowNew();
+            if (Paths::FileExists(open)) session.Open(open, position);
         }
     }
 
@@ -368,8 +392,7 @@ namespace xournal::app
         {
             for (auto const& [from, to] : done)
             {
-                auto doc = session.Document();
-                if (doc && doc->Uses(from))
+                if (!session.TabsUsing(from).empty())
                 {
                     session.MoveFiles(from, to);
                 }

@@ -243,6 +243,15 @@ code). In short: `base ← model ← io ← pdf, pdftext, search, import, servic
   Windows.Data.Pdf (transparent); iPadOS' PaperKit leaves an earlier appearance as a `/Stamp` with only
   `/PPKID`/`/PPKHash` at the drawing's rectangle – dropped with the drawing. `/FreeText` → `<text>`, y = baseline −
   0.905 em. Undocumented formats, decoded with libfreeform's `pkdrawing.rs` and notability-goodnotes' `pencilkit.py`.
+- **Tabs** (user, 2026-11-27, "wie in einer IDE"): every open document is a tab (`TabStrip` = comctl32 tab control above the
+  pages; Strg+W, Strg+Tab, middle click and the tab's menu close/switch). One WritingSurface shows one tab; the others
+  are parked in `DocumentSession` (ink brought into the model by `CaptureInk` only when changed, unsaved flag and view
+  place kept with the tab) - the surface's undo history starts over when a tab is shown again. New/Open add a tab (a
+  file already open is only shown, an untouched new document is replaced); closing asks per tab, the window asks for
+  every tab with changes; the tabs of the last session return at the start (`Settings.openFiles` + `lastFile`);
+  recovery copies exist per document; file operations in the explorer and a sync's pull close and reopen affected tabs
+  at their place (`DropTab` + `Open(file, position)`). While a question is open a document that finishes loading is
+  added to the strip without being shown (`QuestionScope`). Reviewed by an Opus agent 2026-11-27 (findings fixed).
 - **Explorer order:** names with numbers by value, as File Explorer (`CompareStringEx` + `SORT_DIGITSASNUMBERS`,
   ignore case, ties ordinal).
 - Git (libgit2): sign-in = the credential Git Credential Manager / wincred stores in the Windows Credential Manager

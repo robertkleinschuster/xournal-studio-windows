@@ -9,6 +9,7 @@ add_executable(XournalStudio WIN32
     src/AppToolbar.cpp
     src/MainWindow.cpp
     src/SidePane.cpp
+    src/TabStrip.cpp
     src/ExplorerTree.cpp
     src/ProjectSnapshot.cpp
     src/ProjectExplorer.cpp

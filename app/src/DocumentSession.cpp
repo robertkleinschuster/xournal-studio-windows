@@ -12,6 +12,7 @@
 #include "xournal/io/DocumentFile.h"
 #include "xournal/model/Snapshot.h"
 
+#include <algorithm>
 #include <format>
 
 namespace xournal::app
@@ -26,17 +27,233 @@ namespace xournal::app
     {
     }
 
-    void DocumentSession::Show(std::shared_ptr<XoppDocument> next, std::optional<std::filesystem::path> from)
+    bool DocumentSession::Show(std::shared_ptr<XoppDocument> next, std::optional<std::filesystem::path> from, bool newTab)
     {
-        if (doc && leaving) leaving();
+        if (doc && newTab)
+        {
+            if (!Park()) return false;
+            tabs.emplace_back();
+            active = tabs.size() - 1;
+        }
+        else
+        {
+            if (doc && leaving) leaving();
+            if (tabs.empty()) tabs.emplace_back();
+        }
         doc = std::move(next);
         openedFrom = std::move(from);
         ++shownCount;
         changedOutsideInk = false;
         pagesChanged = false;
+        tabs[active] = { doc, openedFrom, false, std::nullopt };
         auto key = PlaceKey();
         view.Show(doc, key && placeOf ? placeOf(*key) : std::nullopt);
         if (changed) changed();
+        if (tabsChanged) tabsChanged();
+        return true;
+    }
+
+    // The shown tab goes to the background: what is on the surface is brought into the model first (only a document
+    // with changes differs from the model), the unsaved state and the position stay with the tab.
+    bool DocumentSession::Park()
+    {
+        if (!doc) return true;
+        EndTextEditing();
+        bool modified = IsModified();
+        if (modified)
+        {
+            try
+            {
+                view.CaptureInk([] {});
+            }
+            catch (...)
+            {
+                LogException("session: bringing the ink into the document before switching tabs");
+                Fail(std::format(L"Der Tab kann nicht gewechselt werden: {}", ErrorText()));
+                return false;
+            }
+        }
+        if (leaving) leaving();
+        tabs[active] = { doc, openedFrom, modified, surface.CurrentPlace() };
+        return true;
+    }
+
+    void DocumentSession::Switch(size_t index)
+    {
+        active = index;
+        Tab const& tab = tabs[index];
+        doc = tab.doc;
+        openedFrom = tab.openedFrom;
+        ++shownCount;
+        changedOutsideInk = tab.modified; // unsaved until saved; the surface's history starts over
+        pagesChanged = false;
+        auto key = PlaceKey();
+        view.Show(doc, tab.place ? tab.place : key && placeOf ? placeOf(*key) : std::nullopt);
+        if (changed) changed();
+        if (tabsChanged) tabsChanged();
+    }
+
+    bool DocumentSession::Activate(int index)
+    {
+        if (index < 0 || index >= TabCount()) return false;
+        if (static_cast<size_t>(index) == active) return true;
+        if (!Park()) return false;
+        Switch(static_cast<size_t>(index));
+        return true;
+    }
+
+    bool DocumentSession::CloseTab(int index)
+    {
+        if (index < 0 || index >= TabCount()) return false;
+        if (!TabModified(index))
+        {
+            DropTab(index); // nothing to ask: the shown tab stays
+            return true;
+        }
+        QuestionScope question(*this);
+        auto closing = tabs[static_cast<size_t>(index)].doc;
+        auto before = doc;
+        if (!Activate(index) || !ConfirmLeave()) return false;
+        int now = TabOf(closing); // by identity: the strip may have changed while the question was open
+        if (now < 0) return true;
+        DropTab(now);
+        if (before != closing)
+        {
+            if (int back = TabOf(before); back >= 0) Activate(back);
+        }
+        return true;
+    }
+
+    void DocumentSession::DropTab(int index)
+    {
+        if (index < 0 || index >= TabCount()) return;
+        auto const size = static_cast<size_t>(index);
+        if (size == active)
+        {
+            if (leaving) leaving();
+            tabs.erase(tabs.begin() + static_cast<std::ptrdiff_t>(size));
+            doc.reset();
+            if (tabs.empty())
+            {
+                active = 0;
+                Show(XoppDocument::CreateNew(), std::nullopt, false);
+                return;
+            }
+            Switch(std::min(size, tabs.size() - 1));
+            return;
+        }
+        tabs.erase(tabs.begin() + static_cast<std::ptrdiff_t>(size));
+        if (size < active) --active;
+        if (tabsChanged) tabsChanged();
+    }
+
+    void DocumentSession::MoveLastTabTo(int position)
+    {
+        if (position < 0 || static_cast<size_t>(position) >= tabs.size() - 1) return;
+        std::rotate(tabs.begin() + position, tabs.end() - 1, tabs.end());
+        active = static_cast<size_t>(position); // the new tab was the shown one
+        if (tabsChanged) tabsChanged();
+    }
+
+    bool DocumentSession::AnyModified() const
+    {
+        for (int i = 0; i < TabCount(); ++i)
+        {
+            if (TabModified(i)) return true;
+        }
+        return false;
+    }
+
+    bool DocumentSession::SaveAll()
+    {
+        QuestionScope question(*this);
+        for (int i = 0; i < TabCount(); ++i)
+        {
+            if (!TabModified(i)) continue;
+            if (!Activate(i) || !Save()) return false;
+        }
+        return true;
+    }
+
+    bool DocumentSession::ConfirmLeaveAll()
+    {
+        QuestionScope question(*this);
+        for (int i = 0; i < TabCount(); ++i)
+        {
+            if (!TabModified(i)) continue;
+            if (!Activate(i) || !ConfirmLeave()) return false;
+        }
+        return true;
+    }
+
+    std::wstring DocumentSession::TabName(int index) const
+    {
+        return tabs.at(static_cast<size_t>(index)).doc->SuggestedName();
+    }
+
+    bool DocumentSession::TabModified(int index) const
+    {
+        return static_cast<size_t>(index) == active ? IsModified() : tabs.at(static_cast<size_t>(index)).modified;
+    }
+
+    std::optional<std::filesystem::path> DocumentSession::TabFile(int index) const
+    {
+        auto const& tab = tabs.at(static_cast<size_t>(index));
+        if (tab.doc->FilePath()) return tab.doc->FilePath();
+        return tab.doc->PdfPath() ? tab.doc->PdfPath() : tab.openedFrom;
+    }
+
+    std::vector<std::shared_ptr<XoppDocument>> DocumentSession::Documents() const
+    {
+        std::vector<std::shared_ptr<XoppDocument>> all;
+        for (auto const& tab : tabs) all.push_back(tab.doc);
+        return all;
+    }
+
+    int DocumentSession::TabOf(std::shared_ptr<XoppDocument> const& document) const
+    {
+        for (size_t i = 0; i < tabs.size(); ++i)
+        {
+            if (tabs[i].doc == document) return static_cast<int>(i);
+        }
+        return -1;
+    }
+
+    std::vector<int> DocumentSession::TabsUsing(std::filesystem::path const& item) const
+    {
+        std::vector<int> found;
+        for (size_t i = 0; i < tabs.size(); ++i)
+        {
+            if (tabs[i].doc->Uses(item)) found.push_back(static_cast<int>(i));
+        }
+        return found;
+    }
+
+    int DocumentSession::TabWithFile(std::filesystem::path const& file) const
+    {
+        for (int i = 0; i < TabCount(); ++i)
+        {
+            auto own = TabFile(i);
+            if (own && project::ProjectFiles::SamePath(file, own)) return i;
+        }
+        return -1;
+    }
+
+    bool DocumentSession::IsPristine() const { return doc && IsPristineTab(active); }
+
+    bool DocumentSession::IsPristineTab(size_t index) const
+    {
+        auto const& tab = tabs[index];
+        return !tab.doc->FilePath() && !tab.doc->PdfPath() && !tab.openedFrom && !TabModified(static_cast<int>(index));
+    }
+
+    // A tab that is not shown: the strip gets it, the surface does not change.
+    void DocumentSession::InsertParked(std::shared_ptr<XoppDocument> document, std::optional<std::filesystem::path> from, int position)
+    {
+        size_t at = position >= 0 && static_cast<size_t>(position) <= tabs.size() ? static_cast<size_t>(position) : tabs.size();
+        tabs.insert(tabs.begin() + static_cast<std::ptrdiff_t>(at), { std::move(document), std::move(from), false, std::nullopt });
+        if (at <= active) ++active;
+        if (tabsChanged) tabsChanged();
     }
 
     std::optional<std::filesystem::path> DocumentSession::PlaceKey() const
@@ -53,8 +270,7 @@ namespace xournal::app
             if (message) message(L"Ein Dokument wird gerade geöffnet; bitte einen Moment warten.", MessageKind::Info);
             return;
         }
-        if (!ConfirmLeave()) return;
-        Show(XoppDocument::CreateNew());
+        Show(XoppDocument::CreateNew(), std::nullopt, true);
     }
 
     void DocumentSession::Open()
@@ -65,49 +281,79 @@ namespace xournal::app
         if (file) Open(*file);
     }
 
-    void DocumentSession::Open(std::filesystem::path const& file)
+    void DocumentSession::Open(std::filesystem::path const& file, int position)
     {
-        if (loading || (refusedWhileSyncing && refusedWhileSyncing(L"Öffnen")) || !ConfirmLeave()) return;
-        Load(file);
+        if (int tab = TabWithFile(file); tab >= 0)
+        {
+            Activate(tab);
+            return;
+        }
+        if (refusedWhileSyncing && refusedWhileSyncing(L"Öffnen")) return;
+        if (loading)
+        {
+            pendingOpens.emplace_back(file, position); // opened when the one loading is shown
+            return;
+        }
+        EndTextEditing();
+        Load(file, position, IsPristine() ? doc : nullptr);
     }
 
-    void DocumentSession::ShowNew()
+    void DocumentSession::OpenPending()
     {
-        Show(XoppDocument::CreateNew());
+        while (!loading && !pendingOpens.empty())
+        {
+            auto [file, position] = std::move(pendingOpens.front());
+            pendingOpens.pop_front();
+            Open(file, position); // may only show a tab that has the file: the next one follows at once
+        }
     }
 
-    void DocumentSession::ShowRecovered(std::shared_ptr<XoppDocument> restored)
+    bool DocumentSession::ShowRecovered(std::shared_ptr<XoppDocument> restored)
     {
-        Show(std::move(restored));
+        if (!Show(std::move(restored), std::nullopt, true)) return false;
         changedOutsideInk = true; // unsaved until the user saves it
+        tabs[active].modified = true;
         if (changed) changed();
+        if (tabsChanged) tabsChanged();
+        return true;
     }
 
     void DocumentSession::MoveFiles(std::filesystem::path const& item, std::filesystem::path const& renamed)
     {
         if (!doc) return;
-        if (project::ProjectFiles::IsAtOrBelow(doc->FilePath(), item))
+        for (size_t i = 0; i < tabs.size(); ++i)
         {
-            doc->SetFilePath(project::ProjectFiles::MapRenamed(*doc->FilePath(), item, renamed));
-        }
-        if (project::ProjectFiles::IsAtOrBelow(doc->PdfPath(), item))
-        {
-            doc->MovePdf(project::ProjectFiles::MapRenamed(*doc->PdfPath(), item, renamed));
-        }
-        for (auto const& page : doc->Pages())
-        {
-            if (project::ProjectFiles::IsAtOrBelow(page->BackgroundImagePath(), item))
+            auto const& tabDoc = tabs[i].doc;
+            if (!tabDoc->Uses(item)) continue;
+            if (project::ProjectFiles::IsAtOrBelow(tabDoc->FilePath(), item))
             {
-                page->SetBackgroundImagePath(project::ProjectFiles::MapRenamed(*page->BackgroundImagePath(), item, renamed));
+                tabDoc->SetFilePath(project::ProjectFiles::MapRenamed(*tabDoc->FilePath(), item, renamed));
+            }
+            if (project::ProjectFiles::IsAtOrBelow(tabDoc->PdfPath(), item))
+            {
+                tabDoc->MovePdf(project::ProjectFiles::MapRenamed(*tabDoc->PdfPath(), item, renamed));
+            }
+            for (auto const& page : tabDoc->Pages())
+            {
+                if (project::ProjectFiles::IsAtOrBelow(page->BackgroundImagePath(), item))
+                {
+                    page->SetBackgroundImagePath(project::ProjectFiles::MapRenamed(*page->BackgroundImagePath(), item, renamed));
+                }
+            }
+            tabs[i].modified = true;
+            if (i == active)
+            {
+                changedOutsideInk = true;
+                ++edits;
             }
         }
-        changedOutsideInk = true;
-        ++edits;
         if (changed) changed();
+        if (tabsChanged) tabsChanged();
     }
 
     bool DocumentSession::SaveCopy()
     {
+        QuestionScope question(*this);
         if (!doc) return false;
         std::filesystem::path folder = doc->FilePath() ? doc->FilePath()->parent_path() : std::filesystem::path();
         auto file = Dialogs::SaveDocument(owner, folder, doc->SuggestedName() + L" (Kopie)");
@@ -126,13 +372,12 @@ namespace xournal::app
         }
     }
 
-    void DocumentSession::Load(std::filesystem::path const& file)
+    void DocumentSession::Load(std::filesystem::path const& file, int position, std::shared_ptr<XoppDocument> replacing)
     {
         if (loading || (refusedWhileSyncing && refusedWhileSyncing(L"Öffnen"))) return;
         loading = true;
-        std::uint64_t editsBefore = edits, shownBefore = shownCount;
         Log(std::format("session: opening {}", ToUtf8(file.native())));
-        UiQueue::RunInBackground("open document", [this, file, editsBefore, shownBefore]
+        UiQueue::RunInBackground("open document", [this, file, position, replacing]
         {
             std::shared_ptr<XoppDocument> loaded;
             std::exception_ptr error;
@@ -146,34 +391,42 @@ namespace xournal::app
                 LogException(std::format("session: opening {}", ToUtf8(file.native())));
                 error = std::current_exception();
             }
-            UiQueue::Post("show document", [this, loaded, error, file, editsBefore, shownBefore]
+            UiQueue::Post("show document", [this, loaded, error, file, position, replacing]
             {
                 loading = false;
+                // Whatever ends this, the next file asked for meanwhile is opened (posted: not inside this handler).
+                struct Next
+                {
+                    DocumentSession* session;
+                    ~Next() { if (!UiQueue::Post("open the next document", [s = session] { s->OpenPending(); })) LogError("could not queue the next open"); }
+                } next{ this };
                 if (error)
                 {
                     Dialogs::ShowError(owner, std::format(L"„{}“ kann nicht geöffnet werden.", file.filename().native()),
                         ErrorText(error));
+                    if (tabs.empty() && pendingOpens.empty()) Show(XoppDocument::CreateNew(), std::nullopt, false); // a window shows a document
                     return;
                 }
-                if (shownCount != shownBefore)
+                // A tab of its own: whatever is shown meanwhile stays in its tab. The same file may have been opened
+                // meanwhile: that tab is shown.
+                if (int tab = TabWithFile(file); tab >= 0)
                 {
-                    // Another document was shown while this one loaded (a new or recovered one): that one stays.
-                    Log(std::format("session: {} loaded after another document was shown - not shown", ToUtf8(file.native())));
-                    if (message) message(std::format(L"„{}“ wurde nicht geöffnet: inzwischen wird ein anderes Dokument gezeigt.",
-                        file.filename().native()), MessageKind::Warning);
+                    if (asking == 0) Activate(tab);
                     return;
                 }
-                // Edits made while it loaded belong to the shown document: the question about them comes now (a text
-                // still being typed is one of them).
-                EndTextEditing();
-                if (edits != editsBefore && !ConfirmLeave())
+                int replaced = replacing ? TabOf(replacing) : -1; // the new document it replaces, if still untouched
+                if (replaced >= 0 && !IsPristineTab(static_cast<size_t>(replaced))) replaced = -1;
+                int where = position >= 0 ? position : replaced;
+                if (asking > 0)
                 {
-                    Log(std::format("session: {} loaded, kept the edited document (Abbrechen)", ToUtf8(file.native())));
-                    if (message) message(std::format(L"„{}“ wurde nicht geöffnet; das geänderte Dokument bleibt offen.",
-                        file.filename().native()), MessageKind::Info);
-                    return;
+                    InsertParked(loaded, file, where);
                 }
-                Show(loaded, file);
+                else
+                {
+                    if (!Show(loaded, file, true)) return;
+                    MoveLastTabTo(where);
+                }
+                if (replaced >= 0) DropTab(TabOf(replacing));
                 if (fileUsed) fileUsed(file);
             });
         });
@@ -190,6 +443,7 @@ namespace xournal::app
 
     bool DocumentSession::SaveAs()
     {
+        QuestionScope question(*this);
         if (!doc || (refusedWhileSyncing && refusedWhileSyncing(L"Speichern"))) return false;
         std::optional<std::filesystem::path> forNew = !doc->FilePath() && folderForNew ? folderForNew() : std::nullopt;
         std::filesystem::path folder = doc->FilePath() ? doc->FilePath()->parent_path()
@@ -212,10 +466,11 @@ namespace xournal::app
             surface.MarkSaved();
             changedOutsideInk = false;
             pagesChanged = false;
-        pagesChanged = false;
+            tabs[active].modified = false;
             if (message) message(std::format(L"Gespeichert: {}", file.filename().native()), MessageKind::Success);
             if (fileUsed) fileUsed(file);
             if (changed) changed();
+            if (tabsChanged) tabsChanged();
             return true;
         }
         catch (...)
@@ -240,6 +495,7 @@ namespace xournal::app
 
     bool DocumentSession::ConfirmLeave()
     {
+        QuestionScope question(*this);
         EndTextEditing(); // the typed text counts as a change (and is saved with the rest)
         if (!IsModified()) return true;
         switch (Dialogs::AskLeave(owner, doc->SuggestedName()))
@@ -255,6 +511,7 @@ namespace xournal::app
         pagesChanged = true;
         ++edits;
         if (changed) changed();
+        if (tabsChanged) tabsChanged();
     }
 
     bool DocumentSession::IsModified() const

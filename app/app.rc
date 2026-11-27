@@ -14,6 +14,7 @@ BEGIN
     BEGIN
         MENUITEM "&Neu\tStrg+N", CmdNew
         MENUITEM "Ö&ffnen…\tStrg+O", CmdOpen
+        MENUITEM "&Tab schließen\tStrg+W", CmdCloseTab
         MENUITEM "&Speichern\tStrg+S", CmdSave
         MENUITEM "Speichern &unter…\tStrg+Umschalt+S", CmdSaveAs
         MENUITEM "Als PDF e&xportieren…\tStrg+E", CmdExportPdf
@@ -58,6 +59,9 @@ BEGIN
     END
     POPUP "&Ansicht"
     BEGIN
+        MENUITEM "&Nächster Tab\tStrg+Tab", CmdNextTab
+        MENUITEM "&Vorheriger Tab\tStrg+Umschalt+Tab", CmdPreviousTab
+        MENUITEM SEPARATOR
         MENUITEM "&Dunkelmodus", CmdDarkMode
         MENUITEM "&Große Werkzeugleistensymbole", CmdLargeToolbarIcons
         MENUITEM "&Dateien und Aufgaben\tStrg+B", CmdTogglePane
@@ -78,6 +82,10 @@ IDA_MAIN ACCELERATORS
 BEGIN
     "N", CmdNew, VIRTKEY, CONTROL
     "O", CmdOpen, VIRTKEY, CONTROL
+    "W", CmdCloseTab, VIRTKEY, CONTROL
+    VK_F4, CmdCloseTab, VIRTKEY, CONTROL
+    VK_TAB, CmdNextTab, VIRTKEY, CONTROL
+    VK_TAB, CmdPreviousTab, VIRTKEY, CONTROL, SHIFT
     "S", CmdSave, VIRTKEY, CONTROL
     "S", CmdSaveAs, VIRTKEY, CONTROL, SHIFT
     "E", CmdExportPdf, VIRTKEY, CONTROL
