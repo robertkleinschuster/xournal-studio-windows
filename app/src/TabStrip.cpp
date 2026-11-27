@@ -76,6 +76,7 @@ namespace xournal::app
                 if (!TabCtrl_SetItem(strip, static_cast<int>(i), &item)) ThrowHr("TCM_SETITEM", E_FAIL);
             }
             shown = tabs;
+            if (heightChanged) heightChanged(); // the row is as high as its tabs
         }
         if (TabCtrl_GetCurSel(strip) != active) TabCtrl_SetCurSel(strip, active);
     }
@@ -145,7 +146,7 @@ namespace xournal::app
         {
             LRESULT result = DefSubclassProc(hwnd, message, wp, lp);
             ChildControls::UseMessageFont(hwnd);
-            if (self->dpiChanged) self->dpiChanged();
+            if (self->heightChanged) self->heightChanged();
             return result;
         }
         if (message == WM_NCDESTROY) RemoveWindowSubclass(hwnd, SubclassProc, SubclassId);

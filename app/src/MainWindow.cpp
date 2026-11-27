@@ -166,7 +166,7 @@ namespace xournal::app
             UpdateTabs();
             if (recovery) recovery->Update(); // a tab dropped in the background ends its copy
         };
-        tabStrip->dpiChanged = [this] { Layout(); };
+        tabStrip->heightChanged = [this] { Layout(); };
         exportCommand = std::make_unique<PdfExportCommand>(window, *view,
             [this](std::wstring const& text, MessageKind kind) { Message(text, kind); });
         pageCommands = std::make_unique<PageCommands>(window, *surface, *view);

@@ -26,7 +26,7 @@ function Read-Xopp($file) {
         (New-Object IO.StreamReader($gzip, [Text.Encoding]::UTF8)).ReadToEnd()
     } finally { $stream.Dispose() }
 }
-function Strokes($file) {
+function Xopp-Strokes($file) {
     $doc = New-Object Xml.XmlDocument
     $doc.LoadXml((Read-Xopp $file))
     $doc.SelectNodes('/xournal/page/layer/stroke').Count
@@ -43,20 +43,19 @@ Invoke-Test {
     Copy-Item C:\sbx\data\Schaltungen.xopp C:\work\Erste.xopp
     Copy-Item C:\sbx\data\Schaltungen.xopp C:\work\Zweite.xopp
     Copy-Item C:\sbx\data\Schaltungen.pdf C:\work
-    $first = 'C:\work\Erste.xopp'; $second = 'C:\work\Zweite.xopp'
-    $before = Strokes $first
+    $fileA = 'C:\work\Erste.xopp'; $fileB = 'C:\work\Zweite.xopp'
+    $before = Xopp-Strokes $fileA
 
     # A session that ended with two tabs: Zweite on the left, Erste shown.
     $config = "$out\config"
     New-Item -ItemType Directory -Force $config | Out-Null
-    $settings = @{ openFiles = @($second); lastFile = $first } | ConvertTo-Json
+    $settings = @{ openFiles = @($fileB); lastFile = $fileA } | ConvertTo-Json
     [IO.File]::WriteAllText("$config\settings-native.json", $settings, (New-Object Text.UTF8Encoding($false)))
     $env:XOURNAL_STUDIO_CONFIG_DIR = $config
     $env:XOURNAL_STUDIO_LOG = "$out\app.log"
     Start-TestApp 'XournalStudio.exe'
     Start-Sleep 5
     Shot '01-two-tabs'
-    & C:\sbx\data\uiaprobe.exe XournalStudioWindow | Out-File "$out\uia-tree.txt" -Encoding utf8
     Expect-Title 'restored' 'Erste'
 
     # A stroke in Erste, to Zweite and back: the stroke is still there and is saved.
@@ -69,7 +68,7 @@ Invoke-Test {
     Expect-Title 'back' 'Erste'
     if ((Title) -notlike '*' + [char]0x2022 + '*') { throw 'Erste lost its unsaved mark while it was in the background' }
     Ctrl 0x53 'S'
-    $after = Strokes $first
+    $after = Xopp-Strokes $fileA
     Write-Host "strokes before $before, after $after"
     if ($after -ne $before + 1) { throw "the stroke did not survive the tab switch: $after strokes, expected $($before + 1)" }
 
@@ -84,6 +83,6 @@ Invoke-Test {
     if (-not $script:p.HasExited) { throw 'the window did not close' }
     $saved = Get-Content "$config\settings-native.json" -Raw | ConvertFrom-Json
     Write-Host "settings after closing: lastFile $($saved.lastFile), openFiles $($saved.openFiles -join ', ')"
-    if ($saved.lastFile -ne $second) { throw "lastFile is $($saved.lastFile), expected $second" }
+    if ($saved.lastFile -ne $fileB) { throw "lastFile is $($saved.lastFile), expected $fileB" }
     Get-Content "$config\errors.log" -ErrorAction SilentlyContinue | ForEach-Object { "errors.log: $_" }
 }

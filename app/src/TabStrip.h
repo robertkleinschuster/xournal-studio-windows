@@ -29,7 +29,7 @@ namespace xournal::app
         TabStrip& operator=(TabStrip const&) = delete;
 
         HWND Window() const { return strip; }
-        /// The height the strip needs (one row; tabs that do not fit scroll with the control's own arrows).
+        /// The height the strip needs (the tabs' row; tabs that do not fit scroll with the control's own arrows).
         int Height() const;
         /// Shows `tabs` with `active` selected; only what differs is changed.
         void Set(std::vector<TabEntry> const& tabs, int active);
@@ -39,8 +39,8 @@ namespace xournal::app
         std::function<void(int)> chosen;
         std::function<void(int)> closeRequested;
         std::function<void(int)> closeOthersRequested;
-        /// The strip's font follows the monitor: its height changed.
-        std::function<void()> dpiChanged;
+        /// The strip's height may have changed (its first tab appeared, the font follows the monitor): lay out again.
+        std::function<void()> heightChanged;
 
     private:
         static LRESULT CALLBACK SubclassProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp, UINT_PTR id, DWORD_PTR data);
