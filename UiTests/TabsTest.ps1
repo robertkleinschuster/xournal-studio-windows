@@ -51,6 +51,13 @@ Invoke-Test {
     New-Item -ItemType Directory -Force $config | Out-Null
     $settings = @{ openFiles = @($fileB); lastFile = $fileA } | ConvertTo-Json
     [IO.File]::WriteAllText("$config\settings-native.json", $settings, (New-Object Text.UTF8Encoding($false)))
+    # A crash leaves a dump in the results (WER LocalDumps, full dump) - this test once lost the app on the runner.
+    $dumps = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\XournalStudio.exe'
+    try {
+        New-Item -Path $dumps -Force | Out-Null
+        New-ItemProperty -Path $dumps -Name DumpFolder -Value $out -PropertyType ExpandString -Force | Out-Null
+        New-ItemProperty -Path $dumps -Name DumpType -Value 2 -PropertyType DWord -Force | Out-Null
+    } catch { Write-Host "no crash dumps: $($_.Exception.Message)" }
     $env:XOURNAL_STUDIO_CONFIG_DIR = $config
     $env:XOURNAL_STUDIO_LOG = "$out\app.log"
     Start-TestApp 'XournalStudio.exe'
