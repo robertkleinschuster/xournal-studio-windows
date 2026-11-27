@@ -691,6 +691,36 @@ namespace xournal::tests
     }
 
 
+    TEST(PaperKit, TheStrokesListNamesTheStrokesInDrawingOrder)
+    {
+        std::vector<std::string> items;
+        auto first = PpkStroke(1, Ink("com.apple.ink.pen", 1, 0, 0, 1), Path(Line, 2.5f), true);
+        auto second = PpkStroke(2, Ink("com.apple.ink.pen", 0, 1, 0, 1), Path({ { 50.f, 50.f }, { 60.f, 50.f } }, 2.5f), true);
+        auto third = PpkStroke(3, Ink("com.apple.ink.pen", 0, 0, 1, 1), Path({ { 70.f, 70.f }, { 80.f, 75.f } }, 2.5f), true); // dropped from the list
+        for (auto const& i : first) items.push_back(i);
+        for (auto const& i : second) items.push_back(i);
+        for (auto const& i : third) items.push_back(i);
+        // The list item (what names the list entries) puts the second stroke first and leaves the third out.
+        std::string container = Message([&](protozero::pbf_writer& o) {
+            o.add_bytes(4, Message([&](protozero::pbf_writer& a) { a.add_bytes(2, PpkRef(PpkId('p' + 2))); a.add_bytes(2, PpkRef(PpkId('p' + 1))); }));
+        });
+        items.push_back(PpkItem(PpkId('Z'), container));
+
+        auto strokes = PencilKitDrawing::ReadPaperKit(PpkDocument(items));
+
+        ASSERT_EQ(strokes.size(), 2u);
+        EXPECT_EQ(strokes[0].color, (Color{ 0xFF, 0, 255, 0 }));
+        EXPECT_EQ(strokes[1].color, (Color{ 0xFF, 255, 0, 0 }));
+    }
+
+    TEST(PaperKit, ADocumentWithoutStrokesIsNotThisFormat)
+    {
+        auto assigned = PpkStroke(1, Ink("com.apple.ink.pen", 1, 0, 0, 1), Path(Line, 2.5f), false);
+        // No list entry at all (a version that has none): every assigned stroke counts.
+        EXPECT_EQ(PencilKitDrawing::ReadPaperKit(PpkDocument({ assigned[0], assigned[1], assigned[2] })).size(), 1u);
+        EXPECT_THROW(PencilKitDrawing::ReadPaperKit(PpkDocument({})), Error); // nothing like a stroke in it: the caller reads the older archive
+    }
+
     // ------------------------------------------------------------------ the iPad export
 
     TEST(BinaryPlistWriter, WritesWhatTheReaderReads)
@@ -925,6 +955,83 @@ namespace xournal::tests
         reader.processFile(ToUtf8(target.native()).c_str());
         auto contents = QPDFPageDocumentHelper(reader).getAllPages()[0].getObjectHandle().getKey("/Contents");
         EXPECT_LT(contents.isStream() ? contents.getStreamData(qpdf_dl_all)->getSize() : 0, 400u);
+    }
+
+    // iPadOS rewrote the file of the user's and dropped every key it does not know (/NM and /Ff of ours were gone): the original
+    // survives in /AAPL:AKExtras, and where nothing of ours is left an /Ink is a stroke and not a picture.
+    TEST(IpadExport, TheOriginalSurvivesWhereIpadosKeepsOnlyItsOwnContainer)
+    {
+        TempFolder folder;
+        auto source = folder / L"notes.xopp";
+        WriteBytes(source, R"(<?xml version="1.0" standalone="no"?>
+<xournal creator="xournalpp 1.3.8" fileversion="5">
+<page width="400" height="300"><background type="solid" color="#ffffffff" style="plain"/><layer>
+<stroke tool="highlighter" color="#ffff007f" width="8.5">20 200 180 205.5</stroke>
+<stroke tool="pen" color="#0000ffff" width="1.4" style="dash">200 250 300 255</stroke>
+</layer></page>
+</xournal>)");
+        auto doc = io::DocumentFile::Load(source);
+        auto ipad = folder / L"ipad.pdf";
+        import::ExportForIpad(pdf::PrepareExport(*doc), ipad);
+
+        auto rewrite = [&](std::wstring const& name, bool dropExtras)
+        {
+            auto target = folder / name;
+            QPDF pdf;
+            pdf.processFile(ToUtf8(ipad.native()).c_str());
+            for (auto& annotation : QPDFPageDocumentHelper(pdf).getAllPages()[0].getAnnotations())
+            {
+                auto handle = annotation.getObjectHandle();
+                handle.removeKey("/XournalStudio"); // what iPadOS does to a key it does not know
+                if (dropExtras) handle.removeKey("/AAPL:AKExtras");
+            }
+            QPDFWriter writer(pdf, ToUtf8(target.native()).c_str());
+            writer.write();
+            return target;
+        };
+        auto lines = [&](std::filesystem::path const& file, std::wstring const& tag)
+        {
+            auto imported = Prepare(file, folder / (tag + L"-clean.pdf"), [&](int round) { return folder / std::format(L"{}-pictures-{}.pdf", tag, round); });
+            EXPECT_TRUE(imported.pictures.empty()) << "a picture of an annotation that holds strokes";
+            return imported;
+        };
+
+        // 1. Only the top-level key gone: the original comes from /AAPL:AKExtras - exactly.
+        auto kept = lines(rewrite(L"kept.pdf", false), L"kept");
+        std::vector<std::wstring> values;
+        for (auto const& e : kept.elements[0]) values.push_back(Attr(e, L"tool") + L"|" + Attr(e, L"style") + L"|" + e->Value());
+        EXPECT_NE(std::find(values.begin(), values.end(), L"highlighter||20 200 180 205.5"), values.end());
+        EXPECT_NE(std::find(values.begin(), values.end(), L"pen|dash|200 250 300 255"), values.end());
+
+        // 2. Everything of ours gone: the /Ink data is read - a highlighter by its opacity, a dash pattern kept.
+        auto bare = lines(rewrite(L"bare.pdf", true), L"bare");
+        ASSERT_EQ(bare.elements[0].size(), 2u);
+        EXPECT_EQ(Attr(bare.elements[0][0], L"tool"), L"highlighter");
+        EXPECT_EQ(Attr(bare.elements[0][0], L"color"), L"#ffff007f");
+        EXPECT_EQ(Attr(bare.elements[0][1], L"tool"), L"pen");
+        EXPECT_TRUE(Attr(bare.elements[0][1], L"style").starts_with(L"cust: "));
+    }
+
+    TEST(IpadExport, OnlyAPlainPenStrokeGoesToPencilKit)
+    {
+        TempFolder folder;
+        auto source = folder / L"notes.xopp";
+        WriteBytes(source, R"(<?xml version="1.0" standalone="no"?>
+<xournal creator="xournalpp 1.3.8" fileversion="5">
+<page width="400" height="300"><background type="solid" color="#ffffffff" style="plain"/><layer>
+<stroke tool="pen" ts="0" fn="" color="#000000ff" width="1.2" capStyle="round">10 20 30 40</stroke>
+<stroke tool="pen" ts="1234" fn="rec.mp3" color="#000000ff" width="1.2" capStyle="round">10 60 30 80</stroke>
+<stroke tool="pen" color="#000000ff" width="1.2" pressures="1 2">10 100 30 120</stroke>
+</layer></page>
+</xournal>)");
+        auto doc = io::DocumentFile::Load(source);
+
+        auto result = import::ExportForIpad(pdf::PrepareExport(*doc), folder / L"ipad.pdf");
+
+        // The stroke with the defaults only is PencilKit's; the one with audio and the one with an attribute of another program
+        // would lose it there: they are /Ink annotations that carry everything.
+        EXPECT_EQ(result.strokes, 1);
+        EXPECT_EQ(result.elements, 2);
     }
 
     TEST(IpadExport, ATapKeepsItsDot)

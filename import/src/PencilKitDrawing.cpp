@@ -1,6 +1,7 @@
 #include "xournal/import/PencilKitDrawing.h"
 
 #include "xournal/base/Error.h"
+#include "xournal/base/Log.h"
 #include "xournal/io/Gzip.h"
 
 #include <protozero/pbf_reader.hpp>
@@ -117,6 +118,14 @@ namespace xournal::import
                     if (f.number == number && f.isBytes) return f.bytes;
                 }
                 return std::nullopt;
+            }
+
+            /// The numbers of the fields present.
+            std::set<std::uint32_t> FieldNumbers() const
+            {
+                std::set<std::uint32_t> numbers;
+                for (auto const& f : fields) numbers.insert(f.number);
+                return numbers;
             }
 
             /// Every length-delimited field, whatever its number.
@@ -532,16 +541,21 @@ namespace xournal::import
             return std::nullopt;
         }
 
-        std::optional<std::vector<RawPoint>> FindPath(std::string_view data, int depth = 0)
+        // A path is found by its shape: the count (#3) and channel mask (#4) and the records (#7); the constants' mask (#5) is left
+        // out of the message when it is 0. Fields other than #1-#7 of a path are collected: their meaning is not known.
+        std::optional<std::vector<RawPoint>> FindPath(std::string_view data, std::set<std::uint32_t>& unknown, int depth = 0)
         {
             if (depth > 12) return std::nullopt;
             auto m = TryParse(data);
             if (!m) return std::nullopt;
-            if (m->Varint(3) && m->Varint(4) && m->Varint(5) && m->Bytes(7))
+            if (m->Varint(3) && m->Varint(4) && m->Bytes(7))
             {
                 try
                 {
-                    return Points(*m);
+                    auto points = Points(*m);
+                    for (auto number : m->FieldNumbers())
+                        if (number > 7) unknown.insert(number);
+                    return points;
                 }
                 catch (Error const&)
                 {
@@ -551,9 +565,50 @@ namespace xournal::import
             for (auto child : m->AllByteFields())
             {
                 if (child.size() > 2)
-                    if (auto found = FindPath(child, depth + 1)) return found;
+                    if (auto found = FindPath(child, unknown, depth + 1)) return found;
             }
             return std::nullopt;
+        }
+
+        // The drawing's matrix of an ink value item (a, b, c, d, tx, ty): a message {#4: 48 bytes}, six big-endian doubles. Seen as
+        // (1.004, 0, 0, 1.001, 0, 0) on every stroke of the user's iPad file - the annotation's size against the drawing's - while
+        // the older archive of the same annotation (the pictures the strokes were checked against) has none: such a scale is not
+        // applied. A stroke the iPad moved is expected to have a translation (not seen in any sample): that is applied.
+        std::optional<Matrix> FindMatrix(std::string_view data, int depth = 0)
+        {
+            if (depth > 12) return std::nullopt;
+            auto m = TryParse(data);
+            if (!m) return std::nullopt;
+            if (auto bytes = m->Bytes(4); bytes && bytes->size() == 48)
+            {
+                double v[6];
+                for (int i = 0; i < 6; ++i)
+                {
+                    std::uint64_t bits = 0;
+                    for (int k = 0; k < 8; ++k) bits = bits << 8 | static_cast<unsigned char>((*bytes)[static_cast<size_t>(i * 8 + k)]);
+                    v[i] = std::bit_cast<double>(bits);
+                }
+                if (std::all_of(std::begin(v), std::end(v), [](double d) { return std::isfinite(d); }) && v[0] > 0.1 && v[0] < 10 && v[3] > 0.1 && v[3] < 10)
+                    return Matrix{ v[0], v[1], v[2], v[3], v[4], v[5] };
+            }
+            for (auto child : m->AllByteFields())
+            {
+                if (child.size() > 2)
+                    if (auto found = FindMatrix(child, depth + 1)) return found;
+            }
+            return std::nullopt;
+        }
+
+        // What of a matrix is a move: a near-1 scale and near-0 shear are the annotation's size (see FindMatrix); nothing left
+        // of it and no translation: no transform.
+        std::optional<Matrix> Movement(Matrix m)
+        {
+            if (std::abs(m.m11 - 1) < 0.02) m.m11 = 1;
+            if (std::abs(m.m22 - 1) < 0.02) m.m22 = 1;
+            if (std::abs(m.m12) < 0.02) m.m12 = 0;
+            if (std::abs(m.m21) < 0.02) m.m21 = 0;
+            if (m.m11 == 1 && m.m22 == 1 && m.m12 == 0 && m.m21 == 0 && std::abs(m.m31) < 0.5 && std::abs(m.m32) < 0.5) return std::nullopt;
+            return m;
         }
 
         std::vector<PencilKitStroke> ReadPaperKit(std::string_view body)
@@ -563,9 +618,10 @@ namespace xournal::import
             {
                 std::string_view payload;
                 std::string_view id;
-                std::vector<size_t> refs; // items named anywhere in the payload
+                std::vector<size_t> refs; // items named anywhere in the payload, in the order they appear
                 std::optional<std::vector<RawPoint>> path;
                 std::optional<Ink> ink;
+                std::optional<Matrix> matrix;
                 bool listed = false; // a payload of #1 only
             };
             std::vector<Item> items;
@@ -579,6 +635,8 @@ namespace xournal::import
                 byId[item.id] = items.size();
                 items.push_back(std::move(item));
             }
+            std::set<std::uint32_t> unknownPathFields;
+            size_t paths = 0;
             for (size_t i = 0; i < items.size(); ++i)
             {
                 auto& item = items[i];
@@ -592,20 +650,60 @@ namespace xournal::import
                 if (!message) continue;
                 if (message->Bytes(10))
                 {
-                    item.path = FindPath(*message->Bytes(10));
+                    item.path = FindPath(*message->Bytes(10), unknownPathFields);
+                    if (item.path) ++paths;
                 }
                 else if (message->Bytes(4))
                 {
                     item.ink = FindInk(*message->Bytes(4));
+                    if (item.ink) item.matrix = FindMatrix(*message->Bytes(4));
                 }
                 else if (message->Bytes(1))
                 {
                     item.listed = true;
                 }
             }
-            bool anyListed = std::any_of(items.begin(), items.end(), [](Item const& i) { return i.listed; });
+            // Nothing in it looks like a stroke: this is not the document the reader knows (the caller falls back to the older
+            // archive); strokes that are there but not in the drawing (erased) are a valid, empty drawing.
+            if (paths == 0) ThrowInvalidData("PaperKit drawing: no stroke recognised");
+            if (!unknownPathFields.empty())
+            {
+                std::string numbers;
+                for (auto n : unknownPathFields) numbers += std::format(" #{}", n);
+                Log(std::format("PaperKit drawing: path fields not understood:{} (their meaning is unknown: parts may be missing)", numbers));
+            }
+
+            std::vector<size_t> listed;
+            for (size_t i = 0; i < items.size(); ++i)
+                if (items[i].listed) listed.push_back(i);
+            // The drawing's strokes list is one item that names the list entries in drawing order (found by naming most of them);
+            // an entry the drawing dropped is no longer named there (the op log keeps it).
+            std::vector<size_t> order = listed;
+            if (listed.size() >= 2)
+            {
+                std::set<size_t> listedSet(listed.begin(), listed.end());
+                size_t bestCount = 0;
+                std::vector<size_t> best;
+                for (size_t i = 0; i < items.size(); ++i)
+                {
+                    if (items[i].listed) continue;
+                    std::vector<size_t> named;
+                    std::set<size_t> seen;
+                    for (size_t r : items[i].refs)
+                        if (listedSet.contains(r) && seen.insert(r).second) named.push_back(r);
+                    if (named.size() > bestCount)
+                    {
+                        bestCount = named.size();
+                        best = std::move(named);
+                    }
+                }
+                if (bestCount * 2 >= listed.size()) order = std::move(best);
+                else Log("PaperKit drawing: no strokes list found; the strokes come in the order of the log");
+            }
+
             std::vector<PencilKitStroke> strokes;
             std::set<size_t> done;
+            size_t unresolved = 0;
             auto take = [&](size_t assignment)
             {
                 std::optional<size_t> stroke, ink;
@@ -614,20 +712,29 @@ namespace xournal::import
                     if (items[r].path && !stroke) stroke = r;
                     if (items[r].ink && !ink) ink = r;
                 }
-                if (!stroke || !ink || !done.insert(*stroke).second) return;
+                if (!stroke || !ink)
+                {
+                    ++unresolved;
+                    return;
+                }
+                if (!done.insert(*stroke).second) return;
                 Ink value = *items[*ink].ink;
                 if (value.color.a >= 250) value.color.a = 255; // PaperKit writes an opaque ink as 0.996 or so
-                strokes.push_back(Stroke(value, *items[*stroke].path, std::nullopt));
+                std::optional<Matrix> move = items[*ink].matrix ? Movement(*items[*ink].matrix) : std::nullopt;
+                if (move) Log(std::format("PaperKit drawing: a stroke with a movement ({:.3f} {:.3f} {:.3f} {:.3f} {:.3f} {:.3f}) is placed by it - not verified",
+                                          move->m11, move->m12, move->m21, move->m22, move->m31, move->m32));
+                strokes.push_back(Stroke(value, *items[*stroke].path, move));
             };
-            for (auto const& item : items)
-            {
-                if (anyListed && item.listed)
-                    for (size_t assignment : item.refs) take(assignment);
-            }
-            if (!anyListed)
+            if (listed.empty())
             {
                 for (size_t i = 0; i < items.size(); ++i) take(i); // no list items in this version: every assigned stroke
             }
+            else
+            {
+                for (size_t entry : order)
+                    for (size_t assignment : items[entry].refs) take(assignment);
+            }
+            if (unresolved > 0) Log(std::format("PaperKit drawing: {} listed entries without a readable stroke or ink were left out", unresolved));
             std::erase_if(strokes, [](PencilKitStroke const& s) { return s.points.empty(); });
             return strokes;
         }

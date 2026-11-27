@@ -98,12 +98,12 @@ namespace xournal::import
             if (!ppk.isString() || ppk.getStringValue().empty()) return std::nullopt;
             try
             {
-                auto strokes = PencilKitDrawing::ReadPaperKit(AppleMarkup::DecodeBase64(ppk.getStringValue()));
-                if (!strokes.empty()) return strokes;
+                // Read: it stands, also when the drawing has no stroke left (all erased) - the older archive beside it is stale.
+                return PencilKitDrawing::ReadPaperKit(AppleMarkup::DecodeBase64(ppk.getStringValue()));
             }
             catch (Error const&)
             {
-                LogException("import: /PPK of an ink annotation");
+                LogException("import: /PPK of an ink annotation; the older archive is read instead (it may be outdated)");
             }
             return std::nullopt;
         }
@@ -250,6 +250,7 @@ namespace xournal::import
             auto e = XmlElement::Make(L"stroke", { { L"tool", marker ? L"highlighter" : L"pen" },
                                                    { L"color", FormatColor(color) },
                                                    { L"width", widths } });
+            if (!marker) e->SetAttribute(L"capStyle", L"round"); // as upstream writes every pen stroke
             e->SetValue(std::move(text));
             return e;
         }
@@ -305,6 +306,16 @@ namespace xournal::import
                 added.push_back(element);
                 return element->Name() == L"text" ? Taken::Text : Taken::Strokes;
             }
+            // An /Ink the iPad rewrote (the original is gone) or another program wrote: strokes, not a picture.
+            if (Subtype(annotation) == "/Ink" && !apple && !paper && annotation.getKey("/InkList").isArray())
+            {
+                auto strokes = detail::ReadStandardInk(annotation, frame);
+                if (!strokes.empty())
+                {
+                    for (auto const& e : strokes) added.push_back(e);
+                    return Taken::Strokes;
+                }
+            }
             if (paper)
             {
                 // PaperKit's coordinates are the page's (the archive's drawing size, where there is one, is the page's too).
@@ -315,7 +326,7 @@ namespace xournal::import
                 {
                     if (auto e = StrokeElement(s, frame, size)) added.push_back(e);
                 }
-                return Taken::Strokes;
+                return paper->empty() ? Taken::Removed : Taken::Strokes;
             }
             if (IsInkDrawing(apple))
             {

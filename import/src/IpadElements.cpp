@@ -7,6 +7,8 @@
 #include "xournal/model/XoppImage.h"
 #include "xournal/pdf/TextBoxLayout.h"
 
+#include "AppearanceText.h"
+
 #include <qpdf/BufferInputSource.hh>
 #include <qpdf/QPDFPageDocumentHelper.hh>
 #include <qpdf/QPDFPageObjectHelper.hh>
@@ -151,7 +153,7 @@ namespace xournal::import::detail
 
         // ---- what the annotation carries of the element
 
-        Handle Original(XmlElement const& origin, Rect box, double pageHeight)
+        Handle Original(XmlElement const& origin, Rect box, double pageHeight, std::optional<double> writtenWidth = std::nullopt)
         {
             auto custom = Handle::newDictionary();
             custom.replaceKey("/Element", UnicodeString(origin.Name()));
@@ -164,6 +166,7 @@ namespace xournal::import::detail
             custom.replaceKey("/Attrs", attributes);
             custom.replaceKey("/Value", UnicodeString(origin.Value()));
             custom.replaceKey("/Rect0", Array({ box.x, pageHeight - box.y - box.height, box.x + box.width, pageHeight - box.y }));
+            if (writtenWidth) custom.replaceKey("/W0", Real(*writtenWidth)); // the /BS /W it was written with (to see a change)
             return custom;
         }
 
@@ -176,6 +179,24 @@ namespace xournal::import::detail
                 page.replaceKey("/Annots", annots);
             }
             annots.appendItem(annotation);
+        }
+
+        // The original goes into /XournalStudio and - iPadOS rewrote every annotation of the user's file and dropped the keys it does
+        // not know, /NM and /Ff included, but kept /AAPL:AKExtras - into that, too.
+        void KeepOriginal(QPDF& pdf, Handle annotation, Handle original)
+        {
+            auto shared = pdf.makeIndirectObject(original);
+            annotation.replaceKey("/XournalStudio", shared);
+            auto copy = Handle::newDictionary(); // Apple's own copy of the annotation's keys (it has no appearance)
+            for (auto const& key : annotation.getKeys())
+            {
+                if (key != "/AP" && key != "/XournalStudio" && key != "/InkList") copy.replaceKey(key, annotation.getKey(key));
+            }
+            copy.replaceKey("/XournalStudio", shared);
+            auto extras = Handle::newDictionary();
+            extras.replaceKey("/XournalStudio", shared);
+            extras.replaceKey("/AAPL:AKPDFAnnotationDictionary", copy);
+            annotation.replaceKey("/AAPL:AKExtras", extras);
         }
 
         // The keys every annotation of these gets.
@@ -198,7 +219,11 @@ namespace xournal::import::detail
                        pdf::ExportOptions const& options)
         {
             Rect box = StrokeBox(s);
-            auto a = Annotation("/Ink", box, pageHeight, pdf.makeIndirectObject(Appearance(pdf, keep, s, box, options)));
+            // The appearance is drawn opaque and the annotation's /CA applies the opacity (a viewer that applies /CA to an appearance
+            // that has its own opacity would show a highlighter at a quarter instead of half).
+            StrokeShape opaque = s;
+            opaque.color.a = 255;
+            auto a = Annotation("/Ink", box, pageHeight, pdf.makeIndirectObject(Appearance(pdf, keep, opaque, box, options)));
             auto line = Handle::newArray();
             for (auto const& p : s.points)
             {
@@ -220,7 +245,7 @@ namespace xournal::import::detail
                 style.replaceKey("/D", dash);
             }
             a.replaceKey("/BS", style);
-            a.replaceKey("/XournalStudio", Original(origin, box, pageHeight));
+            KeepOriginal(pdf, a, Original(origin, box, pageHeight, s.width));
             Append(page, pdf.makeIndirectObject(a));
         }
 
@@ -232,7 +257,7 @@ namespace xournal::import::detail
             Rect box = XoppImage::GetBounds(origin);
             if (box.width <= 0 || box.height <= 0) ThrowInvalidData("iPad export: a picture without an area");
             auto a = Annotation("/Stamp", box, pageHeight, pdf.makeIndirectObject(Appearance(pdf, keep, picture, box, options)));
-            a.replaceKey("/XournalStudio", Original(origin, box, pageHeight));
+            KeepOriginal(pdf, a, Original(origin, box, pageHeight));
             Append(page, pdf.makeIndirectObject(a));
         }
 
@@ -246,7 +271,7 @@ namespace xournal::import::detail
             a.replaceKey("/Contents", UnicodeString(content));
             a.replaceKey("/DA", Handle::newString(std::format("/Helv {} Tf {} {} {} rg", Num(text.size), Num(text.color.r / 255.0),
                                                               Num(text.color.g / 255.0), Num(text.color.b / 255.0))));
-            a.replaceKey("/XournalStudio", Original(origin, box, pageHeight));
+            KeepOriginal(pdf, a, Original(origin, box, pageHeight));
             Append(page, pdf.makeIndirectObject(a));
         }
     }
@@ -264,18 +289,51 @@ namespace xournal::import::detail
 
     namespace
     {
-        std::vector<double> Numbers(std::wstring_view text)
+        // The numbers of a text, separated by any white space; nothing when a word is no number (a damaged text is kept as it is).
+        std::optional<std::vector<double>> Numbers(std::wstring_view text)
         {
             std::vector<double> numbers;
             size_t at = 0;
             while (at < text.size())
             {
-                size_t end = text.find(L' ', at);
-                if (end == std::wstring_view::npos) end = text.size();
-                if (end > at) numbers.push_back(XoppFormat::ParseDouble(std::wstring(text.substr(at, end - at))).value_or(0));
-                at = end + 1;
+                while (at < text.size() && iswspace(text[at])) ++at;
+                size_t end = at;
+                while (end < text.size() && !iswspace(text[end])) ++end;
+                if (end == at) break;
+                auto value = XoppFormat::ParseDouble(std::wstring(text.substr(at, end - at)));
+                if (!value) return std::nullopt;
+                numbers.push_back(*value);
+                at = end;
             }
             return numbers;
+        }
+
+        std::wstring Normalized(std::wstring const& text)
+        {
+            std::wstring normal;
+            for (size_t i = 0; i < text.size(); ++i)
+            {
+                if (text[i] == L'\r')
+                {
+                    normal += L'\n';
+                    if (i + 1 < text.size() && text[i + 1] == L'\n') ++i;
+                }
+                else normal += text[i];
+            }
+            return normal;
+        }
+
+        // The element names an annotation of ours may carry (anything else in /XournalStudio is not ours).
+        bool KnownElement(std::wstring const& name) { return name == L"stroke" || name == L"text" || name == L"image" || name == L"teximage"; }
+
+        QPDFObjectHandle FindOriginal(QPDFObjectHandle a)
+        {
+            auto direct = a.getKey("/XournalStudio");
+            if (direct.isDictionary()) return direct;
+            auto extras = a.getKey("/AAPL:AKExtras");
+            if (!extras.isDictionary()) return QPDFObjectHandle::newNull();
+            if (extras.getKey("/XournalStudio").isDictionary()) return extras.getKey("/XournalStudio");
+            return extras.getKey("/AAPL:AKPDFAnnotationDictionary").getKey("/XournalStudio");
         }
 
         std::wstring Format(double v) { return XoppFormat::FormatNumber(v, 3); }
@@ -312,9 +370,11 @@ namespace xournal::import::detail
 
     XmlElementPtr ReadElementAnnotation(QPDFObjectHandle a, pdf::PageFrame const& frame)
     {
-        auto custom = a.getKey("/XournalStudio");
+        auto custom = FindOriginal(a);
         if (!custom.isDictionary() || !custom.getKey("/Element").isString() || !custom.getKey("/Attrs").isArray()) return nullptr;
-        auto element = XmlElement::Make(FromUtf8(custom.getKey("/Element").getUTF8Value()));
+        auto elementName = FromUtf8(custom.getKey("/Element").getUTF8Value());
+        if (!KnownElement(elementName)) return nullptr;
+        auto element = XmlElement::Make(elementName);
         auto attributes = custom.getKey("/Attrs");
         for (int i = 0; i + 1 < attributes.getArrayNItems(); i += 2)
         {
@@ -350,8 +410,8 @@ namespace xournal::import::detail
                     shown.push_back(p.y);
                 }
                 auto original = Numbers(stored);
-                bool same = original.size() == shown.size();
-                for (size_t i = 0; same && i < shown.size(); ++i) same = std::abs(original[i] - shown[i]) <= 0.01;
+                bool same = !original || original->size() == shown.size(); // a damaged original is kept as it is
+                for (size_t i = 0; same && original && i < shown.size(); ++i) same = std::abs((*original)[i] - shown[i]) <= 0.01;
                 if (!same && !shown.empty())
                 {
                     std::wstring text;
@@ -369,9 +429,9 @@ namespace xournal::import::detail
                     element->SetAttribute(L"color", ColorText(now[0], now[1], now[2], rgba[3]));
             }
             auto width = a.getKey("/BS").getKey("/W");
-            auto widths = Numbers(Attribute(*element, L"width"));
-            if (width.isNumber() && !widths.empty() && std::abs(width.getNumericValue() - widths[0]) > 0.01)
-                element->SetAttribute(L"width", Format(width.getNumericValue())); // the iPad changed it (pressure goes)
+            auto written = custom.getKey("/W0"); // what was written: the iPad changed the width when /W is another
+            if (width.isNumber() && written.isNumber() && std::abs(width.getNumericValue() - written.getNumericValue()) > 0.01)
+                element->SetAttribute(L"width", Format(width.getNumericValue())); // (the pressure goes)
         }
         else if (name == L"image")
         {
@@ -387,18 +447,18 @@ namespace xournal::import::detail
             auto contents = a.getKey("/Contents");
             if (contents.isString())
             {
-                std::wstring text = FromUtf8(contents.getUTF8Value());
-                std::wstring normal;
-                for (size_t i = 0; i < text.size(); ++i)
-                {
-                    if (text[i] == L'\r')
-                    {
-                        normal += L'\n';
-                        if (i + 1 < text.size() && text[i + 1] == L'\n') ++i;
-                    }
-                    else normal += text[i];
-                }
-                element->SetValue(normal);
+                // Only what the iPad edited replaces the text (line ends are compared as the PDF writes them).
+                std::wstring now = Normalized(FromUtf8(contents.getUTF8Value()));
+                if (now != Normalized(stored)) element->SetValue(now);
+            }
+            if (auto da = a.getKey("/DA"); da.isString())
+            {
+                auto shown = detail::ParseDefaultAppearance(da.getStringValue());
+                auto size = XoppFormat::ParseDouble(Attribute(*element, L"size"));
+                if (size && std::abs(shown.size - *size) > 0.01) element->SetAttribute(L"size", Format(shown.size));
+                int rgba[4];
+                if (ParseColor(Attribute(*element, L"color"), rgba) && (shown.color.r != rgba[0] || shown.color.g != rgba[1] || shown.color.b != rgba[2]))
+                    element->SetAttribute(L"color", ColorText(shown.color.r, shown.color.g, shown.color.b, rgba[3]));
             }
             if (dx != 0 || dy != 0)
             {
@@ -411,5 +471,58 @@ namespace xournal::import::detail
             }
         }
         return element;
+    }
+
+    std::vector<XmlElementPtr> ReadStandardInk(QPDFObjectHandle a, pdf::PageFrame const& frame)
+    {
+        std::vector<XmlElementPtr> strokes;
+        auto list = a.getKey("/InkList");
+        if (!list.isArray()) return strokes;
+        double alpha = a.getKey("/CA").isNumber() ? std::clamp(a.getKey("/CA").getNumericValue(), 0.0, 1.0) : 1.0;
+        int rgb[3] = { 0, 0, 0 };
+        if (auto c = a.getKey("/C"); c.isArray() && c.getArrayNItems() == 3)
+            for (int i = 0; i < 3; ++i) rgb[i] = static_cast<int>(std::lround(std::clamp(c.getArrayItem(i).getNumericValue(), 0.0, 1.0) * 255));
+        auto style = a.getKey("/BS");
+        double width = style.getKey("/W").isNumber() ? style.getKey("/W").getNumericValue() : 1;
+        bool highlighter = alpha < 0.99;
+        for (int l = 0; l < list.getArrayNItems(); ++l)
+        {
+            auto line = list.getArrayItem(l);
+            if (!line.isArray() || line.getArrayNItems() < 2) continue;
+            std::wstring points;
+            for (int i = 0; i + 1 < line.getArrayNItems(); i += 2)
+            {
+                Point p = frame.FromUserSpace(line.getArrayItem(i).getNumericValue(), line.getArrayItem(i + 1).getNumericValue());
+                points += (points.empty() ? L"" : L" ") + Format(p.x) + L" " + Format(p.y);
+            }
+            if (line.getArrayNItems() == 2) points += L" " + points; // a dot: two equal points
+            auto e = XmlElement::Make(L"stroke", { { L"tool", highlighter ? L"highlighter" : L"pen" },
+                { L"color", ColorText(rgb[0], rgb[1], rgb[2], highlighter ? static_cast<int>(std::lround(alpha * 255)) : 255) },
+                { L"width", Format(std::max(width, 0.1)) }, { L"capStyle", L"round" } });
+            if (style.getKey("/S").isName() && style.getKey("/S").getName() == "/D" && style.getKey("/D").isArray())
+            {
+                std::wstring dashes;
+                for (int i = 0; i < style.getKey("/D").getArrayNItems(); ++i)
+                    dashes += (dashes.empty() ? L"" : L" ") + Format(style.getKey("/D").getArrayItem(i).getNumericValue());
+                e->SetAttribute(L"style", L"cust: " + dashes);
+            }
+            e->SetValue(points);
+            strokes.push_back(e);
+        }
+        return strokes;
+    }
+
+    bool PencilKitEligible(XmlElement const& stroke)
+    {
+        for (auto const& a : stroke.Attributes())
+        {
+            if (a.name == L"tool") { if (a.value != L"pen") return false; }
+            else if (a.name == L"color" || a.name == L"width") continue;
+            else if (a.name == L"capStyle") { if (a.value != L"round") return false; }
+            else if (a.name == L"ts") { if (a.value != L"0") return false; }
+            else if (a.name == L"fn") { if (!a.value.empty()) return false; }
+            else return false;
+        }
+        return true;
     }
 }

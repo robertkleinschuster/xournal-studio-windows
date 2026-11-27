@@ -110,7 +110,7 @@ namespace xournal::import
                     if (auto* stroke = std::get_if<StrokeShape>(&element))
                     {
                         // A pen stroke is a drawing's when the markup can hold it and its whole-number bounds lie on the page.
-                        bool editable = IsEditable(*stroke);
+                        bool editable = IsEditable(*stroke) && origin && detail::PencilKitEligible(*origin);
                         if (editable)
                         {
                             Rect bounds = PencilKitDrawing::BoundsOf(Stroke(*stroke));

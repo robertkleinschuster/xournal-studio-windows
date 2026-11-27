@@ -37,6 +37,16 @@ namespace xournal::import::detail
     void AddElementAnnotation(QPDF& pdf, ForeignKeep& keep, QPDFObjectHandle page, double pageHeight, pdf::PageElement const& element,
                               XmlElementPtr const& origin, pdf::ExportOptions const& options);
 
-    /// The element an annotation written by AddElementAnnotation holds (nothing for any other annotation).
+    /// The element an annotation written by AddElementAnnotation holds (nothing for any other annotation). The original is found
+    /// in /XournalStudio or - where iPadOS kept it and dropped the annotation's other unknown keys (measured: it rewrites every
+    /// annotation) - in /AAPL:AKExtras.
     XmlElementPtr ReadElementAnnotation(QPDFObjectHandle annotation, pdf::PageFrame const& frame);
+
+    /// What a standard /Ink annotation without the original shows (the iPad rewrote it, or another program wrote it): its lines as
+    /// pen strokes - a highlighter when its opacity is below 1 -, never a picture of it.
+    std::vector<XmlElementPtr> ReadStandardInk(QPDFObjectHandle annotation, pdf::PageFrame const& frame);
+
+    /// A pen stroke the markup's drawing can hold keeps nothing the drawing cannot: only tool, color, width, a round cap and the
+    /// audio fields at their defaults - anything else (a style, a filling, audio, another program's attribute) would be lost.
+    bool PencilKitEligible(XmlElement const& stroke);
 }
