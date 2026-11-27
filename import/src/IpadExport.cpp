@@ -8,6 +8,8 @@
 #include "xournal/import/PencilKitDrawing.h"
 #include "xournal/io/Files.h"
 
+#include "IpadElements.h"
+
 #include <qpdf/Buffer.hh>
 #include <qpdf/QPDF.hh>
 #include <qpdf/QPDFObjectHandle.hh>
@@ -81,20 +83,33 @@ namespace xournal::import
             return stroke;
         }
 
-        std::string Num(double v) { return std::format("{:.3f}", v); }
+        using detail::Num;
+        using detail::PdfDate;
 
-        // The pages' elements sorted: the editable strokes (per page) go to `ink`, everything else is counted in `omitted` and
-        // removed from the pages (nothing uneditable is drawn into the page). A stroke is editable when the markup can hold
-        // it and its whole-number bounds lie on the page (as in every file of the user's).
-        void Partition(std::vector<pdf::ExportPage>& pages, std::vector<std::vector<StrokeShape>>& ink, IpadOmitted& omitted)
+        // What goes where: the pen strokes the PencilKit drawing can hold (per page) go to `ink`; the other strokes (highlighters,
+        // dashed, filled, square or butt ended, transparent, off the page) and the texts become standard annotations
+        // (`standard`, in the page's order, with the .xopp element they come from); pictures and what the app does not read are
+        // counted in `omitted`. Nothing is drawn into the page: the pages' elements are removed.
+        struct Standard
+        {
+            pdf::PageElement element;
+            XmlElementPtr origin;
+        };
+
+        void Partition(std::vector<pdf::ExportPage>& pages, std::vector<std::vector<StrokeShape>>& ink,
+                       std::vector<std::vector<Standard>>& standard, IpadOmitted& omitted)
         {
             ink.assign(pages.size(), {});
+            standard.assign(pages.size(), {});
             for (size_t i = 0; i < pages.size(); ++i)
             {
-                for (auto& element : pages[i].elements)
+                for (size_t e = 0; e < pages[i].elements.size(); ++e)
                 {
+                    auto& element = pages[i].elements[e];
+                    XmlElementPtr origin = e < pages[i].origin.size() ? pages[i].origin[e] : nullptr;
                     if (auto* stroke = std::get_if<StrokeShape>(&element))
                     {
+                        // A pen stroke is a drawing's when the markup can hold it and its whole-number bounds lie on the page.
                         bool editable = IsEditable(*stroke);
                         if (editable)
                         {
@@ -103,13 +118,13 @@ namespace xournal::import
                                        bounds.y + bounds.height <= pages[i].height;
                         }
                         if (editable) ink[i].push_back(std::move(*stroke));
-                        else if (stroke->highlighter) ++omitted.highlighters;
-                        else ++omitted.otherStrokes;
+                        else standard[i].push_back({ std::move(element), origin });
                     }
-                    else if (std::holds_alternative<pdf::Picture>(element)) ++omitted.pictures;
-                    else ++omitted.texts;
+                    else if (std::holds_alternative<XoppText>(element)) standard[i].push_back({ std::move(element), origin });
+                    else ++omitted.pictures;
                 }
                 pages[i].elements.clear();
+                pages[i].origin.clear();
             }
         }
 
@@ -147,13 +162,6 @@ namespace xournal::import
             a = (a & ~0xF000ull) | 0x4000ull;             // version 4
             b = (b & 0x3FFFFFFFFFFFFFFFull) | 0x8000000000000000ull;
             return std::format("{:08X}-{:04X}-{:04X}-{:04X}-{:012X}", a >> 32, (a >> 16) & 0xFFFF, a & 0xFFFF, b >> 48, b & 0xFFFFFFFFFFFFull);
-        }
-
-        std::string PdfDate()
-        {
-            SYSTEMTIME t{};
-            GetSystemTime(&t);
-            return std::format("D:{:04}{:02}{:02}{:02}{:02}{:02}Z00'00'", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond);
         }
 
         // One page's ink annotation: the strokes' archive and a vector appearance. As on iPadOS (every file of the user's)
@@ -211,17 +219,25 @@ namespace xournal::import
         auto pages = pdf::PagesOf(source, counts);
         // The editable strokes become ink annotations; everything else is left out and counted.
         std::vector<std::vector<StrokeShape>> ink;
-        Partition(pages, ink, result.omitted);
+        std::vector<std::vector<Standard>> standard;
+        Partition(pages, ink, standard, result.omitted);
         result.omitted.other = counts.skippedElements;
         auto bytes = pdf::ExportToMemory(pages, result.pdf, options);
         result.pdf.skippedElements = 0;
 
+        detail::ForeignKeep keep; // the appearances' documents live until the file is written
         QPDF pdf;
         pdf.setSuppressWarnings(true);
         pdf.processMemoryFile("iPad export", reinterpret_cast<char const*>(bytes.data()), bytes.size());
         auto qpages = QPDFPageDocumentHelper(pdf).getAllPages();
         for (size_t i = 0; i < qpages.size() && i < ink.size(); ++i)
         {
+            // Standard annotations first (below), the pen drawing over them.
+            for (auto const& item : standard[i])
+            {
+                detail::AddElementAnnotation(pdf, keep, qpages[i].getObjectHandle(), pages[i].height, item.element, item.origin, options);
+                ++result.elements;
+            }
             if (ink[i].empty()) continue;
             std::vector<StrokeShape const*> strokes;
             for (auto const& s : ink[i]) strokes.push_back(&s);
@@ -246,8 +262,9 @@ namespace xournal::import
         pdf::ExportResult counts;
         auto pages = pdf::PagesOf(source, counts);
         std::vector<std::vector<StrokeShape>> ink;
+        std::vector<std::vector<Standard>> standard;
         IpadOmitted omitted;
-        Partition(pages, ink, omitted);
+        Partition(pages, ink, standard, omitted);
         omitted.other = counts.skippedElements;
         return omitted;
     }

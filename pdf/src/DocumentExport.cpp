@@ -72,15 +72,21 @@ namespace xournal::pdf
                 {
                     if (e->Name() == L"stroke")
                     {
-                        if (auto shape = Strokes::ReadShape(*e)) page.elements.emplace_back(std::move(*shape));
+                        if (auto shape = Strokes::ReadShape(*e))
+                        {
+                            page.elements.emplace_back(std::move(*shape));
+                            page.origin.push_back(e);
+                        }
                     }
                     else if (XoppImage::IsImage(*e))
                     {
                         page.elements.emplace_back(Picture{ XoppImage::GetData(*e), XoppImage::GetPlacement(*e) });
+                        page.origin.push_back(e);
                     }
                     else if (XoppText::IsText(*e))
                     {
                         page.elements.emplace_back(XoppText::Read(*e));
+                        page.origin.push_back(e);
                     }
                     else
                     {

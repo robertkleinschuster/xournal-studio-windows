@@ -27,10 +27,6 @@ namespace xournal::app
                 if (!text.empty()) text += L", ";
                 text += std::format(L"{} {}", count, count == 1 ? one : many);
             };
-            add(o.highlighters, L"Textmarker-Strich", L"Textmarker-Striche");
-            add(o.otherStrokes, L"anderer Strich (gestrichelt, gefüllt, eckig, transparent oder außerhalb der Seite)",
-                L"andere Striche (gestrichelt, gefüllt, eckig, transparent oder außerhalb der Seite)");
-            add(o.texts, L"Text", L"Texte");
             add(o.pictures, L"Bild", L"Bilder");
             add(o.other, L"anderes Element", L"andere Elemente");
             return text;
@@ -59,7 +55,7 @@ namespace xournal::app
             complete = result.missingBackgrounds + result.skippedElements == 0 && !result.annotationsLeftOut;
             if (ipad)
             {
-                text += std::format(L" {} Strich(e) auf {} Seite(n) sind auf dem iPad bearbeitbar.", ipad->strokes, ipad->drawings);
+                text += std::format(L" {} Strich(e) auf {} Seite(n) und {} weitere Elemente sind auf dem iPad bearbeitbar.", ipad->strokes, ipad->drawings, ipad->elements);
                 if (ipad->omitted.Total() > 0) text += L" Weggelassen (auf dem iPad nicht darstellbar): " + OmittedText(ipad->omitted) + L".";
                 complete = complete && ipad->omitted.Total() == 0;
                 return std::format(L"{}: {}", complete ? L"Für iPad exportiert" : L"Für iPad exportiert – unvollständig", text);

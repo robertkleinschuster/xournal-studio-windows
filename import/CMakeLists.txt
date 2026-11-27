@@ -20,6 +20,7 @@ add_library(XournalImport STATIC
     src/AppearanceText.cpp
     src/PdfMarkupImport.cpp
     src/IpadExport.cpp
+    src/IpadElements.cpp
 )
 target_include_directories(XournalImport PUBLIC include PRIVATE src)
 target_compile_options(XournalImport PRIVATE ${XOURNAL_COMPILE_OPTIONS})

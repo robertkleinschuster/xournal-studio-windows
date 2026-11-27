@@ -19,6 +19,7 @@
 #include "xournal/model/Color.h"
 #include "xournal/model/StrokeShape.h"
 #include "xournal/model/XoppImage.h"
+#include "xournal/model/Xml.h"
 #include "xournal/model/XoppText.h"
 
 #include <cstdint>
@@ -71,6 +72,7 @@ namespace xournal::pdf
         double width = 0, height = 0; // points
         PageBackground background;
         std::vector<PageElement> elements; // bottom to top
+        std::vector<XmlElementPtr> origin; // parallel to `elements` for pages taken from a document (PagesOf): the .xopp element
     };
 
     struct ExportOptions

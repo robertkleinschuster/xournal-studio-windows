@@ -16,12 +16,9 @@ namespace xournal::import
     /// What the export leaves out because the iPad has no counterpart for it yet (counted, never drawn into the page).
     struct IpadOmitted
     {
-        int highlighters = 0;   // PencilKit's marker ink is not written yet
-        int otherStrokes = 0;   // dashed, filled, square or butt ended, transparent strokes, strokes leaving the page
-        int texts = 0;
-        int pictures = 0;
+        int pictures = 0;       // not yet (open work)
         int other = 0;          // elements the app does not read at all
-        int Total() const { return highlighters + otherStrokes + texts + pictures + other; }
+        int Total() const { return pictures + other; }
     };
 
     struct IpadExportResult
@@ -29,6 +26,7 @@ namespace xournal::import
         pdf::ExportResult pdf;   // the pages, what the PDF export left out
         int drawings = 0;        // pages that got an ink annotation
         int strokes = 0;         // pen strokes written as ink
+        int elements = 0;        // strokes, texts... written as standard annotations (/Ink, /FreeText)
         IpadOmitted omitted;     // what is not in the file
     };
 

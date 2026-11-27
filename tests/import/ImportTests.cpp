@@ -817,17 +817,34 @@ namespace xournal::tests
         EXPECT_EQ(result.pdf.pages, 2);
         EXPECT_EQ(result.drawings, 1);
         EXPECT_EQ(result.strokes, 2);
-        EXPECT_EQ(result.omitted.highlighters, 1); // left out (and the text), never drawn into the page
-        EXPECT_EQ(result.omitted.texts, 1);
-        EXPECT_EQ(result.strokes + result.omitted.highlighters, 3); // every stroke of the page is somewhere, once
-        EXPECT_EQ(import::OmittedByIpadExport(pdf::PrepareExport(*doc)).Total(), 2); // what the warning counts
-        EXPECT_EQ(Subtypes(target), (std::vector<std::string>{ "/Stamp" }));
+        EXPECT_EQ(result.elements, 2); // the highlighter (an /Ink annotation) and the text (/FreeText)
+        EXPECT_EQ(result.strokes + 1, 3); // every stroke of the page is somewhere, once
+        EXPECT_EQ(result.omitted.Total(), 0);
+        EXPECT_EQ(import::OmittedByIpadExport(pdf::PrepareExport(*doc)).Total(), 0); // what the warning counts
+        EXPECT_EQ(Subtypes(target), (std::vector<std::string>{ "/Ink", "/FreeText", "/Stamp" })); // pen drawing over the others
 
         // Imported again (as an iPad PDF): the pen strokes are strokes again, where and as wide as they were.
         auto imported = Prepare(target, folder / L"clean.pdf", [&](int round) { return folder / std::format(L"pictures-{}.pdf", round); });
-        EXPECT_EQ(imported.drawings, 1);
+        EXPECT_EQ(imported.drawings, 2);  // the pen drawing and the highlighter (an /Ink annotation)
+        EXPECT_EQ(imported.texts, 1);
         std::vector<XmlElementPtr> strokes;
-        for (auto const& e : imported.elements[0]) if (e->Name() == L"stroke") strokes.push_back(e);
+        for (auto const& e : imported.elements[0])
+        {
+            if (e->Name() == L"stroke" && Attr(e, L"tool") == L"pen") strokes.push_back(e);
+            if (e->Name() == L"stroke" && Attr(e, L"tool") == L"highlighter")
+            {
+                EXPECT_EQ(Attr(e, L"color"), L"#ffff007f"); // as it was: attributes and points, exactly
+                EXPECT_EQ(Attr(e, L"width"), L"8");
+                EXPECT_EQ(e->Value(), L"20 200 120 200");
+            }
+            if (e->Name() == L"text")
+            {
+                EXPECT_EQ(e->Value(), L"Hallo");
+                EXPECT_EQ(Attr(e, L"font"), L"Sans");
+                EXPECT_EQ(Attr(e, L"x"), L"10");
+                EXPECT_EQ(Attr(e, L"y"), L"250");
+            }
+        }
         ASSERT_EQ(strokes.size(), 2u);
         EXPECT_EQ(Attr(strokes[0], L"color"), L"#3333ccff");
         EXPECT_NEAR(Number(strokes[0], L"width"), 1.2, 0.05); // back through the brush size (stored in tenths of it)
@@ -862,7 +879,10 @@ namespace xournal::tests
         // The drawing the iPad gets has points as dense as its own (at most 2 pt apart), from the first to the last.
         QPDF reader;
         reader.processFile(ToUtf8(target.native()).c_str());
-        auto annotation = QPDFPageDocumentHelper(reader).getAllPages()[0].getAnnotations()[0].getObjectHandle();
+        QPDFObjectHandle annotation;
+        for (auto& candidate : QPDFPageDocumentHelper(reader).getAllPages()[0].getAnnotations())
+            if (candidate.getObjectHandle().getKey("/AAPL:AKExtras").isDictionary()) annotation = candidate.getObjectHandle(); // the pen drawing
+        ASSERT_TRUE(annotation.isDictionary());
         auto markup = AppleMarkup::Read(annotation.getKey("/AAPL:AKExtras").getKey("/AAPL:AKAnnotationV2").getStringValue());
         ASSERT_TRUE(markup.drawing);
         auto written = PencilKitDrawing::Read(*markup.drawing);
@@ -875,7 +895,7 @@ namespace xournal::tests
         EXPECT_GT(written[0].points.size(), 60u);
     }
 
-    TEST(IpadExport, WhatTheIpadCannotEditIsLeftOutAndCounted)
+    TEST(IpadExport, WhatPencilKitCannotHoldBecomesStandardAnnotations)
     {
         TempFolder folder;
         auto source = folder / L"notes.xopp";
@@ -895,13 +915,12 @@ namespace xournal::tests
 
         auto result = import::ExportForIpad(pdf::PrepareExport(*doc), target);
 
-        // The two strokes the markup can hold; the one that leaves the page, the filled and the dashed one, and the text are
-        // left out - and counted, for the warning before the export.
+        // The two strokes PencilKit can hold are its drawing's; the one that leaves the page, the filled and the dashed one and
+        // the text are standard annotations (the iPad edits those too) - nothing is left out, nothing drawn into the page.
         EXPECT_EQ(result.strokes, 2);
-        EXPECT_EQ(result.omitted.otherStrokes, 3);
-        EXPECT_EQ(result.omitted.texts, 1);
-        EXPECT_EQ(result.omitted.Total(), 4);
-        // Nothing of it is drawn into the page: its content stream is empty (the paper only).
+        EXPECT_EQ(result.elements, 4);
+        EXPECT_EQ(result.omitted.Total(), 0);
+        EXPECT_EQ(Subtypes(target), (std::vector<std::string>{ "/Ink", "/Ink", "/FreeText", "/Ink", "/Stamp" }));
         QPDF reader;
         reader.processFile(ToUtf8(target.native()).c_str());
         auto contents = QPDFPageDocumentHelper(reader).getAllPages()[0].getObjectHandle().getKey("/Contents");
@@ -956,7 +975,12 @@ namespace xournal::tests
             {
                 auto element = page->Snapshot();
                 for (auto const& layer : element->Elements(L"layer"))
-                    for (auto const& s : layer->Elements(L"stroke")) all.push_back({ s->AttributeOr(L"width", L""), s->Value() });
+                    for (auto const& s : layer->Elements(L"stroke"))
+                    {
+                        // The plain pen strokes only (PencilKit's); the styled ones are compared whole elsewhere.
+                        if (s->AttributeOr(L"tool", L"") != L"pen" || s->Attribute(L"style") || s->Attribute(L"fill") || s->Attribute(L"capStyle")) continue;
+                        all.push_back({ s->AttributeOr(L"width", L""), s->Value() });
+                    }
             }
             return all;
         }
@@ -1018,6 +1042,11 @@ namespace xournal::tests
 <stroke tool="pen" color="#000000ff" width="1.4">150.5 30.25 150.5 30.25</stroke>
 <stroke tool="pen" color="#7f007fff" width="1.1">{}</stroke>
 <stroke tool="pen" color="#000000ff" width="{}">{}</stroke>
+<stroke tool="highlighter" color="#ffff007f" width="8.5">20 200 180 205.5</stroke>
+<stroke tool="pen" color="#0000ffff" width="1.4" style="dashdot" capStyle="butt">200 250 300 255</stroke>
+<stroke tool="pen" color="#00ff00ff" width="1" fill="96">320 200 380 200 350 260 320 200</stroke>
+<text font="Sans Bold" size="14" x="40.5" y="160.25" color="#cc0000ff">Zwei Zeilen
+mit Umlauten: äöü Ω</text>
 </layer></page>
 </xournal>)", circle, pressureWidths, pressure));
         auto original = io::DocumentFile::Load(source);
@@ -1027,7 +1056,7 @@ namespace xournal::tests
         auto doc = Lap(*original, folder.Path(), 1);
         auto first = StrokesOf(*doc);
         ASSERT_EQ(first.size(), before.size());
-        for (size_t i = 0; i < before.size(); ++i)
+        for (size_t i = 0; i < 6; ++i)
         {
             // Every original point lies on the imported line (at most 0.05 pt off), the ends are the same.
             auto original_points = PointsOf(before[i]);
@@ -1046,11 +1075,33 @@ namespace xournal::tests
         EXPECT_NEAR(*std::max_element(lap_widths.begin() + 1, lap_widths.end()), *std::max_element(original_widths.begin() + 1, original_widths.end()), 0.2);
         EXPECT_EQ(PointsOf(first[3]).size(), 2u); // the tap is a dot again
 
+        // What the iPad holds as standard annotations comes back as it was, attribute for attribute and character for character.
+        auto everything = [](XoppDocument& d)
+        {
+            std::vector<std::wstring> all;
+            for (auto const& page : d.Pages())
+            {
+                auto element = page->Snapshot();
+                for (auto const& layer : element->Elements(L"layer"))
+                    for (auto const& e : layer->Elements())
+                    {
+                        std::wstring line = e->Name() + L"|";
+                        for (auto const& a : e->Attributes()) line += a.name + L"=" + a.value + L";";
+                        all.push_back(line + L"|" + e->Value());
+                    }
+            }
+            return all;
+        };
+        auto originalAll = everything(*original), lapAll = everything(*doc);
+        for (size_t i = 6; i < 9; ++i)
+            EXPECT_NE(std::find(lapAll.begin(), lapAll.end(), originalAll[i]), lapAll.end()) << "element " << i << " came back different";
+
         // And again and again: the same, character for character.
         auto previous = std::move(doc);
         for (int round = 2; round <= 6; ++round)
         {
             auto next = Lap(*previous, folder.Path(), round);
+            EXPECT_EQ(everything(*next), lapAll) << "round " << round; // the standard elements too, whole
             auto strokes = StrokesOf(*next);
             ASSERT_EQ(strokes.size(), first.size()) << "round " << round;
             for (size_t i = 0; i < first.size(); ++i)
@@ -1074,11 +1125,16 @@ namespace xournal::tests
 
         EXPECT_GT(result.strokes, 0);
         auto imported = Prepare(target, folder / L"clean.pdf", [&](int round) { return folder / std::format(L"pictures-{}.pdf", round); });
-        int strokes = 0;
+        int strokes = 0, texts = 0;
         for (auto const& page : imported.elements)
-            for (auto const& e : page) strokes += e->Name() == L"stroke" ? 1 : 0;
-        EXPECT_EQ(strokes, result.strokes);
-        EXPECT_EQ(imported.drawings, result.drawings);
+            for (auto const& e : page)
+            {
+                strokes += e->Name() == L"stroke" ? 1 : 0;
+                texts += e->Name() == L"text" ? 1 : 0;
+            }
+        EXPECT_EQ(strokes + texts, result.strokes + result.elements); // every stroke and text, once
+        EXPECT_EQ(texts, imported.texts);
+        EXPECT_EQ(result.omitted.other, 0); // (pictures: the next step)
 
         // The user's own kind of document, lap after lap: the second and third lap return exactly the first's strokes.
         auto lap1 = Lap(*doc, folder.Path(), 1);

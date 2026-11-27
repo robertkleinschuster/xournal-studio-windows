@@ -1,6 +1,7 @@
 #include "xournal/import/PdfMarkupImport.h"
 
 #include "AppearanceText.h"
+#include "IpadElements.h"
 
 #include "xournal/base/Error.h"
 #include "xournal/base/Log.h"
@@ -298,6 +299,12 @@ namespace xournal::import
         {
             picture = false;
             if (!IsMarkup(annotation)) return Taken::Kept;
+            // An element the export wrote as a standard annotation: back as the element it was.
+            if (auto element = detail::ReadElementAnnotation(annotation, frame))
+            {
+                added.push_back(element);
+                return element->Name() == L"text" ? Taken::Text : Taken::Strokes;
+            }
             if (paper)
             {
                 // PaperKit's coordinates are the page's (the archive's drawing size, where there is one, is the page's too).
