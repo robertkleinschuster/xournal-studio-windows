@@ -40,6 +40,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <sstream>
 #include <variant>
 
 namespace xournal::tests
@@ -505,7 +506,7 @@ namespace xournal::tests
         EXPECT_EQ(Attr(strokes[0], L"tool"), L"pen");
         EXPECT_EQ(Attr(strokes[0], L"color"), L"#0000ffff");
         EXPECT_EQ(Attr(strokes[0], L"width"), L"1"); // PencilKit's 2.5 as drawn
-        EXPECT_EQ(strokes[0]->Value(), L"10 10 20 10 30 10");
+        EXPECT_EQ(strokes[0]->Value(), L"10 10 30 10"); // the point between is on the line: not kept
         EXPECT_EQ(Attr(strokes[1], L"tool"), L"highlighter");
         EXPECT_EQ(Attr(strokes[1], L"color"), L"#ffff007f");
         EXPECT_EQ(Attr(strokes[1], L"width"), L"6");
@@ -704,7 +705,7 @@ namespace xournal::tests
         for (auto const& e : imported.elements[0]) if (e->Name() == L"stroke") strokes.push_back(e);
         ASSERT_EQ(strokes.size(), 2u);
         EXPECT_EQ(Attr(strokes[0], L"color"), L"#3333ccff");
-        EXPECT_NEAR(Number(strokes[0], L"width"), std::sqrt(1.2), 0.02); // the brush size follows the square root of the width (stored in tenths)
+        EXPECT_NEAR(Number(strokes[0], L"width"), 1.2, 0.05); // back through the brush size (stored in tenths of it)
         auto coordinates = [](XmlElementPtr const& e)
         {
             std::vector<double> numbers;
@@ -719,25 +720,34 @@ namespace xournal::tests
             }
             return numbers;
         };
-        // PencilKit keeps the control points of a smooth curve: the polyline's few points come back as many (as dense as
-        // the points of the user's own drawings: never more than 2 pt apart), from the first point to the last.
-        auto spacing = [&](std::vector<double> const& c)
-        {
-            double widest = 0;
-            for (size_t i = 2; i + 1 < c.size(); i += 2) widest = std::max(widest, std::hypot(c[i] - c[i - 2], c[i + 1] - c[i - 1]));
-            return widest;
-        };
+        // The polyline's corners come back as they were (the dense points between them, which PencilKit needs, are not kept).
         auto first = coordinates(strokes[0]);
-        ASSERT_GT(first.size(), 60u);
+        ASSERT_EQ(first.size(), 6u);
         EXPECT_NEAR(first[0], 10, 1e-2);
         EXPECT_NEAR(first[1], 20, 1e-2);
-        EXPECT_NEAR(first[first.size() - 2], 50, 1e-2);
-        EXPECT_NEAR(first[first.size() - 1], 20, 1e-2);
-        EXPECT_LE(spacing(first), 2.0);
+        EXPECT_NEAR(first[2], 30, 1e-2);
+        EXPECT_NEAR(first[3], 40, 1e-2);
+        EXPECT_NEAR(first[4], 50, 1e-2);
+        EXPECT_NEAR(first[5], 20, 1e-2);
         auto second = coordinates(strokes[1]);
-        EXPECT_NEAR(second[second.size() - 2], 130, 1e-2);
-        EXPECT_NEAR(second[second.size() - 1], 110, 1e-2);
-        EXPECT_LE(spacing(second), 2.0);
+        ASSERT_EQ(second.size(), 6u);
+        EXPECT_NEAR(second[4], 130, 1e-2);
+        EXPECT_NEAR(second[5], 110, 1e-2);
+
+        // The drawing the iPad gets has points as dense as its own (at most 2 pt apart), from the first to the last.
+        QPDF reader;
+        reader.processFile(ToUtf8(target.native()).c_str());
+        auto annotation = QPDFPageDocumentHelper(reader).getAllPages()[0].getAnnotations()[0].getObjectHandle();
+        auto markup = AppleMarkup::Read(annotation.getKey("/AAPL:AKExtras").getKey("/AAPL:AKAnnotationV2").getStringValue());
+        ASSERT_TRUE(markup.drawing);
+        auto written = PencilKitDrawing::Read(*markup.drawing);
+        ASSERT_EQ(written.size(), 2u);
+        double widest = 0;
+        for (auto const& stroke : written)
+            for (size_t i = 1; i < stroke.points.size(); ++i)
+                widest = std::max(widest, std::hypot(stroke.points[i].x - stroke.points[i - 1].x, stroke.points[i].y - stroke.points[i - 1].y));
+        EXPECT_LE(widest, 2.0);
+        EXPECT_GT(written[0].points.size(), 60u);
     }
 
     TEST(IpadExport, StrokesThatCannotLieUnderWhatIsAboveThemStayInThePage)
@@ -785,8 +795,138 @@ namespace xournal::tests
         for (auto const& e : imported.elements[0])
         {
             if (e->Name() != L"stroke") continue;
-            // Many points within a fraction of a point of the tap.
-            EXPECT_GT(e->Value().size(), 50u);
+            EXPECT_EQ(e->Value(), L"133.8 234.2 133.8 234.2"); // the tap comes back as a dot (two equal points)
+        }
+    }
+
+    namespace
+    {
+        // One lap of the exchange: the document as an iPad PDF, then imported again (what the iPad adds is left out here).
+        std::unique_ptr<XoppDocument> Lap(XoppDocument& doc, std::filesystem::path const& folder, int round)
+        {
+            auto ipad = folder / std::format(L"ipad{}.pdf", round);
+            import::ExportForIpad(pdf::PrepareExport(doc), ipad);
+            auto clean = folder / std::format(L"clean{}.pdf", round);
+            auto imported = Prepare(ipad, clean, [&](int r) { return folder / std::format(L"pictures{}-{}.pdf", round, r); });
+            return CreateDocument(imported, clean);
+        }
+
+        struct Written
+        {
+            std::wstring width, value;
+            bool operator==(Written const&) const = default;
+        };
+
+        std::vector<Written> StrokesOf(XoppDocument& doc)
+        {
+            std::vector<Written> all;
+            for (auto const& page : doc.Pages())
+            {
+                auto element = page->Snapshot();
+                for (auto const& layer : element->Elements(L"layer"))
+                    for (auto const& s : layer->Elements(L"stroke")) all.push_back({ s->AttributeOr(L"width", L""), s->Value() });
+            }
+            return all;
+        }
+
+        std::vector<Point> PointsOf(Written const& s)
+        {
+            std::vector<Point> points;
+            std::wistringstream in(s.value);
+            double x, y;
+            while (in >> x >> y) points.push_back({ x, y });
+            return points;
+        }
+
+        std::vector<double> WidthsOf(Written const& s)
+        {
+            std::vector<double> widths;
+            std::wistringstream in(s.width);
+            double w;
+            while (in >> w) widths.push_back(w);
+            return widths;
+        }
+
+        double DistanceToPolyline(Point p, std::vector<Point> const& line)
+        {
+            double best = 1e30;
+            for (size_t i = 0; i + 1 < line.size(); ++i)
+            {
+                double dx = line[i + 1].x - line[i].x, dy = line[i + 1].y - line[i].y, l2 = dx * dx + dy * dy;
+                double t = l2 > 0 ? std::clamp(((p.x - line[i].x) * dx + (p.y - line[i].y) * dy) / l2, 0.0, 1.0) : 0;
+                best = std::min(best, std::hypot(p.x - line[i].x - t * dx, p.y - line[i].y - t * dy));
+            }
+            return best;
+        }
+    }
+
+    // The exchange runs back and forth: a document exported for the iPad and imported again comes back the same - after the
+    // first lap exactly (the same text of every stroke), however often it is repeated - and the first lap stays within what
+    // the formats store (whole numbers of a size's tenths, single precision).
+    TEST(IpadExport, ExportAndImportAgreeAndRepeatForever)
+    {
+        TempFolder folder;
+        std::string circle;
+        for (int i = 0; i <= 60; ++i)
+            circle += std::format("{:.2f} {:.2f} ", 200 + 50 * std::cos(i * 0.1047), 150 + 40 * std::sin(i * 0.1047));
+        std::string pressure;
+        std::string pressureWidths = "1.4";
+        for (int i = 0; i < 40; ++i)
+        {
+            pressure += std::format("{} {} ", 20 + i * 4, 250 + 10 * std::sin(i * 0.3));
+            if (i > 0) pressureWidths += std::format(" {:.2f}", 0.4 + 2.0 * (i % 13) / 13.0);
+        }
+        auto source = folder / L"exchange.xopp";
+        WriteBytes(source, std::format(R"(<?xml version="1.0" standalone="no"?>
+<xournal creator="xournalpp 1.3.8" fileversion="5">
+<page width="400" height="300"><background type="solid" color="#ffffffff" style="plain"/><layer>
+<stroke tool="pen" color="#3333ccff" width="1.41">20 20 120 20 120 80 20 80 20 20</stroke>
+<stroke tool="pen" color="#ff0000ff" width="0.85">30 40 90 40</stroke>
+<stroke tool="pen" color="#00aa00ff" width="2.26">30 60 90 60</stroke>
+<stroke tool="pen" color="#000000ff" width="1.4">150.5 30.25 150.5 30.25</stroke>
+<stroke tool="pen" color="#7f007fff" width="1.1">{}</stroke>
+<stroke tool="pen" color="#000000ff" width="{}">{}</stroke>
+</layer></page>
+</xournal>)", circle, pressureWidths, pressure));
+        auto original = io::DocumentFile::Load(source);
+        auto before = StrokesOf(*original);
+        ASSERT_EQ(before.size(), 6u);
+
+        auto doc = Lap(*original, folder.Path(), 1);
+        auto first = StrokesOf(*doc);
+        ASSERT_EQ(first.size(), before.size());
+        for (size_t i = 0; i < before.size(); ++i)
+        {
+            // Every original point lies on the imported line (at most 0.05 pt off), the ends are the same.
+            auto original_points = PointsOf(before[i]);
+            auto lap_points = PointsOf(first[i]);
+            for (auto const& p : original_points) EXPECT_LE(DistanceToPolyline(p, lap_points), 0.05) << "stroke " << i;
+            EXPECT_NEAR(lap_points.front().x, original_points.front().x, 0.01);
+            EXPECT_NEAR(lap_points.back().y, original_points.back().y, 0.01);
+        }
+        // Widths: an even stroke within a size's tenth (about 4 %), the pressure stroke's range within 12 %.
+        EXPECT_NEAR(WidthsOf(first[0])[0], 1.41, 1.41 * 0.05);
+        EXPECT_NEAR(WidthsOf(first[1])[0], 0.85, 0.85 * 0.06);
+        EXPECT_NEAR(WidthsOf(first[2])[0], 2.26, 2.26 * 0.05);
+        auto original_widths = WidthsOf(before[5]), lap_widths = WidthsOf(first[5]);
+        ASSERT_GT(lap_widths.size(), 5u);
+        EXPECT_NEAR(*std::min_element(lap_widths.begin() + 1, lap_widths.end()), *std::min_element(original_widths.begin() + 1, original_widths.end()), 0.12);
+        EXPECT_NEAR(*std::max_element(lap_widths.begin() + 1, lap_widths.end()), *std::max_element(original_widths.begin() + 1, original_widths.end()), 0.2);
+        EXPECT_EQ(PointsOf(first[3]).size(), 2u); // the tap is a dot again
+
+        // And again and again: the same, character for character.
+        auto previous = std::move(doc);
+        for (int round = 2; round <= 6; ++round)
+        {
+            auto next = Lap(*previous, folder.Path(), round);
+            auto strokes = StrokesOf(*next);
+            ASSERT_EQ(strokes.size(), first.size()) << "round " << round;
+            for (size_t i = 0; i < first.size(); ++i)
+            {
+                EXPECT_EQ(strokes[i].value, first[i].value) << "round " << round << " stroke " << i;
+                EXPECT_EQ(strokes[i].width, first[i].width) << "round " << round << " stroke " << i;
+            }
+            previous = std::move(next);
         }
     }
 
@@ -807,6 +947,17 @@ namespace xournal::tests
             for (auto const& e : page) strokes += e->Name() == L"stroke" ? 1 : 0;
         EXPECT_EQ(strokes, result.strokes);
         EXPECT_EQ(imported.drawings, result.drawings);
+
+        // The user's own kind of document, lap after lap: the second and third lap return exactly the first's strokes.
+        auto lap1 = Lap(*doc, folder.Path(), 1);
+        auto lap2 = Lap(*lap1, folder.Path(), 2);
+        auto lap3 = Lap(*lap2, folder.Path(), 3);
+        auto a = StrokesOf(*lap2), b = StrokesOf(*lap3);
+        ASSERT_EQ(a.size(), b.size());
+        size_t different = 0;
+        for (size_t i = 0; i < a.size(); ++i) different += a[i] == b[i] ? 0 : 1;
+        EXPECT_EQ(different, 0u) << "strokes that changed between lap 2 and lap 3";
+        EXPECT_EQ(StrokesOf(*lap1).size(), a.size());
 
         wchar_t out[MAX_PATH]{};
         if (GetEnvironmentVariableW(L"XOURNAL_PROBE_OUT", out, MAX_PATH) > 0)

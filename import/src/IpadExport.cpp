@@ -39,29 +39,19 @@ namespace xournal::import
         // them is the polyline itself (corners rounded by a fraction of a point), widths interpolated.
         constexpr double PointSpacing = 0.8;
 
-        // The brush size for a drawn width. Linear (size = width / 0.4) spread the widths on the iPad: thin came out thinner
-        // and thick thicker (user, 2026-11-27) - the factor 0.4 was measured only where the user's own pen strokes lie
-        // (sizes 2.5 to 3.0; PencilKit gets the rest of the thickness from the pen's force). So the size follows the square
-        // root of the width, through the measured point (1 pt <-> 2.5). An ESTIMATE, not measured: calibrate with
-        // an iPad-saved test PDF (strokes of known widths) before relying on it.
-        double BrushSize(double width) { return std::sqrt(std::max(width, 0.0)) * (1.0 / PenWidthFactor); }
-
         PencilKitStroke Stroke(StrokeShape const& shape)
         {
             PencilKitStroke stroke;
             stroke.ink = "com.apple.ink.pen";
             stroke.color = shape.color;
-            stroke.width = BrushSize(shape.width);
+            stroke.width = PenBrushSize(shape.width);
             size_t n = shape.points.size();
             std::vector<double> sizes(n, stroke.width); // each original point's brush size
             if (!shape.EvenWidth() && shape.segmentWidths.size() + 1 == n)
             {
-                for (size_t k = 0; k < n; ++k)
-                {
-                    double before = k > 0 ? shape.segmentWidths[k - 1] : shape.segmentWidths[0];
-                    double after = k + 1 < n ? shape.segmentWidths[k] : shape.segmentWidths[n - 2];
-                    sizes[k] = BrushSize((before + after) / 2);
-                }
+                // A point's width is that of the segment that starts there (the last point: of the last segment), the
+                // import's reading of it - so a round trip returns each segment's own width.
+                for (size_t k = 0; k < n; ++k) sizes[k] = PenBrushSize(shape.segmentWidths[std::min(k, n - 2)]);
             }
             double length = 0;
             for (size_t k = 0; k + 1 < n; ++k) length += std::hypot(shape.points[k + 1].x - shape.points[k].x, shape.points[k + 1].y - shape.points[k].y);
@@ -83,7 +73,7 @@ namespace xournal::import
                 {
                     double f = static_cast<double>(i) / pieces;
                     stroke.points.push_back({ a.x + f * (b.x - a.x), a.y + f * (b.y - a.y) });
-                    stroke.widths.push_back(sizes[k] + f * (sizes[k + 1] - sizes[k]));
+                    stroke.widths.push_back(sizes[k]); // the whole segment has its width, as in Xournal (no interpolated, rounded values)
                 }
             }
             stroke.points.push_back(shape.points[n - 1]);

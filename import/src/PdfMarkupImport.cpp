@@ -127,28 +127,108 @@ namespace xournal::import
             });
         }
 
+        // A vertex of a stroke with its drawn width.
+        struct Vertex
+        {
+            Point p;
+            double width = 0;
+        };
+
+        // Douglas-Peucker on position and width together: a point goes when it lies within `positionTolerance` of the line
+        // between its neighbours' kept points and has the width of the segment's start (a segment has one width, as in
+        // Xournal and as the export writes it) within `widthTolerance` or 10 %. The dense control points PencilKit stores (the
+        // export writes one every 0.8 pt) come back as the corners they were. Idempotent: the points kept were the farthest
+        // ones, so a second pass keeps them again.
+        void Simplify(std::vector<Vertex> const& v, size_t first, size_t last, double positionTolerance, double widthTolerance,
+                      std::vector<bool>& keep)
+        {
+            if (last <= first + 1) return;
+            auto const& a = v[first];
+            auto const& b = v[last];
+            double dx = b.p.x - a.p.x, dy = b.p.y - a.p.y, length2 = dx * dx + dy * dy;
+            double worst = 0;
+            size_t at = first;
+            for (size_t i = first + 1; i < last; ++i)
+            {
+                double t = length2 > 0 ? std::clamp(((v[i].p.x - a.p.x) * dx + (v[i].p.y - a.p.y) * dy) / length2, 0.0, 1.0) : 0;
+                double distance = std::hypot(v[i].p.x - (a.p.x + t * dx), v[i].p.y - (a.p.y + t * dy));
+                double widthError = std::abs(v[i].width - a.width) / std::max(widthTolerance, 0.1 * a.width);
+                double error = std::max(distance / positionTolerance, widthError);
+                if (error > worst)
+                {
+                    worst = error;
+                    at = i;
+                }
+            }
+            if (worst <= 1) return;
+            keep[at] = true;
+            Simplify(v, first, at, positionTolerance, widthTolerance, keep);
+            Simplify(v, at, last, positionTolerance, widthTolerance, keep);
+        }
+
         XmlElementPtr StrokeElement(PencilKitStroke const& stroke, PageFrame const& frame, AppleMarkup const& markup)
         {
             // Drawing coordinates span the page (drawingSize = its unrotated size), top left, y down.
             double sx = markup.drawingWidth > 0 ? frame.width / markup.drawingWidth : 1;
             double sy = markup.drawingHeight > 0 ? frame.height / markup.drawingHeight : 1;
-            std::vector<Point> points;
-            for (auto const& p : stroke.points) points.push_back(frame.FromTopLeft(p.x * sx, p.y * sy));
-            if (points.empty()) return nullptr;
-            if (points.size() == 1) points.push_back(points[0]); // a dot: Xournal's strokes have two points at least
+            double scale = std::sqrt(sx * sy);
             bool marker = stroke.IsMarker();
-            double width = stroke.width * std::sqrt(sx * sy) * (marker ? MarkerWidthFactor : PenWidthFactor);
+            bool perPoint = !marker && stroke.widths.size() == stroke.points.size();
+            double constant = marker ? stroke.width * scale * MarkerWidthFactor : PenDrawnWidth(stroke.width * scale);
+            std::vector<Vertex> vertices;
+            for (size_t i = 0; i < stroke.points.size(); ++i)
+            {
+                auto const& p = stroke.points[i];
+                double width = perPoint && stroke.widths[i] > 0 ? PenDrawnWidth(stroke.widths[i] * scale) : constant;
+                vertices.push_back({ frame.FromTopLeft(p.x * sx, p.y * sy), width });
+            }
+            if (vertices.empty()) return nullptr;
+            // The iPad and the export write a point as a stroke of a fraction of a point: a dot again (two equal points).
+            double extent = 0;
+            for (size_t i = 1; i < vertices.size(); ++i) extent += std::hypot(vertices[i].p.x - vertices[i - 1].p.x, vertices[i].p.y - vertices[i - 1].p.y);
+            if (extent < 0.5)
+            {
+                Vertex middle = vertices[vertices.size() / 2];
+                vertices = { middle, middle }; // Xournal's strokes have two points at least
+            }
+            else if (vertices.size() > 2)
+            {
+                std::vector<bool> keep(vertices.size(), false);
+                keep.front() = keep.back() = true;
+                Simplify(vertices, 0, vertices.size() - 1, 0.02, 0.03, keep);
+                std::vector<Vertex> kept;
+                for (size_t i = 0; i < vertices.size(); ++i)
+                    if (keep[i]) kept.push_back(vertices[i]);
+                vertices = std::move(kept);
+            }
             Color color = stroke.color;
             if (marker) color.a = HighlighterAlpha;
             std::wstring text;
-            for (auto const& p : points)
+            for (auto const& v : vertices)
             {
                 if (!text.empty()) text += L' ';
-                text += Format(p.x) + L' ' + Format(p.y);
+                text += Format(v.p.x) + L' ' + Format(v.p.y);
+            }
+            // One width for the stroke, or - when the pen's pressure changed it - the stroke's width followed by that of each
+            // segment (a segment has the width of the point it starts at, as the export writes them).
+            double lowest = vertices[0].width, highest = vertices[0].width;
+            std::vector<double> sorted;
+            for (size_t i = 0; i < vertices.size(); ++i)
+            {
+                lowest = std::min(lowest, vertices[i].width);
+                highest = std::max(highest, vertices[i].width);
+                if (i + 1 < vertices.size()) sorted.push_back(vertices[i].width);
+            }
+            std::sort(sorted.begin(), sorted.end());
+            double nominal = std::max(sorted[sorted.size() / 2], 0.1);
+            std::wstring widths = Format(nominal);
+            if (highest - lowest > 0.1)
+            {
+                for (size_t i = 0; i + 1 < vertices.size(); ++i) widths += L' ' + Format(std::max(vertices[i].width, 0.1));
             }
             auto e = XmlElement::Make(L"stroke", { { L"tool", marker ? L"highlighter" : L"pen" },
                                                    { L"color", FormatColor(color) },
-                                                   { L"width", Format(std::max(width, 0.1)) } });
+                                                   { L"width", widths } });
             e->SetValue(std::move(text));
             return e;
         }

@@ -21,6 +21,7 @@
 #include "xournal/model/Color.h"
 #include "xournal/model/Geometry.h"
 
+#include <cmath>
 #include <cstdint>
 #include <span>
 #include <string>
@@ -35,14 +36,25 @@ namespace xournal::import
         Color color;                // the ink's color, its alpha lowered by the points' opacity (pencil)
         std::vector<Point> points;
         double width = 0;           // the points' median width (brush size), scaled by the stroke's transform
-        std::vector<double> widths; // writing only: each point's brush size (empty: `width` everywhere)
+        std::vector<double> widths; // each point's brush size, scaled by the stroke's transform (empty: `width` everywhere)
 
         bool IsMarker() const;
     };
 
-    /// The drawn width as a fraction of PencilKit's brush size (measured on Apple's appearance images of the user's PDFs,
-    /// 2026-11-18, ink area over stroke length): the pen 0.4 (2.5 -> 1.0 pt in eight drawings), the marker about 1.2.
-    constexpr double PenWidthFactor = 0.4, MarkerWidthFactor = 1.2;
+    /// The pen's drawn width (pt) and PencilKit's brush size, one pair for the export and the import so that a round trip
+    /// returns the same width (up to the tenths the older drawing format stores). Through the point the user's own pen
+    /// strokes measured (2.5 <-> 1.0 pt, "2.5 -> 1.0 pt in eight drawings", 2026-11-18) the size follows the square root of
+    /// the width: linear (width / 0.4) spread the widths on the iPad, thin thinner and thick thicker (user, 2026-11-27). An
+    /// estimate away from that point (the user's strokes all lie at sizes 2.5 to 3.0): calibrate with an iPad-saved test.
+    constexpr double PenSizeAtOnePoint = 2.5;
+    inline double PenBrushSize(double drawnWidth) { return PenSizeAtOnePoint * std::sqrt(drawnWidth > 0 ? drawnWidth : 0); }
+    inline double PenDrawnWidth(double brushSize)
+    {
+        double r = brushSize / PenSizeAtOnePoint;
+        return r * r;
+    }
+    /// The marker is drawn about 1.2 of its size (measured as the pen's, only for the one size 5).
+    constexpr double MarkerWidthFactor = 1.2;
 
     namespace PencilKitDrawing
     {

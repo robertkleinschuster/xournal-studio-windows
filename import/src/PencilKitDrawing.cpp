@@ -368,16 +368,20 @@ namespace xournal::import
             Matrix m = transform.value_or(Matrix{});
             PencilKitStroke stroke{ ink.identifier, ink.color, {}, 0 };
             std::vector<double> widths, opacities;
+            double scale = std::sqrt(std::abs(m.m11 * m.m22 - m.m12 * m.m21));
             for (auto const& p : raw)
             {
                 // As the C# app (System.Numerics, float): the point transformed in single precision.
                 float x = static_cast<float>(p.x * m.m11 + p.y * m.m21 + m.m31);
                 float y = static_cast<float>(p.x * m.m12 + p.y * m.m22 + m.m32);
-                if (std::isfinite(x) && std::isfinite(y)) stroke.points.push_back({ x, y });
+                if (std::isfinite(x) && std::isfinite(y))
+                {
+                    stroke.points.push_back({ x, y });
+                    stroke.widths.push_back(p.width > 0 && std::isfinite(p.width) ? p.width * scale : 0);
+                }
                 if (p.width > 0 && std::isfinite(p.width)) widths.push_back(p.width);
                 opacities.push_back(p.opacity);
             }
-            double scale = std::sqrt(std::abs(m.m11 * m.m22 - m.m12 * m.m21));
             stroke.width = Median(widths) * scale;
             double opacity = std::clamp(Median(opacities), 0.0, 1.0);
             if (opacity < 0.999) stroke.color.a = static_cast<std::uint8_t>(std::lround(stroke.color.a * opacity));

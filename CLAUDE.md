@@ -264,11 +264,16 @@ code). In short: `base ← model ← io ← pdf, pdftext, search, import, servic
   id and {0,1,0}); the `wrd` variant of newer files and `/PPK` (PaperKit) are not written. Brush size = 2.5 x sqrt(width in pt) (user, 2026-11-27: linear width / 0.4 spread the
   widths - thin thinner, thick thicker; the 0.4 was measured only for sizes 2.5-3.0, the user's real strokes all lie there
   and get their thickness from the pen's force; the root is an ESTIMATE through the measured point, to be calibrated with
-  an iPad-saved test PDF).
-  PencilKit's points are the control points of a smooth curve (uniform cubic B-spline; the user's own points lie
-  ~0.8 pt apart, 2.1 at most), so the polyline is written resampled to 0.8 pt (widths interpolated, a dot as a
-  sub-point stroke) - found by the Opus review; the importer reads control points as a polyline, so a round trip
-  test cannot see it. Stroke bounds, the archive's rectangle, /Rect and /BBox are the same whole numbers (as Apple's).
+  an iPad-saved test PDF). **Round trip** (user, 2026-11-27, "wichtig": export and import again give the same result, for
+  an exchange that runs back and forth without end): `PenBrushSize`/`PenDrawnWidth` (PencilKitDrawing.h) are one
+  inverse pair used by both directions; the import keeps per-point widths (a segment has the width of the point it
+  starts at; the export writes each segment's points with that one width, no interpolated tenths) and simplifies the
+  dense points back to the corners (Douglas-Peucker 0.02 pt, widths 10 %, a tap = two equal points). After the first lap
+  (within the formats: single precision, a size's tenths) every lap returns the same text of every stroke -
+  `IpadExport.ExportAndImportAgreeAndRepeatForever` (6 laps) and the example (3 laps, 1562 strokes). Everything the markup
+  has no counterpart for is drawn into the page and so becomes part of the imported PDF background: texts, pictures and
+  highlighters are NOT editable objects after a lap (open: merging the iPad's strokes back into the original .xopp, or
+  FreeText/marker/image annotations).
   Highlighters, dashed, filled and square-ended strokes, strokes below a later picture, text, opaque stroke or filling
   (an annotation lies over the page; a later highlighter may lie over ink) and strokes whose whole-number bounds leave
   the page stay drawn in the page (the marker ink's layout is not known). A tap (two equal points) is written as a
