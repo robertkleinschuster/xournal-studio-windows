@@ -1,6 +1,7 @@
 #include "PdfExportCommand.h"
 
 #include "Dialogs.h"
+#include "Questions.h"
 #include "ErrorText.h"
 #include "UiQueue.h"
 
@@ -16,6 +17,25 @@ namespace xournal::app
 {
     namespace
     {
+        // "3 Textmarker, 2 Bilder" - what an iPad export leaves out, for the warning and the status message.
+        std::wstring OmittedText(import::IpadOmitted const& o)
+        {
+            std::wstring text;
+            auto add = [&](int count, wchar_t const* one, wchar_t const* many)
+            {
+                if (count <= 0) return;
+                if (!text.empty()) text += L", ";
+                text += std::format(L"{} {}", count, count == 1 ? one : many);
+            };
+            add(o.highlighters, L"Textmarker-Strich", L"Textmarker-Striche");
+            add(o.otherStrokes, L"anderer Strich (gestrichelt, gefüllt, eckig, transparent oder außerhalb der Seite)",
+                L"andere Striche (gestrichelt, gefüllt, eckig, transparent oder außerhalb der Seite)");
+            add(o.texts, L"Text", L"Texte");
+            add(o.pictures, L"Bild", L"Bilder");
+            add(o.other, L"anderes Element", L"andere Elemente");
+            return text;
+        }
+
         // The status message for a finished export.
         std::wstring Describe(std::filesystem::path const& target, pdf::ExportResult const& result,
             std::optional<std::filesystem::path> const& background, bool& complete, import::IpadExportResult const* ipad = nullptr)
@@ -39,8 +59,9 @@ namespace xournal::app
             complete = result.missingBackgrounds + result.skippedElements == 0 && !result.annotationsLeftOut;
             if (ipad)
             {
-                text += std::format(L" {} Strich(e) auf {} Seite(n) sind auf dem iPad bearbeitbar", ipad->strokes, ipad->drawings);
-                text += ipad->flatStrokes > 0 ? std::format(L"; {} weitere (z. B. Textmarker, gestrichelte, unter Bildern oder Texten) sind fest in der Seite.", ipad->flatStrokes) : L".";
+                text += std::format(L" {} Strich(e) auf {} Seite(n) sind auf dem iPad bearbeitbar.", ipad->strokes, ipad->drawings);
+                if (ipad->omitted.Total() > 0) text += L" Weggelassen (auf dem iPad nicht darstellbar): " + OmittedText(ipad->omitted) + L".";
+                complete = complete && ipad->omitted.Total() == 0;
                 return std::format(L"{}: {}", complete ? L"Für iPad exportiert" : L"Für iPad exportiert – unvollständig", text);
             }
             return std::format(L"{}: {}", complete ? L"Als PDF exportiert" : L"Als PDF exportiert – unvollständig", text);
@@ -89,6 +110,26 @@ namespace xournal::app
             LogException(std::format("export PDF to {}: reading the document", ToUtf8(target->native())));
             message(std::format(L"Export fehlgeschlagen: {}", ErrorText()), MessageKind::Error);
             return;
+        }
+        if (kind == Kind::Ipad)
+        {
+            // Nothing the iPad cannot edit is drawn into the file: it is left out, and the user is told first.
+            try
+            {
+                auto omitted = import::OmittedByIpadExport(source);
+                if (omitted.Total() > 0 && !Questions::Confirm(owner, L"Nicht alles lässt sich auf das iPad übertragen",
+                        L"Folgendes hat auf dem iPad noch keine Entsprechung und fehlt in der exportierten Datei (das Dokument selbst "
+                        L"bleibt unverändert):\n\n" + OmittedText(omitted), L"Trotzdem exportieren"))
+                {
+                    return;
+                }
+            }
+            catch (...)
+            {
+                LogException(std::format("export for the iPad to {}: checking the content", ToUtf8(target->native())));
+                message(std::format(L"Export fehlgeschlagen: {}", ErrorText()), MessageKind::Error);
+                return;
+            }
         }
         running = true;
         UiQueue::RunInBackground("export PDF", [this, source = std::move(source), file = *target, background, kind]

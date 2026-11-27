@@ -81,55 +81,37 @@ namespace xournal::import
             return stroke;
         }
 
-        Rect BoxOf(StrokeShape const& shape)
-        {
-            double minX = 1e30, minY = 1e30, maxX = -1e30, maxY = -1e30;
-            for (auto const& p : shape.points)
-            {
-                minX = std::min(minX, p.x); maxX = std::max(maxX, p.x);
-                minY = std::min(minY, p.y); maxY = std::max(maxY, p.y);
-            }
-            double pad = shape.width;
-            return { minX - pad, minY - pad, maxX - minX + 2 * pad, maxY - minY + 2 * pad };
-        }
-
-        bool Overlaps(Rect const& a, Rect const& b)
-        {
-            return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
-        }
-
-        // A text's box, estimated (its real layout is the PDF export's): a line's length from its characters, a line's height
-        // from the size - generous, since a wrong guess only keeps a stroke flat.
-        Rect BoxOf(XoppText const& text)
-        {
-            double longest = 0;
-            int lines = 1;
-            double current = 0;
-            for (wchar_t c : text.content)
-            {
-                if (c == L'\n') { longest = std::max(longest, current); current = 0; ++lines; }
-                else ++current;
-            }
-            longest = std::max(longest, current);
-            double width = text.wrap ? *text.wrap : longest * text.size * 0.7;
-            Point origin = text.transform.Apply({ 0, 0 });
-            return { origin.x, origin.y, width, lines * text.size * 1.4 };
-        }
-
-        Rect BoxOf(pdf::Picture const& picture)
-        {
-            double minX = 1e30, minY = 1e30, maxX = -1e30, maxY = -1e30;
-            for (Point corner : { Point{ 0, 0 }, Point{ picture.placement.size.width, 0 }, Point{ 0, picture.placement.size.height },
-                                  Point{ picture.placement.size.width, picture.placement.size.height } })
-            {
-                Point p = picture.placement.transform.Apply(corner);
-                minX = std::min(minX, p.x); maxX = std::max(maxX, p.x);
-                minY = std::min(minY, p.y); maxY = std::max(maxY, p.y);
-            }
-            return { minX, minY, maxX - minX, maxY - minY };
-        }
-
         std::string Num(double v) { return std::format("{:.3f}", v); }
+
+        // The pages' elements sorted: the editable strokes (per page) go to `ink`, everything else is counted in `omitted` and
+        // removed from the pages (nothing uneditable is drawn into the page). A stroke is editable when the markup can hold
+        // it and its whole-number bounds lie on the page (as in every file of the user's).
+        void Partition(std::vector<pdf::ExportPage>& pages, std::vector<std::vector<StrokeShape>>& ink, IpadOmitted& omitted)
+        {
+            ink.assign(pages.size(), {});
+            for (size_t i = 0; i < pages.size(); ++i)
+            {
+                for (auto& element : pages[i].elements)
+                {
+                    if (auto* stroke = std::get_if<StrokeShape>(&element))
+                    {
+                        bool editable = IsEditable(*stroke);
+                        if (editable)
+                        {
+                            Rect bounds = PencilKitDrawing::BoundsOf(Stroke(*stroke));
+                            editable = bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= pages[i].width &&
+                                       bounds.y + bounds.height <= pages[i].height;
+                        }
+                        if (editable) ink[i].push_back(std::move(*stroke));
+                        else if (stroke->highlighter) ++omitted.highlighters;
+                        else ++omitted.otherStrokes;
+                    }
+                    else if (std::holds_alternative<pdf::Picture>(element)) ++omitted.pictures;
+                    else ++omitted.texts;
+                }
+                pages[i].elements.clear();
+            }
+        }
 
         // The strokes as the annotation's appearance shows them: round-ended lines, one per segment when the width
         // changes. `ox`, `oy`: the box's top left on the page; the form's origin is its lower left.
@@ -227,52 +209,12 @@ namespace xournal::import
         IpadExportResult result;
         pdf::ExportResult counts;
         auto pages = pdf::PagesOf(source, counts);
-        // The editable strokes leave the pages' content: they come back as ink annotations.
-        std::vector<std::vector<StrokeShape>> ink(pages.size());
-        for (size_t i = 0; i < pages.size(); ++i)
-        {
-            // An annotation lies over the page's content, so a stroke below a picture would come out above it: such strokes
-            // stay drawn (the picture's box against the stroke's), as do strokes with nothing of them on the page.
-            Rect pageBox{ 0, 0, pages[i].width, pages[i].height };
-            auto& elements = pages[i].elements;
-            std::vector<pdf::PageElement> rest;
-            for (size_t e = 0; e < elements.size(); ++e)
-            {
-                auto* stroke = std::get_if<StrokeShape>(&elements[e]);
-                // Whole numbers of the bounds inside the page (as in every file of the user's).
-                bool editable = stroke && IsEditable(*stroke);
-                if (editable)
-                {
-                    Rect bounds = PencilKitDrawing::BoundsOf(Stroke(*stroke));
-                    editable = bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= pages[i].width &&
-                               bounds.y + bounds.height <= pages[i].height;
-                }
-                // Later elements that cover (pictures, texts, opaque strokes, fillings) must stay above the ink. A later
-                // highlighter lets the ink show through: it may lie over it.
-                for (size_t later = e + 1; editable && later < elements.size(); ++later)
-                {
-                    Rect mine = BoxOf(*stroke);
-                    if (auto const* picture = std::get_if<pdf::Picture>(&elements[later]))
-                        editable = !Overlaps(mine, BoxOf(*picture));
-                    else if (auto const* text = std::get_if<XoppText>(&elements[later]))
-                        editable = !Overlaps(mine, BoxOf(*text));
-                    else if (auto const* other = std::get_if<StrokeShape>(&elements[later]);
-                             other && !IsEditable(*other) && !other->highlighter && !other->points.empty() &&
-                             (other->color.a == 0xFF || other->fill >= 0))
-                        editable = !Overlaps(mine, BoxOf(*other));
-                }
-                if (editable)
-                {
-                    ink[i].push_back(std::move(*stroke));
-                    continue;
-                }
-                if (stroke) ++result.flatStrokes;
-                rest.push_back(std::move(elements[e]));
-            }
-            elements = std::move(rest);
-        }
+        // The editable strokes become ink annotations; everything else is left out and counted.
+        std::vector<std::vector<StrokeShape>> ink;
+        Partition(pages, ink, result.omitted);
+        result.omitted.other = counts.skippedElements;
         auto bytes = pdf::ExportToMemory(pages, result.pdf, options);
-        result.pdf.skippedElements = counts.skippedElements;
+        result.pdf.skippedElements = 0;
 
         QPDF pdf;
         pdf.setSuppressWarnings(true);
@@ -297,5 +239,16 @@ namespace xournal::import
         std::unique_ptr<Buffer> buffer(writer.getBuffer());
         io::Files::WriteReplacing(target, std::span<std::uint8_t const>(buffer->getBuffer(), buffer->getSize()));
         return result;
+    }
+
+    IpadOmitted OmittedByIpadExport(pdf::DocumentExportSource const& source)
+    {
+        pdf::ExportResult counts;
+        auto pages = pdf::PagesOf(source, counts);
+        std::vector<std::vector<StrokeShape>> ink;
+        IpadOmitted omitted;
+        Partition(pages, ink, omitted);
+        omitted.other = counts.skippedElements;
+        return omitted;
     }
 }

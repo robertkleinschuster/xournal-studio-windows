@@ -3,9 +3,9 @@
 // Datei -> Für iPad exportieren: the counterpart of the iPad import. The document as a PDF that the iPad's markup can
 // edit: the background PDF's pages kept exactly, the pen strokes written as Apple's ink annotations (one /Stamp per page
 // with a PencilKit drawing in /AAPL:AKExtras, the archive iPadOS writes - see AppleMarkup::WriteInk) with a vector
-// appearance, so every PDF viewer shows them too. Everything the markup has no counterpart for stays drawn into the page
-// (highlighters, dashed or filled strokes, pictures, texts) as in the normal PDF export.
-// Format facts: CLAUDE.md, "iPad export".
+// appearance, so every PDF viewer shows them too. Only what the iPad can edit goes out (user, 2026-11-27): whatever has no
+// counterpart there is LEFT OUT, never drawn into the page as something uneditable, and the app warns before it exports a
+// document that has such content (OmittedByIpadExport). Format facts: CLAUDE.md, "iPad export".
 
 #include "xournal/pdf/DocumentExport.h"
 
@@ -13,13 +13,27 @@
 
 namespace xournal::import
 {
+    /// What the export leaves out because the iPad has no counterpart for it yet (counted, never drawn into the page).
+    struct IpadOmitted
+    {
+        int highlighters = 0;   // PencilKit's marker ink is not written yet
+        int otherStrokes = 0;   // dashed, filled, square or butt ended, transparent strokes, strokes leaving the page
+        int texts = 0;
+        int pictures = 0;
+        int other = 0;          // elements the app does not read at all
+        int Total() const { return highlighters + otherStrokes + texts + pictures + other; }
+    };
+
     struct IpadExportResult
     {
         pdf::ExportResult pdf;   // the pages, what the PDF export left out
         int drawings = 0;        // pages that got an ink annotation
         int strokes = 0;         // pen strokes written as ink
-        int flatStrokes = 0;     // strokes left drawn in the page (no counterpart in the markup)
+        IpadOmitted omitted;     // what is not in the file
     };
+
+    /// What ExportForIpad would leave out of the document, counted without writing (for the warning before the export).
+    IpadOmitted OmittedByIpadExport(pdf::DocumentExportSource const& source);
 
     /// Writes `target` ("<target>~" first, then replacing it). Never over the document's own PDF (throws). Any thread.
     IpadExportResult ExportForIpad(pdf::DocumentExportSource const& source, std::filesystem::path const& target,

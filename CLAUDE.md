@@ -271,16 +271,15 @@ code). In short: `base ← model ← io ← pdf, pdftext, search, import, servic
   dense points back to the corners (Douglas-Peucker 0.02 pt, widths 10 %, a tap = two equal points). After the first lap
   (within the formats: single precision, a size's tenths) every lap returns the same text of every stroke -
   `IpadExport.ExportAndImportAgreeAndRepeatForever` (6 laps) and the example (3 laps, 1562 strokes). Everything the markup
-  has no counterpart for is drawn into the page and so becomes part of the imported PDF background: texts, pictures and
-  highlighters are NOT editable objects after a lap (open: merging the iPad's strokes back into the original .xopp, or
-  FreeText/marker/image annotations).
-  Highlighters, dashed, filled and square-ended strokes, strokes below a later picture, text, opaque stroke or filling
-  (an annotation lies over the page; a later highlighter may lie over ink) and strokes whose whole-number bounds leave
-  the page stay drawn in the page (the marker ink's layout is not known). A tap (two equal points) is written as a
-  sub-point stroke; stroke times run on one after the other; `/Ff 1` as Apple writes it (meaning unknown). Second Opus
-  review round 2026-11-27 done.
-  **Not verified on an iPad** (none here): checked by reading it back with the importer and by rendering it with
-  Windows.Data.Pdf.
+  has no counterpart for is **left out, never drawn into the page** (user, 2026-11-27: "statt etwas unbearbeitbares ins
+  pdf zu zeichnen sollten diese inhalte weggelassen werden, es sollte eine warnung geben"): `IpadOmitted` counts
+  highlighters, other strokes (dashed, filled, square/butt ended, transparent, leaving the page), texts, pictures and
+  unknown elements; `OmittedByIpadExport` counts them before the export and the app asks first ("Trotzdem exportieren"),
+  the status message names them again. Texts, pictures and highlighters need iPad counterparts (open work, user: all
+  xopp functions should get one - FreeText/AKTextBox, AKImage, marker ink; the user's PDFs hold AKTextBoxAnnotation,
+  AKImageAnnotation and AKRectangularShapeAnnotation samples). iPadOS 27 saves an edited drawing **only as `/PPK`**
+  (PaperKit: `crdt` + protobuf op log; the stroke paths are the same records as in the older format, found by their
+  fields #3 count, #4/#5 masks, #7 records) without `AKAnnotationV2` - the import must read both (user: "beides").
 - **Explorer order:** names with numbers by value, as File Explorer (`CompareStringEx` + `SORT_DIGITSASNUMBERS`,
   ignore case, ties ordinal).
 - Git (libgit2): sign-in = the credential Git Credential Manager / wincred stores in the Windows Credential Manager

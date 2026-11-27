@@ -694,8 +694,10 @@ namespace xournal::tests
         EXPECT_EQ(result.pdf.pages, 2);
         EXPECT_EQ(result.drawings, 1);
         EXPECT_EQ(result.strokes, 2);
-        EXPECT_EQ(result.flatStrokes, 1); // the highlighter stays in the page
-        EXPECT_EQ(result.strokes + result.flatStrokes, 3); // every stroke of the page is somewhere, once
+        EXPECT_EQ(result.omitted.highlighters, 1); // left out (and the text), never drawn into the page
+        EXPECT_EQ(result.omitted.texts, 1);
+        EXPECT_EQ(result.strokes + result.omitted.highlighters, 3); // every stroke of the page is somewhere, once
+        EXPECT_EQ(import::OmittedByIpadExport(pdf::PrepareExport(*doc)).Total(), 2); // what the warning counts
         EXPECT_EQ(Subtypes(target), (std::vector<std::string>{ "/Stamp" }));
 
         // Imported again (as an iPad PDF): the pen strokes are strokes again, where and as wide as they were.
@@ -750,7 +752,7 @@ namespace xournal::tests
         EXPECT_GT(written[0].points.size(), 60u);
     }
 
-    TEST(IpadExport, StrokesThatCannotLieUnderWhatIsAboveThemStayInThePage)
+    TEST(IpadExport, WhatTheIpadCannotEditIsLeftOutAndCounted)
     {
         TempFolder folder;
         auto source = folder / L"notes.xopp";
@@ -760,20 +762,27 @@ namespace xournal::tests
 <stroke tool="pen" color="#000000ff" width="1.2">10 20 30 40</stroke>
 <stroke tool="pen" color="#000000ff" width="1.2">-20 100 30 110</stroke>
 <stroke tool="pen" color="#000000ff" width="1.2">100 100 140 100</stroke>
-<stroke tool="pen" color="#000000ff" width="1.2">200 200 240 210</stroke>
 <stroke tool="pen" color="#000000ff" width="1.2" fill="128">300 20 340 20</stroke>
 <text font="Sans" size="12" x="95" y="95" color="#000000ff">Deckt zu</text>
 <stroke tool="pen" color="#ff0000ff" width="1.2" style="dash">150 200 250 200</stroke>
 </layer></page>
 </xournal>)");
         auto doc = io::DocumentFile::Load(source);
+        auto target = folder / L"ipad.pdf";
 
-        auto result = import::ExportForIpad(pdf::PrepareExport(*doc), folder / L"ipad.pdf");
+        auto result = import::ExportForIpad(pdf::PrepareExport(*doc), target);
 
-        // The first one is free; the second leaves the page; the third lies under a text; the fourth lies under a dashed
-        // stroke that covers it; the filled one is drawn as before.
-        EXPECT_EQ(result.strokes + result.flatStrokes, 6);
-        EXPECT_EQ(result.strokes, 1);
+        // The two strokes the markup can hold; the one that leaves the page, the filled and the dashed one, and the text are
+        // left out - and counted, for the warning before the export.
+        EXPECT_EQ(result.strokes, 2);
+        EXPECT_EQ(result.omitted.otherStrokes, 3);
+        EXPECT_EQ(result.omitted.texts, 1);
+        EXPECT_EQ(result.omitted.Total(), 4);
+        // Nothing of it is drawn into the page: its content stream is empty (the paper only).
+        QPDF reader;
+        reader.processFile(ToUtf8(target.native()).c_str());
+        auto contents = QPDFPageDocumentHelper(reader).getAllPages()[0].getObjectHandle().getKey("/Contents");
+        EXPECT_LT(contents.isStream() ? contents.getStreamData(qpdf_dl_all)->getSize() : 0, 400u);
     }
 
     TEST(IpadExport, ATapKeepsItsDot)
