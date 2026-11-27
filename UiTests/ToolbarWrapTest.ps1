@@ -33,7 +33,9 @@ Invoke-Test {
     $container = [WrapProbe]::FindWindowEx($script:h, [IntPtr]::Zero, 'InkPagesToolbar', $null)
     $bar = [WrapProbe]::FindWindowEx($container, [IntPtr]::Zero, 'ToolbarWindow32', $null)
     $surface = [WrapProbe]::FindWindowEx($script:h, [IntPtr]::Zero, 'InkPagesWritingSurface', $null)
-    if (!$container -or !$bar -or !$surface) { throw 'Could not find toolbar or writing surface' }
+    # The tab strip lies between the toolbar and the writing surface (a direct child: the side pane's tabs are not).
+    $tabs = [WrapProbe]::FindWindowEx($script:h, [IntPtr]::Zero, 'SysTabControl32', $null)
+    if (!$container -or !$bar -or !$surface -or !$tabs) { throw 'Could not find toolbar, tab strip or writing surface' }
     foreach ($width in 1400, 700, 490, 1400) {
         [WrapProbe]::Resize($script:h, $width)
         Start-Sleep -Milliseconds 350
@@ -42,7 +44,8 @@ Invoke-Test {
         $surfaceBounds = [WrapProbe]::Bounds($surface)
         "width=$width, rows=$rows, toolbar height=$($barBounds.bottom - $barBounds.top), surface top=$($surfaceBounds.top)"
         if (($width -eq 1400 -and $rows -ne 1) -or ($width -ne 1400 -and $rows -lt 2)) { throw "Unexpected number of rows: $rows" }
-        if ($barBounds.bottom -ne $surfaceBounds.top) { throw 'Toolbar and writing surface do not meet' }
+        $tabBounds = [WrapProbe]::Bounds($tabs)
+        if ($barBounds.bottom -ne $tabBounds.top -or $tabBounds.bottom -ne $surfaceBounds.top) { throw 'Toolbar, tab strip and writing surface do not meet' }
         $height = $barBounds.bottom - $barBounds.top
         if (!$singleHeight) { $singleHeight = $height }
         if ($width -eq 1400 -and $height -ne $singleHeight) { throw 'The toolbar did not return to its single-row height' }
@@ -54,6 +57,6 @@ Invoke-Test {
     $largeRows = [WrapProbe]::Rows($bar)
     "large icons, width=700, rows=$largeRows"
     if ($largeRows -lt 2) { throw 'Large toolbar icons did not wrap' }
-    if ([WrapProbe]::Bounds($container).bottom -ne [WrapProbe]::Bounds($surface).top) { throw 'Large toolbar overlaps the writing surface' }
+    if ([WrapProbe]::Bounds($container).bottom -ne [WrapProbe]::Bounds($tabs).top) { throw 'Large toolbar overlaps the tab strip' }
     Shot 'large-icons'
 }

@@ -87,7 +87,7 @@ namespace xournal::app
         bool CloseTab(int index);
         /// Removes a tab without a question (the caller asked already, or its content is replaced by a reload).
         void DropTab(int index);
-        bool AnyModified() const;
+        bool AnyModified(); // ends the Text tool's editing first (the typed text is a change)
         /// Saves every tab with changes (each is shown while it is saved; a document never saved asks for its place);
         /// false when one was not saved.
         bool SaveAll();

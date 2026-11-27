@@ -105,6 +105,7 @@ namespace xournal::app
     bool DocumentSession::CloseTab(int index)
     {
         if (index < 0 || index >= TabCount()) return false;
+        if (static_cast<size_t>(index) == active) EndTextEditing(); // the typed text is a change
         if (!TabModified(index))
         {
             DropTab(index); // nothing to ask: the shown tab stays
@@ -155,8 +156,9 @@ namespace xournal::app
         if (tabsChanged) tabsChanged();
     }
 
-    bool DocumentSession::AnyModified() const
+    bool DocumentSession::AnyModified()
     {
+        EndTextEditing();
         for (int i = 0; i < TabCount(); ++i)
         {
             if (TabModified(i)) return true;
@@ -167,6 +169,7 @@ namespace xournal::app
     bool DocumentSession::SaveAll()
     {
         QuestionScope question(*this);
+        EndTextEditing();
         for (int i = 0; i < TabCount(); ++i)
         {
             if (!TabModified(i)) continue;
@@ -178,6 +181,7 @@ namespace xournal::app
     bool DocumentSession::ConfirmLeaveAll()
     {
         QuestionScope question(*this);
+        EndTextEditing(); // the typed text is a change
         for (int i = 0; i < TabCount(); ++i)
         {
             if (!TabModified(i)) continue;

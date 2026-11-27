@@ -84,7 +84,7 @@ Invoke-Test {
     Click 'Kapitel 1'
     Ctrl 0x42 'B'
     Start-Sleep 1
-    [Inj]::Click(500, 55); Start-Sleep 1.5
+    [Inj]::Click(500, 80); Start-Sleep 1.5 # the link's line, below the tab strip
     Shot '03-web-link-question'
     ClickAnywhere 'Abbrechen'
     if (LogHas 'pdf links: opening') { throw 'the web link was opened without asking' }

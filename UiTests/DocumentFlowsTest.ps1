@@ -71,9 +71,10 @@ Invoke-Test {
     if (-not (Log-Has 'pdf background: .*Schaltungen.pdf loaded')) { throw 'the PDF was not loaded for the background' }
     if (Log-Has 'ERROR') { Select-String -Path "$out\app.log" -Pattern 'ERROR' | ForEach-Object { "log: $_" } }
 
-    # 2. the leave question: a change, then Neu - Abbrechen keeps the document, Nicht speichern leaves it
+    # 2. the leave question: a change, then Strg+W (close the tab) - Abbrechen keeps the document, Nicht speichern
+    # closes it (the last tab closed leaves a new document)
     Stroke 150 300 450 330
-    Ctrl 0x4E 'N'
+    Ctrl 0x57 'W'
     Shot '02-leave-question'
     ClickAnywhere 'Abbrechen'
     Start-Sleep 1
@@ -81,7 +82,7 @@ Invoke-Test {
     # The title's change mark is U+2022 (PS 5.1 reads this script as ANSI: compared by its code).
     if (-not $script:p.MainWindowTitle.StartsWith([string][char]0x2022)) { throw "after Abbrechen the document must still be the changed one (title: $($script:p.MainWindowTitle))" }
     "title after Abbrechen: $($script:p.MainWindowTitle)"
-    Ctrl 0x4E 'N'
+    Ctrl 0x57 'W'
     ClickAnywhere 'Nicht speichern'
     Start-Sleep 2
     $script:p.Refresh()
