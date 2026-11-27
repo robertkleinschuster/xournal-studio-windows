@@ -12,6 +12,11 @@
 //   24-byte points #5: time, x, y as f32, then width x 10, aspect, edge, force, azimuth, altitude as u16).
 // The stored points are the curve's control points; they become the stroke's polyline (a point or two apart). Pressure
 // is not taken over: the user's drawings have force 1 everywhere. Port of the C# PencilKitDrawing.
+//
+// Writing (the iPad export) uses the older variant only: gzip + that protobuf message, laid out as iPadOS wrote it in the
+// user's PDFs (2026-11-27, surveyed over their 10 older drawings: version fields 10, a drawing id, two ordering
+// records {n,0,n} and {0,1,0}, per stroke {i,0,i+1}, {0,0,0}, ink index, point count, the 24-byte points with force 1000
+// and aspect 1000, the bounds, the time, two ids) - iPadOS still reads it.
 
 #include "xournal/model/Color.h"
 #include "xournal/model/Geometry.h"
@@ -30,13 +35,22 @@ namespace xournal::import
         Color color;                // the ink's color, its alpha lowered by the points' opacity (pencil)
         std::vector<Point> points;
         double width = 0;           // the points' median width (brush size), scaled by the stroke's transform
+        std::vector<double> widths; // writing only: each point's brush size (empty: `width` everywhere)
 
         bool IsMarker() const;
     };
+
+    /// The drawn width as a fraction of PencilKit's brush size (measured on Apple's appearance images of the user's PDFs,
+    /// 2026-11-18, ink area over stroke length): the pen 0.4 (2.5 -> 1.0 pt in eight drawings), the marker about 1.2.
+    constexpr double PenWidthFactor = 0.4, MarkerWidthFactor = 1.2;
 
     namespace PencilKitDrawing
     {
         /// The visible strokes in drawing order. Throws xournal::Error (invalid data) for data it cannot read.
         std::vector<PencilKitStroke> Read(std::span<std::uint8_t const> data);
+
+        /// A drawing in the older variant (gzip) of `strokes` in drawing order (points in drawing coordinates, points, y
+        /// down; `width` or `widths` = the brush size; the ink name and color from the stroke). Throws for no strokes.
+        std::vector<std::uint8_t> WriteLegacy(std::span<PencilKitStroke const> strokes);
     }
 }

@@ -41,6 +41,7 @@
 #define CmdDarkMode 409
 #define CmdLargeToolbarIcons 410
 #define CmdCloseTab 110
+#define CmdExportIpad 111
 #define CmdNextTab 411
 #define CmdPreviousTab 412
 #define CmdRecentFirst 500

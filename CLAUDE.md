@@ -252,6 +252,19 @@ code). In short: `base ← model ← io ← pdf, pdftext, search, import, servic
   recovery copies exist per document; file operations in the explorer and a sync's pull close and reopen affected tabs
   at their place (`DropTab` + `Open(file, position)`). While a question is open a document that finishes loading is
   added to the strip without being shown (`QuestionScope`). Reviewed by an Opus agent 2026-11-27 (findings fixed).
+- **iPad export** (user, 2026-11-27: the counterpart of the import, "bearbeitbares PDF"; Datei -> Für iPad exportieren):
+  the normal PDF export (background pages kept, texts, pictures drawn in) with the opaque round-ended pen strokes taken
+  out of the page content and written as one `/Stamp` per page, as iPadOS writes it: `/AAPL:AKExtras` with
+  `/AAPL:AKAnnotationV2` (base64 NSKeyedArchiver bplist: `AKInkAnnotation2`, object graph copied from the user's PDFs -
+  `AppleMarkup::WriteInk`) and `/AAPL:AKPDFAnnotationDictionary` (copy of the annotation's own keys), `/F 644`, `/T`,
+  an `/AP` form with the strokes as vector paths (every viewer shows them; iPadOS draws its own on edit), `Rect` = the
+  strokes' box. The drawing is the **older gzip variant** (`PencilKitDrawing::WriteLegacy`): fields surveyed over the
+  user's 10 older drawings (drawing: 1=10, two 16-byte ids, {n,0,n}, {0,1,0}, inks #4 {color, name, 3}, strokes #5
+  {i,0,i+1}, {0,0,0}, ink index, point count, 24-byte points with force/aspect 1000, bounds, Apple time, two ids; then an
+  id and {0,1,0}); the `wrd` variant of newer files and `/PPK` (PaperKit) are not written. Brush size = width / 0.4.
+  Highlighters, dashed, filled and square-ended strokes stay drawn in the page (the marker ink's layout is not known).
+  **Not verified on an iPad** (none here): checked by reading it back with the importer and by rendering it with
+  Windows.Data.Pdf.
 - **Explorer order:** names with numbers by value, as File Explorer (`CompareStringEx` + `SORT_DIGITSASNUMBERS`,
   ignore case, ties ordinal).
 - Git (libgit2): sign-in = the credential Git Credential Manager / wincred stores in the Windows Credential Manager

@@ -32,10 +32,6 @@ namespace xournal::import
 {
     namespace
     {
-        // PencilKit's width is its brush size. Drawn (measured on Apple's appearance images of the user's PDFs,
-        // 2026-11-18, ink area over stroke length): the pen 0.4 of it (2.5 -> 1.0 pt in eight drawings), the marker about
-        // 1.2 of it.
-        constexpr double PenWidthFactor = 0.4, MarkerWidthFactor = 1.2;
         constexpr std::uint8_t HighlighterAlpha = 0x7f; // as Xournal stores highlighters
         constexpr int Hidden = 1 << 1, NoView = 1 << 5;
 

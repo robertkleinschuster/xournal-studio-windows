@@ -1,6 +1,7 @@
 #include "xournal/import/AppleMarkup.h"
 
 #include "BinaryPlist.h"
+#include "BinaryPlistWriter.h"
 
 #include "xournal/base/Error.h"
 
@@ -125,5 +126,72 @@ namespace xournal::import
             }
         }
         return markup;
+    }
+
+    namespace
+    {
+        using detail::BinaryPlistWriter;
+
+        std::string ToBase64(std::span<std::uint8_t const> bytes)
+        {
+            DWORD size = 0;
+            if (!CryptBinaryToStringA(bytes.data(), static_cast<DWORD>(bytes.size()), CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, nullptr, &size))
+            {
+                ThrowInvalidData("markup archive: base64");
+            }
+            std::string text(size, '\0');
+            if (!CryptBinaryToStringA(bytes.data(), static_cast<DWORD>(bytes.size()), CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, text.data(), &size))
+            {
+                ThrowInvalidData("markup archive: base64");
+            }
+            text.resize(size);
+            return text;
+        }
+    }
+
+    // The objects in the order iPadOS archives them (object numbers as in the user's PDFs): 0 $null, 1 the annotation, 2 its
+    // UUID, 3 the rectangle (an NSMutableDictionary: Width, Height, Y, X), 12 that class, 13 the drawing, 14 the drawing's
+    // size (Width, Height), 17 the annotation's class. A UID is only a number (an index into $objects), so the objects
+    // can be written in that order without looking ahead.
+    std::string AppleMarkup::WriteInk(std::span<std::uint8_t const> drawing, double drawingWidth, double drawingHeight,
+                                      double x, double y, double width, double height, std::string_view uuid)
+    {
+        BinaryPlistWriter w;
+        using Ref = BinaryPlistWriter::Ref;
+        auto uid = [&](std::uint64_t index) { return w.Uid(index); };
+        auto key = [&](char const* name) { return w.String(name); };
+        auto names = [&](std::vector<char const*> const& classes)
+        {
+            std::vector<Ref> items;
+            for (auto name : classes) items.push_back(w.String(name));
+            return w.Array(items);
+        };
+        std::vector<Ref> objects;
+        objects.push_back(w.String("$null"));                                             // 0
+        objects.push_back(w.Dictionary({                                                  // 1 the annotation
+            { key("textIsFixedHeight"), w.Bool(false) }, { key("originalModelBaseScaleFactor"), w.Real(0) },
+            { key("drawing"), uid(13) }, { key("akPlat"), w.Int(2) }, { key("akVers"), w.Int(2) },
+            { key("formContentType"), w.Int(0) }, { key("AKIsFormFieldKey"), w.Bool(false) }, { key("UUID"), uid(2) },
+            { key("rectangle"), uid(3) }, { key("shouldUsePlaceholderText"), w.Bool(true) },
+            { key("textIsClipped"), w.Bool(false) }, { key("drawingSize"), uid(14) },
+            { key("editsDisableAppearanceOverride"), w.Bool(true) }, { key("textIsFixedWidth"), w.Bool(false) },
+            { key("customPlaceholderText"), uid(0) }, { key("$class"), uid(17) }, { key("originalExifOrientation"), w.Int(1) } }));
+        objects.push_back(w.String(uuid));                                                // 2
+        objects.push_back(w.Dictionary({ { key("NS.keys"), w.Array({ uid(4), uid(5), uid(6), uid(7) }) },   // 3
+            { key("NS.objects"), w.Array({ uid(8), uid(9), uid(10), uid(11) }) }, { key("$class"), uid(12) } }));
+        for (char const* name : { "Width", "Height", "Y", "X" }) objects.push_back(w.String(name));         // 4-7
+        for (double value : { width, height, y, x }) objects.push_back(w.Real(value));                       // 8-11
+        objects.push_back(w.Dictionary({ { key("$classname"), w.String("NSMutableDictionary") },             // 12
+            { key("$classes"), names({ "NSMutableDictionary", "NSDictionary", "NSObject" }) } }));
+        objects.push_back(w.Data(drawing));                                               // 13
+        objects.push_back(w.Dictionary({ { key("NS.keys"), w.Array({ uid(4), uid(5) }) },                    // 14
+            { key("NS.objects"), w.Array({ uid(15), uid(16) }) }, { key("$class"), uid(12) } }));
+        objects.push_back(w.Real(drawingWidth));                                          // 15
+        objects.push_back(w.Real(drawingHeight));                                         // 16
+        objects.push_back(w.Dictionary({ { key("$classname"), w.String("AKInkAnnotation2") },                // 17
+            { key("$classes"), names({ "AKInkAnnotation2", "AKInkAnnotation", "AKAnnotation", "NSObject" }) } }));
+        Ref top = w.Dictionary({ { key("$version"), w.Int(100000) }, { key("$archiver"), w.String("NSKeyedArchiver") },
+            { key("$top"), w.Dictionary({ { key("root"), uid(1) } }) }, { key("$objects"), w.Array(objects) } });
+        return ToBase64(w.Finish(top));
     }
 }

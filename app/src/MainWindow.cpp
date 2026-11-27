@@ -769,6 +769,7 @@ namespace xournal::app
         case CmdSave: session->Save(); break;
         case CmdSaveAs: session->SaveAs(); break;
         case CmdExportPdf: exportCommand->Export(session->Document()); break;
+        case CmdExportIpad: exportCommand->Export(session->Document(), PdfExportCommand::Kind::Ipad); break;
         case CmdInsertPage: pageCommands->InsertAfterCurrent(); break;
         case CmdInsertFromFile: insertCommand->Insert(surface->PageInView().value_or(0)); break;
         case CmdImportPdf: importCommand->Import(); break;

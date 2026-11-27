@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -24,5 +25,11 @@ namespace xournal::import
 
         /// The archive's root object; throws xournal::Error (invalid data) when it is not such an archive.
         static AppleMarkup Read(std::string_view base64);
+
+        /// The archive of an ink annotation as iPadOS writes it (the object graph of the user's PDFs), base64: `drawing` = a
+        /// PencilKit drawing in a coordinate space of `drawingWidth` x `drawingHeight`, `rectangle` = the annotation's
+        /// place on the page (x, y = the lower left corner in PDF user space, width, height), `uuid` its identifier.
+        static std::string WriteInk(std::span<std::uint8_t const> drawing, double drawingWidth, double drawingHeight,
+                                    double x, double y, double width, double height, std::string_view uuid);
     };
 }

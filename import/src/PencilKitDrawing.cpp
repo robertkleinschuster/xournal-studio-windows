@@ -4,14 +4,19 @@
 #include "xournal/io/Gzip.h"
 
 #include <protozero/pbf_reader.hpp>
+#include <protozero/pbf_writer.hpp>
 
 #include <algorithm>
 #include <bit>
 #include <cmath>
+#include <chrono>
 #include <cstring>
+#include <functional>
 #include <format>
 #include <map>
 #include <optional>
+#include <random>
+#include <string>
 #include <string_view>
 
 namespace xournal::import
@@ -475,5 +480,151 @@ namespace xournal::import
             ThrowInvalidData(std::format("PencilKit drawing: damaged protobuf data ({})", e.what()));
         }
         ThrowInvalidData("not a PencilKit drawing");
+    }
+
+    // ---- writing (the older variant)
+
+    namespace
+    {
+        template <class T>
+        void Put(std::string& s, T value)
+        {
+            char bytes[sizeof(T)];
+            std::memcpy(bytes, &value, sizeof(T));
+            s.append(bytes, sizeof(T));
+        }
+
+        std::string Message(std::function<void(protozero::pbf_writer&)> const& write)
+        {
+            std::string buffer;
+            {
+                protozero::pbf_writer w(buffer);
+                write(w);
+            }
+            return buffer;
+        }
+
+        // The three-number records that order the drawing's parts: {a, b, c} (varints 1-3).
+        std::string Triple(std::uint32_t a, std::uint32_t b, std::uint32_t c)
+        {
+            return Message([&](protozero::pbf_writer& w) { w.add_uint32(1, a); w.add_uint32(2, b); w.add_uint32(3, c); });
+        }
+
+        // Identifiers: 16 random bytes (a UUID's size) - the drawing's, each stroke's two.
+        std::string RandomId(std::mt19937_64& random)
+        {
+            std::string id(16, '\0');
+            for (auto& c : id) c = static_cast<char>(random() & 0xFF);
+            return id;
+        }
+
+        struct WrittenInk
+        {
+            std::string name;
+            Color color;
+            bool operator==(WrittenInk const&) const = default;
+        };
+
+        // iPadOS' pen points as the user's drawings have them (azimuth and altitude as the pen's usual tilt there).
+        constexpr std::uint16_t Aspect = 1000, Force = 1000, Azimuth = 36000, Altitude = 65146;
+        constexpr double PointInterval = 0.008; // seconds between two points (as a 120 Hz pen)
+    }
+
+    std::vector<std::uint8_t> PencilKitDrawing::WriteLegacy(std::span<PencilKitStroke const> strokes)
+    {
+        if (strokes.empty()) ThrowInvalidData("PencilKit drawing: no strokes to write");
+        std::mt19937_64 random{ std::random_device{}() };
+        std::vector<WrittenInk> inks;
+        std::string body = Message([&](protozero::pbf_writer& drawing)
+        {
+            drawing.add_uint32(1, 10);
+            drawing.add_bytes(2, RandomId(random));
+            drawing.add_bytes(2, std::string(16, '\0'));
+            auto count = static_cast<std::uint32_t>(strokes.size());
+            drawing.add_bytes(3, Triple(count, 0, count));
+            drawing.add_bytes(3, Triple(0, 1, 0));
+            // The inks, in the order the strokes first use them.
+            std::vector<size_t> inkOf;
+            for (auto const& stroke : strokes)
+            {
+                WrittenInk ink{ stroke.ink.empty() ? "com.apple.ink.pen" : stroke.ink, stroke.color };
+                auto found = std::ranges::find(inks, ink);
+                inkOf.push_back(static_cast<size_t>(found - inks.begin()));
+                if (found == inks.end()) inks.push_back(ink);
+            }
+            for (auto const& ink : inks)
+            {
+                drawing.add_bytes(4, Message([&](protozero::pbf_writer& o)
+                {
+                    o.add_bytes(1, Message([&](protozero::pbf_writer& c)
+                    {
+                        c.add_float(1, ink.color.r / 255.0f);
+                        c.add_float(2, ink.color.g / 255.0f);
+                        c.add_float(3, ink.color.b / 255.0f);
+                        c.add_float(4, ink.color.a / 255.0f);
+                    }));
+                    o.add_string(2, ink.name);
+                    o.add_uint32(3, 3);
+                }));
+            }
+            double now = static_cast<double>(std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count()) - 978307200.0; // since 2001-01-01 (Apple's epoch)
+            for (size_t i = 0; i < strokes.size(); ++i)
+            {
+                auto const& stroke = strokes[i];
+                std::string points;
+                double minX = 1e30, minY = 1e30, maxX = -1e30, maxY = -1e30, widest = 0;
+                for (size_t k = 0; k < stroke.points.size(); ++k)
+                {
+                    auto const& p = stroke.points[k];
+                    double size = k < stroke.widths.size() ? stroke.widths[k] : stroke.width;
+                    widest = std::max(widest, size);
+                    minX = std::min(minX, p.x); maxX = std::max(maxX, p.x);
+                    minY = std::min(minY, p.y); maxY = std::max(maxY, p.y);
+                    Put(points, static_cast<float>(PointInterval * static_cast<double>(k)));
+                    Put(points, static_cast<float>(p.x));
+                    Put(points, static_cast<float>(p.y));
+                    Put(points, static_cast<std::uint16_t>(std::clamp(std::lround(size * 10), 1L, 65535L)));
+                    Put(points, Aspect);
+                    Put(points, std::uint16_t{ 0 });
+                    Put(points, Force);
+                    Put(points, Azimuth);
+                    Put(points, Altitude);
+                }
+                double pad = widest / 2;
+                drawing.add_bytes(5, Message([&](protozero::pbf_writer& s)
+                {
+                    s.add_bytes(1, Triple(static_cast<std::uint32_t>(i), 0, static_cast<std::uint32_t>(i + 1)));
+                    s.add_bytes(2, Triple(0, 0, 0));
+                    s.add_uint32(3, static_cast<std::uint32_t>(inkOf[i]));
+                    s.add_uint32(4, static_cast<std::uint32_t>(stroke.points.size()));
+                    s.add_bytes(5, points);
+                    s.add_bytes(6, Message([&](protozero::pbf_writer& b)
+                    {
+                        b.add_float(1, static_cast<float>(minX - pad));
+                        b.add_float(2, static_cast<float>(minY - pad));
+                        b.add_float(3, static_cast<float>(maxX - minX + 2 * pad));
+                        b.add_float(4, static_cast<float>(maxY - minY + 2 * pad));
+                    }));
+                    s.add_uint32(9, 0);
+                    s.add_double(11, now + PointInterval * static_cast<double>(i));
+                    s.add_bytes(13, RandomId(random));
+                    s.add_bytes(14, RandomId(random));
+                }));
+            }
+            drawing.add_bytes(9, RandomId(random));
+            drawing.add_bytes(10, Triple(0, 1, 0));
+        });
+        std::string root = Message([&](protozero::pbf_writer& r)
+        {
+            r.add_uint32(1, 0);
+            r.add_bytes(2, Message([&](protozero::pbf_writer& c)
+            {
+                c.add_uint32(1, 10);
+                c.add_uint32(2, 10);
+                c.add_bytes(3, body);
+            }));
+        });
+        return io::Gzip::Compress({ reinterpret_cast<std::uint8_t const*>(root.data()), root.size() });
     }
 }

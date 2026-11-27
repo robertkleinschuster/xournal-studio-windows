@@ -6,6 +6,7 @@
 #include "../TestSupport.h"
 
 #include "../../import/src/BinaryPlist.h"
+#include "../../import/src/BinaryPlistWriter.h"
 
 
 
@@ -13,14 +14,18 @@
 #include "xournal/base/Paths.h"
 #include "xournal/base/Text.h"
 #include "xournal/import/AppleMarkup.h"
+#include "xournal/import/IpadExport.h"
 #include "xournal/import/PdfMarkupImport.h"
 #include "xournal/import/PencilKitDrawing.h"
 #include "xournal/io/DocumentFile.h"
 #include "xournal/io/Gzip.h"
 #include "xournal/model/Snapshot.h"
+#include "xournal/pdf/DocumentExport.h"
+#include "xournal/pdf/PdfAreaRenderer.h"
 #include "xournal/model/XoppFormat.h"
 #include "xournal/model/XoppImage.h"
 
+#include <protozero/pbf_reader.hpp>
 #include <protozero/pbf_writer.hpp>
 #include <qpdf/QPDFPageDocumentHelper.hh>
 #include <qpdf/QPDFWriter.hh>
@@ -560,5 +565,198 @@ namespace xournal::tests
         size_t images = 0;
         for (auto const& e : doc->Pages()[0]->Images().List()) images += e ? 1 : 0;
         EXPECT_EQ(images, 3u);
+    }
+
+    // ------------------------------------------------------------------ the iPad export
+
+    TEST(BinaryPlistWriter, WritesWhatTheReaderReads)
+    {
+        using import::detail::BinaryPlist;
+        import::detail::BinaryPlistWriter w;
+        auto key = w.String("drawing");
+        auto data = w.Data(std::vector<std::uint8_t>(40, 7));
+        auto name = w.String("\xC3\xA4rger"); // UTF-8 of a-umlaut: written as UTF-16
+        auto list = w.Array({ w.Int(5), w.Int(70000), w.Real(2.5), w.Bool(true), w.Uid(3) });
+        auto top = w.Dictionary({ { key, data }, { w.String("name"), name }, { w.String("list"), list } });
+        auto bytes = w.Finish(top);
+
+        BinaryPlist plist(bytes);
+        auto root = std::get<BinaryPlist::Dictionary>(plist.Object(plist.Top()));
+        auto drawing = plist.Find(root, L"drawing");
+        ASSERT_TRUE(drawing);
+        EXPECT_EQ(std::get<BinaryPlist::Bytes>(plist.Object(*drawing)).size(), 40u);
+        EXPECT_EQ(std::get<std::wstring>(plist.Object(*plist.Find(root, L"name"))), L"ärger");
+        auto items = std::get<BinaryPlist::Array>(plist.Object(*plist.Find(root, L"list"))).items;
+        ASSERT_EQ(items.size(), 5u);
+        EXPECT_EQ(std::get<std::int64_t>(plist.Object(items[1])), 70000);
+        EXPECT_EQ(std::get<double>(plist.Object(items[2])), 2.5);
+        EXPECT_EQ(std::get<BinaryPlist::Uid>(plist.Object(items[4])).value, 3u);
+    }
+
+    TEST(PencilKitWriter, WritesWhatTheReaderReadsInTheLayoutOfIpadOs)
+    {
+        PencilKitStroke pen;
+        pen.ink = "com.apple.ink.pen";
+        pen.color = Color{ 0xFF, 0, 0, 0xFF };
+        pen.points = { { 10, 20 }, { 30, 40 }, { 50, 20 } };
+        pen.width = 2.5;
+        PencilKitStroke red = pen;
+        red.color = Color{ 0xFF, 0xFF, 0, 0 };
+        red.points = { { 100, 100 }, { 110, 105 } };
+        red.widths = { 3, 6 };
+        std::vector<PencilKitStroke> strokes{ pen, red };
+
+        auto data = PencilKitDrawing::WriteLegacy(strokes);
+
+        auto read = PencilKitDrawing::Read(data);
+        ASSERT_EQ(read.size(), 2u);
+        EXPECT_EQ(read[0].color, pen.color);
+        EXPECT_EQ(read[1].color, red.color);
+        ASSERT_EQ(read[0].points.size(), 3u);
+        EXPECT_NEAR(read[0].points[1].x, 30, 1e-4);
+        EXPECT_NEAR(read[0].points[1].y, 40, 1e-4);
+        EXPECT_NEAR(read[0].width, 2.5, 1e-9);
+        EXPECT_NEAR(read[1].width, 6, 1e-9); // the median of 3 and 6 (the second one of two)
+
+        // The layout of the user's drawings: a gzip of {1: 0, 2: {1: 10, 2: 10, 3: drawing}}; the drawing has the version,
+        // two ids, the ordering records {n,0,n} and {0,1,0}, the inks (#4), the strokes (#5) with {i,0,i+1}, {0,0,0}, the
+        // ink index, the point count and the 24-byte points, then an id and {0,1,0}.
+        auto raw = io::Gzip::Decompress(data);
+        protozero::pbf_reader root(reinterpret_cast<char const*>(raw.data()), raw.size());
+        ASSERT_TRUE(root.next(1));
+        EXPECT_EQ(root.get_uint32(), 0u);
+        ASSERT_TRUE(root.next(2));
+        auto container = root.get_message();
+        ASSERT_TRUE(container.next(1));
+        EXPECT_EQ(container.get_uint32(), 10u);
+        ASSERT_TRUE(container.next(2));
+        EXPECT_EQ(container.get_uint32(), 10u);
+        ASSERT_TRUE(container.next(3));
+        auto drawing = container.get_message();
+        std::vector<int> order;
+        int inks = 0, strokeCount = 0;
+        while (drawing.next())
+        {
+            order.push_back(static_cast<int>(drawing.tag()));
+            if (drawing.tag() == 4) ++inks;
+            if (drawing.tag() == 5)
+            {
+                auto stroke = drawing.get_message();
+                std::vector<int> fields;
+                while (stroke.next())
+                {
+                    fields.push_back(static_cast<int>(stroke.tag()));
+                    if (stroke.tag() == 5) EXPECT_EQ(stroke.get_view().size(), (strokeCount == 0 ? 3u : 2u) * 24);
+                    else stroke.skip();
+                }
+                EXPECT_EQ(fields, (std::vector<int>{ 1, 2, 3, 4, 5, 6, 9, 11, 13, 14 }));
+                ++strokeCount;
+            }
+            else drawing.skip();
+        }
+        EXPECT_EQ(order, (std::vector<int>{ 1, 2, 2, 3, 3, 4, 4, 5, 5, 9, 10 }));
+        EXPECT_EQ(inks, 2);
+        EXPECT_THROW(PencilKitDrawing::WriteLegacy({}), Error);
+    }
+
+    TEST(AppleMarkupArchive, WrittenInkReadsBack)
+    {
+        std::vector<std::uint8_t> drawing{ 1, 2, 3, 4 };
+        auto text = AppleMarkup::WriteInk(drawing, 595.276, 841.89, 40.5, 700.25, 81, 85, "196366F7-B305-4FFB-BC01-9897D82136CA");
+        auto markup = AppleMarkup::Read(text);
+        EXPECT_EQ(markup.className, AppleMarkup::InkClass);
+        ASSERT_TRUE(markup.drawing);
+        EXPECT_EQ(*markup.drawing, drawing);
+        EXPECT_NEAR(markup.drawingWidth, 595.276, 1e-9);
+        EXPECT_NEAR(markup.drawingHeight, 841.89, 1e-9);
+    }
+
+    TEST(IpadExport, WritesPenStrokesAsEditableInkAndLeavesTheRestInThePage)
+    {
+        TempFolder folder;
+        auto source = folder / L"notes.xopp";
+        WriteBytes(source, R"(<?xml version="1.0" standalone="no"?>
+<xournal creator="xournalpp 1.3.8" fileversion="5">
+<page width="400" height="300"><background type="solid" color="#ffffffff" style="plain"/><layer>
+<stroke tool="pen" color="#3333ccff" width="1.2">10 20 30 40 50 20</stroke>
+<stroke tool="pen" color="#ff0000ff" width="1.5 1 2">100 100 110 105 130 110</stroke>
+<stroke tool="highlighter" color="#ffff007f" width="8">20 200 120 200</stroke>
+<text font="Sans" size="12" x="10" y="250" color="#000000ff">Hallo</text>
+</layer></page>
+<page width="400" height="300"><background type="solid" color="#ffffffff" style="plain"/><layer/></page>
+</xournal>)");
+        auto doc = io::DocumentFile::Load(source);
+        auto target = folder / L"ipad.pdf";
+
+        auto result = import::ExportForIpad(pdf::PrepareExport(*doc), target);
+
+        EXPECT_EQ(result.pdf.pages, 2);
+        EXPECT_EQ(result.drawings, 1);
+        EXPECT_EQ(result.strokes, 2);
+        EXPECT_EQ(result.flatStrokes, 1); // the highlighter stays in the page
+        EXPECT_EQ(Subtypes(target), (std::vector<std::string>{ "/Stamp" }));
+
+        // Imported again (as an iPad PDF): the pen strokes are strokes again, where and as wide as they were.
+        auto imported = Prepare(target, folder / L"clean.pdf", [&](int round) { return folder / std::format(L"pictures-{}.pdf", round); });
+        EXPECT_EQ(imported.drawings, 1);
+        std::vector<XmlElementPtr> strokes;
+        for (auto const& e : imported.elements[0]) if (e->Name() == L"stroke") strokes.push_back(e);
+        ASSERT_EQ(strokes.size(), 2u);
+        EXPECT_EQ(Attr(strokes[0], L"color"), L"#3333ccff");
+        EXPECT_NEAR(Number(strokes[0], L"width"), 1.2, 1e-3);
+        auto coordinates = [](XmlElementPtr const& e)
+        {
+            std::vector<double> numbers;
+            std::wstring text = e->Value();
+            size_t at = 0;
+            while (at < text.size())
+            {
+                size_t end = text.find(L' ', at);
+                if (end == std::wstring::npos) end = text.size();
+                numbers.push_back(XoppFormat::ParseDouble(text.substr(at, end - at)).value_or(-1));
+                at = end + 1;
+            }
+            return numbers;
+        };
+        auto first = coordinates(strokes[0]);
+        ASSERT_EQ(first.size(), 6u);
+        std::vector<double> expected{ 10, 20, 30, 40, 50, 20 };
+        for (size_t i = 0; i < 6; ++i) EXPECT_NEAR(first[i], expected[i], 1e-2);
+        auto second = coordinates(strokes[1]);
+        ASSERT_EQ(second.size(), 6u);
+        EXPECT_NEAR(second[4], 130, 1e-2);
+        EXPECT_NEAR(second[5], 110, 1e-2);
+    }
+
+    // The user's kind of document (the sanitized example): every editable stroke comes back as a stroke. With
+    // XOURNAL_PROBE_OUT set the exported PDF and a rendering of its pages are written there to look at.
+    TEST(IpadExport, AnExampleDocumentComesBackAsItsStrokes)
+    {
+        TempFolder folder;
+        auto doc = io::DocumentFile::Load(std::filesystem::path(XOURNAL_EXAMPLES_DIR) / L"Schaltungen.xopp");
+        auto target = folder / L"ipad.pdf";
+
+        auto result = import::ExportForIpad(pdf::PrepareExport(*doc), target);
+
+        EXPECT_GT(result.strokes, 0);
+        auto imported = Prepare(target, folder / L"clean.pdf", [&](int round) { return folder / std::format(L"pictures-{}.pdf", round); });
+        int strokes = 0;
+        for (auto const& page : imported.elements)
+            for (auto const& e : page) strokes += e->Name() == L"stroke" ? 1 : 0;
+        EXPECT_EQ(strokes, result.strokes);
+        EXPECT_EQ(imported.drawings, result.drawings);
+
+        wchar_t out[MAX_PATH]{};
+        if (GetEnvironmentVariableW(L"XOURNAL_PROBE_OUT", out, MAX_PATH) > 0)
+        {
+            std::filesystem::path dir(out);
+            std::filesystem::copy_file(target, dir / L"ipad.pdf", std::filesystem::copy_options::overwrite_existing);
+            pdf::PdfAreaRenderer renderer(target);
+            for (size_t page = 0; page < imported.pageSizes.size(); ++page)
+            {
+                auto rendered = renderer.Render(static_cast<int>(page), Rect{ 0, 0, imported.pageSizes[page].width, imported.pageSizes[page].height }, 1.5);
+                WriteBytes(dir / std::format(L"page{}.png", page + 1), std::string_view(reinterpret_cast<char const*>(rendered.png.data()), rendered.png.size()));
+            }
+        }
     }
 }

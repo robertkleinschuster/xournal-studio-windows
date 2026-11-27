@@ -7,6 +7,7 @@ add_executable(XournalImportTests
     ImportTests.cpp
 )
 target_include_directories(XournalImportTests PRIVATE ..)
+target_compile_definitions(XournalImportTests PRIVATE XOURNAL_EXAMPLES_DIR=L"${CMAKE_SOURCE_DIR}/examples")
 target_compile_options(XournalImportTests PRIVATE ${XOURNAL_COMPILE_OPTIONS})
 target_link_libraries(XournalImportTests PRIVATE XournalImport qpdf::libqpdf protozero GTest::gtest_main ole32 crypt32 windowscodecs windowsapp)
 include(GoogleTest)

@@ -7,6 +7,7 @@
 #include "xournal/base/Log.h"
 #include "xournal/base/Paths.h"
 #include "xournal/base/Text.h"
+#include "xournal/import/IpadExport.h"
 #include "xournal/pdf/DocumentExport.h"
 
 #include <format>
@@ -17,7 +18,7 @@ namespace xournal::app
     {
         // The status message for a finished export.
         std::wstring Describe(std::filesystem::path const& target, pdf::ExportResult const& result,
-            std::optional<std::filesystem::path> const& background, bool& complete)
+            std::optional<std::filesystem::path> const& background, bool& complete, import::IpadExportResult const* ipad = nullptr)
         {
             std::wstring pages = result.pages == 1 ? L"1 Seite" : std::format(L"{} Seiten", result.pages);
             std::wstring text = std::format(L"{} ({}).", target.filename().native(), pages);
@@ -36,6 +37,12 @@ namespace xournal::app
                         L"sich nicht verändern.";
             }
             complete = result.missingBackgrounds + result.skippedElements == 0 && !result.annotationsLeftOut;
+            if (ipad)
+            {
+                text += std::format(L" {} Strich(e) auf {} Seite(n) sind auf dem iPad bearbeitbar", ipad->strokes, ipad->drawings);
+                text += ipad->flatStrokes > 0 ? std::format(L"; {} weitere (Textmarker, gestrichelt, gefüllt) sind fest in der Seite.", ipad->flatStrokes) : L".";
+                return std::format(L"{}: {}", complete ? L"Für iPad exportiert" : L"Für iPad exportiert – unvollständig", text);
+            }
             return std::format(L"{}: {}", complete ? L"Als PDF exportiert" : L"Als PDF exportiert – unvollständig", text);
         }
     }
@@ -45,7 +52,7 @@ namespace xournal::app
     {
     }
 
-    void PdfExportCommand::Export(std::shared_ptr<XoppDocument> const& doc)
+    void PdfExportCommand::Export(std::shared_ptr<XoppDocument> const& doc, Kind kind)
     {
         if (!doc) return;
         if (running)
@@ -57,6 +64,7 @@ namespace xournal::app
         auto base = doc->FilePath() ? doc->FilePath() : doc->PdfPath();
         std::filesystem::path folder = base ? base->parent_path() : std::filesystem::path();
         std::wstring name = doc->SuggestedName();
+        if (kind == Kind::Ipad) name += L" (iPad)";
         if (background && !folder.empty() && Paths::Same(folder / (name + L".pdf"), *background))
         {
             name += L" (mit Notizen)"; // the lecture PDF itself stays untouched
@@ -83,20 +91,29 @@ namespace xournal::app
             return;
         }
         running = true;
-        UiQueue::RunInBackground("export PDF", [this, source = std::move(source), file = *target, background]
+        UiQueue::RunInBackground("export PDF", [this, source = std::move(source), file = *target, background, kind]
         {
             std::optional<pdf::ExportResult> result;
+            std::optional<import::IpadExportResult> ipad;
             std::wstring error;
             try
             {
-                result = pdf::ExportDocument(source, file);
+                if (kind == Kind::Ipad)
+                {
+                    ipad = import::ExportForIpad(source, file);
+                    result = ipad->pdf;
+                }
+                else
+                {
+                    result = pdf::ExportDocument(source, file);
+                }
             }
             catch (...)
             {
                 LogException(std::format("export PDF to {}", ToUtf8(file.native())));
                 error = ErrorText();
             }
-            UiQueue::Post("export PDF done", [this, result, error, file, background]
+            UiQueue::Post("export PDF done", [this, result, ipad, error, file, background]
             {
                 running = false;
                 if (!result)
@@ -105,7 +122,7 @@ namespace xournal::app
                     return;
                 }
                 bool complete = true;
-                std::wstring text = Describe(file, *result, background, complete);
+                std::wstring text = Describe(file, *result, background, complete, ipad ? &*ipad : nullptr);
                 message(text, complete ? MessageKind::Success : MessageKind::Warning);
             });
         });

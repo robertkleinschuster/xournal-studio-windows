@@ -18,6 +18,7 @@ BEGIN
         MENUITEM "&Speichern\tStrg+S", CmdSave
         MENUITEM "Speichern &unter…\tStrg+Umschalt+S", CmdSaveAs
         MENUITEM "Als PDF e&xportieren…\tStrg+E", CmdExportPdf
+        MENUITEM "Für i&Pad exportieren…", CmdExportIpad
         MENUITEM "PDF mit iPad-Anmerkungen &importieren…", CmdImportPdf
         MENUITEM SEPARATOR
         MENUITEM "Zuletzt &geöffnet", CmdRecentFirst
