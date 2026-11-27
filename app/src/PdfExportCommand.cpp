@@ -27,7 +27,6 @@ namespace xournal::app
                 if (!text.empty()) text += L", ";
                 text += std::format(L"{} {}", count, count == 1 ? one : many);
             };
-            add(o.pictures, L"Bild", L"Bilder");
             add(o.other, L"anderes Element", L"andere Elemente");
             return text;
         }

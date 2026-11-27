@@ -968,6 +968,24 @@ namespace xournal::tests
             bool operator==(Written const&) const = default;
         };
 
+        // Every element of the document as one line: name, attributes in order, text (to compare whole elements).
+        std::vector<std::wstring> Everything(XoppDocument& d)
+        {
+            std::vector<std::wstring> all;
+            for (auto const& page : d.Pages())
+            {
+                auto element = page->Snapshot();
+                for (auto const& layer : element->Elements(L"layer"))
+                    for (auto const& e : layer->Elements())
+                    {
+                        std::wstring line = e->Name() + L"|";
+                        for (auto const& a : e->Attributes()) line += a.name + L"=" + a.value + L";";
+                        all.push_back(line + L"|" + e->Value());
+                    }
+            }
+            return all;
+        }
+
         std::vector<Written> StrokesOf(XoppDocument& doc)
         {
             std::vector<Written> all;
@@ -978,7 +996,7 @@ namespace xournal::tests
                     for (auto const& s : layer->Elements(L"stroke"))
                     {
                         // The plain pen strokes only (PencilKit's); the styled ones are compared whole elsewhere.
-                        if (s->AttributeOr(L"tool", L"") != L"pen" || s->Attribute(L"style") || s->Attribute(L"fill") || s->Attribute(L"capStyle")) continue;
+                        if (s->AttributeOr(L"tool", L"") != L"pen" || s->Attribute(L"style") || s->Attribute(L"fill") || (s->Attribute(L"capStyle") && *s->Attribute(L"capStyle") != L"round")) continue;
                         all.push_back({ s->AttributeOr(L"width", L""), s->Value() });
                     }
             }
@@ -1047,6 +1065,7 @@ namespace xournal::tests
 <stroke tool="pen" color="#00ff00ff" width="1" fill="96">320 200 380 200 350 260 320 200</stroke>
 <text font="Sans Bold" size="14" x="40.5" y="160.25" color="#cc0000ff">Zwei Zeilen
 mit Umlauten: äöü Ω</text>
+<image left="200" top="100.5" right="260" bottom="140">iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==</image>
 </layer></page>
 </xournal>)", circle, pressureWidths, pressure));
         auto original = io::DocumentFile::Load(source);
@@ -1076,24 +1095,8 @@ mit Umlauten: äöü Ω</text>
         EXPECT_EQ(PointsOf(first[3]).size(), 2u); // the tap is a dot again
 
         // What the iPad holds as standard annotations comes back as it was, attribute for attribute and character for character.
-        auto everything = [](XoppDocument& d)
-        {
-            std::vector<std::wstring> all;
-            for (auto const& page : d.Pages())
-            {
-                auto element = page->Snapshot();
-                for (auto const& layer : element->Elements(L"layer"))
-                    for (auto const& e : layer->Elements())
-                    {
-                        std::wstring line = e->Name() + L"|";
-                        for (auto const& a : e->Attributes()) line += a.name + L"=" + a.value + L";";
-                        all.push_back(line + L"|" + e->Value());
-                    }
-            }
-            return all;
-        };
-        auto originalAll = everything(*original), lapAll = everything(*doc);
-        for (size_t i = 6; i < 9; ++i)
+        auto originalAll = Everything(*original), lapAll = Everything(*doc);
+        for (size_t i = 6; i < 10; ++i)
             EXPECT_NE(std::find(lapAll.begin(), lapAll.end(), originalAll[i]), lapAll.end()) << "element " << i << " came back different";
 
         // And again and again: the same, character for character.
@@ -1101,7 +1104,7 @@ mit Umlauten: äöü Ω</text>
         for (int round = 2; round <= 6; ++round)
         {
             auto next = Lap(*previous, folder.Path(), round);
-            EXPECT_EQ(everything(*next), lapAll) << "round " << round; // the standard elements too, whole
+            EXPECT_EQ(Everything(*next), lapAll) << "round " << round; // the standard elements too, whole
             auto strokes = StrokesOf(*next);
             ASSERT_EQ(strokes.size(), first.size()) << "round " << round;
             for (size_t i = 0; i < first.size(); ++i)
@@ -1125,19 +1128,35 @@ mit Umlauten: äöü Ω</text>
 
         EXPECT_GT(result.strokes, 0);
         auto imported = Prepare(target, folder / L"clean.pdf", [&](int round) { return folder / std::format(L"pictures-{}.pdf", round); });
-        int strokes = 0, texts = 0;
+        int strokes = 0, texts = 0, images = 0;
         for (auto const& page : imported.elements)
             for (auto const& e : page)
             {
                 strokes += e->Name() == L"stroke" ? 1 : 0;
                 texts += e->Name() == L"text" ? 1 : 0;
+                images += XoppImage::IsImage(*e) ? 1 : 0; // image and teximage
             }
-        EXPECT_EQ(strokes + texts, result.strokes + result.elements); // every stroke and text, once
+        EXPECT_EQ(strokes + texts + images, result.strokes + result.elements) << strokes << " strokes, " << texts << " texts, " << images << " images; written " << result.strokes << " pen strokes, " << result.elements << " elements"; // every stroke, text and picture, once
+        EXPECT_GT(images, 0);
         EXPECT_EQ(texts, imported.texts);
-        EXPECT_EQ(result.omitted.other, 0); // (pictures: the next step)
+        EXPECT_EQ(result.omitted.Total(), 0); // nothing of the example is left out: its pictures are stamps
 
         // The user's own kind of document, lap after lap: the second and third lap return exactly the first's strokes.
         auto lap1 = Lap(*doc, folder.Path(), 1);
+        // Everything that is not a plain pen stroke (highlighters, styled strokes, texts, pictures) came back exactly.
+        auto lap1All = Everything(*lap1);
+        int missing = 0;
+        for (auto const& line : Everything(*doc))
+        {
+            bool plainPen = line.starts_with(L"stroke|") && line.find(L"tool=pen;") != std::wstring::npos && line.find(L"style=") == std::wstring::npos &&
+                            line.find(L"fill=") == std::wstring::npos && line.find(L"capStyle=butt") == std::wstring::npos &&
+                            line.find(L"capStyle=square") == std::wstring::npos;
+            if (!plainPen && std::find(lap1All.begin(), lap1All.end(), line) == lap1All.end())
+            {
+                if (++missing <= 3) ADD_FAILURE() << "came back different: " << ToUtf8(line.substr(0, 160));
+            }
+        }
+        EXPECT_EQ(missing, 0);
         auto lap2 = Lap(*lap1, folder.Path(), 2);
         auto lap3 = Lap(*lap2, folder.Path(), 3);
         auto a = StrokesOf(*lap2), b = StrokesOf(*lap3);

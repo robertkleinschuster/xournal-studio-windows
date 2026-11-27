@@ -97,7 +97,7 @@ namespace xournal::import
         };
 
         void Partition(std::vector<pdf::ExportPage>& pages, std::vector<std::vector<StrokeShape>>& ink,
-                       std::vector<std::vector<Standard>>& standard, IpadOmitted& omitted)
+                       std::vector<std::vector<Standard>>& standard)
         {
             ink.assign(pages.size(), {});
             standard.assign(pages.size(), {});
@@ -120,8 +120,7 @@ namespace xournal::import
                         if (editable) ink[i].push_back(std::move(*stroke));
                         else standard[i].push_back({ std::move(element), origin });
                     }
-                    else if (std::holds_alternative<XoppText>(element)) standard[i].push_back({ std::move(element), origin });
-                    else ++omitted.pictures;
+                    else standard[i].push_back({ std::move(element), origin }); // a text or a picture
                 }
                 pages[i].elements.clear();
                 pages[i].origin.clear();
@@ -220,7 +219,7 @@ namespace xournal::import
         // The editable strokes become ink annotations; everything else is left out and counted.
         std::vector<std::vector<StrokeShape>> ink;
         std::vector<std::vector<Standard>> standard;
-        Partition(pages, ink, standard, result.omitted);
+        Partition(pages, ink, standard);
         result.omitted.other = counts.skippedElements;
         auto bytes = pdf::ExportToMemory(pages, result.pdf, options);
         result.pdf.skippedElements = 0;
@@ -264,7 +263,7 @@ namespace xournal::import
         std::vector<std::vector<StrokeShape>> ink;
         std::vector<std::vector<Standard>> standard;
         IpadOmitted omitted;
-        Partition(pages, ink, standard, omitted);
+        Partition(pages, ink, standard);
         omitted.other = counts.skippedElements;
         return omitted;
     }

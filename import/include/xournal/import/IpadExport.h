@@ -16,9 +16,8 @@ namespace xournal::import
     /// What the export leaves out because the iPad has no counterpart for it yet (counted, never drawn into the page).
     struct IpadOmitted
     {
-        int pictures = 0;       // not yet (open work)
         int other = 0;          // elements the app does not read at all
-        int Total() const { return pictures + other; }
+        int Total() const { return other; }
     };
 
     struct IpadExportResult

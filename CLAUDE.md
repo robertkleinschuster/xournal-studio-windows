@@ -271,23 +271,29 @@ code). In short: `base ← model ← io ← pdf, pdftext, search, import, servic
   dense points back to the corners (Douglas-Peucker 0.02 pt, widths 10 %, a tap = two equal points). After the first lap
   (within the formats: single precision, a size's tenths) every lap returns the same text of every stroke -
   `IpadExport.ExportAndImportAgreeAndRepeatForever` (6 laps) and the example (3 laps, 1562 strokes). Everything the markup
-  has no counterpart for is **left out, never drawn into the page** (user, 2026-11-27: "statt etwas unbearbeitbares ins
-  pdf zu zeichnen sollten diese inhalte weggelassen werden, es sollte eine warnung geben"): `IpadOmitted` counts
-  highlighters, other strokes (dashed, filled, square/butt ended, transparent, leaving the page), texts, pictures and
-  unknown elements; `OmittedByIpadExport` counts them before the export and the app asks first ("Trotzdem exportieren"),
-  the status message names them again. Texts, pictures and highlighters need iPad counterparts (open work, user: all
-  xopp functions should get one - FreeText/AKTextBox, AKImage, marker ink; the user's PDFs hold AKTextBoxAnnotation,
-  AKImageAnnotation and AKRectangularShapeAnnotation samples). iPadOS 27 saves an edited drawing **only as `/PPK`**
-  (PaperKit: `crdt` + protobuf op log; the stroke paths are the same records as in the older format, found by their
-  fields #3 count, #4/#5 masks, #7 records) without `AKAnnotationV2` - the import reads both (user: "beides"):
-  `PencilKitDrawing::ReadPaperKit` (checked on the user's GET_UE_5 iPad file: 18/0/0/1074/421/326/119/560/0 strokes per
-  page = the original .xopp, ink colors 1072/1073). Item graph: list item (payload #1 only) -> assignment item (names
-  by item id, 0x02 + 16 bytes, the stroke item and the ink value item) ; stroke item payload #10 holds the path; ink
-  value item holds {#1 color 4 floats, #2 "com.apple.ink.pen"}. A PPK wins over a `AKAnnotationV2` of the same
-  annotation; PaperKit alpha >= 250 counts as opaque. Not seen in any sample: a moved stroke's transform (the ink
-  value item's second element holds 48 bytes), erased/deleted strokes' tombstones, markers - strokes outside a list
-  item are left out, transforms are ignored. Writing PPK is not done (iPadOS accepts the older archive alone and
-  converts it itself when the drawing is edited).
+  has no PencilKit counterpart is a **standard annotation** (user, 2026-11-27: "alle xopp funktionen sollen eine ipad
+  entsprechung bekommen"; "statt etwas unbearbeitbares ins pdf zu zeichnen sollten diese inhalte weggelassen werden, es
+  sollte eine warnung geben"): highlighters, dashed/filled/butt- or square-ended/transparent strokes and strokes off the
+  page -> `/Ink` (InkList, C, CA, BS W/D), texts -> `/FreeText` (Contents, DA), pictures -> `/Stamp`; `IpadElements.cpp`.
+  Each has an appearance = the element drawn alone by the normal export on a transparent one-page PDF of its box, copied
+  as a form XObject (`ForeignKeep`: qpdf reads copied streams at WRITE time - the helper documents must outlive the
+  writer; a crash found that way) and `/XournalStudio` = the original element (its attributes verbatim, its text/base64
+  data, the rectangle it was written at). The import (`ReadElementAnnotation`) gives the element back unchanged; where the
+  iPad changed the annotation (InkList points, color, width, Contents, rectangle -> moved/scaled) the annotation's data
+  wins. Stacking: standard annotations below the pen drawing. Only unknown elements are left out (`IpadOmitted`, counted
+  before the export: `OmittedByIpadExport`, the app asks first). Not verified on an iPad whether it edits these as
+  objects. If iPadOS rewrites an annotation and drops `/XournalStudio`, the import falls back to its old reading
+  (FreeText from the appearance, pictures rendered). Tests: `ExportAndImportAgreeAndRepeatForever` (pens, highlighter,
+  dash-dot butt stroke, filled stroke, text with newline/umlauts/Omega, a picture: 6 laps identical) and the example
+  document (1562 pens, 61 highlighters, 5 pictures: every non-pen element back exactly).
+  iPadOS 27 saves an edited drawing **only as `/PPK`** (PaperKit: `crdt` + protobuf op log) without `AKAnnotationV2` -
+  the import reads both (user: "beides"): `PencilKitDrawing::ReadPaperKit` (checked on the user's GET_UE_5 iPad file:
+  18/0/0/1074/421/326/119/560/0 strokes per page = the original .xopp, ink colors 1072/1073). Item graph: list item
+  (payload #1 only) -> assignment item (names by item id, 0x02 + 16 bytes, the stroke item and the ink value item); stroke
+  item payload #10 holds the path; ink value item holds {#1 color 4 floats, #2 "com.apple.ink.pen"}. A PPK wins over an
+  `AKAnnotationV2` of the same annotation; PaperKit alpha >= 250 counts as opaque. Not seen in any sample: a moved stroke's
+  transform, erased strokes' tombstones, markers - strokes outside a list item are left out, transforms are ignored.
+  Writing PPK is not done (iPadOS accepts the older archive alone and converts it itself when the drawing is edited).
 - **Explorer order:** names with numbers by value, as File Explorer (`CompareStringEx` + `SORT_DIGITSASNUMBERS`,
   ignore case, ties ordinal).
 - Git (libgit2): sign-in = the credential Git Credential Manager / wincred stores in the Windows Credential Manager

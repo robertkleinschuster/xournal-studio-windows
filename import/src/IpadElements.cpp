@@ -4,6 +4,7 @@
 #include "xournal/base/Log.h"
 #include "xournal/base/Text.h"
 #include "xournal/model/XoppFormat.h"
+#include "xournal/model/XoppImage.h"
 #include "xournal/pdf/TextBoxLayout.h"
 
 #include <qpdf/BufferInputSource.hh>
@@ -223,6 +224,18 @@ namespace xournal::import::detail
             Append(page, pdf.makeIndirectObject(a));
         }
 
+        // A picture is a stamp: its appearance draws the picture, /XournalStudio holds the element with its data (base64 as the
+        // .xopp has it), so it comes back byte for byte.
+        void AddPicture(QPDF& pdf, ForeignKeep& keep, QPDFObjectHandle page, double pageHeight, pdf::Picture const& picture,
+                        XmlElement const& origin, pdf::ExportOptions const& options)
+        {
+            Rect box = XoppImage::GetBounds(origin);
+            if (box.width <= 0 || box.height <= 0) ThrowInvalidData("iPad export: a picture without an area");
+            auto a = Annotation("/Stamp", box, pageHeight, pdf.makeIndirectObject(Appearance(pdf, keep, picture, box, options)));
+            a.replaceKey("/XournalStudio", Original(origin, box, pageHeight));
+            Append(page, pdf.makeIndirectObject(a));
+        }
+
         void AddText(QPDF& pdf, ForeignKeep& keep, QPDFObjectHandle page, double pageHeight, XoppText const& text, XmlElement const& origin,
                      pdf::ExportOptions const& options)
         {
@@ -244,7 +257,7 @@ namespace xournal::import::detail
         if (!origin) ThrowInvalidData("iPad export: an element without its source");
         if (auto const* stroke = std::get_if<StrokeShape>(&element)) AddStroke(pdf, keep, page, pageHeight, *stroke, *origin, options);
         else if (auto const* text = std::get_if<XoppText>(&element)) AddText(pdf, keep, page, pageHeight, *text, *origin, options);
-        else ThrowInvalidData("iPad export: this element has no annotation yet");
+        else if (auto const* picture = std::get_if<pdf::Picture>(&element)) AddPicture(pdf, keep, page, pageHeight, *picture, *origin, options);
     }
 
     // ================================================================== reading
@@ -290,6 +303,11 @@ namespace xournal::import::detail
         std::wstring ColorText(int r, int g, int b, int a) { return std::format(L"#{:02x}{:02x}{:02x}{:02x}", r, g, b, a); }
 
         std::wstring Attribute(XmlElement const& e, std::wstring const& name) { return e.AttributeOr(name, L""); }
+
+        bool SizeChanged(QPDFObjectHandle::Rectangle a, QPDFObjectHandle::Rectangle b)
+        {
+            return std::abs((a.urx - a.llx) - (b.urx - b.llx)) > 0.01 || std::abs((a.ury - a.lly) - (b.ury - b.lly)) > 0.01;
+        }
     }
 
     XmlElementPtr ReadElementAnnotation(QPDFObjectHandle a, pdf::PageFrame const& frame)
@@ -354,6 +372,15 @@ namespace xournal::import::detail
             auto widths = Numbers(Attribute(*element, L"width"));
             if (width.isNumber() && !widths.empty() && std::abs(width.getNumericValue() - widths[0]) > 0.01)
                 element->SetAttribute(L"width", Format(width.getNumericValue())); // the iPad changed it (pressure goes)
+        }
+        else if (name == L"image")
+        {
+            // The iPad moved or scaled the stamp: the picture follows its rectangle.
+            if (dx != 0 || dy != 0 || (rect0.isRectangle() && rect.isRectangle() && SizeChanged(rect0.getArrayAsRectangle(), rect.getArrayAsRectangle())))
+            {
+                auto r = rect.getArrayAsRectangle();
+                XoppImage::SetBounds(*element, frame.Area(pdf::PdfBox{ r.llx, r.lly, r.urx, r.ury }));
+            }
         }
         else if (name == L"text")
         {
