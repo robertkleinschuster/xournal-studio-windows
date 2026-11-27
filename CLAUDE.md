@@ -261,7 +261,10 @@ code). In short: `base ← model ← io ← pdf, pdftext, search, import, servic
   strokes' box. The drawing is the **older gzip variant** (`PencilKitDrawing::WriteLegacy`): fields surveyed over the
   user's 10 older drawings (drawing: 1=10, two 16-byte ids, {n,0,n}, {0,1,0}, inks #4 {color, name, 3}, strokes #5
   {i,0,i+1}, {0,0,0}, ink index, point count, 24-byte points with force/aspect 1000, bounds, Apple time, two ids; then an
-  id and {0,1,0}); the `wrd` variant of newer files and `/PPK` (PaperKit) are not written. Brush size = width / 0.4.
+  id and {0,1,0}); the `wrd` variant of newer files and `/PPK` (PaperKit) are not written. Brush size = 2.5 x sqrt(width in pt) (user, 2026-11-27: linear width / 0.4 spread the
+  widths - thin thinner, thick thicker; the 0.4 was measured only for sizes 2.5-3.0, the user's real strokes all lie there
+  and get their thickness from the pen's force; the root is an ESTIMATE through the measured point, to be calibrated with
+  an iPad-saved test PDF).
   PencilKit's points are the control points of a smooth curve (uniform cubic B-spline; the user's own points lie
   ~0.8 pt apart, 2.1 at most), so the polyline is written resampled to 0.8 pt (widths interpolated, a dot as a
   sub-point stroke) - found by the Opus review; the importer reads control points as a polyline, so a round trip

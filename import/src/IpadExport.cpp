@@ -39,12 +39,19 @@ namespace xournal::import
         // them is the polyline itself (corners rounded by a fraction of a point), widths interpolated.
         constexpr double PointSpacing = 0.8;
 
+        // The brush size for a drawn width. Linear (size = width / 0.4) spread the widths on the iPad: thin came out thinner
+        // and thick thicker (user, 2026-11-27) - the factor 0.4 was measured only where the user's own pen strokes lie
+        // (sizes 2.5 to 3.0; PencilKit gets the rest of the thickness from the pen's force). So the size follows the square
+        // root of the width, through the measured point (1 pt <-> 2.5). An ESTIMATE, not measured: calibrate with
+        // an iPad-saved test PDF (strokes of known widths) before relying on it.
+        double BrushSize(double width) { return std::sqrt(std::max(width, 0.0)) * (1.0 / PenWidthFactor); }
+
         PencilKitStroke Stroke(StrokeShape const& shape)
         {
             PencilKitStroke stroke;
             stroke.ink = "com.apple.ink.pen";
             stroke.color = shape.color;
-            stroke.width = shape.width / PenWidthFactor;
+            stroke.width = BrushSize(shape.width);
             size_t n = shape.points.size();
             std::vector<double> sizes(n, stroke.width); // each original point's brush size
             if (!shape.EvenWidth() && shape.segmentWidths.size() + 1 == n)
@@ -53,7 +60,7 @@ namespace xournal::import
                 {
                     double before = k > 0 ? shape.segmentWidths[k - 1] : shape.segmentWidths[0];
                     double after = k + 1 < n ? shape.segmentWidths[k] : shape.segmentWidths[n - 2];
-                    sizes[k] = (before + after) / 2 / PenWidthFactor;
+                    sizes[k] = BrushSize((before + after) / 2);
                 }
             }
             double length = 0;

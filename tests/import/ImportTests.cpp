@@ -704,7 +704,7 @@ namespace xournal::tests
         for (auto const& e : imported.elements[0]) if (e->Name() == L"stroke") strokes.push_back(e);
         ASSERT_EQ(strokes.size(), 2u);
         EXPECT_EQ(Attr(strokes[0], L"color"), L"#3333ccff");
-        EXPECT_NEAR(Number(strokes[0], L"width"), 1.2, 1e-3);
+        EXPECT_NEAR(Number(strokes[0], L"width"), std::sqrt(1.2), 0.02); // the brush size follows the square root of the width (stored in tenths)
         auto coordinates = [](XmlElementPtr const& e)
         {
             std::vector<double> numbers;
