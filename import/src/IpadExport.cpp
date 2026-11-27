@@ -17,6 +17,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <cmath>
 #include <format>
 #include <random>
 
@@ -32,24 +33,83 @@ namespace xournal::import
                    !s.points.empty();
         }
 
+        // PencilKit stores the control points of a smooth curve (uniform cubic B-spline) - every point of the user's own
+        // drawings lies about 0.8 pt from the next (never more than 2.1 pt) - while Xournal stores a polyline whose
+        // corners and straight lines have two or a few points. The points are written so dense that the curve through
+        // them is the polyline itself (corners rounded by a fraction of a point), widths interpolated.
+        constexpr double PointSpacing = 0.8;
+
         PencilKitStroke Stroke(StrokeShape const& shape)
         {
             PencilKitStroke stroke;
             stroke.ink = "com.apple.ink.pen";
             stroke.color = shape.color;
-            stroke.points = shape.points;
             stroke.width = shape.width / PenWidthFactor;
             size_t n = shape.points.size();
+            std::vector<double> sizes(n, stroke.width); // each original point's brush size
             if (!shape.EvenWidth() && shape.segmentWidths.size() + 1 == n)
             {
                 for (size_t k = 0; k < n; ++k)
                 {
                     double before = k > 0 ? shape.segmentWidths[k - 1] : shape.segmentWidths[0];
                     double after = k + 1 < n ? shape.segmentWidths[k] : shape.segmentWidths[n - 2];
-                    stroke.widths.push_back((before + after) / 2 / PenWidthFactor);
+                    sizes[k] = (before + after) / 2 / PenWidthFactor;
                 }
             }
+            if (n == 1)
+            {
+                // A dot: a stroke of a fraction of a point, round ends make it the circle.
+                for (int k = -8; k <= 8; ++k)
+                {
+                    stroke.points.push_back({ shape.points[0].x + 0.05 * k, shape.points[0].y });
+                    stroke.widths.push_back(sizes[0]);
+                }
+                return stroke;
+            }
+            for (size_t k = 0; k + 1 < n; ++k)
+            {
+                Point a = shape.points[k], b = shape.points[k + 1];
+                int pieces = std::max(1, static_cast<int>(std::ceil(std::hypot(b.x - a.x, b.y - a.y) / PointSpacing)));
+                for (int i = 0; i < pieces; ++i)
+                {
+                    double f = static_cast<double>(i) / pieces;
+                    stroke.points.push_back({ a.x + f * (b.x - a.x), a.y + f * (b.y - a.y) });
+                    stroke.widths.push_back(sizes[k] + f * (sizes[k + 1] - sizes[k]));
+                }
+            }
+            stroke.points.push_back(shape.points[n - 1]);
+            stroke.widths.push_back(sizes[n - 1]);
             return stroke;
+        }
+
+        Rect BoxOf(StrokeShape const& shape)
+        {
+            double minX = 1e30, minY = 1e30, maxX = -1e30, maxY = -1e30;
+            for (auto const& p : shape.points)
+            {
+                minX = std::min(minX, p.x); maxX = std::max(maxX, p.x);
+                minY = std::min(minY, p.y); maxY = std::max(maxY, p.y);
+            }
+            double pad = shape.width;
+            return { minX - pad, minY - pad, maxX - minX + 2 * pad, maxY - minY + 2 * pad };
+        }
+
+        bool Overlaps(Rect const& a, Rect const& b)
+        {
+            return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+        }
+
+        Rect BoxOf(pdf::Picture const& picture)
+        {
+            double minX = 1e30, minY = 1e30, maxX = -1e30, maxY = -1e30;
+            for (Point corner : { Point{ 0, 0 }, Point{ picture.placement.size.width, 0 }, Point{ 0, picture.placement.size.height },
+                                  Point{ picture.placement.size.width, picture.placement.size.height } })
+            {
+                Point p = picture.placement.transform.Apply(corner);
+                minX = std::min(minX, p.x); maxX = std::max(maxX, p.x);
+                minY = std::min(minY, p.y); maxY = std::max(maxY, p.y);
+            }
+            return { minX, minY, maxX - minX, maxY - minY };
         }
 
         std::string Num(double v) { return std::format("{:.3f}", v); }
@@ -97,25 +157,21 @@ namespace xournal::import
             return std::format("D:{:04}{:02}{:02}{:02}{:02}{:02}Z00'00'", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond);
         }
 
-        // One page's ink annotation: the strokes' archive and a vector appearance, at the strokes' bounding box.
+        // One page's ink annotation: the strokes' archive and a vector appearance. As on iPadOS (every file of the user's)
+        // the rectangle is the union of the strokes' bounds (whole numbers), the same in the archive, /Rect and /BBox; the
+        // drawing's own coordinates stay those of the page.
         void AddInkAnnotation(QPDF& pdf, QPDFObjectHandle page, double width, double height,
                               std::vector<StrokeShape const*> const& strokes)
         {
-            double minX = 1e30, minY = 1e30, maxX = -1e30, maxY = -1e30;
             std::vector<PencilKitStroke> drawn;
+            double minX = 1e30, minY = 1e30, maxX = -1e30, maxY = -1e30;
             for (auto const* s : strokes)
             {
-                double pad = s->width;
-                for (auto const& p : s->points)
-                {
-                    minX = std::min(minX, p.x - pad); maxX = std::max(maxX, p.x + pad);
-                    minY = std::min(minY, p.y - pad); maxY = std::max(maxY, p.y + pad);
-                }
                 drawn.push_back(Stroke(*s));
+                Rect b = PencilKitDrawing::BoundsOf(drawn.back());
+                minX = std::min(minX, b.x); maxX = std::max(maxX, b.x + b.width);
+                minY = std::min(minY, b.y); maxY = std::max(maxY, b.y + b.height);
             }
-            minX = std::max(0.0, minX); minY = std::max(0.0, minY);
-            maxX = std::min(width, maxX); maxY = std::min(height, maxY);
-            if (maxX <= minX || maxY <= minY) return;
             double boxWidth = maxX - minX, boxHeight = maxY - minY;
             double lly = height - maxY; // PDF user space: y up
             auto drawing = PencilKitDrawing::WriteLegacy(drawn);
@@ -158,19 +214,29 @@ namespace xournal::import
         std::vector<std::vector<StrokeShape>> ink(pages.size());
         for (size_t i = 0; i < pages.size(); ++i)
         {
+            // An annotation lies over the page's content, so a stroke below a picture would come out above it: such strokes
+            // stay drawn (the picture's box against the stroke's), as do strokes with nothing of them on the page.
+            Rect pageBox{ 0, 0, pages[i].width, pages[i].height };
+            auto& elements = pages[i].elements;
             std::vector<pdf::PageElement> rest;
-            for (auto& element : pages[i].elements)
+            for (size_t e = 0; e < elements.size(); ++e)
             {
-                auto* stroke = std::get_if<StrokeShape>(&element);
-                if (stroke && IsEditable(*stroke))
+                auto* stroke = std::get_if<StrokeShape>(&elements[e]);
+                bool editable = stroke && IsEditable(*stroke) && Overlaps(BoxOf(*stroke), pageBox);
+                for (size_t later = e + 1; editable && later < elements.size(); ++later)
+                {
+                    auto const* picture = std::get_if<pdf::Picture>(&elements[later]);
+                    if (picture && Overlaps(BoxOf(*stroke), BoxOf(*picture))) editable = false;
+                }
+                if (editable)
                 {
                     ink[i].push_back(std::move(*stroke));
                     continue;
                 }
                 if (stroke) ++result.flatStrokes;
-                rest.push_back(std::move(element));
+                rest.push_back(std::move(elements[e]));
             }
-            pages[i].elements = std::move(rest);
+            elements = std::move(rest);
         }
         auto bytes = pdf::ExportToMemory(pages, result.pdf, options);
         result.pdf.skippedElements = counts.skippedElements;
@@ -190,6 +256,8 @@ namespace xournal::import
         }
         QPDFWriter writer(pdf);
         writer.setOutputMemory();
+        writer.setDecodeLevel(qpdf_dl_none);         // streams keep their data and filters (the pages are kept exactly)
+        writer.setObjectStreamMode(qpdf_o_generate);
         writer.setDeterministicID(true);
         writer.write();
         for (auto const& w : pdf.getWarnings()) Log(std::format("iPad export: qpdf warning: {}", w.what()));

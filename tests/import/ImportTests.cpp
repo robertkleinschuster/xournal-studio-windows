@@ -718,14 +718,25 @@ namespace xournal::tests
             }
             return numbers;
         };
+        // PencilKit keeps the control points of a smooth curve: the polyline's few points come back as many (as dense as
+        // the points of the user's own drawings: never more than 2 pt apart), from the first point to the last.
+        auto spacing = [&](std::vector<double> const& c)
+        {
+            double widest = 0;
+            for (size_t i = 2; i + 1 < c.size(); i += 2) widest = std::max(widest, std::hypot(c[i] - c[i - 2], c[i + 1] - c[i - 1]));
+            return widest;
+        };
         auto first = coordinates(strokes[0]);
-        ASSERT_EQ(first.size(), 6u);
-        std::vector<double> expected{ 10, 20, 30, 40, 50, 20 };
-        for (size_t i = 0; i < 6; ++i) EXPECT_NEAR(first[i], expected[i], 1e-2);
+        ASSERT_GT(first.size(), 60u);
+        EXPECT_NEAR(first[0], 10, 1e-2);
+        EXPECT_NEAR(first[1], 20, 1e-2);
+        EXPECT_NEAR(first[first.size() - 2], 50, 1e-2);
+        EXPECT_NEAR(first[first.size() - 1], 20, 1e-2);
+        EXPECT_LE(spacing(first), 2.0);
         auto second = coordinates(strokes[1]);
-        ASSERT_EQ(second.size(), 6u);
-        EXPECT_NEAR(second[4], 130, 1e-2);
-        EXPECT_NEAR(second[5], 110, 1e-2);
+        EXPECT_NEAR(second[second.size() - 2], 130, 1e-2);
+        EXPECT_NEAR(second[second.size() - 1], 110, 1e-2);
+        EXPECT_LE(spacing(second), 2.0);
     }
 
     // The user's kind of document (the sanitized example): every editable stroke comes back as a stroke. With

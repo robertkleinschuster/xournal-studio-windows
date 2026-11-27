@@ -137,12 +137,12 @@ namespace xournal::import
             DWORD size = 0;
             if (!CryptBinaryToStringA(bytes.data(), static_cast<DWORD>(bytes.size()), CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, nullptr, &size))
             {
-                ThrowInvalidData("markup archive: base64");
+                ThrowLastError("CryptBinaryToString (markup archive)");
             }
             std::string text(size, '\0');
             if (!CryptBinaryToStringA(bytes.data(), static_cast<DWORD>(bytes.size()), CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, text.data(), &size))
             {
-                ThrowInvalidData("markup archive: base64");
+                ThrowLastError("CryptBinaryToString (markup archive)");
             }
             text.resize(size);
             return text;

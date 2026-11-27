@@ -530,6 +530,21 @@ namespace xournal::import
         constexpr double PointInterval = 0.008; // seconds between two points (as a 120 Hz pen)
     }
 
+    Rect PencilKitDrawing::BoundsOf(PencilKitStroke const& stroke)
+    {
+        double minX = 1e30, minY = 1e30, maxX = -1e30, maxY = -1e30, widest = stroke.width;
+        for (size_t k = 0; k < stroke.points.size(); ++k)
+        {
+            auto const& p = stroke.points[k];
+            if (k < stroke.widths.size()) widest = std::max(widest, stroke.widths[k]);
+            minX = std::min(minX, p.x); maxX = std::max(maxX, p.x);
+            minY = std::min(minY, p.y); maxY = std::max(maxY, p.y);
+        }
+        double pad = widest / 2;
+        double left = std::floor(minX - pad), top = std::floor(minY - pad);
+        return { left, top, std::ceil(maxX + pad) - left, std::ceil(maxY + pad) - top };
+    }
+
     std::vector<std::uint8_t> PencilKitDrawing::WriteLegacy(std::span<PencilKitStroke const> strokes)
     {
         if (strokes.empty()) ThrowInvalidData("PencilKit drawing: no strokes to write");
@@ -573,14 +588,10 @@ namespace xournal::import
             {
                 auto const& stroke = strokes[i];
                 std::string points;
-                double minX = 1e30, minY = 1e30, maxX = -1e30, maxY = -1e30, widest = 0;
                 for (size_t k = 0; k < stroke.points.size(); ++k)
                 {
                     auto const& p = stroke.points[k];
                     double size = k < stroke.widths.size() ? stroke.widths[k] : stroke.width;
-                    widest = std::max(widest, size);
-                    minX = std::min(minX, p.x); maxX = std::max(maxX, p.x);
-                    minY = std::min(minY, p.y); maxY = std::max(maxY, p.y);
                     Put(points, static_cast<float>(PointInterval * static_cast<double>(k)));
                     Put(points, static_cast<float>(p.x));
                     Put(points, static_cast<float>(p.y));
@@ -591,7 +602,7 @@ namespace xournal::import
                     Put(points, Azimuth);
                     Put(points, Altitude);
                 }
-                double pad = widest / 2;
+                Rect bounds = BoundsOf(stroke);
                 drawing.add_bytes(5, Message([&](protozero::pbf_writer& s)
                 {
                     s.add_bytes(1, Triple(static_cast<std::uint32_t>(i), 0, static_cast<std::uint32_t>(i + 1)));
@@ -601,10 +612,10 @@ namespace xournal::import
                     s.add_bytes(5, points);
                     s.add_bytes(6, Message([&](protozero::pbf_writer& b)
                     {
-                        b.add_float(1, static_cast<float>(minX - pad));
-                        b.add_float(2, static_cast<float>(minY - pad));
-                        b.add_float(3, static_cast<float>(maxX - minX + 2 * pad));
-                        b.add_float(4, static_cast<float>(maxY - minY + 2 * pad));
+                        b.add_float(1, static_cast<float>(bounds.x));
+                        b.add_float(2, static_cast<float>(bounds.y));
+                        b.add_float(3, static_cast<float>(bounds.width));
+                        b.add_float(4, static_cast<float>(bounds.height));
                     }));
                     s.add_uint32(9, 0);
                     s.add_double(11, now + PointInterval * static_cast<double>(i));

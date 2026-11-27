@@ -52,5 +52,9 @@ namespace xournal::import
         /// A drawing in the older variant (gzip) of `strokes` in drawing order (points in drawing coordinates, points, y
         /// down; `width` or `widths` = the brush size; the ink name and color from the stroke). Throws for no strokes.
         std::vector<std::uint8_t> WriteLegacy(std::span<PencilKitStroke const> strokes);
+
+        /// The bounds WriteLegacy stores for a stroke: its points and half the widest brush size around them, rounded
+        /// outwards to whole numbers as iPadOS stores them (drawing coordinates).
+        Rect BoundsOf(PencilKitStroke const& stroke);
     }
 }
